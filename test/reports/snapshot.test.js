@@ -1,0 +1,69 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { buildSnapshot } from '../../src/reports/snapshot.js';
+import { CLASSIFICATIONS } from '../../src/reports/classifications.js';
+import { createReport, setReportDesign } from '../../src/core/ops/reports.js';
+import { assignHazardNumbers, updateHazard } from '../../src/core/ops/hazards.js';
+import { confirmControl, excludeControl, setRating } from '../../src/core/ops/assessment.js';
+import { entries } from '../../src/core/history.js';
+import { act, seed } from '../helpers.js';
+
+const names = { u1: 'Ada', u2: 'Grace' };
+const opts = { profileName: (id) => names[id] ?? id, at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'Alpha hazards', classification: 'OFFICIAL' };
+
+function assessed() {
+  let d = assignHazardNumbers(seed());
+  d = confirmControl(d, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1' });
+  d = excludeControl(d, act, { hazardId: 'h1', controlId: 'c2', platformId: 'p1', reason: 'No crew' });
+  d = setRating(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', consequence: 1, likelihood: 'C' });
+  d = setRating(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', consequence: 2, likelihood: 'C' });
+  return d;
+}
+
+test('the marking list', () => {
+  assert.deepEqual(CLASSIFICATIONS, ['OFFICIAL', 'OFFICIAL: Sensitive', 'PROTECTED']);
+});
+
+test('a snapshot holds the platform, and each of its hazards with everything a report shows', () => {
+  const s = buildSnapshot(assessed(), 'p1', opts);
+  assert.equal(s.platformName, 'Alpha');
+  assert.equal(s.ownerName, 'Ada');
+  assert.equal(s.producedAt, opts.at);
+  assert.equal(s.classification, 'OFFICIAL');
+  assert.equal(s.rows.length, 1);
+  const r = s.rows[0];
+  assert.deepEqual(
+    { reportId: r.reportId, title: r.title, causalFactors: r.causalFactors, consequences: r.consequences, initial: r.initial, residual: r.residual },
+    { reportId: 'H-0001', title: 'Fire', causalFactors: ['Hot works'], consequences: ['Burns'], initial: { consequence: 1, likelihood: 'C' }, residual: { consequence: 2, likelihood: 'C' } },
+  );
+  assert.deepEqual(r.controls, [
+    { title: 'Sprinklers', kind: 'preventative', state: 'confirmed', reason: '' },
+    { title: 'Fire drills', kind: 'mitigating', state: 'excluded', reason: 'No crew' },
+  ]);
+});
+
+test('a snapshot does not change when the data does', () => {
+  const d = assessed();
+  const s = buildSnapshot(d, 'p1', opts);
+  const copy = structuredClone(s);
+  updateHazard(d, act, { id: 'h1', title: 'Renamed' });
+  assert.deepEqual(s, copy);
+  assert.notEqual(s.rows[0].controls, undefined);
+});
+
+test('a missing or deleted platform is refused', () => {
+  assert.throws(() => buildSnapshot(assessed(), 'nope', opts), (e) => e.code === 'not-found');
+});
+
+test('createReport stores the report as a record reaching its platform; setReportDesign writes no history', () => {
+  const d = assessed();
+  const report = { ...buildSnapshot(d, 'p1', opts), markdown: '# x', html: '<p>x</p>' };
+  const d2 = createReport(d, act, { id: 'r1', report });
+  assert.equal(d2.records.report.r1.markdown, '# x');
+  assert.equal(d2.records.report.r1.createdBy, 'u1');
+  assert.deepEqual(entries(d2).at(-1).platforms, ['p1']);
+  const d3 = setReportDesign(d2, { titleBlock: true });
+  assert.deepEqual(d3.reportDesign, { titleBlock: true });
+  assert.equal(Object.keys(d3.history).length, Object.keys(d2.history).length);
+  assert.equal(setReportDesign(d3, { titleBlock: true }), d3);
+});
