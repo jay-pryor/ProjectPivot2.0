@@ -222,3 +222,22 @@ test('Final review I1: an edit made while a save is in progress is kept, not los
   await c.dispatch({ type: 'save' });
   assert.equal((await load(f.handle)).data.records.hazard.h1.title, 'Edited during the save');
 });
+
+test('Final review I2: profiles.json unreadable just after a merged save leaves the saved session in place, with a warning', async () => {
+  const f = new MemoryFolder();
+  const a = createController(env(f));
+  await openAs(a, 'Ada');
+  await a.dispatch({ type: 'save' });
+  const g = createController(env(f));
+  await openAs(g, 'Grace');
+  await g.dispatch({ type: 'createControl', id: 'cg', title: 'From Grace' });
+  await g.dispatch({ type: 'save' });
+  await a.dispatch({ type: 'createHazard', id: 'h1', title: 'Fire' });
+  f.denyRead((rel) => rel === 'profiles.json');
+  await a.dispatch({ type: 'save' });
+  const s = a.getState();
+  assert.equal((await load(f.handle)).stamp.token, s.session.loadedStamp.token, 'the session knows it saved');
+  assert.equal(s.session.working.records.hazard.h1.number, 1, 'new hazards are numbered in the session');
+  assert.notEqual(s.message.kind, 'error');
+  assert.ok(s.warnings.some((w) => /profiles/.test(w)), JSON.stringify(s.warnings));
+});

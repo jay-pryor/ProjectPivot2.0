@@ -215,8 +215,15 @@ export function createController(env) {
       set({ session: { base: r.data, working, loadedStamp: r.stamp } });
       if (during) await afterChange(); else clearMirror(env.storage);
       // Someone who saved in between may have created their profile since this copy read the list.
-      if (r.merged) set({ profiles: await store.readProfiles(/** @type {any} */ (handle)) });
-      set({ message: saveMessage(r), warnings: during ? state.warnings : [] });
+      const warnings = during ? [...state.warnings] : [];
+      if (r.merged) {
+        try {
+          set({ profiles: await store.readProfiles(/** @type {any} */ (handle)) });
+        } catch (e) {
+          warnings.push(`Saved, but profiles.json could not be read just now (${e instanceof Error ? e.message : String(e)}), so some names may show as "someone".`);
+        }
+      }
+      set({ message: saveMessage(r), warnings });
     },
     async setFilter({ list, field, value }) {
       const next = { ...state.filters[list] };
