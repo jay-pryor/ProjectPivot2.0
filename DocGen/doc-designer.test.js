@@ -546,6 +546,49 @@ import { App } from './doc-designer.js';
         T.assert(App.docHost.validate(named).some(function (e) { return /subject\.noun/.test(e); }),
           'a non-string noun was accepted');
       });
+
+      s.test('CLS-2 the classification marking is one of the host\'s, chosen per design', function () {
+        var host = mockHost();
+        host.classifications = ['OFFICIAL', 'PROTECTED'];
+        withHost(host, function () {
+          T.assertDeepEqual(App.docHost.validate(host), []);
+          T.assert(App.docStore.setClassification('PROTECTED').ok, 'a listed marking is accepted');
+          T.assertEqual(App.docSession.options().classification, 'PROTECTED');
+          T.assert(!App.docStore.setClassification('SECRET').ok, 'an unlisted marking is refused');
+          T.assertEqual(App.docSession.options().classification, 'PROTECTED');
+          T.assert(App.docStore.setClassification('').ok);
+          T.assertEqual(App.docSession.options().classification, '');
+        });
+        host.classifications = ['OK', 3];
+        T.assert(App.docHost.validate(host).some(function (e) { return /classifications/.test(e); }), 'a bad list is refused');
+      });
+
+      s.test('CLS-2 the designer offers None and each marking, with the saved one selected', function () {
+        var host = mockHost();
+        host.classifications = ['OFFICIAL', 'OFFICIAL: Sensitive'];
+        withHost(host, function () {
+          App.docStore.setClassification('OFFICIAL: Sensitive');
+          var RD = App.ui.views.reportDesign;
+          RD.open(); RD.pane('headerfooter');
+          var html = RD.render(host.getState());
+          RD.close();
+          T.assert(/<select data-rd-classification/.test(html), 'no marking select');
+          T.assert(/<option value="">None<\/option>/.test(html), 'no None option');
+          T.assert(/<option value="OFFICIAL: Sensitive" selected>/.test(html), 'the saved marking is not selected');
+        });
+      });
+
+      s.test('HOST-2 the section preview works for a host with no subject.context or chosenMeta', function () {
+        var host = mockHost();
+        withHost(host, function () {
+          var RD = App.ui.views.reportDesign;
+          RD.open(); RD.pane('section'); RD.select('staff');
+          var html = RD.render(host.getState());
+          RD.close();
+          T.assertEqual(html.indexOf('Preview failed'), -1, 'the preview failed');
+          T.assert(html.indexOf('Ada') !== -1, 'the preview does not show the rows');
+        });
+      });
     });
   })(App);
 

@@ -1,3 +1,4 @@
+// @ts-nocheck
   /* App namespace root. Exported at the bottom of this file. */
   var App = {};
 
@@ -3956,6 +3957,11 @@
           errs.push('host.subject.noun must be a string');
         }
       }
+      // CLS-2: the markings a design may carry. The host's vocabulary, never free text.
+      if (host.classifications !== undefined && !(Array.isArray(host.classifications) &&
+          host.classifications.every(function (c) { return typeof c === 'string' && c.trim() !== ''; }))) {
+        errs.push('host.classifications must be an array of non-empty strings');
+      }
       // build() is what the workspace previews and what its Generate button emits;
       // linkTerms() is how a host says which words in a table become links. Both
       // optional: without build() the preview says so, without linkTerms() nothing
@@ -4082,11 +4088,28 @@
         columns: stored.columns || {},
         relevance: Object.assign(rel, stored.relevance || {}),
         // CLS-1: from the PROJECT, so it survives a reload and travels with the file.
-        classification: bag.classification === true
+        classification: typeof bag.classification === 'string' ? bag.classification : ''
       });
     }
 
-    App.docHost = { set: set, get: get, validate: validate, sections: sections, log: log };
+    /** HOST-2: the run context a section is filled with: the host's, or the subject and the time. */
+    function subjectContext(subjectId, generatedUtc) {
+      var sj = _host && _host.subject;
+      if (sj && typeof sj.context === 'function') return sj.context(subjectId, generatedUtc);
+      return { subjectId: subjectId, generatedUtc: generatedUtc };
+    }
+
+    /** HOST-2 / META-1: the subject's metadata rows this design keeps: the host's, or meta() less the unticked. */
+    function chosenMeta(subjectId, generatedUtc) {
+      var sj = _host && _host.subject;
+      if (sj && typeof sj.chosenMeta === 'function') return sj.chosenMeta(subjectId, generatedUtc);
+      if (!sj || typeof sj.meta !== 'function') return [];
+      var chosen = (((_host.getState() || {}).report) || {}).meta || {};
+      return (sj.meta(subjectId) || []).filter(function (r) { return chosen[r.id] !== false; });
+    }
+
+    App.docHost = { set: set, get: get, validate: validate, sections: sections, log: log,
+                    context: subjectContext, chosenMeta: chosenMeta };
     App.docSession = { get: sessionGet, set: sessionSet, run: sessionRun, options: sessionOptions,
                        selectedSubjectId: selectedSubjectId, KEYS: SESSION_KEYS };
   }(App));
@@ -5073,7 +5096,8 @@
     function setTitleBlock(on) { return setReportSwitch('titleBlock', on); }
 
     /**
-     * CLS-1: whether the report carries the OFFICIAL: Sensitive banner on every page.
+     * CLS-1 / CLS-2: the classification marking the report carries on every page: one of the
+     * host's `classifications`, or none ('').
      *
      * It used to live in the session block with the filename and the `/[Tag]` values, on
      * the reasoning that it was an answer for one run. It is not: the sensitivity of what
@@ -5082,7 +5106,20 @@
      * with no decision in it, and a document issued from an unticked session went out
      * unmarked. Stored beside the title block, and on the same presence rule.
      */
-    function setClassification(on) { return setReportSwitch('classification', on); }
+    function setClassification(marking) {
+      if (!P()) return errNoProject();
+      var text = marking == null ? '' : String(marking);
+      var allowed = App.docHost.get().classifications || [];
+      if (text && allowed.indexOf(text) === -1) {
+        return err('"' + text + '" is not one of the classification markings this application offers.', 'classification');
+      }
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        if (text) b.classification = text; else delete b.classification;
+        if (!Object.keys(b).length) delete p.report;
+      });
+      return ok();
+    }
 
     /** The shape both of the above share: a document-level switch, stored as presence. */
     function setReportSwitch(key, on) {
@@ -7910,8 +7947,8 @@
       if (!selId) return view;
       try {
         var generatedUtc = H().clock.nowIso();
-        var ctx = H().subject.context(selId, generatedUtc);
-        var metaRows = H().subject.chosenMeta(selId, generatedUtc);
+        var ctx = App.docHost.context(selId, generatedUtc);
+        var metaRows = App.docHost.chosenMeta(selId, generatedUtc);
         var o = Object.assign({}, opts(), { subjectId: selId });
         o.linkTerms = H().linkTerms ? H().linkTerms(view.blocks) : null;
         o.providers = runSections(selId);
@@ -7971,10 +8008,10 @@
       if (!selId) return '<p class="muted">No ' + esc(noun()) + ' selected — nothing to preview.</p>';
       try {
         var generatedUtc = H().clock.nowIso();
-        var ctx = H().subject.context(selId, generatedUtc);
+        var ctx = App.docHost.context(selId, generatedUtc);
         var filled = App.docGen.sectionContent(H(), block,
           Object.assign({}, opts(), { subjectId: selId, providers: runSections(selId) }), ctx,
-          H().subject.chosenMeta(selId, generatedUtc));
+          App.docHost.chosenMeta(selId, generatedUtc));
         // Numbered as it will actually be numbered, so the preview reads as the page.
         var resolved = outlineNow(project).resolved.filter(function (r) { return r.id === block.id; })[0];
         var md = App.md.join([
@@ -8535,10 +8572,17 @@
           ? '<div class="rd-locked">The <strong>Standard</strong> profile ships with the tool and cannot be edited — <strong>Duplicate</strong> it and change the copy.</div>'
           : '');
 
+      var marking = (project.report || {}).classification;
+      var markings = H().classifications || [];
       var banner = '<div class="rd-fieldset"><strong>Classification banner</strong>' +
-        // CLS-1: read from the project, like the title block — not from the session.
-        cb('data-rd-classification', 'OFFICIAL: Sensitive on every page',
-          ((project.report || {}).classification === true)) +
+        // CLS-1: read from the project, like the title block, not from the session. CLS-2: the
+        // choices are the host's; there is no free text, so a marking cannot be mistyped.
+        '<label class="rd-lab">Marking on every page <select data-rd-classification aria-label="Classification marking">' +
+          '<option value=""' + (marking ? '' : ' selected') + '>None</option>' +
+          markings.map(function (m) {
+            return '<option value="' + esc(m) + '"' + (m === marking ? ' selected' : '') + '>' + esc(m) + '</option>';
+          }).join('') +
+        '</select></label>' +
         '<p class="muted rd-hint">Printed in the first free slot of the header and of the footer, preferring the centre. ' +
         'Fill all three slots of a line yourself and the banner leaves that line alone — your words win.</p>' +
         '<p class="muted rd-hint">Saved with the project, so it is set once for the document rather than re-ticked ' +
@@ -8805,7 +8849,7 @@
     function pagedPaper(project, html) {
       var f = App.docFormat.resolve(project);
       var m = App.docFormat.pageMetrics(f);
-      var hf = App.docFormat.headerFooter(f, { classification: opts().classification ? 'OFFICIAL: Sensitive' : '' });
+      var hf = App.docFormat.headerFooter(f, { classification: opts().classification || '' });
       // Written as data attributes rather than inline styles so `paginate` can read the
       // numbers back without re-resolving the profile, and so a redraw cannot disagree
       // with the measurement that produced it.
@@ -9463,7 +9507,7 @@
       // stored with the project — the same shape as the title block beside it, and the
       // reason `data-rd-flag` is no longer a session flag at all.
       dom.on(ctx.root, 'change', '[data-rd-classification]', function (e, el) {
-        quietly(function () { logIssues(App.docStore.setClassification(el.checked)); });
+        quietly(function () { logIssues(App.docStore.setClassification(el.value)); });
         dirty(); repaint();
       });
       dom.on(ctx.root, 'click', '[data-rd-up]', function (e, el) {

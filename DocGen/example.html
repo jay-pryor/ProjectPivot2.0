@@ -114,7 +114,7 @@ import { App } from './doc-designer.js';
       return App.docGen.emitDocument(host, prepared, {
         title: 'Platform team roster',
         date: host.clock.nowIso().slice(0, 10),
-        filename: o.filename, tags: o.tags,
+        filename: o.filename, tags: o.tags, classification: o.classification,
         logicalName: 'roster.md', fallbackName: 'roster.md'
       });
     }
@@ -139,7 +139,7 @@ import { App } from './doc-designer.js';
 
   function generate(format) {
     var doc = host.build('team', App.docSession.options());
-    if (format === 'html') doc = App.docGen.emitHtml(host, doc, { title: 'Platform team roster' });
+    if (format === 'html') doc = App.docGen.emitHtml(host, doc, { title: 'Platform team roster', classification: App.docSession.options().classification });
     document.getElementById('out').textContent = doc.text;
     return doc;
   }
