@@ -1,0 +1,32 @@
+import { hazardLabel } from '../core/ids.js';
+
+export const KIND_LABEL = Object.freeze({
+  hazard: 'Hazard', causalFactor: 'Causal factor', consequence: 'Consequence', control: 'Control',
+  platform: 'Platform', hazardControl: 'Control link', hazardPlatform: 'Platform link',
+  ruling: 'Control decision', rating: 'Rating', report: 'Report', reportDesign: 'Report design',
+});
+
+/** How a record is named to a person. @param {string} kind @param {any} rec */
+export function recordName(kind, rec) {
+  if (kind === 'reportDesign') return 'the report design';
+  if (!rec) return KIND_LABEL[kind] ?? kind;
+  switch (kind) {
+    case 'hazard': return `${hazardLabel(rec)} ${rec.title}`;
+    case 'control':
+    case 'report': return rec.title;
+    case 'platform': return rec.name;
+    case 'causalFactor':
+    case 'consequence': return rec.text;
+    default: return KIND_LABEL[kind] ?? kind;
+  }
+}
+
+/** @param {{ profiles: { id: string, name: string }[] }} state @param {string | null | undefined} id */
+export function profileName(state, id) {
+  return state.profiles.find((p) => p.id === id)?.name ?? 'someone';
+}
+
+/** @param {string} ts an AEST timestamp @returns {string} `YYYY-MM-DD HH:mm` */
+export function when(ts) {
+  return ts.slice(0, 16).replace('T', ' ');
+}
