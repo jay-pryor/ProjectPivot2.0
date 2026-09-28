@@ -1,0 +1,15 @@
+module: registry
+allowed_imports:
+  - baseline/types
+  - baseline/schema
+  - baseline/clock
+  - modules/change-log/contract   # 4.0, C-023: every changing operation records its own act
+# The change-log edge is the only module edge this module has, added at 4.0 (DEC-016): a
+# record and the entry for the change to it are written in one call, so nothing here can
+# change stored data and leave no history (HZ-005). change-log imports no module, so the graph
+# stays acyclic (DEC-004, DEC-015).
+# No modules/store/contract at any version: registry is a function of the working DataBody
+# the consumer carries between store.load and store.save (DEC-006), so the edge the retired
+# G2 drawing proposed (DEC-011) is not drawn until a version needs it. No
+# modules/rating/contract either: this module stores the two values an assessor entered and
+# never the band they mean, so it has nothing to ask the matrix (DEC-002, C-017, C-018).

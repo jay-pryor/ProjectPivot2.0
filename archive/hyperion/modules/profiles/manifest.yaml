@@ -1,0 +1,6 @@
+module: profiles
+allowed_imports:
+  - baseline/types
+  - baseline/clock
+  - modules/store/contract
+  - modules/store/conformance/harness   # test code only (CORE-CON-003): the suite opens a DataStore on store's in-memory folder rather than writing a second one

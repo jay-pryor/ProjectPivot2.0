@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Document designer — worked example</title>
+<!-- doc-designer.js is an ES module, and Chromium will not import one module file from
+     another when the page is opened straight from disk. Serve this folder instead:
+         python3 -m http.server     (then open http://localhost:8000/example.html)
+     A host that must open from a file path inlines the module, as Pivot's build does. -->
+<link rel="stylesheet" href="doc-designer.css">
+<style>
+  /* This page's own chrome. Nothing here is part of the module. */
+  body { padding: 24px; max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.lede { color: var(--c-text-muted); margin: 0 0 18px; }
+  .bar { display: flex; gap: 8px; margin-bottom: 16px; }
+  pre#out { background: var(--c-surface-alt); border: 1px solid var(--c-border);
+            border-radius: 6px; padding: 12px; white-space: pre-wrap; font-size: 12px;
+            max-height: 420px; overflow: auto; }
+</style>
+</head>
+<!-- .docgen gives this page's own chrome the designer's tokens; the designer adds the
+     class to its root itself, so a host that styles its own page needs no class here. -->
+<body class="docgen">
+
+<h1>A staff roster, written by the document designer</h1>
+<p class="lede">
+  Nothing on this page knows what a device, a control or a hardening decision is. It declares
+  where its state lives, what its sections are, and what the document is about — and gets the
+  whole designer, preview, formatting and generation in return.
+</p>
+
+<div class="bar">
+  <button class="primary" id="design">Open the designer</button>
+  <button id="generate">Generate the document</button>
+  <button id="generate-html">Generate as HTML</button>
+</div>
+
+<pre id="out">Press Generate.</pre>
+
+<!-- The stable delegation root the workspace wires itself to. -->
+<div id="rd-host"></div>
+
+<script type="module">
+import { App } from './doc-designer.js';
+
+  // ---- 1. The state. Yours to own; the module reads and writes it through the host.
+  //         Everything the designer saves lives under `report`, so persisting this object
+  //         persists the design.
+  var state = { report: {} };
+
+  var ROWS = [
+    { key: 'ada',    name: 'Ada Lovelace',  role: 'Lead',     decision: { band: 'senior' } },
+    { key: 'grace',  name: 'Grace Hopper',  role: 'Engineer', decision: { band: 'senior' } },
+    { key: 'katherine', name: 'Katherine Johnson', role: 'Analyst', decision: { band: 'staff' } }
+  ];
+
+  // ---- 2. The host. Four required members, and three optional ones worth having.
+  var host = {
+    getState: function () { return state; },
+    commit: function (mutator) { mutator(state); /* your save/undo hook goes here */ },
+    // The module takes the time from you and nowhere else — there is no clock inside it,
+    // which is what makes a generated document reproducible under a fixed one.
+    clock: { nowIso: function () { return new Date().toISOString(); } },
+    log: function (issue) { console.log('[' + (issue.severity || 'info') + '] ' + issue.message); },
+
+    // What each document is ABOUT. Gives you the subject picker and the provenance section.
+    subject: {
+      metaLabel: 'About this roster',
+      noun: 'team',                           // what the designer's wording calls one subject
+      list: function () { return [{ id: 'team', label: 'Platform team' }]; },
+      ready: function () { return true; },
+      meta: function () {
+        return [{ id: 'team', label: 'Team', value: 'Platform', code: false },
+                { id: 'size', label: 'People', value: String(ROWS.length) }];
+      }
+    },
+
+    // ---- 3. The sections, declared rather than rendered. A provider says what its rows
+    //         are, which column is the key, and what the other columns hold; the module
+    //         builds the table, the caption, the widths and the numbering.
+    sections: function (run) {
+      return [{
+        id: 'people', label: 'People',
+        keyColumn: { id: '_key', label: 'Name', w: 3, get: function (r) { return r.name; } },
+        columns: [
+          { id: 'role', label: 'Role', w: 3, get: function (r) { return r.role; } },
+          { id: 'band', label: 'Band', w: 2, optional: true, get: function (r) { return r.decision.band; } }
+        ],
+        // Declaring groups splits the section into one table per band.
+        groups: { field: 'band', options: [{ value: 'senior', label: 'Senior' },
+                                           { value: 'staff', label: 'Staff' }] },
+        rows: function () { return ROWS; }
+      }];
+    },
+
+    // Which categories rows can be filtered by, in the designer and in the document.
+    filter: {
+      id: 'band', label: 'Band',
+      categories: function () {
+        return [{ key: 'senior', label: 'Senior', defaultOn: true },
+                { key: 'staff', label: 'Staff', defaultOn: true }];
+      },
+      categoryOf: function (row) { return row.decision.band; }
+    },
+
+    // ---- 4. Producing the document: blocks in, one .md out.
+    build: function (subjectId, opts) {
+      var o = Object.assign({ subjectId: subjectId }, opts || {});
+      var blocks = App.docGen.reportBlocks(host, o).filter(function (b) { return b.included; });
+      var ctx = { subjectId: subjectId, generatedUtc: host.clock.nowIso() };
+      var meta = host.subject.meta(subjectId);
+      var prepared = blocks.map(function (b) { return App.docGen.sectionContent(host, b, o, ctx, meta); });
+      return App.docGen.emitDocument(host, prepared, {
+        title: 'Platform team roster',
+        date: host.clock.nowIso().slice(0, 10),
+        filename: o.filename, tags: o.tags,
+        logicalName: 'roster.md', fallbackName: 'roster.md'
+      });
+    }
+  };
+
+  App.docHost.set(host);
+
+  // ---- 5. Mounting the designer. render() returns HTML; wire() is called once, against
+  //         a root element that stays put across repaints.
+  var RD = App.ui.views.reportDesign;
+  var rdHost = document.getElementById('rd-host');
+
+  function paint() { rdHost.innerHTML = RD.render(state); }
+
+  RD.wire({
+    root: rdHost,
+    refreshMain: paint,                       // repaint after a change
+    quietEdit: function (fn) { fn(); }        // where an app with undo would wrap the write
+  });
+
+  document.getElementById('design').addEventListener('click', function () { RD.open(); paint(); });
+
+  function generate(format) {
+    var doc = host.build('team', App.docSession.options());
+    if (format === 'html') doc = App.docGen.emitHtml(host, doc, { title: 'Platform team roster' });
+    document.getElementById('out').textContent = doc.text;
+    return doc;
+  }
+  document.getElementById('generate').addEventListener('click', function () { generate('md'); });
+  document.getElementById('generate-html').addEventListener('click', function () { generate('html'); });
+
+  // The designer's own Generate buttons. Where the file goes is the host's decision; this
+  // page downloads it. Pivot writes it through its store's save-file picker instead.
+  rdHost.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-generate-action]');
+    if (!btn || btn.disabled) return;
+    var doc = generate(btn.getAttribute('data-generate-format'));
+    App.util.dom.download(doc.blob, doc.name);
+  });
+</script>
+</body>
+</html>

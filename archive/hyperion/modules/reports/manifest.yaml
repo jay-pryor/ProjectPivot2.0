@@ -1,0 +1,36 @@
+module: reports
+allowed_imports:
+  - baseline/types
+  - baseline/schema
+  - baseline/clock                     # C-003, C-011: a report's and a template's header times are the baseline
+                                       # clock's; the suite fixes it, as it does for a due date (C-006)
+  - modules/registry/contract          # 4.0, C-004: listPlatformHazards, the one query every list of a platform's
+                                       # hazards is made from (registry C-019, HZ-004), whose platform is also how a
+                                       # retired platform is told (C-003); platformsAffected for the entry a report
+                                       # writes (C-011).
+                                       # This module holds no link and reads no collection of registry's
+  - modules/rating/contract            # 1.0, C-008: the band beside each hazard's residual values in a document, asked
+                                       # when the document is drawn and never stored (REQ-017, HZ-010; DEC-032)
+  - modules/review-schedule/contract   # 1.0, C-006: listOverdue, the one call that says what is past its review due
+                                       # date (review-schedule C-009, C-010; HZ-009). This module derives no due date
+  - modules/bowtie/contract            # 1.0, C-005: bowtieFor and renderBowtieSvg, the drawing a report holds as
+                                       # generated at production (REQ-061; bowtie C-003, C-010)
+  - modules/change-log/contract        # 1.0, C-011: every changing operation records its own act, as registry's,
+                                       # review-schedule's, reference-register's, and workflows' do (DEC-016)
+# Five module edges, all downward, and the graph stays acyclic (DEC-004): this is the second of the two
+# composing modules DEC-004 placed above the record modules, and nothing imports it but views. registry,
+# review-schedule, and change-log import no module above change-log; bowtie imports only registry; rating
+# imports nothing.
+#
+# No modules/store/contract, at any version. This module is a function of the working DataBody the consumer
+# carries between store.load and store.save (DEC-006), and of a Report passed in. Writing a document to a file
+# the user chose is views', over store.writeExportFile (DEC-030).
+#
+# No modules/reference-register/contract. A report at 1.0 includes no reference entry, so it uses none that
+# could be past its review due date; the reading this takes of SL-09 criterion 3 is in CONTRACT.md's preamble.
+#
+# No modules/workflows/contract and no modules/profiles/contract. A report names no workflow, and the active
+# profile is a baseline value passed in on the Act (DEC-004).
+#
+# No modules/views/contract, ever: views imports this module at SL-09, and an edge back would close the cycle
+# DEC-004 rejected.

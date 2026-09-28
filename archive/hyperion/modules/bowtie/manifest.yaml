@@ -1,0 +1,10 @@
+module: bowtie
+allowed_imports:
+  - baseline/types
+  - baseline/schema
+  - modules/registry/contract   # 1.0, C-001, C-003: getHazardDetail and listPlatformHazards, the only reads of the
+                                # body this module makes, so the bow-tie is the registry's data and no copy of it
+                                # (DEC-028, HZ-011). registry imports only change-log, which imports nothing, so
+                                # the graph stays acyclic (DEC-004)
+# No modules/rating/contract: no rating is drawn at 1.0 (CONTRACT.md preamble). No modules/store/contract:
+# nothing is stored, and the export file is views' to write (C-003).

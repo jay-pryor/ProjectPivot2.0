@@ -1,0 +1,58 @@
+module: views
+allowed_imports:
+  - baseline/types
+  - baseline/schema
+  - baseline/messages
+  - modules/store/contract
+  - modules/profiles/contract
+  - modules/registry/contract
+  - modules/rating/contract            # 3.0: the only source of a band on any screen (C-021, REQ-017, HZ-010)
+  - modules/change-log/contract        # 5.0: the history screen, the acknowledgement queue, and the one append this
+                                       # module makes (C-028, C-029). It never calls recordChange: the entry for a
+                                       # change to a registry record is written by the operation that makes it
+                                       # (registry C-023, DEC-016), so this edge reads the log and acknowledges,
+                                       # and change-log imports no module, which keeps the graph acyclic (DEC-004)
+  - modules/review-schedule/contract   # 6.0: the tempo, the due date, the last reviewed date, and the overdue flag
+                                       # on every screen that shows a schedulable record (C-031), and the one act that
+                                       # sets a tempo (C-032). This module derives none of them: it holds no month
+                                       # arithmetic, no overdue boundary, and no clock (C-009). review-schedule imports
+                                       # only change-log, which imports nothing, so the graph stays acyclic (DEC-004)
+  - modules/reference-register/contract # 7.0: the reference register's entries, an entry's links, and whether
+                                        # each entry's stored file is still there (C-033, C-034, C-035; REQ-078).
+                                        # This module derives none of it: it never reads collections['reference-entry'],
+                                        # holds no second list of an entry's links, and opens, names, and lists no file
+                                        # (C-009). It is also the one path by which an act of this module writes to
+                                        # files/, through the store.putStoredFile that createEntry makes on its behalf
+                                        # (DEC-022, DEC-006's carve-out). reference-register imports only store and
+                                        # change-log, neither of which imports a module, so the graph stays acyclic (DEC-004)
+  - modules/workflows/contract          # 8.0: the five guided workflows, their step lists, each step's demand, and the
+                                        # acts a step makes (C-036, C-037, C-038; REQ-037). This module derives none of
+                                        # it: it never reads collections['workflow-record'], holds no step list, no
+                                        # demand, and no seal of its own, and makes no act a step makes (C-009). It is
+                                        # also the one path by which a screen of this module causes a last reviewed
+                                        # date to move: workflows calls review-schedule.completeReview, this module
+                                        # never does, at any version (C-032, DEC-026). workflows imports registry,
+                                        # review-schedule and change-log and imports no views, so the graph stays
+                                        # acyclic (DEC-004)
+  - modules/bowtie/contract             # 9.0: the bow-tie of one hazard on one platform and the one SVG document that
+                                        # draws it, shown and exported from the same calls (C-039, C-040; REQ-018,
+                                        # REQ-059, REQ-060; HZ-011). This module draws no bow-tie of its own, keeps no
+                                        # copy of one, and writes none to the folder or the browser's storage (C-009).
+                                        # bowtie imports only registry, which imports only change-log, and imports no
+                                        # views, so the graph stays acyclic (DEC-004)
+  - modules/reports/contract            # 10.0: the saved templates, the produced reports, what a report includes, the
+                                        # reports that include a hazard, the records a report would use that are past
+                                        # their review due date, and the two documents a report is downloaded as (C-041
+                                        # to C-044; REQ-016, REQ-026, REQ-027, REQ-046). This module derives none of it:
+                                        # it never reads collections['report'] or collections['report-template'], holds no
+                                        # due-date rule, and draws no document of its own (C-009). reports imports registry,
+                                        # rating, review-schedule, bowtie, and change-log and imports no views, so the
+                                        # graph stays acyclic (DEC-004)
+  - modules/store/conformance/harness  # test code only (CORE-CON-003): the suite opens apps on store's in-memory folder rather than writing a second one
+  - baseline/faults                     # test code only: the suite arms store's fault points to stop a save partway (C-011, SL-02 criterion 2)
+  - baseline/clock                      # test code only: the suite fixes the clock either side of a due date to reach C-031's
+                                        # two directions (SL-06 criterion 4). Production code of this module reads no clock:
+                                        # every stamp, header time, and overdue flag it shows came from the module that
+                                        # made it (C-009, C-031)
+# The page's drawing (src/main.js) imports
+# only what is listed here plus baseline/tokens.css, which the build inlines, not imports.

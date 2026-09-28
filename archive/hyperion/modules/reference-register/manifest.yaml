@@ -1,0 +1,29 @@
+module: reference-register
+allowed_imports:
+  - baseline/types
+  - baseline/schema
+  - baseline/clock                 # C-001, C-008: an entry's and a link's header times are the baseline clock's now; the suite fixes it
+  - modules/change-log/contract    # 1.0, C-011: every changing operation records its own act
+  - modules/store/contract         # 1.0, C-003, C-010: the one record module that reaches the folder, for the file
+                                   # operation alone (DEC-006) - putStoredFile to keep a carried file and
+                                   # checkStoredFiles to ask whether one is still there. Nothing here calls save,
+                                   # load, restore, noteChange, or any other operation of that contract
+  - modules/store/conformance/harness   # test code only (CORE-CON-003): the suite opens a DataStore on store's
+                                        # in-memory folder rather than writing a second one, as profiles' and views' do
+# Two module edges, and both are drawn by a recorded decision.
+#
+# modules/store/contract is DEC-006's one carve-out: "a record module whose records include
+# files in the folder (reference-register, REQ-029) imports store for the file operation and
+# nothing else". Every other record module is a pure function of the working DataBody; this one
+# is too for every operation that does not touch a file (C-007). store imports no module, so the
+# edge closes no cycle (DEC-004).
+#
+# modules/change-log/contract is the edge registry and review-schedule already draw (DEC-016,
+# DEC-018): an entry and the log record of the change to it are written in one call, so nothing
+# here can change stored data and leave no history (HZ-005). change-log imports no module either.
+#
+# No modules/registry/contract, at any version. An entry names what it is linked to by a baseline
+# RecordRef and this module resolves none of them (C-008): the platforms a change to an entry
+# reaches are the caller's to name, as they are change-log's caller's and review-schedule's
+# (DEC-015, DEC-020). That edge is the record-module-to-record-module edge DEC-004 decomposed the
+# modules to avoid, and DEC-018's reversal trigger names discovering a need for it as a STOP.

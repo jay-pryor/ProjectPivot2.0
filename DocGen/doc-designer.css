@@ -1,0 +1,334 @@
+/* doc-designer.css: the document designer's styles.
+ *
+ * Every rule is scoped under `.docgen`, which the designer adds to the element it is
+ * wired to (reportDesign.wire({root})), so nothing here restyles the host page. The
+ * design tokens (`--c-*`) are declared on `.docgen` too; a host that wants the
+ * designer in its own colours overrides them there, e.g.
+ *
+ *     .docgen { --c-accent: var(--pivot-accent); }
+ *
+ * Dark mode follows `data-theme="dark"` on the document root or on the `.docgen`
+ * element itself.
+ *
+ * Originally extracted from the CH Config Tool's stylesheet; now maintained here.
+ */
+  .docgen {
+    --c-bg: #f5f6f8;
+    --c-surface: #ffffff;
+    --c-surface-alt: #f0f2f5;
+    --c-border: #d4d8de;
+    --c-text: #1d2330;
+    --c-text-muted: #5b6472;
+    --c-accent: #1f5fb0;
+    --c-accent-text: #ffffff;
+    --c-ok: #1d7a46;
+    --c-warn: #9a6700;
+    --c-error: #b3261e;
+    --c-undecided-border: #d99100;
+    --c-badge-bg: #e7ecf3;
+    /* Status tint backgrounds as variables so the dark theme overrides VARIABLES
+       only (spec §18.1 DM-1) — no per-component restyle. */
+    --c-ok-bg: #e7f5ec;
+    --c-warn-bg: #fff5e0;
+    --c-error-bg: #fdecea;
+    /* review-12: a distinct informational (blue) tint for the LOW relevance badge. */
+    --c-info: #1f5fb0;
+    --c-info-bg: #e7eefa;
+    /* review-14: purple = REPORT (IRRELEVANT reuses the muted/alt greys). */
+    --c-purple: #6b3fa0;
+    --c-purple-bg: #f1eafa;
+    --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;  --sp-4: 16px;  --sp-5: 24px;
+    --radius: 6px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;}
+  :root[data-theme="dark"] .docgen, .docgen[data-theme="dark"] {
+    --c-bg: #14171c;
+    --c-surface: #1d222b;
+    --c-surface-alt: #262c37;
+    --c-border: #3a414d;
+    --c-text: #e6e9ee;
+    --c-text-muted: #9aa4b2;
+    --c-accent: #4f9bff;
+    --c-accent-text: #0b1220;
+    --c-ok: #4ec98a;
+    --c-warn: #e0a64b;
+    --c-error: #ff6b61;
+    --c-undecided-border: #e0a64b;
+    --c-badge-bg: #2a313c;
+    --c-ok-bg: #16301f;
+    --c-warn-bg: #3a2e16;
+    --c-error-bg: #3a1f1d;
+    --c-info: #4f9bff;
+    --c-info-bg: #16233a;
+    --c-purple: #c39bf5;
+    --c-purple-bg: #2b2140;}
+  .docgen { color-scheme: light dark;}
+  .docgen, .docgen * { box-sizing: border-box;}
+  .docgen {
+    font-family: var(--font);
+    color: var(--c-text);
+    background: var(--c-bg);
+    font-size: 14px;
+    line-height: 1.45;}
+  .docgen code, .docgen pre { font-family: var(--mono);}
+  .docgen button {
+    font: inherit; cursor: pointer; border: 1px solid var(--c-border);
+    background: var(--c-surface); color: var(--c-text);
+    padding: var(--sp-2) var(--sp-3); border-radius: var(--radius);}
+  .docgen button:hover:not(:disabled) { background: var(--c-surface-alt);}
+  .docgen button:disabled { opacity: .5; cursor: not-allowed;}
+  .docgen button.primary { background: var(--c-accent); color: var(--c-accent-text); border-color: var(--c-accent);}
+  .docgen button.primary:hover:not(:disabled) { filter: brightness(1.08);}
+  .docgen a { color: var(--c-accent);}
+  .docgen .gen-opt { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; margin: 1px 10px 1px 0;}
+  .docgen .ord-note { font-size: 12px; margin-bottom: 6px;}
+  .docgen .ord-list { list-style: none; margin: 0; padding: 0; counter-reset: none;}
+  .docgen .ord-step { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border: 1px solid var(--c-border);
+               border-radius: 6px; background: var(--c-surface); margin-bottom: 6px; cursor: grab;}
+  .docgen .ord-step.dragging { opacity: .45;}
+  .docgen .ord-step.drop-target { border-color: var(--c-accent, var(--c-info)); box-shadow: inset 0 2px 0 var(--c-info);}
+  .docgen .ord-step.off { opacity: .55; background: var(--c-surface-alt);}
+  .docgen .ord-num { min-width: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--c-text-muted); padding-top: 2px;}
+  .docgen .ord-inc { padding-top: 3px;}
+  .docgen .ord-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px;}
+  .docgen .ord-label { font-weight: 600; font-size: 13px; word-break: break-word;}
+  .docgen .ord-move { display: flex; flex-direction: column; gap: 2px;}
+  .docgen .ord-move button { font-size: 11px; line-height: 1; padding: 3px 6px;}
+  .docgen button.danger { border-color: var(--c-undecided-border);}
+  .docgen .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;}
+  .docgen .modal { background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 10px; max-width: 900px; width: 100%; max-height: 86vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.35);}
+  .docgen .modal-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--c-border);}
+  .docgen .modal-head h3 { margin: 0; font-size: 16px;}
+  .docgen .modal-head .modal-sub { color: var(--c-text-muted); font-size: 12px;}
+  .docgen .modal-close { margin-left: auto; background: none; border: none; font-size: 22px; line-height: 1; cursor: pointer; color: var(--c-text); padding: 0 4px;}
+  .docgen .modal-body { padding: 14px 16px; overflow-y: auto;}
+  .docgen .modal-overlay.overlay-full { padding: 0;}
+  .docgen .modal.modal-full { max-width: none; width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; border: 0;}
+  .docgen .modal-full .modal-body { flex: 1 1 auto; min-height: 0;}
+  .docgen .modal-foot { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--c-border); background: var(--c-surface-alt); flex-wrap: wrap;}
+  .docgen .modal-foot .spacer { flex: 1 1 auto;}
+  .docgen .modal-foot .foot-summary { font-size: 12px; color: var(--c-text-muted);}
+  .docgen .rpt-body { display: flex; gap: 16px; align-items: flex-start;}
+  .docgen .rpt-pane { border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-surface); padding: 10px 12px;}
+  .docgen .rpt-pane > h4 { margin: 0 0 3px; font-size: 13px;}
+  .docgen .rpt-pane > .rpt-note { font-size: 12px; margin: 0 0 8px;}
+  .docgen .rpt-pane-main { flex: 1 1 auto; min-width: 0;}
+  .docgen .rpt-pane-side { flex: 0 0 340px; display: flex; flex-direction: column; gap: 12px;}
+  .docgen .rpt-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 1px 8px; font-size: 12px;}
+  .docgen .rpt-sub > em { color: var(--c-text-muted); margin-right: 2px;}
+  .docgen .rpt-rel { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0;}
+  .docgen .rpt-rel .rpt-rel-count { margin-left: auto; color: var(--c-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap;}
+  .docgen .rpt-omit { font-size: 12px; margin: 8px 0 0;}
+  .docgen .rd-layout { height: 100%; align-items: stretch;}
+  .docgen .rd-layout > .rpt-pane-main { flex: 0 0 42%; max-width: 560px; display: flex; flex-direction: column; min-height: 0;}
+  .docgen .rd-layout > .rpt-pane-main > #rd-order-host { overflow-y: auto; flex: 1 1 auto; min-height: 0;}
+  .docgen .rd-right { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 0;}
+  .docgen .rd-tabs { display: flex; gap: 2px; flex-wrap: wrap; margin-bottom: 8px;}
+  .docgen .rd-tab { font: inherit; font-size: 12px; padding: 5px 12px; border: 1px solid var(--c-border); border-radius: 6px 6px 0 0; background: var(--c-surface-alt); color: var(--c-text); cursor: pointer;}
+  .docgen .rd-tab.on { background: var(--c-surface); border-bottom-color: var(--c-surface); font-weight: 600;}
+  .docgen .rd-pane { flex: 1 1 auto; min-height: 0; overflow-y: auto;}
+  .docgen .rd-pane h5 { margin: 0 0 6px; font-size: 13px;}
+  .docgen .rd-addbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0;}
+  .docgen .rd-addbar .spacer { flex: 1 1 auto;}
+  .docgen .rd-hint { font-size: 12px; margin: 6px 0 0;}
+  .docgen .rd-err { color: var(--c-danger, #b00); font-size: 13px;}
+  .docgen .rd-row .rd-open { font: inherit; background: none; border: 0; padding: 0; color: var(--c-text); cursor: pointer; text-align: left; text-decoration: underline dotted;}
+  .docgen .rd-row.sel { outline: 2px solid var(--c-accent); outline-offset: -2px; border-radius: 6px;}
+  .docgen .rd-row .rd-meta { display: flex; gap: 6px; align-items: center; margin-left: 8px;}
+  .docgen .rd-kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--c-text-muted); border: 1px solid var(--c-border); border-radius: 3px; padding: 0 4px;}
+  .docgen .rd-kind-custom { color: var(--c-accent); border-color: var(--c-accent);}
+  .docgen .rd-warn { font-size: 11px; color: var(--c-warn); white-space: nowrap;}
+  .docgen .rd-level { font: inherit; font-size: 11px; padding: 2px 4px; flex: 0 0 auto; background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 4px;}
+  .docgen .rd-lab { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--c-text-muted);}
+  .docgen .rd-lab input, .docgen .rd-lab select { font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--c-border); border-radius: 4px; background: var(--c-surface); color: var(--c-text);}
+  .docgen .rd-lab-s { min-width: 0;}
+  .docgen .rd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 6px;}
+  .docgen .rd-grid-inline { display: flex; align-items: flex-end; gap: 8px;}
+  .docgen .rd-fieldset { border: 1px solid var(--c-border); border-radius: 6px; padding: 8px 10px; margin: 10px 0;}
+  .docgen .rd-fieldset > strong { display: block; font-size: 12px; margin-bottom: 4px;}
+  .docgen .rd-fieldset p.muted { font-size: 12px; margin: 0 0 6px;}
+  .docgen .rd-locked { font-size: 12px; border: 1px solid var(--c-undecided-border, var(--c-border)); background: var(--c-warn-bg); color: var(--c-text); border-left-width: 4px; border-radius: 6px; padding: 8px 10px; margin: 8px 0;}
+  .docgen .rd-fmt-head { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;}
+  .docgen .rd-fmt-head .spacer { flex: 1 1 auto;}
+  .docgen .rd-fmt-body { border: 0; padding: 0; margin: 0; min-width: 0;}
+  .docgen .rd-fmt-body[disabled] { opacity: 0.55;}
+  .docgen .rd-lvl { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px;}
+  .docgen .rd-lvl th, .docgen .rd-lvl td { border: 1px solid var(--c-border); padding: 2px 4px; text-align: left;}
+  .docgen .rd-tiny { width: 100%; min-width: 42px; font: inherit; font-size: 12px; padding: 1px 3px; border: 1px solid var(--c-border); border-radius: 3px; background: var(--c-surface); color: var(--c-text);}
+  .docgen .rd-parts { display: flex; flex-direction: column; gap: 10px; margin: 10px 0;}
+  .docgen .rd-part { border: 1px solid var(--c-border); border-radius: 6px; padding: 8px; background: var(--c-surface-alt);}
+  .docgen .rd-part.dragging { opacity: 0.5;}
+  .docgen .rd-part.drop-target { border-color: var(--c-accent); border-style: dashed;}
+  .docgen .rd-part-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;}
+  .docgen .rd-part-kind { font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--c-text-muted);}
+  .docgen .rd-part-note { font-size: 12px;}
+  .docgen .rd-part-move { margin-left: auto; display: flex; gap: 2px;}
+  .docgen .rd-tbs { display: flex; gap: 2px;}
+  .docgen .rd-tb { font: inherit; font-size: 12px; min-width: 26px; padding: 2px 6px; border: 1px solid var(--c-border); border-radius: 4px; background: var(--c-surface); color: var(--c-text); cursor: pointer;}
+  .docgen .rd-para, .docgen .rd-title, .docgen .rd-cap { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--c-border); border-radius: 4px; background: var(--c-surface); color: var(--c-text);}
+  .docgen .rd-para { resize: vertical; font-family: var(--font-mono, ui-monospace, monospace);}
+  .docgen .rd-rich { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; line-height: 1.45;
+    padding: 6px 8px; border: 1px solid var(--c-border); border-radius: 4px;
+    background: var(--c-surface); color: var(--c-text); min-height: 58px;
+    overflow-wrap: break-word; white-space: pre-wrap; cursor: text;}
+  .docgen .rd-rich:focus { outline: 2px solid var(--c-accent); outline-offset: -1px;}
+  .docgen .rd-rich:empty::before { content: attr(data-rd-ph); color: var(--c-text-muted);}
+  .docgen .rd-rich code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.92em;
+    background: var(--c-surface-alt); padding: 0 3px; border-radius: 3px;}
+  .docgen .rd-chip { display: inline-block; background: var(--c-badge-bg); border: 1px solid var(--c-border);
+    border-radius: 10px; padding: 0 7px; font-size: 12px; line-height: 1.5; white-space: nowrap;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: baseline; user-select: none;}
+  .docgen .rd-reflink { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px;}
+  .docgen .rd-broken { color: var(--c-error); border-color: var(--c-error);}
+  .docgen .rd-cellbox { min-height: 20px; padding: 3px 5px; border: 0; border-radius: 0; font-size: 12px;}
+  .docgen .rd-cellbox:focus { outline: 2px solid var(--c-accent); outline-offset: -2px;}
+  .docgen .rd-esc { font-size: 11px; color: var(--c-text-muted); margin-top: 4px;}
+  .docgen .rd-esc code { background: var(--c-surface-alt); padding: 0 3px; border-radius: 3px;}
+  .docgen .rd-refmenu { border: 1px solid var(--c-accent); border-radius: 6px; padding: 6px; margin-bottom: 6px; background: var(--c-surface); max-height: 200px; overflow-y: auto;}
+  .docgen .rd-refmenu-h { font-size: 11px; color: var(--c-text-muted); margin-bottom: 4px;}
+  .docgen .rd-refmenu button { font: inherit; font-size: 12px; padding: 3px 6px; border: 0; background: none; color: var(--c-text); cursor: pointer; border-radius: 4px;}
+  .docgen .rd-refmenu button:hover { background: var(--c-surface-alt);}
+  .docgen .rd-refmenu-note { font-size: 11px; margin: 0 0 6px;}
+  .docgen .rd-tblword { border-left: 2px solid var(--c-border); padding-left: 8px; margin: 8px 0;}
+  .docgen .rd-tblword-h { font-size: 12px; font-weight: 600; color: var(--c-text-muted); margin-bottom: 4px;}
+  .docgen .rd-hf { margin: 8px 0;}
+  .docgen .rd-hf-h { font-size: 12px; font-weight: 600; margin-bottom: 3px;}
+  .docgen .rd-hf-slots { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;}
+  .docgen .rd-tagrow { display: grid; grid-template-columns: minmax(90px, auto) 1fr; align-items: center; gap: 8px; margin: 4px 0;}
+  .docgen .rd-tagrow code { font-size: 12px;}
+  .docgen .rd-preview-paged { background: var(--c-surface-alt); padding: 12px 0;}
+  .docgen .rd-pages { display: flex; flex-direction: column; align-items: center; gap: 18px;}
+  .docgen .rd-sheet { position: relative; background: #fff; color: #111; box-shadow: 0 1px 6px rgba(0,0,0,0.28);
+    display: flex; flex-direction: column; overflow: hidden;}
+  .docgen .rd-sheet-body { flex: 1 1 auto; overflow: hidden;}
+  .docgen .rd-sheet-hf { display: flex; align-items: center; flex: 0 0 auto; color: #111;}
+  .docgen .rd-sheet-hf .prv-hf-left { flex: 1 1 0; text-align: left;}
+  .docgen .rd-sheet-hf .prv-hf-centre { flex: 1 1 0; text-align: center;}
+  .docgen .rd-sheet-hf .prv-hf-right { flex: 1 1 0; text-align: right;}
+  .docgen .rd-sheet-head { align-items: flex-start;}
+  .docgen .rd-sheet-foot { align-items: flex-end;}
+  .docgen .rd-sheet-n { position: absolute; right: 4px; bottom: -16px; font-size: 11px; color: var(--c-text-muted);}
+  .docgen .rd-pageflow { background: #fff;}
+  .docgen .rd-preview-doc .prv-tbltitle th { text-align: center;}
+  .docgen .rd-reftarget { display: flex; align-items: center; gap: 6px; padding: 2px 0;}
+  .docgen .rd-reftarget-l { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+  .docgen .rd-refreadings { flex: 0 0 auto; display: flex; gap: 2px;}
+  .docgen .rd-refreadings button { border: 1px solid var(--c-border); font-size: 11px; padding: 2px 6px;}
+  .docgen .rd-tablewrap { overflow-x: auto;}
+  .docgen .rd-table { border-collapse: collapse; font-size: 12px; width: 100%;}
+  .docgen .rd-table th, .docgen .rd-table td { border: 1px solid var(--c-border); padding: 0; vertical-align: top;}
+  .docgen .rd-table input { width: 100%; box-sizing: border-box; font: inherit; font-size: 12px; padding: 4px 6px; border: 0; background: transparent; color: var(--c-text);}
+  .docgen .rd-table th input { font-weight: 600;}
+  .docgen .rd-colbar { display: flex; gap: 2px; padding: 2px; border-top: 1px solid var(--c-border);}
+  .docgen .rd-colbar select { font-size: 11px; flex: 1 1 auto; background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 3px;}
+  .docgen .rd-rowdel { width: 28px;}
+  .docgen .rd-rowdel-wide, .docgen .rd-table-fixed col:last-child.rd-rowdel { width: 56px;}
+  .docgen .rd-rowdel .rd-tallbox { margin-right: 4px; vertical-align: middle; cursor: pointer;}
+  .docgen .rd-tablebtns { display: flex; gap: 6px; margin-top: 6px; align-items: center; flex-wrap: wrap;}
+  .docgen .rd-mmlab { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--c-text-muted);}
+  .docgen .rd-mmlab .rd-mm { width: 68px; font: inherit; font-size: 12px; padding: 3px 5px; text-align: right;
+    background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 4px;}
+  .docgen .rd-rowh { margin-left: auto;}
+  .docgen .rd-secspace { margin-top: 8px;}
+  .docgen .rd-mmshow { margin-top: 6px; border: 1px dashed var(--c-border); border-radius: 3px;
+    background: repeating-linear-gradient(135deg, transparent 0 6px, var(--c-surface-alt) 6px 7px);}
+  .docgen .rd-cmd { background: var(--c-surface-alt); border: 1px solid var(--c-border); border-radius: 4px;
+    padding: 7px 9px; margin: 6px 0; font-size: 12px; overflow-x: auto; white-space: pre; user-select: all;}
+  .docgen .rd-cmdlist { margin: 4px 0 8px 18px; padding: 0; font-size: 12px;}
+  .docgen .rd-cmdlist li { margin: 4px 0;}
+  .docgen .rd-table-fixed { table-layout: fixed; max-width: 100%;}
+  .docgen .rd-tablescale { max-width: 100%;}
+  .docgen .rd-table-fixed th, .docgen .rd-table-fixed td { overflow: hidden; overflow-wrap: anywhere;}
+  .docgen .rd-table th { position: relative;}
+  .docgen .rd-colresize { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 2;}
+  .docgen .rd-colresize:hover, .docgen .rd-colresize:active { background: var(--c-accent, #4a7fd0); opacity: .5;}
+  .docgen .rd-colpct { font-size: 10px; color: var(--c-text-muted); font-variant-numeric: tabular-nums; align-self: center;
+    padding: 0 3px; white-space: nowrap; cursor: text; border-radius: 3px; border: 1px dashed transparent;}
+  .docgen .rd-colpct:hover, .docgen .rd-colpct:focus { border-color: var(--c-border); color: var(--c-text); outline: none;}
+  .docgen .rd-colpct.auto { opacity: .45; font-style: italic;}
+  .docgen .rd-pctbox { width: 46px; font: inherit; font-size: 10px; padding: 0 2px; border: 1px solid var(--c-accent, #4a7fd0);
+    border-radius: 3px; background: var(--c-surface); color: var(--c-text);}
+  .docgen .rd-widthbar { display: flex; max-width: 100%; border: 1px solid var(--c-border); border-radius: var(--radius);
+    overflow: hidden; background: var(--c-surface); margin: 6px 0;}
+  .docgen .rd-wseg { position: relative; display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+    min-width: 0; padding: 5px 7px; border-right: 1px solid var(--c-border); box-sizing: border-box;}
+  .docgen .rd-wseg:last-child { border-right: 0;}
+  .docgen .rd-wlabel { font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+  .docgen .rd-wseg .rd-colpct { align-self: flex-start;}
+  .docgen .rd-wflag { font-size: 11px; color: var(--c-error); font-weight: 600;}
+  .docgen .rd-wnote { font-size: 11px; color: var(--c-text-muted);}
+  .docgen .rd-row { position: relative;}
+  .docgen .rd-opt { position: relative; display: inline-flex;}
+  .docgen .rd-optbtn { font-size: 12px; line-height: 1; padding: 3px 6px; border: 1px solid var(--c-border);
+    border-radius: 4px; background: var(--c-surface); color: var(--c-text-muted); cursor: pointer;}
+  .docgen .rd-optbtn:hover, .docgen .rd-optbtn.on { color: var(--c-text); border-color: var(--c-accent, #4a7fd0);}
+  .docgen .rd-optmenu { position: absolute; top: 100%; right: 0; z-index: 30; margin-top: 4px; min-width: 190px;
+    max-height: 300px; overflow-y: auto; padding: 6px 8px; border: 1px solid var(--c-border);
+    border-radius: 6px; background: var(--c-surface); box-shadow: 0 4px 14px rgba(0,0,0,.22);
+    display: flex; flex-direction: column; gap: 1px; text-align: left;}
+  .docgen .rd-optmenu-h { font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--c-text-muted); margin: 4px 0 2px;}
+  .docgen .rd-optmenu-h:first-child { margin-top: 0;}
+  .docgen .rd-optmenu .gen-opt { margin: 0; white-space: nowrap;}
+  .docgen .rd-shade { width: 38px; height: 20px; padding: 0; border: 1px solid var(--c-border); border-radius: 3px; background: var(--c-surface); cursor: pointer;}
+  .docgen .rd-metarow { display: flex; align-items: center; gap: 8px;}
+  .docgen .rd-metaval { margin-left: auto; font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--c-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%;}
+  .docgen .rd-secprev-wrap { margin-top: 12px;}
+  .docgen .rd-secprev { max-height: 420px; overflow: auto; border: 1px solid var(--c-border); border-radius: 6px; padding: 8px 12px;}
+  .docgen .rd-tpl-list { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 4px;}
+  .docgen .rd-tpl-list li { display: flex; align-items: center; gap: 8px; border: 1px solid var(--c-border); border-radius: 5px; padding: 4px 8px; font-size: 13px;}
+  .docgen .rd-tpl-list .rd-tpl-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+  .docgen .rd-cf-list .rd-radio { font-size: 12px; display: flex; align-items: center; gap: 4px; white-space: nowrap;}
+  .docgen .rd-filebtn { font-size: 13px; padding: 4px 10px; border: 1px solid var(--c-border); border-radius: var(--radius); background: var(--c-surface); color: var(--c-text); cursor: pointer;}
+  .docgen .rd-filebtn input[type="file"] { display: none;}
+  .docgen .rd-preview { display: flex; flex-direction: column; height: 100%; min-height: 0;}
+  .docgen .rd-preview-body { display: flex; gap: 12px; flex: 1 1 auto; min-height: 0;}
+  .docgen .rd-preview-nav { flex: 0 0 220px; overflow-y: auto; border-right: 1px solid var(--c-border); padding-right: 8px; display: flex; flex-direction: column; gap: 1px;}
+  .docgen .rd-nav { font-size: 12px; color: var(--c-text); text-decoration: none; padding: 2px 4px; border-radius: 3px;}
+  .docgen .rd-nav:hover { background: var(--c-surface-alt);}
+  .docgen .rd-nav-n { color: var(--c-text-muted); font-variant-numeric: tabular-nums;}
+  .docgen .rd-nav-2 { padding-left: 16px;}
+  .docgen .rd-nav-3 { padding-left: 30px;}
+  .docgen .rd-nav-4 { padding-left: 44px;}
+  .docgen .rd-preview-doc { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 4px 12px 40px; background: var(--c-surface); border-radius: 6px;}
+  .docgen .rd-preview-doc .prv-h { margin: 14px 0 6px; line-height: 1.2;}
+  .docgen .rd-preview-doc .prv-h1, .docgen .rd-preview-doc .prv-title { font-size: 19px; border-bottom: 1px solid var(--c-border); padding-bottom: 3px;}
+  .docgen .rd-preview-doc .prv-h2 { font-size: 16px;}
+  .docgen .rd-preview-doc .prv-h3 { font-size: 14px;}
+  .docgen .rd-preview-doc .prv-h4 { font-size: 13px; font-style: italic;}
+  .docgen .rd-preview-doc p { margin: 6px 0; font-size: 13px; line-height: 1.45;}
+  .docgen .rd-preview-doc .prv-tablewrap { overflow-x: auto; margin: 8px 0;}
+  .docgen .rd-preview-doc .prv-table { border-collapse: collapse; font-size: 12px;}
+  .docgen .rd-preview-doc .prv-table th, .docgen .rd-preview-doc .prv-table td { border: 1px solid var(--c-border); padding: 3px 6px; text-align: left; vertical-align: top;
+    /* BRK-1 in the browser. A fixed-layout table with a colgroup does not wrap a long
+       word by default — it lets it run out of the cell, which is the same defect the
+       page had and the same thing the reader sees. */
+    overflow-wrap: anywhere; word-break: break-word;}
+  .docgen .rd-preview-doc .prv-table th { background: var(--c-surface-alt);}
+  .docgen .rd-preview-doc .prv-caption { font-size: 12px; color: var(--c-text-muted); margin-top: 3px;}
+  .docgen .rd-preview-doc .prv-toc-e { padding: 1px 0;}
+  .docgen .rd-preview-doc .prv-toc-n { display: inline-block; min-width: 2.4em;}
+  .docgen .rd-preview-doc .prv-toc-2 { padding-left: 1.6em;}
+  .docgen .rd-preview-doc .prv-toc-3 { padding-left: 3.2em;}
+  .docgen .rd-preview-doc .prv-toc-4 { padding-left: 4.8em;}
+  .docgen .rd-preview-doc .prv-toc-empty { color: var(--c-text-muted);}
+  .docgen .rd-paper { box-shadow: 0 1px 6px rgba(0,0,0,.18); padding: 20px 22px 28px; border-radius: 2px;}
+  .docgen .rd-paper .prv-cp { margin: 0 0 4px;}
+  .docgen .rd-paper .prv-cp:last-child { margin-bottom: 0;}
+  .docgen .rd-paper .prv-pagebreak span { background: #fff; color: #777;}
+  .docgen .rd-paper .prv-pagebreak { border-top-color: #bbb;}
+  .docgen .rd-paper .prv-rule { border-top-color: #bbb;}
+  .docgen .rd-paper a { color: #14418c;}
+  .docgen .rd-preview-doc:has(.rd-paper) { background: var(--c-surface-alt); padding-top: 14px;}
+  .docgen .rd-preview-doc .prv-table[style*="fixed"] { width: 100%;}
+  .docgen .rd-preview-doc .prv-rule { border: 0; border-top: 1px solid var(--c-border); margin: 12px 0;}
+  .docgen .rd-preview-doc .prv-centre { text-align: center;}
+  .docgen .rd-preview-doc .prv-centre .prv-tablewrap { display: inline-block; text-align: left;}
+  .docgen .rd-preview-doc .prv-pagebreak { border-top: 1px dashed var(--c-border); text-align: center; margin: 16px 0;}
+  .docgen .rd-preview-doc .prv-pagebreak span { position: relative; top: -8px; background: var(--c-surface); padding: 0 8px; font-size: 11px; color: var(--c-text-muted);}
+  .docgen .rd-preview-doc code { background: var(--c-surface-alt); padding: 0 3px; border-radius: 3px; font-size: 12px;}
+  .docgen .prv-space, .docgen .prv-strut { display: block;}
+  .docgen .rd-preview-doc .prv-space { background: repeating-linear-gradient(135deg,
+      transparent 0 6px, var(--c-surface-alt) 6px 7px); border-radius: 2px;}
+  .docgen .rd-paper .prv-space { background: none;}
+  .docgen :focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px;}

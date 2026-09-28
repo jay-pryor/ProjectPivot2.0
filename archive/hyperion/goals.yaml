@@ -1,0 +1,5 @@
+# Goals for Pivot (G1): judged by a human at acceptance, never tested.
+- id: GOAL-001
+  statement: Pivot reduces the effort of managing and reviewing hazards (STK-004); any feature that removes a step from an existing workflow, or shortens one, counts toward it; judged yes or no by jay-pryor
+- id: GOAL-002
+  statement: Pivot reduces the effort of producing hazard documentation and reports (STK-005); any feature that removes a step from an existing workflow, or shortens one, counts toward it; judged yes or no by jay-pryor

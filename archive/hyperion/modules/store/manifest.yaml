@@ -1,0 +1,6 @@
+module: store
+allowed_imports:
+  - baseline/types
+  - baseline/schema
+  - baseline/faults
+  - baseline/clock   # C-013, C-015: backup due times and mirror times read the baseline clock; the suite fixes it (SL-02 criterion 3)

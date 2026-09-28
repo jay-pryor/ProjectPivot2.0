@@ -1,0 +1,808 @@
+# Requirements for Pivot (G1). Hazard-driven first; allocation, verification and validation references TBD until G2 and G3.
+# Terms: "link" is the one word for every stored relationship (hazard to platform, control to hazard, control to platform, reference entry to anything).
+# A report is a document Pivot produces. A review is the review-data workflow (REQ-037). An assessment is any list of a platform's hazards that Pivot shows.
+# An open item is anything awaiting a user's action; REQ-049 and REQ-068 name the kinds known so far, not an exhaustive set.
+- id: REQ-001
+  statement: Pivot shall show a control as linked to a platform only when a stored link between that control and that platform exists
+  kind: functional
+  source: HZ-001
+  allocated_to: registry   # registry C-013 with C-021: a live control-platform link is the only thing that puts a control on a platform, and views shows the state it gives
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_invariants.test.js::HZ-001: over random confirmations and exclusions of a hazard's controls on its platforms, every triple is confirmed, excluded, or awaiting and never two; the state every row shows is the one C-021 derives; superseded rows stay with status deleted (C-020, C-021; SL-04 criteria 1, 2 and 4)", "modules/registry/conformance/test_operations.test.js::confirmControlForPlatform puts one control on one platform for one hazard by one link stamped with who and when, records it, and the row shows it confirmed with that confirmation (C-013, C-021, C-022, C-023; SL-04 criteria 1 and 4; HZ-007)", "modules/registry/conformance/test_operations.test.js::a confirmation names all three ids: the same control confirmed for one hazard on a platform is not on that platform for another hazard (C-013, DEC-013; SL-03 criterion 3)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-002
+  statement: For each hazard linked to a platform, Pivot shall show every one of the hazard's controls that is not linked to that platform, with its recorded justification
+  kind: functional
+  source: HZ-001
+  allocated_to: views   # views C-024: every one of a hazard's controls is shown against the platform in the state registry C-019 and C-021 give it, an excluded one carrying the reason stored and an awaiting one shown as awaiting
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.records.test.js::every one of a hazard's controls is shown on the assessment and the platform row in the state registry gives it: confirmed with who and when, excluded with the reason stored, awaiting with neither, each with the hazard's own control kind (C-024)", "modules/views/conformance/test_operations.records.test.js::confirmControlForPlatform and excludeControlFromPlatform each move exactly one control: confirmed by the active profile, or excluded with the reason trimmed; every other control, both ratings, the same control on another platform, and the hazard's detail are as they were (C-025, C-022)", "modules/views/conformance/test_invariants.test.js::over seeded states, every screen that lists a platform's hazards or shows a hazard's controls on a platform agrees with the one listPlatformHazards: the platform screen, a review workflow, the prepare-report screen, the filter, a hazard's own screen, the assessment, the bow-tie, and the dashboard (C-020, C-021, C-024, C-044 to C-046)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-003
+  statement: Pivot shall show the residual consequence and likelihood of a hazard on a platform exactly as the assessor entered them, and shall never adjust them from the controls linked to that platform
+  kind: functional
+  source: HZ-002
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_invariants.test.js::HZ-002: whatever controls are linked, confirmed, or excluded and whatever platforms a hazard joins, the residual values read back are exactly the last ones setRating was given for that hazard, platform, and stage (C-017; SL-03 criterion 5)", "modules/registry/conformance/test_operations.test.js::setRating stores the values exactly as entered per hazard, platform, and stage; a second call updates the one record keeping its id and creation stamp; getRatings gives both stages; each act is recorded (C-017, C-018, C-023; SL-03 criterion 5; HZ-002)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-004
+  statement: Data loaded after a save shall hold the same records and links, with the same field values, as the data that was saved; values Pivot derives from the current date are not stored data
+  kind: cross-cutting
+  source: [HZ-003, STK-010]
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_invariants.test.js::round trip: any body saved loads back identical in this store and in another copy (C-001)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-005
+  statement: When a save does not complete, Pivot shall tell the user and name the changes that were not saved
+  kind: cross-cutting
+  source: HZ-003
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_invariants.test.js::unsaved changes: over seeded edits, saves, and failed saves, unsavedChanges names exactly the records added, changed, or removed against the stored data as last loaded or saved, by kind then id (C-011)", "modules/store/conformance/test_errors.test.js::a save stopped at store.save.data-staged leaves data.json byte-for-byte as it was and readable, unsavedChanges names what was not stored, and a retry saves (C-010, C-011 fault point)"]
+  validation_class: degenerate
+  validated_by: TBD
+  status: traced
+- id: REQ-006
+  statement: When stored data cannot be read or is corrupted, Pivot shall tell the user which data is affected
+  kind: cross-cutting
+  source: HZ-003
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_errors.test.js::checkFolder lists each Pivot file that fails its check, cannot be read, or is not the kind its name calls for, with the data it affects, sorted by file, and does not reject (C-012, section 4)"]
+  validation_class: degenerate
+  validated_by: TBD
+  status: traced
+- id: REQ-007
+  statement: Every report on a platform shall include each hazard that is linked to that platform and is neither deleted nor retired, with its controls and residual rating, or shall list that hazard as omitted
+  kind: functional
+  source: HZ-004
+  allocated_to: reports
+  verification_method: test
+  verified_by: ["modules/reports/conformance/test_operations.test.js::C-003 and C-004: produceReport on a live platform holds the platform's name and every row and omission of registry.listPlatformHazards, in order, with each control's state and justification and the residual values; read back by getReport and added to listReports (REQ-007; SL-09 criterion 2)", "modules/reports/conformance/test_invariants.test.js::C-004, HZ-004: with hazards omitted for a malformed rating, a malformed justification, and a malformed control, a report's rows and omitted are exactly the query's, each hazard linked and live once and in neither twice (REQ-007; SL-09 criterion 2)"]
+  validation_class: conservation
+  validated_by: TBD
+  status: traced
+- id: REQ-008
+  statement: Every review workflow completed on a platform shall include each hazard that is linked to that platform and is neither deleted nor retired, with its controls and residual rating, or shall list that hazard as omitted
+  kind: functional
+  source: HZ-004
+  allocated_to: workflows   # workflows C-006: the hazards a review workflow is about are exactly registry.listPlatformHazards of its platform, its rows the ones that may be marked reviewed and its omitted recorded on the completed record as omission entries, so a review covers the same set as the assessment screen and a report (registry C-019 is the property; this clause is that a review reaches it and keeps no list of its own)
+  verification_method: test
+  verified_by: ["modules/workflows/conformance/test_operations.test.js::a review workflow takes a decision per row with the note trimmed, its demand names the rows still undecided, and it cannot advance until every row is decided (C-006, C-008; SL-07 criterion 3; REQ-008)", "modules/workflows/conformance/test_operations.test.js::a hazard the query omits is reported by reviewOmissions with registry's reason, is not asked for, and is recorded as an omission entry at completion (C-006, C-008; SL-07 criterion 3; HZ-004, REQ-008)", "modules/workflows/conformance/test_errors.test.js::review-the-hazards refuses a hazard that is not a row of the platform's query — not linked, not live, or omitted — with HazardNotInReviewError carrying both ids (C-006, section 4; HZ-004)"]
+  validation_class: conservation
+  validated_by: TBD
+  status: traced
+- id: REQ-009
+  statement: Every list of a platform's hazards that Pivot shows shall include each hazard that is linked to that platform and is neither deleted nor retired, with its controls and residual rating, or shall list that hazard as omitted
+  kind: functional
+  source: HZ-004
+  allocated_to: views
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.records.test.js::openPlatform shows exactly the one listPlatformHazards: the platform, each row with the band rating gives for its residual, the omitted, and as linkable every live hazard in neither (C-020, C-021)", "modules/views/conformance/test_operations.records.test.js::a body whose rating record is malformed shows the hazard in omitted, not in rows, with one error naming its id and the omitting record's key (C-020; HZ-004)", "modules/views/conformance/test_operations.workflows.test.js::a review workflow on a platform whose rating record is malformed names the hazard in omitted with one error message, never in rows (C-037, C-020; HZ-004)", "modules/views/conformance/test_invariants.test.js::over seeded states, every screen that lists a platform's hazards or shows a hazard's controls on a platform agrees with the one listPlatformHazards: the platform screen, a review workflow, the prepare-report screen, the filter, a hazard's own screen, the assessment, the bow-tie, and the dashboard (C-020, C-021, C-024, C-044 to C-046)"]
+  validation_class: conservation
+  validated_by: TBD
+  status: traced
+- id: REQ-010
+  statement: When any stored record or link is deleted, Pivot shall keep a record, viewable by any user, of who deleted it, when, and what it contained
+  kind: functional
+  source: [HZ-005, STK-017]
+  allocated_to: change-log   # change-log C-004 with C-005 and C-009: the entry for a deletion holds who, the AEST time, and every field the record contained, and listHistory gives it to any user
+  verification_method: test
+  verified_by: ["modules/change-log/conformance/test_operations.test.js::recordChange of a deletion holds who, the AEST time, and every field the record contained, and listHistory gives it for that record (C-004, C-005, C-009; SL-05 criterion 1)", "modules/change-log/conformance/test_invariants.test.js::model check: a random sequence of acts, acknowledgements, and reads on bodies with foreign collections matches the model of entries, histories, and queues; entries only ever append, and every input body is left as it was (C-001 to C-006, C-009 to C-011, C-013)"]
+  validation_class: conservation
+  validated_by: TBD
+  status: traced
+- id: REQ-011
+  statement: Before saving an edit that changes either the control links of more than one platform or the stored content of a hazard, control, or justification linked to more than one platform, Pivot shall show the user every platform the edit changes
+  kind: functional
+  source: HZ-006
+  allocated_to: views   # views C-027: an operation whose registry.platformsAffected gives more than one platform resolves with the confirm-edit screen listing every one of them and changes nothing until confirmEdit, so the list is passed rather than shown alongside the edit. The derivation is registry C-024's, so the platforms warned about are the platforms that then await acknowledgement (DEC-017). At views 8.0 the clause covers the five changing workflow operations too, gated on platformsAffected of the workflow's subject, which is the ref DEC-026 derives each entry's affectedPlatformIds from, and states the invariant outright: an operation is gated exactly when the entry its act appends carries two or more platform ids (DEC-021, DEC-024, DEC-027)
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.records.test.js::each of the four changing operations of the hazard screen, on a hazard on two platforms, shows the confirm-edit screen: the pending edit untrimmed, every platform platformsAffected gives named, and nothing changed, told, or written (C-027)", "modules/views/conformance/test_operations.records.test.js::confirmEdit makes exactly the call the gated operation would have made, tells store, and shows that operation's screen; the entry it appends awaits exactly the platforms the confirm-edit screen listed (C-027, C-026, C-012)", "modules/views/conformance/test_invariants.test.js::over seeded links and edits, an operation of C-027 shows the confirm-edit screen exactly when platformsAffected of its ref gives two or more platforms, lists them, and the entry the act then appends reaches exactly that list; an ungated act's entry reaches fewer than two (C-027, C-026)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-012
+  statement: When an edit made for one platform changes any stored data of a hazard, control, or justification linked to another platform, Pivot shall show the change, and every item it affects, to that platform's owner until the owner acknowledges it
+  kind: functional
+  source: [HZ-006, STK-018, STK-026]
+  allocated_to: change-log   # change-log C-010 with C-011: the act awaits acknowledgement on every other platform it reaches until that platform acknowledges it; views' half is the owner it is shown to and the screen it is shown on
+  verification_method: test
+  verified_by: ["modules/change-log/conformance/test_operations.test.js::an edit made for one platform awaits acknowledgement on every other platform it reaches and not on its own; acknowledging clears it for that platform and no other, and the history keeps it (C-010, C-011; SL-05 criterion 4)", "modules/change-log/conformance/test_invariants.test.js::model check: a random sequence of acts, acknowledgements, and reads on bodies with foreign collections matches the model of entries, histories, and queues; entries only ever append, and every input body is left as it was (C-001 to C-006, C-009 to C-011, C-013)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-013
+  statement: Pivot shall not link a control to a platform until a user has confirmed the control for that platform
+  kind: functional
+  source: [HZ-007, STK-019]
+  allocated_to: registry   # registry C-013: confirmControlForPlatform is the only operation that creates one, one control per call
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_invariants.test.js::HZ-007: over any sequence of every other operation, the control-platform links a body holds are exactly the confirmations made, one per confirmControlForPlatform, each over the one control it named, and a link keeps who confirmed and when whatever follows (C-013, C-022; SL-04 criterion 4)", "modules/registry/conformance/test_operations.test.js::confirmControlForPlatform puts one control on one platform for one hazard by one link stamped with who and when, records it, and the row shows it confirmed with that confirmation (C-013, C-021, C-022, C-023; SL-04 criteria 1 and 4; HZ-007)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-014
+  statement: When a user saves data that another user has changed since the first user loaded it, Pivot shall first save the stored data as the other user left it into a Superseded Saves subfolder of the data folder, then save the first user's data in the regular manner
+  kind: cross-cutting
+  source: [HZ-008, STK-011]
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_operations.test.js::a save by another user since this load is kept in Superseded Saves before data.json is overwritten (C-004)", "modules/store/conformance/test_errors.test.js::when the superseded copy cannot be written, save rejects at stage superseded-copy and data.json is unchanged (C-004)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-015
+  statement: Pivot shall set the last reviewed date of a hazard, control, platform, reference document, causal factor, consequence, justification, rating, report, or workflow record to the current date only when a review workflow on it is completed
+  kind: functional
+  source: [HZ-009, STK-024]
+  allocated_to: review-schedule
+  verification_method: test
+  verified_by: ["modules/review-schedule/conformance/test_operations.test.js::completeReview stamps today as the last reviewed date and advances the due date one tempo from the due date, keeping everything else, and records it as an edit (C-007, C-008, C-012; SL-06 criteria 2 and 3; REQ-015, REQ-021)", "modules/review-schedule/conformance/test_invariants.test.js::C-001, C-002, C-005, C-007, C-012, C-013: over random sequences of setSchedule and completeReview, each accepted act writes one entry and changes one schedule; a record never has two schedules; tempos are stored as given; the last reviewed date moves only on completeReview; inputs are never modified; the body survives JSON"]   # four of REQ-015's ten kinds at review-schedule 1.0 (its section 7)
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-016
+  statement: Before producing a report that uses any hazard, control, platform, or reference document past its review due date, Pivot shall warn the user and show the last reviewed date of each one
+  kind: functional
+  source: [HZ-009, STK-025]
+  allocated_to: reports
+  verification_method: test
+  verified_by: ["modules/reports/conformance/test_operations.test.js::C-006: a report produced with the list acknowledged exactly carries that list as outOfDate, and one produced with nothing past due carries an empty list (REQ-016; HZ-009; SL-09 criterion 3)", "modules/reports/conformance/test_errors.test.js::section 4 row 16: a list shown and then changed — a due date crossed at midnight, a schedule set, a hazard linked — is refused with the list as it now is, and the fresh list is accepted (C-006; HZ-009)", "modules/reports/conformance/test_invariants.test.js::C-006, HZ-009: a record is out of date from the day after its due date at any hour, not on the due date at any hour, and outOfDateFor always equals listOverdue over what the report uses (REQ-016; SL-09 criterion 3)"]
+  validation_class: degenerate
+  validated_by: TBD
+  status: traced
+- id: REQ-017
+  statement: Every risk rating Pivot shows shall equal the DEC-002 matrix rating for its consequence and likelihood
+  kind: cross-cutting
+  source: [HZ-010, STK-015]
+  allocated_to: [rating, views]   # rating holds the matrix (its C-001); views is the module that shows, and may reach a band only through modules/rating/contract.js
+  verification_method: test
+  verified_by: ["modules/rating/conformance/test_operations.test.js::the band is the C-001 table cell and the cell is the level then letter entered, for all 35 cells (C-001)", "modules/rating/conformance/test_invariants.test.js::the model: over seeded calls mixing values in scale, absent, and out of scale, each call settles as C-001 to C-003 say, and a band is always one of the seven (C-001, C-002, C-003)", "modules/rating/conformance/test_errors.test.js::a value out of scale beside an absent one is refused, not Uncategorised (C-003)", "modules/views/conformance/test_operations.records.test.js::openAssessment shows the row's report id and controls, every stored profile, the two ratings as getRatings gives them, and each band as rating.ratingFor gives it; nothing entered is Uncategorised (C-021, C-022)", "modules/views/conformance/test_operations.records.test.js::enterRating stores and shows exactly the values given for that stage, null where null was given, with the band ratingFor gives; the other stage, the same hazard on another platform, and the platform row's band follow the values (C-021, C-022)"]   # rating's half (its C-001) and views' half (views C-021)
+  validation_class: reference
+  validated_by: "validation/reference/dec-002-matrix.test.js::every one of the 35 DEC-002 cells: ratingFor gives the band the decision gives, with the cell entered (REQ-017, HZ-010)"
+  status: traced
+- id: REQ-018
+  statement: Every bow-tie diagram of a hazard on a platform shall show exactly the causal factors, consequences, preventative controls, and mitigating controls stored for that hazard, and the stored state of each control on that platform
+  kind: functional
+  source: [HZ-011, STK-009, STK-027]
+  allocated_to: bowtie   # bowtie C-001: the bow-tie is registry.getHazardDetail's causal factors and consequences and listPlatformHazards' controls with their state on the platform, split by controlKind and nothing else; C-004 to C-006: one marked node per thing in the drawing, its text whole, its state in words, so the drawing is compared with the registry and not read by eye (DEC-028). That a screen shows this module's drawing and no other is views'
+  verification_method: test
+  verified_by: ["modules/bowtie/conformance/test_invariants.test.js::HZ-011: over random bodies built through the registry, every bow-tie a platform's query lists is the registry's data for that hazard on that platform, and its drawing holds exactly those nodes with each text whole, each state in words, laid out by side and order, with no relation the registry does not store; every other hazard is refused, never drawn (C-001, C-002, C-004 to C-009; SL-08 criterion 1)", "modules/bowtie/conformance/test_operations.test.js::renderBowtieSvg draws the bow-tie as one self-contained document whose nodes equal the set the registry query returns, compared and not read by eye: each text whole, each state in words, each thing on its side in order, edges only for what the registry relates (C-004 to C-009; SL-08 criterion 1)", "modules/bowtie/conformance/test_operations.test.js::each control's state is drawn in words: the three states have three different state lines, and a control awaiting a ruling is not drawn as confirmed (C-006; REQ-018)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-019
+  statement: When a hazard's review due date has passed, Pivot shall flag it as overdue wherever it is listed
+  kind: functional
+  source: [HZ-012, STK-016]
+  allocated_to: views   # views C-031: every screen that shows a record of a schedulable kind carries the one review-schedule.listOverdue of that body and flags from it alone, so "wherever it is listed" is one thing to verify; review-schedule C-009 and C-010 decide what overdue means
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.reviews.test.js::with the clock fixed on the due date nothing is overdue, and the day after a hazard, a control, and a platform are each flagged in the reviews of every screen that carries them, each exactly the two review-schedule lists of that body (C-031; SL-06 criterion 4)", "modules/views/conformance/test_errors.reviews.test.js::on a body holding a malformed schedule every screen that carries reviews shows reviews null, never an empty Reviews, with one error naming the entry's key, and every other field as its clause says; a change is still made and told to store (section 4, C-031; HZ-012)"]
+  validation_class: degenerate
+  validated_by: TBD
+  status: traced
+- id: REQ-020
+  statement: Pivot shall let a user set the review tempo of each hazard individually within the application
+  kind: functional
+  source: [HZ-012, STK-016]
+  allocated_to: review-schedule
+  verification_method: test
+  verified_by: ["modules/review-schedule/conformance/test_operations.test.js::a tempo can be set for each of the four kinds, one record at a time, by the same operation, and each is stored as given (C-005, C-011; SL-06 criterion 1; REQ-020, REQ-022, REQ-072)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-021
+  statement: Pivot shall set the review due date of each hazard, control, platform, and reference document to the date its user-set review schedule next falls due, and shall never derive it from the last reviewed date
+  kind: functional
+  source: [HZ-009, HZ-012, STK-016, STK-025]
+  allocated_to: review-schedule
+  verification_method: test
+  verified_by: ["modules/review-schedule/conformance/test_invariants.test.js::C-006 and C-008: over random schedules and completion dates, the new due date is the old due date plus the tempo by DEC-019, whatever the clock and whatever the last reviewed date held; the last reviewed date is today (SL-06 criteria 2 and 3)", "modules/review-schedule/conformance/test_operations.test.js::completeReview late does not pull the schedule forward to today, and early does not push it beyond one tempo: the due date is the old due date plus the tempo whatever the clock (C-006, C-008; SL-06 criterion 2)"]
+  validation_class: analytical
+  validated_by: TBD
+  status: traced
+- id: REQ-022
+  statement: Pivot shall let a user set review tempos for controls, platforms, and reference documents within the application
+  kind: functional
+  source: [STK-016, STK-025]
+  allocated_to: review-schedule
+  verification_method: test
+  verified_by: ["modules/review-schedule/conformance/test_operations.test.js::a tempo can be set for each of the four kinds, one record at a time, by the same operation, and each is stored as given (C-005, C-011; SL-06 criterion 1; REQ-020, REQ-022, REQ-072)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-023
+  statement: When the review due date of a control, platform, or reference document has passed, Pivot shall flag it as overdue wherever it is listed
+  kind: functional
+  source: [STK-016, STK-025]
+  allocated_to: views   # views C-031, as REQ-019. Verified for a control and a platform at views 6.0; the reference-document half waited for the version adding the register's screens and is answered at views 7.0, whose references and reference screens carry the same one listOverdue (views CONTRACT.md section 7, SL-10)
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.reviews.test.js::with the clock fixed on the due date nothing is overdue, and the day after a hazard, a control, and a platform are each flagged in the reviews of every screen that carries them, each exactly the two review-schedule lists of that body (C-031; SL-06 criterion 4)", "modules/views/conformance/test_operations.reviews.test.js::a reference entry scheduled over review-schedule's own surface is flagged overdue on both register screens exactly when review-schedule flags it (C-031; REQ-023's reference-document half)", "modules/views/conformance/test_errors.reviews.test.js::on a body holding a malformed schedule every screen that carries reviews shows reviews null, never an empty Reviews, with one error naming the entry's key, and every other field as its clause says; a change is still made and told to store (section 4, C-031; HZ-012)"]
+  validation_class: degenerate
+  validated_by: TBD
+  status: traced
+# Need-driven requirements.
+- id: REQ-024
+  statement: Pivot shall store each hazard once, independently of any platform
+  kind: functional
+  source: STK-001
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_invariants.test.js::a stored justification or rating is never written by an operation other than its own, and every body a changing operation returns holds only records section 3 describes (C-004, C-017, C-020; REQ-035)", "modules/registry/conformance/test_operations.test.js::createHazard on an empty body stores the trimmed title under H-0001 with the profile and the held clock in the header, advances the sequence, records the creation, and leaves the input body as it was (C-001, C-003, C-023; SL-01 criterion 4)", "modules/registry/conformance/test_boundaries.test.js::collections of kinds this module does not own, however malformed, are carried through every changing operation untouched and never read (C-003, C-004)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-025
+  statement: Pivot shall let a user link one hazard to any number of platforms
+  kind: functional
+  source: STK-001
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::linkHazardToPlatform adds one link carrying the hazard's global ID as its report ID, copies nothing, records it, and every one of the hazard's controls starts awaiting on the new platform (C-015, C-016, C-021, C-023; SL-03 criteria 1 and 8; HZ-007)", "modules/registry/conformance/test_operations.test.js::updateHazard changes the title on the one record, restamps the header, touches no link or other record, records an edit reaching every platform the hazard is on, and both platforms read the new title (C-009, C-004, C-023, C-024; SL-03 criterion 1)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-026
+  statement: For any hazard, Pivot shall show the platforms it is linked to, the controls linked to each of those platforms for it, and the reports that include it
+  kind: functional
+  source: STK-002
+  allocated_to: views
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.outputs.test.js::a hazard's own screen lists each platform platformsAffected gives it, in that order, with that hazard's controls from each platform's one query, and exactly the reports reportsIncluding gives (C-044; SL-09 criterion 4)", "modules/views/conformance/test_operations.outputs.test.js::a hazard omitted on one of its platforms is listed there with controls null and the omission, and the screen carries one error naming its id, the omitting record's key, and the platform's name (C-044; HZ-004)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-027
+  statement: For any report, Pivot shall show the hazards, platforms, and controls it includes
+  kind: functional
+  source: STK-002
+  allocated_to: reports
+  verification_method: test
+  verified_by: ["modules/reports/conformance/test_operations.test.js::C-007: includesOf reads the platform, the rows' hazards, the omitted hazards, and every control of the rows once in the order first met, from the report alone (REQ-027; SL-09 criterion 4)", "modules/reports/conformance/test_invariants.test.js::C-003, C-005, C-007: after a hazard is renamed, a causal factor added, a control confirmed and another excluded, a rating re-entered, and a hazard linked to the platform, the report, its includes, the reports that include each record, its bow-tie, and both documents are what they were at production (REQ-027, REQ-061; SL-09 criteria 4 and 5)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-028
+  statement: Pivot shall keep a reference register whose entries each hold any combination of a name, a link, a path, and a stored file
+  kind: functional
+  source: STK-003
+  allocated_to: reference-register   # reference-register C-001 with C-005: an entry is created from any combination of the four, at least one of them given, and is listed and read back exactly as entered. The empty combination is refused and the rejected reading of criterion 1 is recorded in that contract's preamble
+  verification_method: test
+  verified_by: ["modules/reference-register/conformance/test_operations.test.js::createEntry with a name, a link, and a path on an empty body creates one live entry under a fresh id, as entered and trimmed, with no file and no links, stamped with the act and the clock, records it, and leaves the input body as it was (C-001, C-002, C-011; SL-10 criterion 1; REQ-028)", "modules/reference-register/conformance/test_operations.test.js::each of the four alone creates an entry holding that one and three nulls, shown back as entered (C-001; SL-10 criterion 1)", "modules/reference-register/conformance/test_errors.test.js::createEntry with all four absent is refused with EmptyEntryError; nothing written (C-001, section 4)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-029
+  statement: When a reference register entry has a file, Pivot shall keep the file in the data folder and store only its location with the entry, never the file's contents
+  kind: functional
+  source: [STK-003, STK-010]
+  allocated_to: store   # store C-018 keeps the file in the folder and returns the location; the entry holding the location and never the contents is reference-register's half, the way C-008 splits REQ-053 from REQ-054 and REQ-073 (store CONTRACT.md section 7, DEC-022)
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_invariants.test.js::stored files: over seeded files with awkward and repeated names and any bytes, from two copies that never loaded, each call resolves with a location under files/ no call returned before, holding the bytes whole, and no earlier file is disturbed (C-018)", "modules/store/conformance/test_operations.test.js::putStoredFile keeps the bytes under files and resolves with the location; checkStoredFiles reports it present (C-018, C-019)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-030
+  statement: Pivot shall let a user link a reference register entry to any hazard, causal factor, consequence, platform, control, or report
+  kind: functional
+  source: STK-003
+  allocated_to: reference-register   # reference-register C-008: linkEntry stores the ref on the entry, its kind one of LINKABLE_KINDS, once per record, resolving no id. The refs are not rows in registry's link collection (DEC-023)
+  verification_method: test
+  verified_by: ["modules/reference-register/conformance/test_operations.test.js::an entry can be linked to one of each of the six kinds, the refs are kept ascending by kind then id, and the entry lists everything it is linked to (C-008, C-009; SL-10 criterion 3; REQ-030, REQ-031)", "modules/reference-register/conformance/test_operations.test.js::linkEntry resolves no id: a ref to a record no body holds, of any of the six kinds, is linked (C-008)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-031
+  statement: For any reference register entry, Pivot shall show everything it is linked to
+  kind: functional
+  source: STK-003
+  allocated_to: reference-register   # reference-register C-009: an entry's links are the one home of the fact, so getEntry and listEntries give the same list and no second list can disagree (DEC-023). Resolving each ref to something a user can read is views'
+  verification_method: test
+  verified_by: ["modules/reference-register/conformance/test_operations.test.js::an entry can be linked to one of each of the six kinds, the refs are kept ascending by kind then id, and the entry lists everything it is linked to (C-008, C-009; SL-10 criterion 3; REQ-030, REQ-031)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-032
+  statement: Pivot shall store each control once in a control library, independently of hazards and platforms
+  kind: functional
+  source: STK-030
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::createControl stores one library control with no hazard, no platform, and no control kind, records it, and listControls gives every live control by createdAtAest then id (C-011, C-023; SL-03 criterion 3)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-033
+  statement: Pivot shall let a user link one control to any number of hazards
+  kind: functional
+  source: STK-030
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::linkControlToHazard links one control to two hazards on either side, records each link, and getHazardDetail gives the hazard's controls by the link's createdAtAest then the control's id (C-012, C-023, C-024; SL-03 criteria 2 and 3)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-034
+  statement: Pivot shall let a user link each of a hazard's controls separately to each platform the hazard is linked to
+  kind: functional
+  source: STK-030
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::a confirmation names all three ids: the same control confirmed for one hazard on a platform is not on that platform for another hazard (C-013, DEC-013; SL-03 criterion 3)", "modules/registry/conformance/test_operations.test.js::confirmControlForPlatform puts one control on one platform for one hazard by one link stamped with who and when, records it, and the row shows it confirmed with that confirmation (C-013, C-021, C-022, C-023; SL-04 criteria 1 and 4; HZ-007)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-035
+  statement: Adding a platform shall not change or delete any existing hazard, control, reference register entry, or link
+  kind: functional
+  source: STK-006
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::createPlatform stores one platform with exactly one owner, records it, and every other entry of every collection, a reference entry included, is left as it was (C-014, C-023; SL-03 criteria 4 and 7)", "modules/registry/conformance/test_invariants.test.js::a stored justification or rating is never written by an operation other than its own, and every body a changing operation returns holds only records section 3 describes (C-004, C-017, C-020; REQ-035)"]
+  validation_class: conservation
+  validated_by: TBD
+  status: traced
+- id: REQ-036
+  statement: When adding a platform, Pivot shall let the user select hazards from the existing list, bringing their controls and reference register links without re-entering them
+  kind: functional
+  source: STK-014
+  allocated_to: workflows   # workflows C-013: select-hazards links a chosen hazard to the new platform and copies nothing - a hazard-control link names no platform (registry C-012, DEC-013) and a reference entry's links are refs on the entry (DEC-023), so the controls and the reference links come across without re-entry and each control stands as awaiting until a person confirms it there (registry C-021, SL-04)
+  verification_method: test
+  verified_by: ["modules/workflows/conformance/test_operations.test.js::onboard-platform creates the platform and makes it the subject, and selecting a hazard links it, bringing its controls across as awaiting and changing no existing record (C-013; SL-07 criterion 2; REQ-036, REQ-035)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-037
+  statement: Pivot shall guide the user through the steps of each of these workflows - add data, onboard a platform, review data, remove a control from a platform, and transfer platform ownership
+  kind: functional
+  source: STK-007
+  allocated_to: workflows   # workflows C-001 with C-002: five kinds and no more, each a fixed list of named steps, and progressOf gives the step current, the steps done and the steps remaining from one call. Verified by demonstration and a REV row, as REQ-057 is: conformance holds that the three partition the step list; that a user can see them is the screen's, and views 8.0 C-036 with C-037 is that screen - the workflow screen carries progressOf's three fields unchanged and keeps no step list of its own, so the row is SL-07's to record at acceptance (DEC-007, DEC-010)
+  verification_method: demonstration
+  verified_by: TBD
+  validation_class: expert_judgement
+  validated_by: TBD
+  status: proposed
+- id: REQ-038
+  statement: When a user completes a workflow, Pivot shall record the workflow, the date, the user, and the decisions, actions, and outcomes entered
+  kind: functional
+  source: [STK-008, STK-029]
+  allocated_to: workflows   # workflows C-005 with C-004: completing seals the record with the workflowKind and its subject, completedOnAest (the AEST date), completedBy (the user), the outcome trimmed, and every decision, action, omission and outcome entry the run appended, each naming who entered it and when
+  verification_method: test
+  verified_by: ["modules/workflows/conformance/test_operations.test.js::completeWorkflow seals the record: complete, no current step, today's AEST date, the user, the outcome trimmed, the entries kept, and the header otherwise as it was (C-005, C-011; SL-07 criterion 4; REQ-038)", "modules/workflows/conformance/test_invariants.test.js::model check (seed 1464224855): random runs of the five workflows keep the body a value, write only what each clause names, append only, seal complete records, partition progress, and agree demand with refusal (C-002, C-003, C-005, C-008, C-010, C-011)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-039
+  statement: Pivot shall not let a user edit a workflow record once the workflow is complete
+  kind: functional
+  source: [STK-008, ASM-002]
+  allocated_to: workflows   # workflows C-011: every changing operation refuses a record whose state is complete, and the surface exposes no operation that edits a field of a workflow record at all - entries is append-only and this module is the only writer of collections['workflow-record'], so the refusal is kept by there being no call that would break it (P2, DEC-025)
+  verification_method: test
+  verified_by: ["modules/workflows/conformance/test_errors.test.js::every changing operation and stepDemand refuse a complete workflow with WorkflowCompleteError carrying its id, changing nothing (C-011, section 4; SL-07 criterion 4; REQ-039)", "modules/workflows/conformance/test_invariants.test.js::model check (seed 1464224855): random runs of the five workflows keep the body a value, write only what each clause names, append only, seal complete records, partition progress, and agree demand with refusal (C-002, C-003, C-005, C-008, C-010, C-011)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-040
+  statement: Pivot shall run in a Chromium-based browser on a company Windows machine without administrator rights
+  kind: cross-cutting
+  source: [STK-012, ASM-001]
+  allocated_to: baseline
+  verification_method: demonstration
+  verified_by: TBD
+  validation_class: expert_judgement
+  validated_by: TBD
+  status: proposed
+- id: REQ-041
+  statement: Pivot shall run without installing any software other than a Chromium-based browser
+  kind: cross-cutting
+  source: [STK-013, ASM-001]
+  allocated_to: baseline
+  verification_method: demonstration
+  verified_by: TBD
+  validation_class: expert_judgement
+  validated_by: TBD
+  status: proposed
+- id: REQ-042
+  statement: Pivot shall let an assessor enter an initial consequence and likelihood for a hazard on each platform it is linked to
+  kind: functional
+  source: [STK-015, STK-027]
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::setRating stores the values exactly as entered per hazard, platform, and stage; a second call updates the one record keeping its id and creation stamp; getRatings gives both stages; each act is recorded (C-017, C-018, C-023; SL-03 criterion 5; HZ-002)", "modules/registry/conformance/test_boundaries.test.js::ratings at the ends of the scales and the uncategorised case are stored as entered; a rating of both null where none is live is a change, and the same again is not; changing one of the two values is a change (C-017, C-018, C-029; DEC-002)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-043
+  statement: Pivot shall let an assessor enter a residual consequence and likelihood for a hazard on each platform it is linked to
+  kind: functional
+  source: [STK-015, STK-027]
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::setRating stores the values exactly as entered per hazard, platform, and stage; a second call updates the one record keeping its id and creation stamp; getRatings gives both stages; each act is recorded (C-017, C-018, C-023; SL-03 criterion 5; HZ-002)", "modules/registry/conformance/test_invariants.test.js::HZ-002: whatever controls are linked, confirmed, or excluded and whatever platforms a hazard joins, the residual values read back are exactly the last ones setRating was given for that hazard, platform, and stage (C-017; SL-03 criterion 5)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-044
+  statement: Pivot shall store for each hazard its causal factors, consequences, preventative controls, and mitigating controls
+  kind: functional
+  source: STK-027
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::addCausalFactor and addConsequence store the trimmed text against the hazard under a fresh id, stamped, record the creation, and getHazardDetail gives them back as stored (C-010, C-023; SL-03 criterion 2)", "modules/registry/conformance/test_operations.test.js::linkControlToHazard links one control to two hazards on either side, records each link, and getHazardDetail gives the hazard's controls by the link's createdAtAest then the control's id (C-012, C-023, C-024; SL-03 criteria 2 and 3)", "modules/registry/conformance/test_errors.test.js::linkControlToHazard with a control kind that is neither preventative nor mitigating rejects with InvalidControlKindError; body unchanged (C-012; REQ-044)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-045
+  statement: When a hazard, control, platform, reference document, causal factor, consequence, justification, rating, report, or workflow record is created or edited, Pivot shall record who did it, when, and its previous and new values, viewable by any user
+  kind: functional
+  source: [STK-017, STK-029]
+  allocated_to: change-log   # change-log C-001 with C-002 and C-009: one entry per act holds who and when, and each changed field's previous and new value, for a record of any kind
+  verification_method: test
+  verified_by: ["modules/change-log/conformance/test_operations.test.js::recordChange of a created hazard on an empty body appends one entry stamped with the profile and the held clock, holding every field of the record but the restamp fields, and leaves the input body as it was (C-001, C-003, C-004, C-005)", "modules/change-log/conformance/test_operations.test.js::recordChange of an edit holds, for each changed field only, its previous and new value in ascending order of field, and never updatedBy or updatedAtAest (C-002, C-005; SL-05 criterion 2)", "modules/change-log/conformance/test_invariants.test.js::model check: a random sequence of acts, acknowledgements, and reads on bodies with foreign collections matches the model of entries, histories, and queues; entries only ever append, and every input body is left as it was (C-001 to C-006, C-009 to C-011, C-013)"]
+  validation_class: conservation
+  validated_by: TBD
+  status: traced
+- id: REQ-046
+  statement: Pivot shall let a user create, save, and reuse an output document template
+  kind: functional
+  source: STK-021
+  allocated_to: reports
+  verification_method: test
+  verified_by: ["modules/reports/conformance/test_operations.test.js::C-001: createTemplate saves the name and title trimmed, each section with its kind and its text trimmed, stamped by the act at the clock's now, read back by getTemplate and added to listTemplates; nothing else in the body changes but its entry (REQ-046; SL-09 criterion 1)", "modules/reports/conformance/test_operations.test.js::C-002: two reports from one template, on two platforms, both carry the template's name, title, and sections in order, and both documents of each draw that layout (REQ-046; SL-09 criterion 1)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-047
+  statement: Pivot shall let a user filter hazards and controls by platform, risk rating, status, and reference register entry
+  kind: functional
+  source: STK-022
+  allocated_to: views
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.lists.test.js::openFilter shows every hazard and control whatever its status, each against every platform whose one query shows it or against none, with no filter active, the platforms and entries to choose from, and the file and review standing (C-045; SL-11 criterion 1)", "modules/views/conformance/test_operations.lists.test.js::applyFilter with each filter alone and in combination shows exactly the unfiltered items, in order, that satisfy every active filter; a control-state filter empties the hazards; the same filter twice resolves deep-equal; back and openFilter again show no filter (C-045; SL-11 criterion 1)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+# REQ-048 (restore from a save state file) folded into REQ-064 at REV-002: backups and manual saves share one format.
+- id: REQ-049
+  statement: Pivot shall show on a user's dashboard the overdue reviews and unconfirmed controls on platforms that user owns, the workflows that user has in progress, and the changes awaiting that user's acknowledgement
+  kind: functional
+  source: [STK-026, STK-016, STK-019]
+  allocated_to: views
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.lists.test.js::each user's dashboard shows, for each live platform that user owns and no other, its overdue reviews, awaiting controls, omitted hazards, workflows in progress, and changes awaiting acknowledgement (C-046; SL-11 criterion 2)"]
+  validation_class: conservation
+  validated_by: TBD
+  status: traced
+- id: REQ-050
+  statement: Pivot shall give each hazard a global ID that is never changed or reused
+  kind: functional
+  source: STK-028
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::a consumer carries the returned body from call to call: ids strictly increase, a deleted or retired id is never assigned again, and the sequence follows (C-001, C-002, C-005, C-025)", "modules/registry/conformance/test_invariants.test.js::model check of hazards: a random sequence of creates, retitles, deletes, retirements, lists and gets from a random body matches the model of stored hazards, the ids assigned, and the list order (C-001, C-002, C-005, C-006, C-009, C-025)", "modules/registry/conformance/test_invariants.test.js::a sequence behind its collection assigns nothing: createHazard rejects with HazardSequenceError for every held id the sequence points at, and a body with the sequence at a free number assigns that number (C-002)", "modules/registry/conformance/test_errors.test.js::createHazard when the id the sequence would assign is already held, whatever its status, rejects with HazardSequenceError carrying that id; body unchanged and the sequence not adjusted (C-002)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-051
+  statement: A hazard's ID in reports on a platform shall stay the same across every version of those reports unless a user changes it
+  kind: functional
+  source: STK-028
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::linkHazardToPlatform adds one link carrying the hazard's global ID as its report ID, copies nothing, records it, and every one of the hazard's controls starts awaiting on the new platform (C-015, C-016, C-021, C-023; SL-03 criteria 1 and 8; HZ-007)", "modules/registry/conformance/test_operations.test.js::setPlatformReportId sets the report ID on that one link, restamps it, leaves the global ID and the ID on every other platform, and records the edit (C-016, C-023; SL-03 criterion 8)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-052
+  statement: Pivot shall let a user change the ID a hazard has in reports on a platform
+  kind: functional
+  source: STK-028
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::setPlatformReportId sets the report ID on that one link, restamps it, leaves the global ID and the ID on every other platform, and records the edit (C-016, C-023; SL-03 criterion 8)", "modules/registry/conformance/test_errors.test.js::setPlatformReportId with an ID that is empty or has leading or trailing whitespace rejects with InvalidPlatformReportIdError; body unchanged (C-016; REQ-052)", "modules/registry/conformance/test_boundaries.test.js::a report ID is stored exactly as given: internal spaces, case, and punctuation kept, and any string without outer whitespace accepted, the global ID of another hazard included (C-016; REQ-052)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-053
+  statement: Pivot shall store user profiles in the data folder
+  kind: functional
+  source: [STK-029, ASM-002]
+  allocated_to: profiles
+  verification_method: test
+  verified_by: ["modules/profiles/conformance/test_operations.test.js::createProfile stores the trimmed name with a fresh id and the clock now, lists it here and in another copy, and selects nothing (C-001)", "modules/profiles/conformance/test_invariants.test.js::model check: a random sequence of creates, selects and lists by two copies matches the model of stored profiles, their order, and each session's selection (C-001, C-002, C-004, C-005)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-054
+  statement: Each time Pivot is opened, it shall require the user to select a user profile
+  kind: functional
+  source: [STK-029, ASM-002]
+  allocated_to: profiles
+  verification_method: test
+  verified_by: ["modules/profiles/conformance/test_invariants.test.js::every open starts with no one selected, whatever earlier sessions on this DataStore or another selected or created (C-003)", "modules/profiles/conformance/test_operations.test.js::selectProfile resolves with the stored id and name and sets session.active to that value; nothing is written (C-004, C-006)", "modules/profiles/conformance/test_errors.test.js::selectProfile with an id no stored profile has rejects with UnknownProfileError; folder and active unchanged (C-004)", "modules/views/conformance/test_operations.test.js::openFolder shows the profile screen: the handle's name, no one selected, the profiles listProfiles gives, no messages, and nothing written anywhere (C-003)", "modules/views/conformance/test_operations.test.js::selectProfile shows the hazards screen: the name in the top bar, the live hazards registry lists of the loaded body, nothing unsaved, lastSave as loaded, the body's review standing, and nothing written (C-004, C-005, C-031)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-055
+  statement: Pivot shall not let a user change any stored data until a user profile is selected
+  kind: cross-cutting
+  source: STK-029
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_errors.test.js::save with no active profile rejects with NoActiveProfileError and the folder is unchanged (C-002)", "modules/views/conformance/test_errors.test.js::every operation called on a screen kind it does not belong to rejects with WrongScreenError naming the operation and the screen; the app is unchanged and nothing reached the folder or the browser's storage (C-002)", "modules/views/conformance/test_invariants.test.js::before a profile is selected no call changes stored data or the browser's storage: over seeded calls of every operation on the folder and profile screens, data.json is never created or changed (C-002)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-056
+  statement: Pivot shall let a user create a new user profile
+  kind: functional
+  source: STK-029
+  allocated_to: profiles
+  verification_method: test
+  verified_by: ["modules/profiles/conformance/test_operations.test.js::createProfile stores the trimmed name with a fresh id and the clock now, lists it here and in another copy, and selects nothing (C-001)", "modules/profiles/conformance/test_errors.test.js::createProfile with a name that is empty once trimmed rejects with InvalidProfileNameError; folder and active unchanged (C-002)", "modules/profiles/conformance/test_errors.test.js::createProfile with a name a stored profile has, compared trimmed and without regard to case, rejects with DuplicateProfileNameError carrying that profile; folder and active unchanged (C-002)", "modules/views/conformance/test_operations.test.js::createProfile lists the new profile with its name trimmed alongside every profile listed before, and selects no one (C-004)", "modules/views/conformance/test_errors.test.js::createProfile with a name empty once trimmed resolves with the profile screen, one warning, the list re-read, and nothing written (section 4)", "modules/views/conformance/test_errors.test.js::createProfile with a name a stored profile has resolves with the profile screen, one warning naming the existing profile, the list re-read, and nothing written (section 4)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-057
+  statement: Pivot shall show the name of the active user profile prominently in the top bar of every screen
+  kind: cross-cutting
+  source: [STK-029, ASM-002]
+  allocated_to: views
+  verification_method: demonstration
+  verified_by: TBD
+  validation_class: expert_judgement
+  validated_by: TBD
+  status: proposed
+- id: REQ-058
+  statement: When a user leaves one of a hazard's controls unlinked from a platform the hazard is linked to, Pivot shall require the user to record a justification
+  kind: functional
+  source: [HZ-001, STK-030]
+  allocated_to: registry   # registry C-020: the act that rules a control off a platform carries the reason, so the state without one cannot be written
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::excludeControlFromPlatform stores the trimmed reason against the three ids, records it, and the row shows the control excluded with that reason (C-020, C-021, C-023; SL-04 criteria 2 and 3; HZ-001)", "modules/registry/conformance/test_errors.test.js::a title, name, or text that is empty once trimmed is refused with its own error, and nothing is stored; body unchanged (C-001, C-009, C-010, C-011, C-014, C-020; REQ-058)", "modules/registry/conformance/test_invariants.test.js::HZ-001: over random confirmations and exclusions of a hazard's controls on its platforms, every triple is confirmed, excluded, or awaiting and never two; the state every row shows is the one C-021 derives; superseded rows stay with status deleted (C-020, C-021; SL-04 criteria 1, 2 and 4)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-059
+  statement: Pivot shall generate a bow-tie diagram for any hazard on any platform it is linked to, from the current stored hazard data each time it is shown, exported, or included in a report, and shall store no diagram
+  kind: functional
+  source: STK-009
+  allocated_to: bowtie   # bowtie C-001 with C-003: generated from the body passed in on every call, holding nothing between calls and writing nothing anywhere, for any hazard live and linked to the platform (C-002 refuses the rest). That views and SL-09's reports call it each time and keep no copy is theirs to promise
+  verification_method: test
+  verified_by: ["modules/bowtie/conformance/test_invariants.test.js::C-003 and C-010: over random bodies, bowtieFor and renderBowtieSvg read no browser storage, document, or clock; leave a deep-frozen body deep-equal to what it was; hold nothing between calls, so calls on other bodies in between change no result; and give deep-equal bow-ties and identical text for deep-equal arguments", "modules/bowtie/conformance/test_operations.test.js::an edit to the hazard is in the next bow-tie and the next drawing: a new title, causal factor, consequence, control, confirmation, and exclusion (C-001, C-003; SL-08 criterion 2)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-060
+  statement: Pivot shall let a user export a bow-tie diagram
+  kind: functional
+  source: STK-009
+  allocated_to: views   # views 9.0 C-040: exportBowtie generates the bow-tie again from the working body through bowtie and writes that text through store.writeExportFile (store C-020) to the file the user chose, resolving with the screen whose svg is the text written; chooseExportTarget is the picker, verified by demonstration (DEC-030, DEC-031)
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.outputs.test.js::exportBowtie writes to the file chosen exactly the drawing generated again, shows the same screen with svg the text written, and changes nothing else: no entry, no body, no folder, no storage (C-040; SL-08 criterion 3)", "modules/views/conformance/test_errors.outputs.test.js::exportBowtie whose write does not complete shows the bow-tie screen rebuilt, bowtie and svg as they were, with one error naming the target; the file holds what it held and nothing else is written (section 4, C-040; store C-020)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-061
+  statement: Pivot shall let a user include a bow-tie diagram in a report
+  kind: functional
+  source: STK-009
+  allocated_to: reports
+  verification_method: test
+  verified_by: ["modules/reports/conformance/test_operations.test.js::C-005: produceReport holds, for each hazard asked for, exactly the text bowtie.renderBowtieSvg draws for it on that platform now, in the order of the report's rows and not the order asked (REQ-061; SL-09 criterion 5)", "modules/reports/conformance/test_invariants.test.js::C-003, C-005, C-007: after a hazard is renamed, a causal factor added, a control confirmed and another excluded, a rating re-entered, and a hazard linked to the platform, the report, its includes, the reports that include each record, its bow-tie, and both documents are what they were at production (REQ-027, REQ-061; SL-09 criteria 4 and 5)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-062
+  statement: Whenever stored data has changed since the last backup and more than an hour has passed since that backup, Pivot shall save a backup of the stored data immediately
+  kind: cross-cutting
+  source: [STK-023, HZ-003]
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_invariants.test.js::the backup ring against a held clock: over seeded changes, saves, loads, and clock moves, a backup is written exactly when the working state changed and the newest backup is more than an hour old, and only the 72 newest are kept (C-013, C-014)", "modules/store/conformance/test_boundaries.test.js::noteChange at exactly an hour since the newest backup writes none; a second later it writes one (C-013)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-063
+  statement: Pivot shall keep the 72 most recent backups and delete older ones
+  kind: cross-cutting
+  source: STK-023
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_invariants.test.js::the backup ring against a held clock: over seeded changes, saves, loads, and clock moves, a backup is written exactly when the working state changed and the newest backup is more than an hour old, and only the 72 newest are kept (C-013, C-014)", "modules/store/conformance/test_boundaries.test.js::with exactly 72 backups the next removes only the oldest; with 71 it removes none (C-014)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-064
+  statement: Pivot shall let a user restore stored data from any kept backup or save state file, which share one format
+  kind: functional
+  source: STK-023
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_invariants.test.js::restore is save: over seeded backups and save states, prepareRestore writes nothing and names the stamp it replaces, and restore writes the plan's body with a fresh stamp and every promise of save (C-017)", "modules/store/conformance/test_operations.test.js::a save state file the user chose restores through the same path as a backup (C-017)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-065
+  statement: Pivot shall record one user profile as the owner of each platform
+  kind: functional
+  source: [STK-018, STK-026]
+  allocated_to: registry
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::createPlatform stores one platform with exactly one owner, records it, and every other entry of every collection, a reference entry included, is left as it was (C-014, C-023; SL-03 criteria 4 and 7)", "modules/registry/conformance/test_errors.test.js::createPlatform and setPlatformOwner with an owner that is missing or not a user profile id reject with InvalidOwnerError; body unchanged (C-014, C-028; REQ-065)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-066
+  statement: Pivot shall show every open item, whatever its owner, in a view separate from the dashboard, including every kind of item REQ-049 and REQ-068 name
+  kind: functional
+  source: STK-026
+  allocated_to: views
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.lists.test.js::the open-items screen shows every live platform's items whatever its owner, deep-equal to that owner's dashboard, the overdue reviews and in-progress workflows on no live platform, and the unlinked records (C-047, C-048; SL-11 criterion 3)"]
+  validation_class: conservation
+  validated_by: TBD
+  status: traced
+- id: REQ-067
+  statement: Pivot shall let a user mark a hazard, control, platform, or reference register entry as retired
+  kind: functional
+  source: [STK-016, STK-026]
+  allocated_to: registry   # registry C-025 with C-027: retireHazard, retireControl and retirePlatform mark the row retired and take it out of the lists without taking it off anything. The fourth kind, reference-entry, is SL-10's module and has no contract surface yet; splitting or reallocating this requirement when it arrives is a GATE decision (registry CONTRACT.md section 7)
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::retireHazard of a hazard on no platform marks it retired, takes it out of the list, keeps every other record, and records a retirement reaching no platform (C-025, C-023; SL-05 criterion 6)", "modules/registry/conformance/test_operations.test.js::retireControl takes the control out of the library and off nothing: it stays in the hazard's detail and in every platform row in the state it was in, and the retirement reaches every platform its hazards are on (C-025, C-027, C-023, C-024; SL-05 criterion 6; HZ-001)", "modules/registry/conformance/test_operations.test.js::retirePlatform takes the platform out of listPlatforms and off nothing: its hazards, ratings, and links are still read, and the retirement reaches that platform (C-025, C-027, C-023, C-024; SL-05 criterion 6)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-068
+  statement: Pivot shall flag as an open item every hazard, control, platform, or reference register entry that is linked to nothing and is not marked as retired
+  kind: functional
+  source: [STK-016, STK-026]
+  allocated_to: views
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.lists.test.js::a hazard, control, platform, and entry each created alone are flagged unlinked, and each act that links it clears the flag on the next open-items screen; a retirement clears it too (C-048; SL-11 criterion 4)", "modules/views/conformance/test_operations.lists.test.js::a record linked only by a workflow in progress is not flagged, and is flagged again once that workflow is abandoned; a control linked only to a deleted hazard is linked (C-048)"]
+  validation_class: conservation
+  validated_by: TBD
+  status: traced
+# Added at G1 review (REV-002): the data folder made a requirement; halves split out of REQ-013, REQ-014, REQ-020/022, and REQ-054.
+- id: REQ-069
+  statement: Pivot shall keep all stored data, stored files, user profiles, and backups in one data folder chosen by the user
+  kind: cross-cutting
+  source: [STK-010, ASM-001, ASM-004]
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_invariants.test.js::confinement: after any sequence the folder holds only data.json, profiles.json and files under Superseded Saves (C-009)", "modules/store/conformance/test_invariants.test.js::confinement over every operation: the folder holds only data.json, profiles.json, Superseded Saves copies, backups, and stored files; each is written only by the operation C-009 names; files/ only grows; one key only; the reads write nothing anywhere (C-009)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-070
+  statement: When a user confirms a control for a platform, Pivot shall record who confirmed it and when
+  kind: functional
+  source: [HZ-007, STK-019, STK-029]
+  allocated_to: registry   # registry C-022: the confirming link's createdBy and createdAtAest, unchanged by any later operation
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_operations.test.js::confirm, then exclude, then confirm again: each act supersedes the other, keeps the superseded row with status deleted and only updatedBy and updatedAtAest restamped, adds a new row rather than reviving one, and records both records in C-023's order (C-013, C-020, C-021, C-022, C-023; SL-04 criterion 4; SL-05 criteria 1 and 2)", "modules/registry/conformance/test_invariants.test.js::HZ-007: over any sequence of every other operation, the control-platform links a body holds are exactly the confirmations made, one per confirmControlForPlatform, each over the one control it named, and a link keeps who confirmed and when whatever follows (C-013, C-022; SL-04 criterion 4)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-071
+  statement: When a user saves data that another user has changed since the first user loaded it, Pivot shall tell the saving user
+  kind: cross-cutting
+  source: [HZ-008, STK-011]
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_operations.test.js::a save by another user since this load is kept in Superseded Saves before data.json is overwritten (C-004)", "modules/views/conformance/test_operations.test.js::when another copy saved between this load and this save, the save warns once naming that user and the kept file; the folder holds this data and the other under Superseded Saves (C-007)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-072
+  statement: Pivot shall store the review tempo of each hazard, control, platform, and reference document with the persistent data
+  kind: functional
+  source: [STK-016, STK-025, STK-010]
+  allocated_to: review-schedule
+  verification_method: test
+  verified_by: ["modules/review-schedule/conformance/test_operations.test.js::a tempo can be set for each of the four kinds, one record at a time, by the same operation, and each is stored as given (C-005, C-011; SL-06 criterion 1; REQ-020, REQ-022, REQ-072)", "modules/review-schedule/conformance/test_operations.test.js::the tempo and due date survive a save and a load: the body after setSchedule and completeReview is deep-equal to itself after JSON serialisation, and reads back the same (section 3; SL-06 criterion 1; REQ-072)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-073
+  statement: When Pivot is opened, it shall never pre-select the user profile used previously
+  kind: functional
+  source: [STK-029, ASM-002]
+  allocated_to: profiles
+  verification_method: test
+  verified_by: ["modules/profiles/conformance/test_invariants.test.js::every open starts with no one selected, whatever earlier sessions on this DataStore or another selected or created (C-003)", "modules/profiles/conformance/test_invariants.test.js::confinement: after any sequence the folder holds only the file store writes for profiles, and the browser's storage is untouched (C-003, C-006)", "modules/views/conformance/test_invariants.test.js::confinement: after seeded runs of two apps on one folder, the folder holds only data.json, profiles.json, backups, and superseded saves; the browser's storage holds only the key; and no open pre-selects (C-003, C-009)", "modules/views/conformance/test_boundaries.test.js::a second start in the same page is a new app at the folder screen, whatever the first created and selected, and no open pre-selects (C-001, C-003)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+# Added from REV-002 machine findings dispositioned by jay-pryor: M2, M6, M9, M10, M31, M32.
+- id: REQ-074
+  statement: On loading stored data, Pivot shall check each stored file against an integrity check written when it was saved, and shall tell the user which files fail
+  kind: cross-cutting
+  source: [HZ-003, STK-010]
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_invariants.test.js::checked files: after seeded saves, supersessions, backups, profiles, and stored files, every Pivot file is a sealed envelope of its kind, and altering any one outside Pivot makes checkFolder list exactly that file (C-012)", "modules/store/conformance/test_errors.test.js::checkFolder lists each Pivot file that fails its check, cannot be read, or is not the kind its name calls for, with the data it affects, sorted by file, and does not reject (C-012, section 4)"]
+  validation_class: degenerate
+  validated_by: TBD
+  status: traced
+- id: REQ-075
+  statement: Before restoring stored data from a backup or save state file, Pivot shall warn the user that the current stored data will be replaced and shall require the user to confirm
+  kind: functional
+  source: [STK-023, HZ-003]
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_invariants.test.js::restore is save: over seeded backups and save states, prepareRestore writes nothing and names the stamp it replaces, and restore writes the plan's body with a fresh stamp and every promise of save (C-017)", "modules/store/conformance/test_operations.test.js::a kept backup restores through prepareRestore then restore: the plan names what it replaces, and load afterwards returns the backup's body (C-017)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-076
+  statement: Pivot shall not let a user retire a hazard while it is linked to any platform
+  kind: functional
+  source: [HZ-004, HZ-005]
+  allocated_to: registry   # registry C-026: retireHazard rejects with HazardOnPlatformsError carrying every platform a live hazard-platform link holds, so a hazard never leaves a platform's list by being retired
+  verification_method: test
+  verified_by: ["modules/registry/conformance/test_errors.test.js::retireHazard of a hazard one or more live hazard-platform links hold rejects with HazardOnPlatformsError carrying every such platform ascending as strings; the hazard stays live and nothing is recorded (C-026; REQ-076; SL-05 criterion 6)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-077
+  statement: The remove-a-control workflow shall require the user to confirm or re-enter the residual consequence and likelihood of each hazard on that platform that the control was linked to
+  kind: functional
+  source: [HZ-002, STK-015]
+  allocated_to: workflows   # workflows C-008 with C-007: settle-the-ratings demands a submission carrying the consequence and the likelihood for every hazard the chosen control is confirmed for on that platform, whether the user confirms them or re-enters them, and advanceStep refuses while any is outstanding and names which; the exclusions are made at completion, so every residual is settled before any control comes off (HZ-002's mitigation clause stays registry C-017)
+  verification_method: test
+  verified_by: ["modules/workflows/conformance/test_operations.test.js::a removal chooses a control confirmed on the platform, demands a settlement for each hazard it is confirmed for, and records a confirmed residual as a decision and a re-entered one through setRating (C-007, C-008, C-010; SL-07 criterion 5; REQ-077, HZ-002)", "modules/workflows/conformance/test_operations.test.js::completing a removal excludes the chosen control from each settled hazard on that platform with the one reason, one action entry naming each justification, and touches no other platform or control (C-007, C-009, C-010; SL-07 criterion 5; REQ-058, REQ-077)", "modules/workflows/conformance/test_errors.test.js::advanceStep refuses an unmet demand with StepIncompleteError carrying the step and the outstanding refs (C-008, section 4; REQ-077)", "modules/workflows/conformance/test_errors.test.js::completing a removal while a hazard carries the chosen control confirmed on the platform with no settlement rejects with StepIncompleteError for settle-the-ratings carrying every such ref, makes no exclusion, and stepDemand names the same refs (C-007, C-008, section 4; REQ-077, DEC-038)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-078
+  statement: When the file or path of a reference register entry cannot be found, Pivot shall flag the entry wherever it is listed
+  kind: functional
+  source: STK-003
+  allocated_to: views   # views C-035: every screen that lists a reference entry carries that register's file standing from one reference-register.checkEntryFiles of that body and that folder, over store C-019, so "wherever it is listed" is one thing to verify, as C-031 makes the overdue flag. Verifiable for the file half only - a path is one a user typed, which no module can stat under DEC-003, and what criterion 4 means for it is an open GATE ruling (DEC-022)
+  verification_method: test
+  verified_by: ["modules/views/conformance/test_operations.reviews.test.js::an entry whose stored file is removed from the folder is flagged on both register screens, one whose file is there is not, one with no file is unflagged with no reason, and a file put back is unflagged on the next screen (C-035; SL-10 criterion 4)", "modules/views/conformance/test_errors.reviews.test.js::the register screens when the data folder cannot be read show files null, never unflagged, with one error naming the folder; every other field as its clause says (section 4, C-035; store C-019)"]
+  validation_class: degenerate
+  validated_by: TBD
+  status: traced
+- id: REQ-079
+  statement: Pivot shall keep a copy of the current working state in the browser's storage, updated on every change
+  kind: cross-cutting
+  source: [HZ-003, STK-023]
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_invariants.test.js::the browser's copy: over seeded changes, saves, failed saves, loads, and another copy's saves, the mirror holds what C-015 says, and a store writes it only once it mirrors (C-015)", "modules/store/conformance/test_errors.test.js::when the browser's storage is absent, refuses the write, or is full, noteChange resolves with mirrorError at stage mirror naming the key, and still takes the backup (section 4, C-015, section 5 ordering)"]
+  validation_class: invariant
+  validated_by: TBD
+  status: traced
+- id: REQ-080
+  statement: When Pivot is opened and the browser's storage holds working state that was never saved, Pivot shall offer to recover it
+  kind: cross-cutting
+  source: [HZ-003, STK-023]
+  allocated_to: store
+  verification_method: test
+  verified_by: ["modules/store/conformance/test_operations.test.js::readRecoverable offers working state the folder never received; recoverWorkingState returns it; discardWorkingState removes it (C-016)", "modules/store/conformance/test_invariants.test.js::recovery across a crash keeps another user's save made since the recovered state was changed: the next save compares data.json with the state's loadedStamp, not the stamp just loaded (C-016, HZ-008)"]
+  validation_class: degenerate
+  validated_by: TBD
+  status: traced
+- id: REQ-081
+  statement: When ownership of a platform is transferred, Pivot shall show every change awaiting the outgoing owner's acknowledgement for that platform to the incoming owner until the incoming owner acknowledges it
+  kind: functional
+  source: [HZ-006, STK-018, STK-026]
+  allocated_to: change-log   # change-log C-012: the queue is keyed by platform and names no owner, so a transfer of ownership leaves every awaiting change awaiting for the incoming owner
+  verification_method: test
+  verified_by: ["modules/change-log/conformance/test_operations.test.js::a change of a platform's owner leaves every change awaiting that platform awaiting, in the same order, for whoever now owns it; the queue names no owner (C-012; SL-05 criterion 5)", "modules/change-log/conformance/test_invariants.test.js::the queue is keyed by platform alone: any change to other collections, a platform's owner included, leaves every queue as it was, and an acknowledgement made before the change still clears (C-012; SL-05 criterion 5)"]
+  validation_class: conservation
+  validated_by: TBD
+  status: traced

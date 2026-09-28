@@ -1,0 +1,24 @@
+{
+  "//": "JSDoc type check of the runtime code (DEC-003, IMP-05). CI only; nothing is emitted. scripts/check_units.js runs it and then proves it rejects a unit confusion built from types.js. Scripts and tests are not checked: they use Node built-ins, whose types would be a second dependency.",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "target": "es2022",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom"],
+    "types": [],
+    "skipLibCheck": true
+  },
+  "include": [
+    "*.js",
+    "../modules/*/contract.js",
+    "../modules/*/null_double.js",
+    "../modules/*/src/**/*.js"
+  ],
+  "exclude": ["node_modules", "dist", "scripts", "tests"]
+}

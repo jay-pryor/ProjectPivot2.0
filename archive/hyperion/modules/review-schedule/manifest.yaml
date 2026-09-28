@@ -1,0 +1,16 @@
+module: review-schedule
+allowed_imports:
+  - baseline/types
+  - baseline/schema
+  - baseline/clock                # C-009, C-012: today's date decides overdue; the suite fixes it
+  - modules/change-log/contract    # 1.0, C-012: every changing operation records its own act
+# The change-log edge is the only module edge this module has, and it is the edge registry
+# already draws (DEC-016): a schedule and the entry for the change to it are written in one
+# call, so nothing here can change stored data and leave no history (HZ-005). change-log
+# imports no module, so the graph stays acyclic (DEC-004, DEC-015).
+# No modules/registry/contract, at any version. A schedule names the record it schedules by
+# a baseline RecordRef and this module never resolves one (C-011): the platforms a schedule
+# change reaches are the caller's to name, as they are change-log's caller's (DEC-015,
+# DEC-020). That edge is what DEC-018's reversal trigger names as a STOP, not a widening.
+# No modules/store/contract: this module is a function of the working DataBody the consumer
+# carries between store.load and store.save (DEC-006).

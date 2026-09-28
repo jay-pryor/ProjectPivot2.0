@@ -1,0 +1,88 @@
+# Stakeholder needs for Pivot (G1).
+- id: STK-001
+  statement: Store hazards independently of any one platform, so that one hazard can apply to many platforms
+  owner: jay-pryor
+- id: STK-002
+  statement: Trace each hazard to the platforms it applies to, to the controls on each platform, and to the reports that include them
+  owner: jay-pryor
+- id: STK-003
+  statement: Link reference documents to hazards, causal factors, consequences, platforms, controls, and reports
+  owner: jay-pryor
+- id: STK-004
+  statement: Reduce the effort of managing and reviewing hazards
+  owner: jay-pryor
+- id: STK-005
+  statement: Reduce the effort of producing hazard documentation and reports
+  owner: jay-pryor
+- id: STK-006
+  statement: Add a new platform without restructuring existing hazard data
+  owner: jay-pryor
+- id: STK-007
+  statement: Guide users through common workflows within the software
+  owner: jay-pryor
+- id: STK-008
+  statement: Record each completed workflow, with when it was done, by whom, and the decisions, actions, and outcomes
+  owner: jay-pryor
+- id: STK-009
+  statement: Show a bow-tie diagram of a hazard and the state of its controls, and export it or include it in reports
+  owner: jay-pryor
+- id: STK-010
+  statement: Keep all stored data persistent, so that it is intact from one session to the next
+  owner: jay-pryor
+- id: STK-011
+  statement: Let multiple users work on the same stored data without one user's changes overwriting or deleting another's
+  owner: jay-pryor
+- id: STK-012
+  statement: Let any person run the software on any company Windows machine without IT permission
+  owner: jay-pryor
+- id: STK-013
+  statement: Let any person run the software without installing specialised software
+  owner: jay-pryor
+- id: STK-014
+  statement: Add a new platform without re-entering any information already stored
+  owner: jay-pryor
+- id: STK-015
+  statement: Assess each hazard's risk on the company risk matrix, both before and after its controls
+  owner: jay-pryor
+- id: STK-016
+  statement: Review hazards on a schedule, with due and overdue reviews visible
+  owner: jay-pryor
+- id: STK-017
+  statement: Keep a visible history of every edit and deletion to hazards, controls, and justifications
+  owner: jay-pryor
+- id: STK-018
+  statement: When a hazard shared by several platforms changes, show the change to the owner of each affected platform
+  owner: jay-pryor
+- id: STK-019
+  statement: When a new platform inherits hazards, have a person confirm that each control applies to it
+  owner: jay-pryor
+- id: STK-021
+  statement: Configure, save, and reuse templates for output documents
+  owner: jay-pryor
+- id: STK-022
+  statement: Find hazards and controls by platform, risk rating, status, or reference document
+  owner: jay-pryor
+- id: STK-023
+  statement: Restore stored data after corruption or an unwanted edit
+  owner: jay-pryor
+- id: STK-024
+  statement: Record a date against every hazard, control, platform, reference document, causal factor, consequence, justification, rating, report, and workflow record
+  owner: jay-pryor
+- id: STK-025
+  statement: Always show when data is out of date, including when a report is being produced from it
+  owner: jay-pryor
+- id: STK-026
+  statement: Show each user their open items, including changes awaiting their review and acknowledgement
+  owner: jay-pryor
+- id: STK-027
+  statement: Store for each hazard its causal factors, consequences, preventative controls, mitigating controls, and the platforms it applies to, and for each of those platforms its initial and residual consequence and likelihood
+  owner: jay-pryor
+- id: STK-028
+  statement: Identify each hazard by one ID in the platform-agnostic hazard list, and by a separate self-contained ID in each report on a specific platform
+  owner: jay-pryor
+- id: STK-029
+  statement: Know which user made each change, created each record, and completed each workflow
+  owner: jay-pryor
+- id: STK-030
+  statement: Store controls independently of hazards and platforms, so that one control can apply to many hazards and be applied to each platform separately
+  owner: jay-pryor

@@ -1,0 +1,11 @@
+module: change-log
+allowed_imports:
+  - baseline/types
+  - baseline/schema
+  - baseline/clock   # C-001, C-011: an entry's createdAtAest is the baseline clock's now; the suite fixes it
+# Nothing else, at 1.0. This module sits below every module that owns a record kind and
+# imports none of them (DEC-004): a record reaches it as a baseline StoredRecord and the
+# platforms an act reaches are named by the caller (DEC-015), so there is no edge to
+# registry, which would close the cycle DEC-004 rejected. No modules/store/contract either:
+# this module is a function of the working DataBody the consumer carries between store.load
+# and store.save (DEC-006).

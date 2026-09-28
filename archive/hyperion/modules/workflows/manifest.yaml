@@ -1,0 +1,39 @@
+module: workflows
+allowed_imports:
+  - baseline/types
+  - baseline/schema
+  - baseline/clock                     # C-003, C-005: a workflow's started and completed dates and every
+                                       # entry's time are the baseline clock's; the suite fixes it
+  - modules/registry/contract          # 4.0, C-006 to C-008: the acts the steps of add-data, onboard-platform,
+                                       # remove-control, and transfer-ownership name, and the one query every
+                                       # list of a platform's hazards is made from (registry C-019, HZ-004).
+                                       # This module derives none of it: it holds no link, reads no collection
+                                       # of registry's, and never decides what a control is on a platform
+  - modules/review-schedule/contract   # 1.0, C-006: completeReview, the one operation of any contract that sets a
+                                       # last reviewed date (review-schedule C-007), called once per record a
+                                       # completed review workflow reviewed and only where a live schedule names it
+  - modules/change-log/contract        # 1.0, C-010: every changing operation records its own act, as registry's,
+                                       # review-schedule's, and reference-register's do (DEC-016, DEC-018)
+# Four module edges, all downward, and the graph stays acyclic (DEC-004): this is one of the two
+# composing modules that module map placed above the record modules, and no record module imports
+# it. registry imports only change-log, review-schedule imports only change-log, and change-log
+# imports nothing.
+#
+# No modules/store/contract, at any version. This module is a function of the working DataBody the
+# consumer carries between store.load and store.save (DEC-006); the carve-out DEC-006 names is for a
+# record module whose records include files in the folder, and no workflow record holds a file.
+# Whether a workflow's acts are saved, and what is refused at the save, is store's and views'.
+#
+# No modules/views/contract, ever: views imports this module at SL-07, not the other way, and an edge
+# back would close the cycle DEC-004 rejected.
+#
+# No modules/rating/contract. A review workflow shows residual values and never a band; what the two
+# values mean is rating.ratingFor's and is asked on the screen that shows them (DEC-002, views C-021).
+#
+# No modules/reference-register/contract. SL-07 criterion 2's reference-entry links come across with a
+# hazard because they are refs on the entry and name no platform (DEC-023), so onboarding copies
+# nothing and has nothing to ask that module (C-013).
+#
+# No modules/profiles/contract. The active profile is a baseline value passed into every call (DEC-004),
+# and that an ownerProfileId names a stored profile is profiles C-004's promise to whoever passes it
+# (registry C-014, C-028).

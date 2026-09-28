@@ -1,0 +1,19 @@
+{
+  "name": "pivot",
+  "private": true,
+  "type": "module",
+  "description": "Pivot's product package: the one place a dependency is declared (CORE-LFC-004, DEC-003). The product has no runtime dependency; TypeScript checks JSDoc types in CI only.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node scripts/test.js",
+    "build": "node scripts/build.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "check:units": "node scripts/check_units.js",
+    "check:boundaries": "node scripts/check_boundaries.js"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

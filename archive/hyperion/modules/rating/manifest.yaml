@@ -1,0 +1,6 @@
+module: rating
+allowed_imports:
+  - baseline/types
+# Nothing else, at any version this contract can reach: the matrix is a function of the
+# two scalars baseline defines (C-004). No baseline/clock, no baseline/schema, no
+# modules/store/contract - this module has no state to read, stamp, or persist.
