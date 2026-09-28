@@ -1,0 +1,78 @@
+import { PivotError } from '../errors.js';
+import { newId, ids } from '../ids.js';
+import { get, live, created, changed, need, needText } from '../data.js';
+import { commit } from '../apply.js';
+
+/** @typedef {import('../data.js').Data} Data */
+/** @typedef {import('../data.js').Act} Act */
+
+export const CONTROL_KINDS = Object.freeze(['preventative', 'mitigating']);
+
+/** @param {unknown} kind @returns {string} */
+function needKind(kind) {
+  if (typeof kind !== 'string' || !CONTROL_KINDS.includes(kind)) {
+    throw new PivotError('control.kind', 'A control is linked to a hazard as either preventative or mitigating.');
+  }
+  return kind;
+}
+
+/** @param {Data} data @param {Act} act @param {{ id?: string, title: string, description?: string }} args */
+export function createControl(data, act, { id = newId(), title, description = '' }) {
+  const rec = created(act, id, { title: needText(title, 'A control title'), description: String(description ?? '').trim() });
+  return commit(data, act, 'Create control', [{ kind: 'control', rec }]);
+}
+
+/** @param {Data} data @param {Act} act @param {{ id: string, title?: string, description?: string }} args */
+export function updateControl(data, act, { id, title, description }) {
+  const c = need(data, 'control', id);
+  /** @type {Record<string, string>} */
+  const fields = {};
+  if (title !== undefined) fields.title = needText(title, 'A control title');
+  if (description !== undefined) fields.description = String(description).trim();
+  return commit(data, act, 'Edit control', [{ kind: 'control', rec: changed(c, act, fields) }]);
+}
+
+/** Takes the control out of the library and off nothing. @param {Data} data @param {Act} act @param {{ id: string }} args */
+export function retireControl(data, act, { id }) {
+  const c = need(data, 'control', id);
+  if (c.status === 'retired') return data;
+  return commit(data, act, 'Retire control', [{ kind: 'control', rec: changed(c, act, { status: 'retired' }) }]);
+}
+
+/** @param {Data} data @param {Act} act @param {{ id: string }} args */
+export function deleteControl(data, act, { id }) {
+  const c = need(data, 'control', id);
+  const uses = live(data, 'hazardControl').filter((l) => l.controlId === id);
+  if (uses.length) {
+    throw new PivotError('control.in-use', `${c.title} is still linked to ${uses.length === 1 ? 'a hazard' : `${uses.length} hazards`}. Unlink it first.`, { hazardIds: uses.map((u) => u.hazardId) });
+  }
+  return commit(data, act, 'Delete control', [{ kind: 'control', rec: changed(c, act, { status: 'deleted' }) }]);
+}
+
+/** @param {Data} data @param {Act} act @param {{ hazardId: string, controlId: string, kind: string }} args */
+export function linkControl(data, act, { hazardId, controlId, kind }) {
+  need(data, 'hazard', hazardId);
+  const c = need(data, 'control', controlId);
+  if (c.status !== 'live') throw new PivotError('control.retired', `${c.title} is retired, so it cannot be linked to a hazard.`);
+  const k = needKind(kind);
+  const id = ids.hazardControl(hazardId, controlId);
+  const existing = get(data, 'hazardControl', id);
+  const rec = existing ? changed(existing, act, { status: 'live', kind: k }) : created(act, id, { hazardId, controlId, kind: k });
+  return commit(data, act, 'Link control to hazard', [{ kind: 'hazardControl', rec }]);
+}
+
+/** @param {Data} data @param {Act} act @param {{ hazardId: string, controlId: string, kind: string }} args */
+export function setControlKind(data, act, { hazardId, controlId, kind }) {
+  const l = need(data, 'hazardControl', ids.hazardControl(hazardId, controlId));
+  return commit(data, act, 'Change control kind', [{ kind: 'hazardControl', rec: changed(l, act, { kind: needKind(kind) }) }]);
+}
+
+/** @param {Data} data @param {Act} act @param {{ hazardId: string, controlId: string }} args */
+export function unlinkControl(data, act, { hazardId, controlId }) {
+  const l = need(data, 'hazardControl', ids.hazardControl(hazardId, controlId));
+  const recs = [{ kind: 'hazardControl', rec: changed(l, act, { status: 'deleted' }) }];
+  for (const r of live(data, 'ruling')) {
+    if (r.hazardId === hazardId && r.controlId === controlId) recs.push({ kind: 'ruling', rec: changed(r, act, { status: 'deleted' }) });
+  }
+  return commit(data, act, 'Unlink control from hazard', recs);
+}
