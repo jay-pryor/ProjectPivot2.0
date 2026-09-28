@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MemoryFolder } from '../fakes/folder.js';
-import { checkFolder, readProfiles, createProfile, load, FILES } from '../../src/storage/store.js';
+import { checkFolder, readProfiles, createProfile, load, listBackups, FILES } from '../../src/storage/store.js';
 import { seal, serialize, newStamp } from '../../src/storage/envelope.js';
 import { emptyData } from '../../src/core/data.js';
 import { fixedClock } from '../../src/core/time.js';
@@ -54,4 +54,16 @@ test('a profile created by another copy since this one read the list is kept', a
   await createProfile(f.handle, 'B', clock()); // B's create re-reads, so C survives
   assert.equal(seenByB.length, 1);
   assert.deepEqual((await readProfiles(f.handle)).map((p) => p.name), ['A', 'B', 'C']);
+});
+
+test('Final review I3: a file the share refuses to read is reported as a read failure naming it, not as a fault', async () => {
+  const f = new MemoryFolder();
+  f.write('backups/data-20260928-100000.json', 'x');
+  f.write(FILES.profiles, 'x');
+  f.write(FILES.data, 'x');
+  f.denyRead((rel) => rel === 'data.json' || rel === 'profiles.json' || rel === 'backups');
+  const isReadFailure = (name) => (e) => e.code === 'read-failed' && e.message.includes(name);
+  await assert.rejects(() => load(f.handle), isReadFailure('data.json'));
+  await assert.rejects(() => readProfiles(f.handle), isReadFailure('profiles.json'));
+  await assert.rejects(() => listBackups(f.handle), isReadFailure('backups'));
 });

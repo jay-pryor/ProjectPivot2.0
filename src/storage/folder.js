@@ -7,6 +7,11 @@ export function isNotFound(e) {
   return Boolean(e && typeof e === 'object' && /** @type {{ name?: string }} */ (e).name === 'NotFoundError');
 }
 
+/** @param {string} path @param {unknown} e */
+function readFailed(path, e) {
+  return new PivotError('read-failed', `${path} could not be read (${e instanceof Error ? e.message : String(e)}).`, { path });
+}
+
 /** @param {string} path */
 function split(path) {
   const parts = path.split('/');
@@ -29,7 +34,7 @@ export async function readText(root, path) {
     return await (await h.getFile()).text();
   } catch (e) {
     if (isNotFound(e)) return null;
-    throw e;
+    throw readFailed(path, e);
   }
 }
 
@@ -77,7 +82,7 @@ export async function listNames(root, dirPath) {
     return out.sort();
   } catch (e) {
     if (isNotFound(e)) return [];
-    throw e;
+    throw readFailed(dirPath, e);
   }
 }
 
