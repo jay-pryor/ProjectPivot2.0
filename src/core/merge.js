@@ -29,13 +29,16 @@ function choose(b, m, t, onConflict) {
  * current save (mine) wins every conflict.
  * @param {Data} base the data as I loaded it @param {Data} mine my working data
  * @param {Data} theirs the data now on disk @param {Act} act the save being made
- * @returns {{ data: Data, conflicts: Conflict[] }}
+ * @returns {{ data: Data, conflicts: Conflict[], missingFromDisk: number }}
  */
 export function mergeData(base, mine, theirs, act) {
   /** @type {Map<string, Conflict>} */
   const conflicts = new Map();
   /** @type {Data['records']} */
   const records = {};
+  // Nothing is ever removed from data.json, so a record I loaded that is missing from disk
+  // means the file was replaced (moved away and recreated), not that they deleted it.
+  let missingFromDisk = 0;
   for (const kind of KINDS) {
     const b = base.records[kind];
     const m = mine.records[kind];
@@ -43,6 +46,11 @@ export function mergeData(base, mine, theirs, act) {
     /** @type {Record<string, any>} */
     const out = {};
     for (const id of new Set([...Object.keys(b), ...Object.keys(m), ...Object.keys(t)])) {
+      if (b[id] !== undefined && t[id] === undefined) {
+        missingFromDisk += 1;
+        out[id] = m[id];
+        continue;
+      }
       const picked = choose(b[id], m[id], t[id], () => conflicts.set(`${kind}:${id}`, {
         kind, id, reason: 'both-changed', mine: m[id] ?? null, theirs: t[id] ?? null, overriddenBy: t[id]?.updatedBy ?? null,
       }));
@@ -54,10 +62,23 @@ export function mergeData(base, mine, theirs, act) {
     kind: 'reportDesign', id: 'reportDesign', reason: 'both-changed', mine: mine.reportDesign, theirs: theirs.reportDesign, overriddenBy: null,
   }));
 
+  // A replaced file restarts hazard numbering; a number the other file gave that one of my
+  // loaded hazards already holds is cleared, so the save numbers that hazard afresh.
+  if (missingFromDisk > 0) {
+    const held = new Set(Object.values(records.hazard).filter((h) => base.records.hazard[h.id] !== undefined && h.number != null).map((h) => h.number));
+    for (const h of Object.values(records.hazard)) {
+      if (base.records.hazard[h.id] === undefined && mine.records.hazard[h.id] === undefined && h.number != null && held.has(h.number)) {
+        records.hazard[h.id] = { ...h, number: null };
+        conflicts.set(`hazard:${h.id}`, { kind: 'hazard', id: h.id, reason: 'renumbered', mine: records.hazard[h.id], theirs: h, overriddenBy: h.updatedBy });
+      }
+    }
+  }
+  const highest = Math.max(0, ...Object.values(records.hazard).map((h) => h.number ?? 0));
+
   /** @type {Data} */
   let data = {
     records,
-    nextHazardNumber: Math.max(theirs.nextHazardNumber, mine.nextHazardNumber),
+    nextHazardNumber: Math.max(theirs.nextHazardNumber, mine.nextHazardNumber, highest + 1),
     history: { ...theirs.history, ...mine.history },
     reportDesign: reportDesign ?? {},
   };
@@ -67,7 +88,7 @@ export function mergeData(base, mine, theirs, act) {
   // expose another (a deleted hazard, then its causal factor).
   for (let pass = 0; pass < 10; pass++) {
     const violations = checkRules(data);
-    if (violations.length === 0) return { data, conflicts: [...conflicts.values()] };
+    if (violations.length === 0) return { data, conflicts: [...conflicts.values()], missingFromDisk };
     for (const v of violations) {
       for (const { kind, id } of v.records) {
         const m = mine.records[kind][id];

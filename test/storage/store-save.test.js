@@ -141,3 +141,26 @@ test('a data.json damaged on disk stops the save with nothing written', async ()
   await assert.rejects(() => save(f.handle, a, 'a', clock()), (e) => e.code === 'data.unreadable');
   assert.equal(f.read(FILES.data), damaged);
 });
+
+test('Final review C1: a data.json replaced by a newer, smaller file never drops the records this copy loaded', async () => {
+  const f = new MemoryFolder();
+  let a = await open(f);
+  a.working = createHazard(a.working, actOf('a'), { id: 'h1', title: 'Fire' });
+  a.working = createControl(a.working, actOf('a'), { id: 'c1', title: 'Sprinklers' });
+  a = after(await save(f.handle, a, 'a', clock()));
+  // Someone moves data.json off the share; Grace opens the now-empty folder and saves a hazard.
+  f.remove(FILES.data);
+  const g = await open(f);
+  g.working = createHazard(g.working, actOf('g'), { id: 'hg', title: 'Grace' });
+  await save(f.handle, g, 'g', clock());
+  // Ada, who still holds the whole register, edits one hazard and saves.
+  a.working = updateHazard(a.working, actOf('a'), { id: 'h1', title: 'Big fire' });
+  const r = await save(f.handle, a, 'a', clock());
+  assert.equal(r.data.records.control.c1?.title, 'Sprinklers', 'a record Ada did not touch is kept');
+  assert.equal(r.data.records.hazard.h1.title, 'Big fire');
+  assert.equal(r.data.records.hazard.hg.title, 'Grace', 'Grace\'s record is kept too');
+  assert.equal(r.missingFromDisk, 2, 'the save reports the records that were missing from the file on disk');
+  const numbers = Object.values(r.data.records.hazard).map((h) => h.number);
+  assert.equal(new Set(numbers).size, numbers.length, `hazard numbers stay unique: ${numbers}`);
+  assert.ok(r.data.nextHazardNumber > Math.max(...numbers));
+});

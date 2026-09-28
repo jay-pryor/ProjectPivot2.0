@@ -188,3 +188,21 @@ test('filters and navigation', async () => {
   await c.dispatch({ type: 'go', view: 'assessment', hazardId: 'h', platformId: 'p' });
   assert.deepEqual(c.getState().view, { name: 'assessment', id: undefined, hazardId: 'h', platformId: 'p' });
 });
+
+test('Final review C1: the saver is told when records were missing from the file on disk and have been kept', async () => {
+  const f = new MemoryFolder();
+  const a = createController(env(f));
+  await openAs(a, 'Ada');
+  await a.dispatch({ type: 'createHazard', id: 'h1', title: 'Fire' });
+  await a.dispatch({ type: 'save' });
+  f.remove(FILES.data);
+  const g = createController(env(f));
+  await openAs(g, 'Grace');
+  await g.dispatch({ type: 'createHazard', id: 'hg', title: 'Grace' });
+  await g.dispatch({ type: 'save' });
+  await a.dispatch({ type: 'createControl', id: 'c1', title: 'Sprinklers' });
+  await a.dispatch({ type: 'save' });
+  const m = a.getState().message;
+  assert.equal(m.kind, 'warning');
+  assert.ok(m.items.some((i) => /1 record was missing from data\.json/.test(i)), JSON.stringify(m));
+});

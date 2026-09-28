@@ -117,6 +117,13 @@ export function createController(env) {
     if (!r.merged) return { kind: 'info', text: 'Saved.' };
     const who = nameOf(r.lastSavedBy);
     const kept = r.supersededFile ? [`Their previous file is kept as ${r.supersededFile}.`] : [];
+    if (r.missingFromDisk > 0) {
+      const n = r.missingFromDisk;
+      kept.unshift(`${n} ${n === 1 ? 'record was' : 'records were'} missing from data.json on disk (the file had been replaced) and ${n === 1 ? 'is' : 'are'} kept.`);
+    }
+    if (r.conflicts.length === 0 && r.missingFromDisk > 0) {
+      return { kind: 'warning', text: `Saved. ${who} had saved a different data.json since you opened Pivot; both are merged.`, items: kept };
+    }
     if (r.conflicts.length === 0) {
       return { kind: 'info', text: `Saved. ${who} had saved since you opened Pivot; their changes are merged in.`, items: kept };
     }

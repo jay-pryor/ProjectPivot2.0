@@ -108,7 +108,8 @@ export async function createProfile(handle, name, clock) {
 /** @typedef {{ base: Data, working: Data, loadedStamp: SaveStamp | null }} Session */
 /**
  * @typedef {{ data: Data, stamp: SaveStamp, merged: boolean, lastSavedBy: string | null,
- *   conflicts: import('../core/merge.js').Conflict[], supersededFile: string | null }} SaveResult
+ *   conflicts: import('../core/merge.js').Conflict[], supersededFile: string | null,
+ *   missingFromDisk: number }} SaveResult
  */
 
 const SAVE_ATTEMPTS = 3;
@@ -131,7 +132,8 @@ export async function save(handle, session, profileId, clock, hooks = {}) {
     let merged = session.working;
     /** @type {import('../core/merge.js').Conflict[]} */
     let conflicts = [];
-    if (changedOnDisk) ({ data: merged, conflicts } = mergeData(session.base, session.working, disk.data, act));
+    let missingFromDisk = 0;
+    if (changedOnDisk) ({ data: merged, conflicts, missingFromDisk } = mergeData(session.base, session.working, disk.data, act));
     merged = assignHazardNumbers(merged);
     if (conflicts.length) merged = recordOverride(merged, act, conflicts);
     const stamp = newStamp(profileId, at);
@@ -147,7 +149,7 @@ export async function save(handle, session, profileId, clock, hooks = {}) {
       await writeWhole(handle, supersededFile, /** @type {string} */ (disk.text));
     }
     await writeWhole(handle, FILES.data, text);
-    return { data: merged, stamp, merged: changedOnDisk, lastSavedBy: changedOnDisk ? disk.stamp?.savedBy ?? null : null, conflicts, supersededFile };
+    return { data: merged, stamp, merged: changedOnDisk, lastSavedBy: changedOnDisk ? disk.stamp?.savedBy ?? null : null, conflicts, supersededFile, missingFromDisk };
   }
   throw new PivotError('save.busy', 'Other people kept saving while Pivot was saving. Nothing was saved; save again.');
 }
