@@ -16,6 +16,7 @@ import { setReportDesign } from '../core/ops/reports.js';
 import { createDocHost } from '../reports/docgen-host.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
 import { recordName, profileName, KIND_LABEL } from './names.js';
+import { mergeData } from '../core/merge.js';
 
 /** Every edit is an op called with the working data, the act, and the action's own fields. */
 const EDITS = {
@@ -197,11 +198,25 @@ export function createController(env) {
     },
     async save() {
       if (!state.session) throw new PivotError('no-data', 'There is nothing to save yet.');
+      const startWorking = state.session.working;
       const r = await store.save(/** @type {any} */ (handle), state.session, /** @type {string} */ (state.profileId), env.clock);
-      clearMirror(env.storage);
+      // Edits made while the save was running are laid back over what was saved.
+      const during = state.session.working !== startWorking;
+      let working = during ? mergeData(startWorking, state.session.working, r.data, act()).data : r.data;
+      if (during) {
+        // The numbers the save gave stay with their hazards, whatever was edited meanwhile.
+        const hazards = { ...working.records.hazard };
+        for (const h of Object.values(hazards)) {
+          const savedNumber = r.data.records.hazard[h.id]?.number;
+          if (h.number == null && savedNumber != null) hazards[h.id] = { ...h, number: savedNumber };
+        }
+        working = { ...working, records: { ...working.records, hazard: hazards }, nextHazardNumber: r.data.nextHazardNumber };
+      }
+      set({ session: { base: r.data, working, loadedStamp: r.stamp } });
+      if (during) await afterChange(); else clearMirror(env.storage);
       // Someone who saved in between may have created their profile since this copy read the list.
       if (r.merged) set({ profiles: await store.readProfiles(/** @type {any} */ (handle)) });
-      set({ session: { base: r.data, working: r.data, loadedStamp: r.stamp }, message: saveMessage(r), warnings: [] });
+      set({ message: saveMessage(r), warnings: during ? state.warnings : [] });
     },
     async setFilter({ list, field, value }) {
       const next = { ...state.filters[list] };

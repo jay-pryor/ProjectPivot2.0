@@ -206,3 +206,19 @@ test('Final review C1: the saver is told when records were missing from the file
   assert.equal(m.kind, 'warning');
   assert.ok(m.items.some((i) => /1 record was missing from data\.json/.test(i)), JSON.stringify(m));
 });
+
+test('Final review I1: an edit made while a save is in progress is kept, not lost', async () => {
+  const f = new MemoryFolder();
+  const c = createController(env(f));
+  await openAs(c, 'Ada');
+  await c.dispatch({ type: 'createHazard', id: 'h1', title: 'Fire' });
+  const saving = c.dispatch({ type: 'save' });
+  await c.dispatch({ type: 'updateHazard', id: 'h1', title: 'Edited during the save' });
+  await saving;
+  const { session } = c.getState();
+  assert.equal(session.working.records.hazard.h1.title, 'Edited during the save');
+  assert.equal(session.base.records.hazard.h1.number, 1, 'the save itself went through');
+  assert.equal(session.working.records.hazard.h1.number, 1, 'and its numbering is kept under the edit');
+  await c.dispatch({ type: 'save' });
+  assert.equal((await load(f.handle)).data.records.hazard.h1.title, 'Edited during the save');
+});
