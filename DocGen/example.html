@@ -62,6 +62,8 @@ import { App } from './doc-designer.js';
     // The module takes the time from you and nowhere else — there is no clock inside it,
     // which is what makes a generated document reproducible under a fixed one.
     clock: { nowIso: function () { return new Date().toISOString(); } },
+    // The markings the designer offers (none is always an option too).
+    classifications: ['OFFICIAL', 'OFFICIAL: Sensitive', 'PROTECTED'],
     log: function (issue) { console.log('[' + (issue.severity || 'info') + '] ' + issue.message); },
 
     // What each document is ABOUT. Gives you the subject picker and the provenance section.
