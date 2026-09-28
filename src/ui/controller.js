@@ -1,3 +1,6 @@
+import { createReport } from '../core/ops/reports.js';
+import { reportFileBase } from '../reports/docgen-host.js';
+import { when } from './names.js';
 import * as store from '../storage/store.js';
 import { writeMirror, readMirror, clearMirror, hasUnsaved, hasUnsavedRecords } from '../storage/mirror.js';
 import { PivotError } from '../core/errors.js';
@@ -40,7 +43,7 @@ export function initialState() {
     screen: 'open', folderName: '', check: { failed: [] }, profiles: [], profileId: null, dataBlocked: false,
     session: null, recoverable: null, notices: [], view: { name: 'hazards' },
     filters: { hazards: {}, controls: {} }, backups: [], pendingRestore: null,
-    message: null, warnings: [], busy: false, designerRevision: 0,
+    message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
   };
 }
 
@@ -197,6 +200,69 @@ export function createController(env) {
       const next = { ...state.filters[list] };
       if (value) next[field] = value; else delete next[field];
       set({ filters: { ...state.filters, [list]: next } });
+    },
+    async openDesigner() {
+      if (!state.session) throw new PivotError('no-data', 'Open the data before designing reports.');
+      DocGen.docHost.set(docs.host);
+      DocGen.ui.views.reportDesign.open();
+      set({ designerRevision: state.designerRevision + 1 });
+    },
+    async produceReport({ platformId, title }) {
+      if (!state.session) throw new PivotError('no-data', 'There is no data to report on.');
+      if (hasUnsavedRecords(state.session)) {
+        throw new PivotError('report.unsaved', 'Save your changes before producing a report, so the report matches what is stored.');
+      }
+      const at = env.clock.now();
+      const platform = state.session.working.records.platform[platformId];
+      if (!platform) throw new PivotError('not-found', 'Choose a platform to report on.');
+      const t = String(title ?? '').trim() || `${platform.name} hazard report`;
+      const { report } = docs.produce(platformId, { at, by: /** @type {string} */ (state.profileId), title: t });
+      const id = newId();
+      const working = createReport(state.session.working, { by: /** @type {string} */ (state.profileId), at }, { id, report });
+      set({ session: { ...state.session, working }, view: { name: 'reports' }, lastReportId: id, message: { kind: 'info', text: `Report produced for ${platform.name}. Save to keep it.` } });
+      await afterChange();
+    },
+    async downloadReport({ id, format }) {
+      const r = state.session?.working.records.report[id];
+      if (!r) throw new PivotError('not-found', 'That report no longer exists.');
+      const ext = format === 'html' ? 'html' : 'md';
+      const file = await env.pickSaveFile(`${reportFileBase(r)}.${ext}`);
+      await store.writeExport(file, ext === 'html' ? r.html : r.markdown);
+      set({ message: { kind: 'info', text: `Saved ${file.name}.` } });
+    },
+    async generateFromDesigner({ format }) {
+      const platformId = DocGen.docSession.selectedSubjectId();
+      if (!platformId) throw new PivotError('not-found', 'Choose a platform in the designer first.');
+      await handlers.produceReport({ platformId });
+      if (state.message?.kind === 'error') return;
+      await handlers.downloadReport({ id: state.lastReportId, format });
+    },
+    async showBackups() {
+      set({ view: { name: 'backups' }, backups: await store.listBackups(/** @type {any} */ (handle)) });
+    },
+    async prepareRestore({ name }) {
+      const data = await store.readBackup(/** @type {any} */ (handle), name);
+      const b = state.backups.find((x) => x.name === name);
+      set({ pendingRestore: { label: `the backup from ${b ? when(b.at) : name}`, data, lost: unsavedActions() } });
+    },
+    async prepareRestoreFromFile() {
+      const text = await env.pickOpenFile();
+      const data = await store.dataFromText(text);
+      set({ pendingRestore: { label: 'the chosen file', data, lost: unsavedActions() } });
+    },
+    async confirmRestore() {
+      const pending = state.pendingRestore;
+      if (!pending) return;
+      const r = await store.restore(/** @type {any} */ (handle), pending.data, /** @type {string} */ (state.profileId), env.clock);
+      clearMirror(env.storage);
+      set({
+        session: { base: r.data, working: r.data, loadedStamp: r.stamp }, pendingRestore: null, dataBlocked: false,
+        message: { kind: 'info', text: `Restored from ${pending.label}.`, items: r.supersededFile ? [`The data it replaced is kept as ${r.supersededFile}.`] : [] },
+      });
+      DocGen.docHost.set(docs.host);
+    },
+    async cancelRestore() {
+      set({ pendingRestore: null });
     },
   };
 
