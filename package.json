@@ -1,0 +1,12 @@
+{
+  "name": "pivot",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\" && node DocGen/doc-designer.test.js",
+    "build": "node scripts/build.js",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": { "typescript": "5.9.3" }
+}
