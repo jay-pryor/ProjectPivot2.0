@@ -1,3 +1,7 @@
+import { mergeData } from '../core/merge.js';
+import { assignHazardNumbers } from '../core/ops/hazards.js';
+import { recordOverride } from '../core/history.js';
+import { newStamp, sameStamp, supersededName } from './envelope.js';
 import { emptyData, validateData, needText } from '../core/data.js';
 import { PivotError } from '../core/errors.js';
 import { newId } from '../core/ids.js';
@@ -96,4 +100,51 @@ export async function createProfile(handle, name, clock) {
   const body = { profiles: Object.fromEntries([...profiles, profile].map((p) => [p.id, p])) };
   await writeWhole(handle, FILES.profiles, serialize(await seal('profiles', body, null, at)));
   return profile;
+}
+
+/** @typedef {{ base: Data, working: Data, loadedStamp: SaveStamp | null }} Session */
+/**
+ * @typedef {{ data: Data, stamp: SaveStamp, merged: boolean, lastSavedBy: string | null,
+ *   conflicts: import('../core/merge.js').Conflict[], supersededFile: string | null }} SaveResult
+ */
+
+const SAVE_ATTEMPTS = 3;
+
+/**
+ * Save the working data. If someone else saved since this session loaded, merge with what
+ * they saved (the current save wins conflicts), keep their file under Superseded Saves, and
+ * record any overridden edits for their owners to see.
+ * @param {Dir} handle @param {Session} session @param {string} profileId @param {Clock} clock
+ * @param {{ beforeWrite?: () => Promise<void> }} [hooks] tests only
+ * @returns {Promise<SaveResult>}
+ */
+export async function save(handle, session, profileId, clock, hooks = {}) {
+  for (let attempt = 0; attempt < SAVE_ATTEMPTS; attempt++) {
+    const at = clock.now();
+    const act = { by: profileId, at };
+    const disk = await readDisk(handle);
+    // A data.json that has vanished since loading is not "the other user deleted everything".
+    const changedOnDisk = disk.text !== null && !sameStamp(disk.stamp, session.loadedStamp);
+    let merged = session.working;
+    /** @type {import('../core/merge.js').Conflict[]} */
+    let conflicts = [];
+    if (changedOnDisk) ({ data: merged, conflicts } = mergeData(session.base, session.working, disk.data, act));
+    merged = assignHazardNumbers(merged);
+    if (conflicts.length) merged = recordOverride(merged, act, conflicts);
+    const stamp = newStamp(profileId, at);
+    const text = serialize(await seal('data', merged, stamp, at));
+
+    if (hooks.beforeWrite) await hooks.beforeWrite();
+    const now = await readDisk(handle);
+    if (!sameStamp(now.stamp, disk.stamp)) continue;
+
+    let supersededFile = null;
+    if (changedOnDisk && disk.stamp) {
+      supersededFile = `${FILES.superseded}/${supersededName(disk.stamp)}`;
+      await writeWhole(handle, supersededFile, /** @type {string} */ (disk.text));
+    }
+    await writeWhole(handle, FILES.data, text);
+    return { data: merged, stamp, merged: changedOnDisk, lastSavedBy: changedOnDisk ? disk.stamp?.savedBy ?? null : null, conflicts, supersededFile };
+  }
+  throw new PivotError('save.busy', 'Other people kept saving while Pivot was saving. Nothing was saved; save again.');
 }
