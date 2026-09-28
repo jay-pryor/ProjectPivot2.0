@@ -1,0 +1,35 @@
+import * as start from './screens/start.js';
+import { shell } from './screens/common.js';
+import { hazardsView, hazardView } from './screens/hazards.js';
+import { controlsView, controlView } from './screens/controls.js';
+import { platformsView, platformView, assessmentView } from './screens/platforms.js';
+import { reportsView, backupsView } from './screens/reports.js';
+
+/** @param {any} state */
+function mainView(state) {
+  const data = state.session?.working;
+  const v = state.view;
+  if (!data || v.name === 'backups' || state.pendingRestore) return backupsView(state);
+  switch (v.name) {
+    case 'hazard': return hazardView(state, data, v.id);
+    case 'controls': return controlsView(state, data);
+    case 'control': return controlView(state, data, v.id);
+    case 'platforms': return platformsView(state, data);
+    case 'platform': return platformView(state, data, v.id);
+    case 'assessment': return assessmentView(state, data, v.hazardId, v.platformId);
+    case 'reports': return reportsView(state, data);
+    default: return hazardsView(state, data);
+  }
+}
+
+/** @param {any} state @returns {string} */
+export function renderApp(state) {
+  switch (state.screen) {
+    case 'open': return start.openScreen(state).toString();
+    case 'check': return start.checkScreen(state).toString();
+    case 'profile': return start.profileScreen(state).toString();
+    case 'recover': return start.recoverScreen(state).toString();
+    case 'notices': return start.noticesScreen(state).toString();
+    default: return shell(state, mainView(state)).toString();
+  }
+}

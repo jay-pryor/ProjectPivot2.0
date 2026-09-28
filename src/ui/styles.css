@@ -1,0 +1,80 @@
+:root {
+  --p-font: system-ui, "Segoe UI", sans-serif;
+  --p-fg: #1b1f23; --p-bg: #f6f7f9; --p-surface: #ffffff; --p-muted: #59636e; --p-line: #d0d7de;
+  --p-accent: #1f5fb0; --p-accent-fg: #ffffff; --p-danger: #b3261e;
+  --p-bar: #24292f; --p-bar-fg: #ffffff;
+  --p-warn-bg: #fff5e0; --p-error-bg: #fdecea; --p-info-bg: #e7eefa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 var(--p-font); color: var(--p-fg); background: var(--p-bg); }
+button { font: inherit; cursor: pointer; border: 1px solid var(--p-line); background: var(--p-surface); color: var(--p-fg); border-radius: 5px; padding: 4px 10px; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { background: var(--p-accent); border-color: var(--p-accent); color: var(--p-accent-fg); }
+button.danger { border-color: var(--p-danger); color: var(--p-danger); }
+button.link { border: 0; background: none; color: var(--p-accent); padding: 0; text-decoration: underline; }
+input, select, textarea { font: inherit; padding: 3px 6px; border: 1px solid var(--p-line); border-radius: 4px; background: var(--p-surface); color: var(--p-fg); }
+textarea { width: 100%; }
+h1 { font-size: 20px; margin: 8px 0 12px; }
+h2 { font-size: 15px; margin: 18px 0 8px; }
+
+.topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--p-bar); color: var(--p-bar-fg); flex-wrap: wrap; }
+.topbar .brand { font-weight: 700; }
+.topbar .folder { opacity: .75; }
+.topbar nav { display: flex; gap: 4px; }
+.topbar .nav { background: transparent; color: var(--p-bar-fg); border-color: transparent; }
+.topbar .nav.on { border-color: var(--p-bar-fg); }
+.topbar .spacer { flex: 1; }
+.topbar .unsaved { background: #9a6700; color: #fff; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+.topbar .profile { font-weight: 700; font-size: 16px; }
+
+.view, .start { max-width: 1100px; margin: 0 auto; padding: 12px 16px 40px; }
+.start { max-width: 640px; padding-top: 48px; }
+/* A toast at the bottom, above the report designer's modal, so a message is never hidden. */
+.messages { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 1100; width: min(720px, calc(100vw - 32px)); }
+.messages:empty { display: none; }
+.messages .msg { box-shadow: 0 4px 16px rgba(0,0,0,.2); }
+.msg { margin: 10px 0; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--p-line); }
+.msg-info { background: var(--p-info-bg); }
+.msg-warning { background: var(--p-warn-bg); }
+.msg-error { background: var(--p-error-bg); border-color: var(--p-danger); }
+.note { background: var(--p-info-bg); padding: 6px 10px; border-radius: 6px; }
+.muted { color: var(--p-muted); }
+
+.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.row.inline { display: inline-flex; margin: 0; }
+.stack { display: grid; gap: 8px; max-width: 700px; }
+.stack label { display: grid; gap: 2px; }
+.actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.filters { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 12px; }
+.texts { list-style: none; padding: 0; margin: 0; }
+.texts input { min-width: 360px; }
+.profiles { list-style: none; padding: 0; display: grid; gap: 6px; }
+.profiles button { width: 100%; text-align: left; padding: 8px 12px; }
+
+.grid { border-collapse: collapse; width: 100%; background: var(--p-surface); }
+.grid th, .grid td { border: 1px solid var(--p-line); padding: 5px 8px; text-align: left; vertical-align: top; }
+.grid th { background: #eef1f4; font-weight: 600; }
+
+.tag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 12px; font-weight: 600; background: #eef1f4; }
+.tag-retired { background: #eee; color: #555; }
+.tag-deleted { background: var(--p-error-bg); color: var(--p-danger); }
+.state-confirmed { background: #e7f5ec; color: #1d7a46; }
+.state-excluded { background: #f1eafa; color: #6b3fa0; }
+.state-awaiting { background: #ddf4ff; color: #0a3069; }
+.band { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 12px; font-weight: 600; }
+.band-high { background: #b3261e; color: #fff; }
+.band-serious { background: #e8710a; color: #fff; }
+.band-medium { background: #f9d94a; color: #3b3000; }
+.band-low { background: #1d7a46; color: #fff; }
+.band-eliminated, .band-not-credible, .band-uncategorised { background: #eee; color: #444; }
+.reason { font-style: italic; }
+.onplat { white-space: nowrap; margin-right: 8px; }
+
+details.confirm { display: inline-block; }
+details.confirm > summary { display: inline-block; cursor: pointer; border: 1px solid var(--p-line); border-radius: 5px; padding: 4px 10px; background: var(--p-surface); }
+details.confirm[open] > summary { margin-bottom: 4px; }
+details.history { margin-top: 20px; }
+
+/* The DocGen designer, in Pivot's colours. */
+.docgen { --c-accent: var(--p-accent); --c-accent-text: var(--p-accent-fg); --c-text: var(--p-fg); --c-border: var(--p-line); --font: var(--p-font); }
