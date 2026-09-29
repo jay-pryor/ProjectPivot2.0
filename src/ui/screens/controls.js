@@ -1,6 +1,7 @@
 import { html } from '../html.js';
 import { dataAttrs, statusTag, bandTag, stateTag, go, confirmButton, pageTabs, historyTable, historyCount, idTag } from './common.js';
 import { dataTable } from './table.js';
+import { referencesCard } from './references.js';
 import { statusColumn, idColumn, newRecord, notFound } from './hazards.js';
 import { get, live } from '../../core/data.js';
 import { hazardLabel, controlLabel } from '../../core/ids.js';
@@ -77,6 +78,7 @@ export function controlView(state, data, id) {
           ],
         })}
       </section>
+      <section class="block">${referencesCard(state, data, { kind: 'control', id })}</section>
     </article>
     <div class="actions page-actions">${actions}</div>`;
 }

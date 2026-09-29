@@ -5,6 +5,7 @@ import { REVIEW_DETAIL_ACTIONS } from '../../core/ops/reviews.js';
 import { waitingChanges } from '../../core/acks.js';
 import { reviewState } from '../../core/time.js';
 import { dataTable } from './table.js';
+import { referencesCard } from './references.js';
 import { notFound, statusColumn, idColumn, newRecord } from './hazards.js';
 import { all, get, live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
@@ -137,6 +138,7 @@ export function platformView(state, data, id) {
           ],
         })}
       </section>
+      <section class="block">${referencesCard(state, data, { kind: 'platform', id })}</section>
     </article>
     <div class="actions page-actions">${actions}</div>`;
 }

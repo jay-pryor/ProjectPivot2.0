@@ -1,6 +1,7 @@
 import { html } from '../html.js';
 import { dataAttrs, option, statusTag, bandTag, go, confirmButton, pageTabs, historyTable, historyCount, plus, idTag } from './common.js';
 import { dataTable } from './table.js';
+import { referencesCard } from './references.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
 import { hazardRows, hazardDetail, ratingOf, bandOf, hazardLastReviewed } from '../../core/queries.js';
@@ -153,6 +154,7 @@ export function hazardView(state, data, id) {
           ],
         })}
       </section>
+      <section class="block">${referencesCard(state, data, { kind: 'hazard', id: h.id })}</section>
     </article>
     <div class="actions page-actions">${actions}</div>`;
 }

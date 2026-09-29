@@ -5,6 +5,7 @@ import { controlsView, controlView } from './screens/controls.js';
 import { platformsView, platformView } from './screens/platforms.js';
 import { pickerView } from './screens/picker.js';
 import { homeView } from './screens/home.js';
+import { referencesView, referenceView } from './screens/references.js';
 import { reportsView, backupsView } from './screens/reports.js';
 
 /** @param {any} state */
@@ -19,6 +20,8 @@ function mainView(state) {
     case 'control': return controlView(state, data, v.id);
     case 'platforms': return platformsView(state, data);
     case 'platform': return platformView(state, data, v.id);
+    case 'references': return referencesView(state, data);
+    case 'reference': return referenceView(state, data, v.id);
     case 'reports': return reportsView(state, data);
     default: return hazardsView(state, data);
   }

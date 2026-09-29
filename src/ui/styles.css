@@ -234,3 +234,17 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 .home-summary { margin: 0 0 6px; }
 .home-h { display: flex; align-items: center; gap: 14px; margin: 26px 0 8px; }
 .home-h h2 { margin: 0; }
+/* References */
+.new-reference { display: grid; gap: 8px; max-width: 720px; width: 100%; }
+.ref-file { display: flex; align-items: center; gap: 8px; }
+.ref-fields { display: flex; gap: 28px; flex-wrap: wrap; margin: 0 0 8px; }
+.ref-field { display: inline-flex; align-items: center; gap: 8px; color: var(--p-muted); }
+.ref-where { padding: 10px 12px; display: grid; gap: 8px; }
+.ref-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0; }
+.ref-row > strong { min-width: 130px; }
+.ref-row .grow { max-width: 900px; }
+.ref-fields input.quiet, .ref-where input.quiet { border-color: transparent; background: transparent; color: var(--p-fg); }
+.ref-fields input.quiet:hover, .ref-fields input.quiet:focus, .ref-where input.quiet:hover, .ref-where input.quiet:focus { border-color: var(--p-line); background: var(--p-surface); }
+.chip { display: inline-block; padding: 0 7px; margin-right: 4px; border-radius: 4px; font-size: 12px; font-weight: 700; background: var(--p-surface-2); color: var(--p-muted); }
+.tag-missing { background: var(--p-error-bg); color: var(--p-danger); }
+.pick-list .indent { padding-left: 18px; }
