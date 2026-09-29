@@ -44,7 +44,7 @@ export function pickerView(state, data) {
   }
   if (p.picker === 'linkPhases') {
     const ticked = new Set(phasesOf(data, p.hazardId).map((x) => x.phase.id));
-    const phases = live(data, 'phase').filter((ph) => !ticked.has(ph.id)).sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+    const phases = live(data, 'phase').filter((ph) => !ticked.has(ph.id)).sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
     return frame('Add lifecycle phases', html`<form data-action="linkPhases" ${dataAttrs({ 'hazard-id': p.hazardId })} class="picker-form">
       ${search()}
       <ul class="pick-list">${phases.map((ph) => html`<li data-pick-text="${String(ph.name).toLowerCase()}"><label><input type="checkbox" name="phaseId" value="${ph.id}"> ${ph.name}</label></li>`)}</ul>

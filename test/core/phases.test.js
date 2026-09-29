@@ -75,3 +75,9 @@ test('one person deletes an unused phase while another ticks it: the merge settl
   const { data } = mergeData(base, mine, theirs, { by: 'u1', at: '2026-09-28T13:00:00+10:00' });
   assert.deepEqual(checkRules(data), []);
 });
+
+test('phases keep the order they were added, even when added within the same second', () => {
+  let d = seed();
+  for (const name of ['Zeta', 'Alpha', 'Mu', 'Beta', 'Omega']) d = createPhase(d, act, { name });
+  assert.deepEqual(listPhases(d).map((p) => p.name), ['Zeta', 'Alpha', 'Mu', 'Beta', 'Omega']);
+});

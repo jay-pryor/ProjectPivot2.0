@@ -16,7 +16,9 @@ function needName(data, name, self) {
 
 /** @param {Data} data @param {Act} act @param {{ id?: string, name: string }} args */
 export function createPhase(data, act, { id = newId(), name }) {
-  return commit(data, act, 'Create phase', [{ kind: 'phase', rec: created(act, id, { name: needName(data, name, null) }) }]);
+  // A position, so the list keeps the order phases were added in even within the same second.
+  const order = Math.max(0, ...all(data, 'phase').map((p) => (Number.isInteger(p.order) ? p.order : 0))) + 1;
+  return commit(data, act, 'Create phase', [{ kind: 'phase', rec: created(act, id, { name: needName(data, name, null), order }) }]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ id: string, name: string }} args */

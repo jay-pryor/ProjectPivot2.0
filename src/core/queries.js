@@ -493,14 +493,19 @@ export function existingUsage(data, controlId) {
 
 /** The phases that are not deleted, in the order they were added. @param {Data} data */
 export function listPhases(data) {
-  return all(data, 'phase').filter((p) => p.status !== 'deleted').sort(byCreated);
+  return all(data, 'phase').filter((p) => p.status !== 'deleted').sort(byPhaseOrder);
+}
+
+/** Phases in the order they were added. @param {Rec} a @param {Rec} b */
+function byPhaseOrder(a, b) {
+  return (Number(a.order) || 0) - (Number(b.order) || 0) || byCreated(a, b);
 }
 
 /** A hazard's lifecycle phases, in the list's order. @param {Data} data @param {string} hazardId */
 export function phasesOf(data, hazardId) {
   return live(data, 'hazardPhase').filter((l) => l.hazardId === hazardId)
     .map((link) => ({ link, phase: /** @type {Rec} */ (get(data, 'phase', link.phaseId)) }))
-    .sort((a, b) => byCreated(a.phase, b.phase));
+    .sort((a, b) => byPhaseOrder(a.phase, b.phase));
 }
 
 /** The hazards a phase is ticked on. @param {Data} data @param {string} phaseId */
