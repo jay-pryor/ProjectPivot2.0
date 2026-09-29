@@ -4,7 +4,8 @@ import { columnWidth } from '../prefs.js';
 
 /**
  * One table for every list in Pivot: each header sorts its column and, where it makes sense,
- * filters it, and every column can be dragged to a new width, remembered on the profile.
+ * filters it, and every column can be dragged to a new width, remembered on the profile. The
+ * table spans the page: one fill column takes whatever width the others leave.
  *
  * @typedef {object} Column
  * @property {string} key
@@ -18,6 +19,7 @@ import { columnWidth } from '../prefs.js';
  * @property {number} [width] starting width in px
  * @property {number} [minWidth] never narrower than this, so its content does not wrap badly
  * @property {boolean} [sortable] default true
+ * @property {boolean} [grow] this column fills the table's leftover width (default: the widest column)
  */
 
 /** A column's width when neither the table nor the profile gives one. */
@@ -82,12 +84,17 @@ export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing h
       : html`<button type="button" class="sort" ${dataAttrs({ action: 'sortTable', table: id, key: c.key })} aria-sort="${ariaSort}">${c.label}<span class="arrow" aria-hidden="true">${sorted === 'asc' ? '▲' : sorted === 'desc' ? '▼' : '↕'}</span></button>`;
     return html`<th data-col="${c.key}"><div class="th"><div class="th-title">${label}${i === 0 ? tools : ''}</div>${control}</div><span class="col-resize" data-resize ${dataAttrs({ table: id, key: c.key, min: minOf(c) })} title="Drag to resize"></span></th>`;
   });
-  // Every column has a width and the table is exactly their sum, so dragging one column moves
-  // only that column: nothing is stretched to fill the window or squeezed to make room.
+  // The table spans the page. Every column but one keeps its exact width, so dragging it moves only
+  // that column; the fill column (no fixed width) takes what is left, and its own width is the
+  // least it takes. Past the window's width the table scrolls rather than squeezing a column.
   const widths = columns.map((c) => Math.max(minOf(c), columnWidth(state, id, c.key) ?? c.width ?? DEFAULT_WIDTH));
-  const cols = columns.map((c, i) => html`<col data-col="${c.key}" style="width:${raw(String(widths[i]))}px">`);
+  const asked = columns.findIndex((c) => c.grow);
+  const grow = asked >= 0 ? asked : widths.indexOf(Math.max(...widths));
+  const cols = columns.map((c, i) => (i === grow
+    ? html`<col data-col="${c.key}" data-grow data-width="${widths[i]}">`
+    : html`<col data-col="${c.key}" style="width:${raw(String(widths[i]))}px" data-width="${widths[i]}">`));
   const total = widths.reduce((a, b) => a + b, 0);
-  return html`<div class="table-wrap"><table class="grid" data-table="${id}" style="width:${raw(String(total))}px">
+  return html`<div class="table-wrap"><table class="grid" data-table="${id}" style="width:100%;min-width:${raw(String(total))}px">
     <colgroup>${cols}</colgroup>
     <thead><tr>${head}</tr></thead>
     <tbody>${shown.map((row) => html`<tr data-row="${rowKey(row)}">${columns.map((c) => html`<td>${c.render ? c.render(row) : text(valueOf(c, row))}</td>`)}</tr>`)}</tbody>

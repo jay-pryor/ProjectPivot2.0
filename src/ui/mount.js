@@ -135,9 +135,10 @@ export function mount(root, controller) {
 }
 
 /**
- * Drag a header's right edge to resize its column. Only that column and the table's total width
- * change (the table is exactly as wide as its columns), once per frame, and the width is kept on
- * the profile when you let go.
+ * Drag a header's right edge to resize its column. Only that column and the table's least width
+ * change, once per frame, and the width is kept on the profile when you let go. The fill column
+ * (data-grow) has no fixed width: dragging it sets the least it takes, starting from its width on
+ * screen, so dragging it past the window's edge makes the table scroll.
  * @param {HTMLElement} el @param {(action: any) => Promise<void>} dispatch
  */
 function resizableColumns(el, dispatch) {
@@ -149,21 +150,28 @@ function resizableColumns(el, dispatch) {
     const { table: tableId, key } = grip.dataset;
     const table = /** @type {HTMLTableElement} */ (grip.closest('table'));
     const col = /** @type {HTMLElement} */ (table.querySelector(`col[data-col="${CSS.escape(String(key))}"]`));
+    const grows = col.hasAttribute('data-grow');
     const startX = e.clientX;
-    const startWidth = parseFloat(col.style.width) || col.getBoundingClientRect().width;
-    const startTotal = parseFloat(table.style.width) || table.getBoundingClientRect().width;
+    const nominal = Number(col.dataset.width) || 0;
+    const startWidth = grows ? /** @type {HTMLElement} */ (grip.closest('th')).getBoundingClientRect().width : nominal;
+    const startTotal = parseFloat(table.style.minWidth) || table.getBoundingClientRect().width;
     let width = startWidth;
+    const apply = () => {
+      if (!grows) col.style.width = `${width}px`;
+      table.style.minWidth = `${startTotal - nominal + width}px`;
+    };
     let frame = 0;
+    let moved = false;
     grip.setPointerCapture(e.pointerId);
     document.body.classList.add('resizing');
     /** @param {PointerEvent} m */
     const move = (m) => {
       width = Math.max(Number(grip.dataset.min) || 40, Math.round(startWidth + m.clientX - startX));
+      moved = true;
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        col.style.width = `${width}px`;
-        table.style.width = `${startTotal + width - startWidth}px`;
+        apply();
       });
     };
     const up = () => {
@@ -171,10 +179,11 @@ function resizableColumns(el, dispatch) {
       grip.removeEventListener('pointerup', up);
       grip.removeEventListener('pointercancel', up);
       if (frame) cancelAnimationFrame(frame);
-      col.style.width = `${width}px`;
-      table.style.width = `${startTotal + width - startWidth}px`;
       document.body.classList.remove('resizing');
-      if (width !== Math.round(startWidth)) void dispatch({ type: 'setColumnWidth', table: tableId, column: key, width });
+      if (!moved) return;
+      apply();
+      if (width === Math.round(startWidth)) return;
+      void dispatch({ type: 'setColumnWidth', table: tableId, column: key, width });
     };
     grip.addEventListener('pointermove', move);
     grip.addEventListener('pointerup', up);
