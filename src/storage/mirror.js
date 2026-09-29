@@ -8,10 +8,32 @@ export const MIRROR_KEY = 'pivot.unsaved.v2';
  *   loadedStamp: import('./envelope.js').SaveStamp | null }} Mirror
  */
 
+/**
+ * A saved report is already in the folder, and its documents can be large, so the mirror leaves
+ * them out; `restoreReportDocuments` puts them back from the folder on recovery. Reports are never
+ * edited after they are produced, so the working copy of a saved report is the saved one.
+ * @param {import('../core/data.js').Data} data @param {Set<string>} savedIds
+ */
+function withoutSavedDocuments(data, savedIds) {
+  /** @type {Record<string, any>} */
+  const reports = {};
+  for (const [id, r] of Object.entries(data.records.report)) {
+    if (savedIds.has(id)) {
+      const { markdown: _m, html: _h, ...rest } = r;
+      reports[id] = rest;
+    } else {
+      reports[id] = r;
+    }
+  }
+  return { ...data, records: { ...data.records, report: reports } };
+}
+
 /** @param {Storage} storage @param {Mirror} mirror @returns {string | null} a warning, or null */
 export function writeMirror(storage, mirror) {
   try {
-    storage.setItem(MIRROR_KEY, JSON.stringify(mirror));
+    const savedIds = new Set(Object.keys(mirror.base.records.report));
+    const compact = { ...mirror, base: withoutSavedDocuments(mirror.base, savedIds), working: withoutSavedDocuments(mirror.working, savedIds) };
+    storage.setItem(MIRROR_KEY, JSON.stringify(compact));
     return null;
   } catch (e) {
     return `Unsaved changes are not being kept in the browser (${e instanceof Error ? e.message : String(e)}). Save often.`;
@@ -28,6 +50,25 @@ export function readMirror(storage, folderName) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Put back the documents `writeMirror` left out, from the data just loaded from the folder.
+ * @param {Mirror} mirror @param {import('../core/data.js').Data} loaded
+ * @returns {Mirror}
+ */
+export function restoreReportDocuments(mirror, loaded) {
+  /** @param {import('../core/data.js').Data} data */
+  const fill = (data) => {
+    /** @type {Record<string, any>} */
+    const reports = {};
+    for (const [id, r] of Object.entries(data.records.report)) {
+      const stored = loaded.records.report[id];
+      reports[id] = 'markdown' in r ? r : { ...r, markdown: stored?.markdown ?? '', html: stored?.html ?? '' };
+    }
+    return { ...data, records: { ...data.records, report: reports } };
+  };
+  return { ...mirror, base: fill(mirror.base), working: fill(mirror.working) };
 }
 
 /** @param {Storage} storage */

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MemoryStorage } from '../fakes/storage.js';
-import { writeMirror, readMirror, clearMirror, hasUnsaved, hasUnsavedRecords, MIRROR_KEY } from '../../src/storage/mirror.js';
+import { writeMirror, readMirror, clearMirror, hasUnsaved, hasUnsavedRecords, restoreReportDocuments, MIRROR_KEY } from '../../src/storage/mirror.js';
 import { emptyData } from '../../src/core/data.js';
 import { createHazard } from '../../src/core/ops/hazards.js';
 
@@ -35,4 +35,19 @@ test('hasUnsaved compares working with base; hasUnsavedRecords ignores the repor
   assert.equal(hasUnsaved({ base, working: designed }), true);
   assert.equal(hasUnsavedRecords({ base, working: designed }), false);
   assert.equal(hasUnsavedRecords({ base, working }), true);
+});
+
+test('Final review I4: saved reports\' documents are left out of the mirror and put back from the folder on recovery', async () => {
+  const { createReport } = await import('../../src/core/ops/reports.js');
+  const big = 'x'.repeat(500_000);
+  const saved = createReport(base, act, { id: 'r1', report: { platformId: 'p1', title: 'Old', markdown: big, html: big } });
+  const edited = createReport(saved, act, { id: 'r2', report: { platformId: 'p1', title: 'New', markdown: 'md', html: 'html' } });
+  const s = new MemoryStorage();
+  assert.equal(writeMirror(s, { folderName: 'x', base: saved, working: edited, loadedStamp: null }), null);
+  assert.ok(s.getItem(MIRROR_KEY).length < 50_000, `mirror is ${s.getItem(MIRROR_KEY).length} characters`);
+  const m = restoreReportDocuments(readMirror(s, 'x'), saved);
+  assert.equal(m.base.records.report.r1.html, big);
+  assert.equal(m.working.records.report.r1.markdown, big);
+  assert.equal(m.working.records.report.r2.html, 'html', 'an unsaved report keeps its documents in the mirror');
+  assert.deepEqual(m.base, saved);
 });

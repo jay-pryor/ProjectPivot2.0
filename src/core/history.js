@@ -8,6 +8,9 @@ import { canonicalJson } from './json.js';
 /** Restamped on every edit, and the entry's own `by` and `at` already say who and when. */
 export const RESTAMP = Object.freeze(['updatedBy', 'updatedAt']);
 
+/** Fields a history item never copies: a report's documents are the record itself, and large. */
+const NOT_IN_HISTORY = Object.freeze({ report: ['markdown', 'html'] });
+
 /** @param {Rec | null} before @param {Rec} after */
 export function changeOf(before, after) {
   if (!before) return 'created';
@@ -26,7 +29,8 @@ export function changeOf(before, after) {
 export function itemOf(kind, before, after) {
   const change = changeOf(before, after);
   const b = before ?? /** @type {Record<string, any>} */ ({});
-  const names = [...new Set([...Object.keys(b), ...Object.keys(after)])].filter((f) => !RESTAMP.includes(f)).sort();
+  const skip = [...RESTAMP, ...(NOT_IN_HISTORY[/** @type {keyof typeof NOT_IN_HISTORY} */ (kind)] ?? [])];
+  const names = [...new Set([...Object.keys(b), ...Object.keys(after)])].filter((f) => !skip.includes(f)).sort();
   const everything = change === 'created' || change === 'deleted';
   const fields = [];
   for (const field of names) {

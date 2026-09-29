@@ -2,7 +2,7 @@ import { createReport } from '../core/ops/reports.js';
 import { reportFileBase } from '../reports/docgen-host.js';
 import { when } from './names.js';
 import * as store from '../storage/store.js';
-import { writeMirror, readMirror, clearMirror, hasUnsaved, hasUnsavedRecords } from '../storage/mirror.js';
+import { writeMirror, readMirror, clearMirror, hasUnsaved, hasUnsavedRecords, restoreReportDocuments } from '../storage/mirror.js';
 import { PivotError } from '../core/errors.js';
 import { newId } from '../core/ids.js';
 import { emptyData } from '../core/data.js';
@@ -174,7 +174,8 @@ export function createController(env) {
       finishOpening();
     },
     async recover() {
-      const m = state.recoverable;
+      if (!state.recoverable) return;
+      const m = restoreReportDocuments(state.recoverable, state.session.base);
       set({ session: { base: m.base, working: m.working, loadedStamp: m.loadedStamp }, recoverable: null });
       await afterChange();
       finishOpening();
