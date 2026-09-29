@@ -57,6 +57,7 @@ export function platformsReached(data, kind, rec) {
     case 'assessment':
     case 'sfarp':
     case 'existingControl':
+    case 'safetyReport':
     case 'report': return [rec.platformId];
     case 'review': return [rec.platformId];
     case 'hazardPhase': return platformsOfHazard(data, rec.hazardId);
@@ -505,4 +506,12 @@ export function phasesOf(data, hazardId) {
 /** The hazards a phase is ticked on. @param {Data} data @param {string} phaseId */
 export function phaseUsage(data, phaseId) {
   return live(data, 'hazardPhase').filter((l) => l.phaseId === phaseId).map((l) => /** @type {Rec} */ (get(data, 'hazard', l.hazardId))).sort(byNumber);
+}
+
+/** A hazard's safety reports on a platform: newest first, undated last, then by number. @param {Data} data @param {string} hazardId @param {string} platformId */
+export function safetyReportsOn(data, hazardId, platformId) {
+  return live(data, 'safetyReport').filter((r) => r.hazardId === hazardId && r.platformId === platformId).sort((a, b) => {
+    if (a.date !== b.date) return a.date == null ? 1 : b.date == null ? -1 : a.date < b.date ? 1 : -1;
+    return String(a.number).localeCompare(String(b.number));
+  });
 }

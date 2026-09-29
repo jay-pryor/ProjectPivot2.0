@@ -76,17 +76,26 @@ export function entries(data) {
 
 /** @param {Data} data @param {string} kind @param {string} id */
 export function historyOf(data, kind, id) {
-  return entries(data).filter((e) => e.type === 'change' && e.items.some((/** @type {any} */ i) => (i.kind === kind && i.id === id) || (kind === 'hazard' && ssraHazardOf(i) === id)));
+  return entries(data).filter((e) => e.type === 'change' && e.items.some((/** @type {any} */ i) => (i.kind === kind && i.id === id) || (kind === 'hazard' && hazardOfItem(data, i) === id)));
 }
 
 /**
- * The hazard an SSRA item belongs to (an assessment, SFARP, existing control, control status or
- * control link), read from its id (`ra:<hazard>:…`, `sf:`, `ec:`, `ru:`, `hc:`), so a hazard's
- * history includes what was written on its pages; null for any other item.
- * @param {{ kind: string, id: string }} item
+ * The hazard a history item belongs to, when it is one of the hazard's per-platform or linked
+ * records (an assessment, SFARP, existing control, control status, control link, lifecycle phase
+ * link or safety report), so the hazard's History includes it; null for any other item.
+ * @param {Data} data @param {{ kind: string, id: string }} item
  */
-export function ssraHazardOf(item) {
-  return ['assessment', 'sfarp', 'existingControl', 'ruling', 'hazardControl'].includes(item.kind) ? String(item.id).split(':')[1] : null;
+export function hazardOfItem(data, item) {
+  switch (item.kind) {
+    case 'assessment':
+    case 'sfarp':
+    case 'existingControl':
+    case 'ruling':
+    case 'hazardControl':
+    case 'hazardPhase': return String(item.id).split(':')[1];
+    case 'safetyReport': return data.records.safetyReport?.[item.id]?.hazardId ?? null;
+    default: return null;
+  }
 }
 
 /**

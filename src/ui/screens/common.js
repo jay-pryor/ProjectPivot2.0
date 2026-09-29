@@ -1,6 +1,6 @@
 import { html, raw, esc } from '../html.js';
 import { dataTable } from './table.js';
-import { historyOf, commentsOn, ssraHazardOf } from '../../core/history.js';
+import { historyOf, commentsOn, hazardOfItem } from '../../core/history.js';
 import { hasUnsaved } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
 import { themeOf } from '../prefs.js';
@@ -150,6 +150,11 @@ function itemLabel(data, item) {
   if (item.kind === 'hazardControl') return `Control ${name('control', parts[2])}`;
   if (item.kind === 'ruling') return `${name('platform', parts[3])} · Status of ${name('control', parts[2])}`;
   if (item.kind === 'existingControl') return `${name('platform', parts[2])} · Existing control ${name('control', parts[3])}`;
+  if (item.kind === 'hazardPhase') return `Phase ${data.records.phase?.[parts[2]]?.name ?? ''}`;
+  if (item.kind === 'safetyReport') {
+    const r = data.records.safetyReport?.[item.id];
+    return `${name('platform', r?.platformId)} · Safety report ${r?.number || r?.summary || ''}`;
+  }
   const [, , platformId, stage, receptor] = parts;
   const platform = data.records.platform[platformId]?.name ?? platformId;
   return item.kind === 'sfarp' ? `${platform} · SFARP` : `${platform} · ${stage[0].toUpperCase()}${stage.slice(1)} ${receptor}`;
@@ -164,7 +169,7 @@ export function historyTable(state, data, kind, id, list = historyOf(data, kind,
   const rows = list.slice().reverse().map((e) => ({ e, item: e.items.find((/** @type {any} */ i) => i.kind === kind && i.id === id) ?? (e.items.length === 1 ? e.items[0] : null) }));
   // SSRA edits (assessments, SFARP) say which platform and which assessment each item is.
   /** @param {any} e */
-  const ssra = (e) => e.items.every((/** @type {any} */ i) => ssraHazardOf(i) !== null);
+  const ssra = (e) => e.items.every((/** @type {any} */ i) => hazardOfItem(data, i) !== null);
   /** @param {any} e */
   const labelled = (e) => html`${e.items.map((/** @type {any} */ i) => html`<div><span class="muted">${itemLabel(data, i)}</span> ${changeDetail(i)}</div>`)}`;
   return dataTable(state, {

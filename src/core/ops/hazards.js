@@ -54,6 +54,7 @@ export function deleteHazard(data, act, { id }) {
   }
   for (const l of live(data, 'hazardControl')) if (l.hazardId === id) recs.push({ kind: 'hazardControl', rec: changed(l, act, { status: 'deleted' }) });
   for (const l of live(data, 'hazardPhase')) if (l.hazardId === id) recs.push({ kind: 'hazardPhase', rec: changed(l, act, { status: 'deleted' }) });
+  for (const r of live(data, 'safetyReport')) if (r.hazardId === id) recs.push({ kind: 'safetyReport', rec: changed(r, act, { status: 'deleted' }) });
   const gone = [{ kind: 'hazard', id }, ...recs.filter((r) => r.kind === 'causalFactor' || r.kind === 'consequence').map((r) => ({ kind: r.kind, id: r.rec.id }))];
   recs.push(...linksTo(data, act, gone));
   return commit(data, act, 'Delete hazard', recs);

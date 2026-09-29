@@ -70,6 +70,12 @@ export function checkRules(data) {
     const p = get(data, 'phase', l.phaseId);
     if (!p || p.status === 'deleted') out.push({ rule: 'hazardPhase-phase-deleted', message: 'A hazard has a lifecycle phase that has been deleted.', records: [{ kind: 'hazardPhase', id: l.id }, { kind: 'phase', id: l.phaseId }] });
   }
+  for (const r of live(data, 'safetyReport')) {
+    const h = get(data, 'hazard', r.hazardId);
+    if (!h || h.status === 'deleted') out.push({ rule: 'safetyReport-hazard-deleted', message: 'A safety report belongs to a hazard that has been deleted.', records: [{ kind: 'safetyReport', id: r.id }, { kind: 'hazard', id: r.hazardId }] });
+    const p = get(data, 'platform', r.platformId);
+    if (!p || p.status === 'deleted') out.push({ rule: 'safetyReport-platform-deleted', message: 'A safety report belongs to a platform that has been deleted.', records: [{ kind: 'safetyReport', id: r.id }, { kind: 'platform', id: r.platformId }] });
+  }
   // Reviews: an open review needs a live platform, and there is one at a time per platform.
   /** @type {Map<string, any>} */
   const openOn = new Map();

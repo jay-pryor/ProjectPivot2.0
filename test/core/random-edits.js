@@ -4,6 +4,7 @@ import { createControl, updateControl, retireControl, deleteControl, linkControl
 import { createPlatform, linkHazard, unlinkHazard, setReportId, retirePlatform } from '../../src/core/ops/platforms.js';
 import { confirmControl, excludeControl, resetControl, setControlStatus, setRating, setAssessment, setSfarp } from '../../src/core/ops/assessment.js';
 import { createPhase, linkPhase, unlinkPhase, deletePhase } from '../../src/core/ops/phases.js';
+import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
 import { setSchedule, startReview, markRow, setReviewOutcome, completeReview, abandonReview } from '../../src/core/ops/reviews.js';
 
 /** A small, seeded pseudo-random generator (mulberry32), so a failure can be replayed. @param {number} seed */
@@ -62,6 +63,7 @@ export function randomEdit(d, rand, act) {
     () => linkPhase(d, act, { hazardId: pick(rand, hz), phaseId: pick(rand, ['ph1', 'ph2']) }),
     () => unlinkPhase(d, act, { hazardId: pick(rand, hz), phaseId: pick(rand, ['ph1', 'ph2']) }),
     () => deletePhase(d, act, { id: pick(rand, ['ph1', 'ph2']) }),
+    () => createSafetyReport(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), summary: `S ${n()}` }),
     () => setRating(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), stage: pick(rand, ['initial', 'residual']), consequence: 1 + Math.floor(rand() * 5), likelihood: pick(rand, [...'ABCDEFG']) }),
     () => setAssessment(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), stage: pick(rand, ['initial', 'residual']), receptor: pick(rand, ['personnel', 'environment']), likelihood: pick(rand, [...'ABCDEFG']), likelihoodWhy: `Why ${n()}` }),
     () => setSfarp(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), conclusion: `C ${n()}` }),
