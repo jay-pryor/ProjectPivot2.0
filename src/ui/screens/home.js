@@ -180,7 +180,8 @@ export function homeView(state, data) {
     ${cards.length ? html`<div class="pcards">${cards.map((c) => html`<button type="button" class="pcard" ${dataAttrs({ action: 'go', view: 'platform', id: c.platform.id })}>
         <span class="pcard-h"><strong>${c.platform.name}</strong>${reviewTag(c.state)}${c.open ? html` <span class="tag">Review in progress</span>` : ''}</span>
         ${owner === 'everyone' ? html`<span class="muted">${profileName(state, c.platform.ownerId)}</span>` : ''}
-        ${riskBar(c.bands.personnel)}
+        <span class="rx">Personnel</span>${riskBar(c.bands.personnel)}
+        <span class="rx">Environment</span>${riskBar(c.bands.environment)}
         <span>${count(c.hazards, 'hazard', 'hazards')} · ${c.awaiting} awaiting · ${count(c.acks, 'change', 'changes')}</span>
         <span class="muted">${c.due ? `Due ${day(c.due)}` : 'No review schedule'}${c.lastReviewed ? ` · last ${day(c.lastReviewed)}` : ''}</span>
       </button>`)}</div>` : html`<p class="muted">No platforms.</p>`}`;

@@ -14,9 +14,9 @@ test('the hazard list: one row per hazard, its platforms with their risk, filter
   const out = hazardsView(state, data()).toString();
   assert.match(out, /data-action="startEdit" data-kind="newHazard"/);
   assert.equal((out.match(/<tr data-row="h1"/g) || []).length, 1, 'h1 appears once though it is on two platforms');
-  assert.match(out, /Alpha[^<]*<span class="band band-uncategorised">/);
+  assert.match(out, /Alpha <span class="rx">P<\/span> <span class="band band-uncategorised">/);
   assert.match(out, /data-change="filterTable" data-table="hazards" data-key="platforms"/);
-  assert.match(out, /data-change="filterTable" data-table="hazards" data-key="risk"/);
+  assert.match(out, /data-change="filterTable" data-table="hazards" data-key="riskPersonnel"/);
   assert.match(out, /data-input="filterTable" data-table="hazards" data-key="title"/);
   assert.doesNotMatch(out, /data-change="setFilter"/, 'no separate filter bar');
 });
@@ -27,7 +27,7 @@ test('the hazard list filters: status (live by default), platform, and risk on t
   assert.doesNotMatch(withFilters({}), /data-row="h2"/);
   assert.match(withFilters({ status: 'retired' }), /data-row="h2"/);
   assert.match(withFilters({ platforms: 'p1' }), /data-row="h1"/);
-  assert.doesNotMatch(withFilters({ risk: 'Serious' }), /data-row="h1"/, 'no rating entered yet');
+  assert.doesNotMatch(withFilters({ riskPersonnel: 'Serious' }), /data-row="h1"/, 'no rating entered yet');
 });
 
 

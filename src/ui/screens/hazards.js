@@ -59,13 +59,15 @@ export function hazardsView(state, data) {
         { key: 'platforms', label: 'Platforms (residual risk)', width: 640, minWidth: 200, value: (r) => r.platforms.map((p) => p.platform.name).join(', '),
           filter: 'select', options: platformOptions, match: (r, v) => r.platforms.some((p) => p.platform.id === v),
           render: (r) => (r.platforms.length
-            ? html`<ul class="plain">${r.platforms.map((p) => html`<li>${p.platform.name} ${bandTag(p.band)}</li>`)}</ul>`
+            ? html`<ul class="plain">${r.platforms.map((p) => html`<li>${p.platform.name} <span class="rx">P</span> ${bandTag(p.personnel)} <span class="rx">E</span> ${bandTag(p.environment)}</li>`)}</ul>`
             : html`<span class="muted">On no platform</span>`) },
-        { key: 'risk', label: 'Worst residual risk', width: 340, minWidth: 150, value: (r) => (r.worst ? BANDS.indexOf(r.worst) : null),
-          filter: 'select', options: BANDS.map((b) => /** @type {[string, string]} */ ([b, b])),
-          // On the platform filtered to, if one is; otherwise on any of its platforms.
-          match: (r, v, f) => r.platforms.some((p) => p.band === v && (!f.platforms || p.platform.id === f.platforms)),
-          render: (r) => (r.worst ? bandTag(r.worst) : '—') },
+        // On the platform filtered to, if one is; otherwise on any of its platforms.
+        ...[['riskPersonnel', 'personnel', 'worstPersonnel', 'Worst residual (personnel)'], ['riskEnvironment', 'environment', 'worstEnvironment', 'Worst residual (environment)']].map(([key, field, worst, label]) => ({
+          key, label, width: 300, minWidth: 150, value: (/** @type {any} */ r) => (r[worst] ? BANDS.indexOf(r[worst]) : null),
+          filter: /** @type {const} */ ('select'), options: BANDS.map((b) => /** @type {[string, string]} */ ([b, b])),
+          match: (/** @type {any} */ r, /** @type {string} */ v, /** @type {any} */ f) => r.platforms.some((/** @type {any} */ p) => p[field] === v && (!f.platforms || p.platform.id === f.platforms)),
+          render: (/** @type {any} */ r) => (r[worst] ? bandTag(r[worst]) : '—'),
+        })),
         statusColumn((r) => r.hazard.status),
       ],
     })}`;

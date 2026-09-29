@@ -56,7 +56,7 @@ function ratingOptions(pair) {
 /** @param {any} pair @param {Record<string, string>} attrs */
 function ratingCell(pair, attrs) {
   const band = bandOf(pair);
-  return html`<select class="quiet rating band-edge band-${band.toLowerCase().replace(/\s+/g, '-')}" name="value" aria-label="${attrs.stage} rating" ${dataAttrs({ change: 'setRatingCell', ...attrs })}>${ratingOptions(pair)}</select>`;
+  return html`<select class="quiet rating band-edge band-${band.toLowerCase().replace(/\s+/g, '-')}" name="value" aria-label="${attrs.stage} ${attrs.receptor} rating" ${dataAttrs({ change: 'setRatingCell', ...attrs })}>${ratingOptions(pair)}</select>`;
 }
 
 /** @param {any} state @param {Data} data @param {string} id */
@@ -101,11 +101,13 @@ export function platformView(state, data, id) {
                 ? html`<input class="cell-edit" name="reportId" value="${r.link.reportId ?? ''}" placeholder="${hazardLabel(r.hazard)}" aria-label="Report ID" autofocus ${dataAttrs({ change: 'setReportId', 'hazard-id': r.hazard.id, 'platform-id': id })}>`
                 : html`<span class="cell-text" ${dataAttrs({ dblclick: 'startEdit', kind: 'reportId', id: r.hazard.id })} title="Double-click to change">${idTag(r.reportId)}</span>`) },
             { key: 'hazard', label: 'Hazards', width: 600, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`,
-              render: (r) => html`<span class="id">${idTag(hazardLabel(r.hazard))}</span> ${go(r.hazard.title, 'hazard', { id: r.hazard.id })}` },
-            { key: 'initial', label: 'Initial risk', width: 300, minWidth: 170, value: (r) => BANDS.indexOf(bandOf(r.rating.initial)),
-              render: (r) => ratingCell(r.rating.initial, { 'hazard-id': r.hazard.id, 'platform-id': id, stage: 'initial' }) },
-            { key: 'residual', label: 'Residual risk', width: 300, minWidth: 170, value: (r) => BANDS.indexOf(bandOf(r.rating.residual)),
-              render: (r) => ratingCell(r.rating.residual, { 'hazard-id': r.hazard.id, 'platform-id': id, stage: 'residual' }) },
+              render: (r) => html`<span class="id">${idTag(hazardLabel(r.hazard))}</span> ${go(r.hazard.title, 'hazard', { id: r.hazard.id, tab: `p:${id}` })}` },
+            ...['initial', 'residual'].flatMap((stage) => ['personnel', 'environment'].map((receptor) => {
+              const key = `${stage}${receptor === 'personnel' ? 'Personnel' : 'Environment'}`;
+              return { key, label: `${stage === 'initial' ? 'Initial' : 'Residual'} (${receptor})`, width: 250, minWidth: 170,
+                value: (/** @type {any} */ r) => BANDS.indexOf(bandOf(r.ratings[stage][receptor])),
+                render: (/** @type {any} */ r) => ratingCell(r.ratings[stage][receptor], { 'hazard-id': r.hazard.id, 'platform-id': id, stage, receptor }) };
+            })),
             { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
               render: (r) => html`<div class="row-actions">${confirmButton('✕', 'Unlink, clearing its ratings and control decisions here', dataAttrs({ action: 'unlinkHazard', 'hazard-id': r.hazard.id, 'platform-id': id }))}</div>` },
           ],

@@ -56,3 +56,31 @@ test('SFARP considerations, and text shown literally', () => {
 test('a tab for a platform the hazard is not on shows a note, not a crash', () => {
   assert.match(hazardView(on('p:nope'), data(), 'h1').toString(), /not on that platform/);
 });
+
+test('the platform page sets all four ratings from the table, and each hazard opens its SSRA tab', async () => {
+  const { platformView } = await import('../../src/ui/screens/platforms.js');
+  const out = platformView(state, data(), 'p1').toString();
+  for (const k of ['initialPersonnel', 'initialEnvironment', 'residualPersonnel', 'residualEnvironment']) assert.match(out, new RegExp(`<th data-col="${k}"`));
+  assert.match(out, /data-change="setRatingCell" data-hazard-id="h1" data-platform-id="p1" data-stage="residual" data-receptor="environment"[\s\S]*?<option value="2C" selected>/);
+  assert.match(out, /data-action="go" data-view="hazard" data-id="h1" data-tab="p:p1"/);
+});
+
+test('the hazards list shows residual personnel and environment separately, each with a filter', async () => {
+  const { hazardsView } = await import('../../src/ui/screens/hazards.js');
+  const out = hazardsView(state, data()).toString();
+  assert.match(out, /Alpha <span class="rx">P<\/span> <span class="band band-low">Low<\/span> <span class="rx">E<\/span> <span class="band band-serious">Serious<\/span>/);
+  assert.match(out, /<th data-col="riskPersonnel"/);
+  assert.match(out, /<th data-col="riskEnvironment"/);
+  const env = hazardsView({ ...state, tables: { hazards: { filters: { riskEnvironment: 'Serious' } } } }, data()).toString();
+  assert.match(env, /data-row="h1"/);
+  const pers = hazardsView({ ...state, tables: { hazards: { filters: { riskPersonnel: 'Serious' } } } }, data()).toString();
+  assert.doesNotMatch(pers, /data-row="h1"/);
+});
+
+test('dashboard cards show a personnel and an environment bar; unrated items name what is missing', async () => {
+  const { homeView } = await import('../../src/ui/screens/home.js');
+  const out = homeView(state, data()).toString();
+  assert.match(out, /<span class="rx">Personnel<\/span><span class="riskbar">[\s\S]*?band-low/);
+  assert.match(out, /<span class="rx">Environment<\/span><span class="riskbar">[\s\S]*?band-serious/);
+  assert.match(out, /no initial personnel, initial environment rating/);
+});
