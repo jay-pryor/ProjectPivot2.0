@@ -13,6 +13,7 @@ import * as controls from '../core/ops/controls.js';
 import * as platforms from '../core/ops/platforms.js';
 import * as assessment from '../core/ops/assessment.js';
 import * as reviews from '../core/ops/reviews.js';
+import * as acks from '../core/acks.js';
 import { setReportDesign } from '../core/ops/reports.js';
 import { createDocHost } from '../reports/docgen-host.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
@@ -36,6 +37,7 @@ const EDITS = {
   resetControl: assessment.resetControl, setRating: assessment.setRating, setRatingCell: assessment.setRatingCell,
   setSchedule: reviews.setSchedule, startReview: reviews.startReview, markRow: reviews.markRow,
   setReviewOutcome: reviews.setReviewOutcome, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,
+  acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   addComment,
 };
 
@@ -45,7 +47,7 @@ const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', createP
 const BACKUP_CHECK_MS = 60_000;
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
-const QUIET = new Set(['setColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform']);
+const QUIET = new Set(['setColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner']);
 
 export function initialState() {
   return {
@@ -54,7 +56,7 @@ export function initialState() {
     filters: { hazards: {}, controls: {} }, backups: [], pendingRestore: null,
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
     tables: {}, editing: null, saving: false, picker: null,
-    today: aestDate(systemClock.now()), reportPlatformId: null,
+    today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me',
   };
 }
 
@@ -70,6 +72,8 @@ export function createController(env) {
   let handle = null;
   let lastBackupCheck = -Infinity;
   let running = 0;
+  /** When this session opened the data: the acknowledgement start, if the data has none yet. */
+  let openedAt = /** @type {string | null} */ (null);
   /** @type {Set<(s: any) => void>} */
   const listeners = new Set();
 
@@ -113,9 +117,10 @@ export function createController(env) {
   }
 
   function finishOpening() {
+    openedAt = env.clock.now();
     DocGen.docHost.set(docs.host);
     const notices = unseenOverrides(state.session.working, /** @type {string} */ (state.profileId));
-    set({ notices, screen: notices.length ? 'notices' : 'main', view: { name: 'hazards' } });
+    set({ notices, screen: notices.length ? 'notices' : 'main', view: { name: 'home' } });
   }
 
   /** The actions made since the last save, for the restore warning. */
@@ -322,6 +327,9 @@ export function createController(env) {
       if (!p) throw new PivotError('not-found', 'That platform no longer exists.');
       await applyEdit('setSchedule', { platformId, months: months ?? p.reviewMonths, due: due ?? p.reviewDue });
     },
+    async setHomeOwner({ ownerId, show }) {
+      set({ homeOwner: ownerId || 'me', ...(show === 'home' ? { view: { name: 'home' }, editing: null } : {}) });
+    },
     async beginReview({ platformId }) {
       await applyEdit('startReview', { platformId });
       set({ view: { name: 'platform', id: platformId, tab: 'reviews' } });
@@ -416,7 +424,12 @@ export function createController(env) {
     if (!state.session || !state.profileId) throw new PivotError('no-data', 'Select your profile before changing anything.');
     const shows = SHOW_CREATED[/** @type {keyof typeof SHOW_CREATED} */ (type)];
     if (shows && !args.id) args.id = newId();
-    const working = EDITS[/** @type {keyof typeof EDITS} */ (type)](state.session.working, act(), /** @type {any} */ (args));
+    // Acknowledgement starts with the session's first real edit, dated when the session opened, so
+    // opening Pivot alone never leaves unsaved work.
+    const current = state.session.working;
+    const from = openedAt && acks.ackStart(current) === null ? acks.startAcks(current, { by: /** @type {string} */ (state.profileId), at: openedAt }) : current;
+    const next = EDITS[/** @type {keyof typeof EDITS} */ (type)](from, act(), /** @type {any} */ (args));
+    const working = next === from ? current : next;
     set({ session: { ...state.session, working }, message: null, editing: null });
     if (shows) set({ view: { name: shows, id: args.id } });
     await afterChange();
