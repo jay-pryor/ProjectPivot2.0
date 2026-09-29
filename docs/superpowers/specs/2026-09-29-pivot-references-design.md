@@ -109,8 +109,9 @@ target's platforms. So an edit to a shared reference waits for acknowledgement b
   what it supports on this platform (*Platform*, a hazard's report ID, *H-0001 causal factor*,
   a control's title).
 - The DocGen host declares a **References** section (ID, Title, Doc number, Revision, Supports),
-  placed, worded or left out in the designer like the others. It is not included in an existing
-  design until switched on.
+  placed, worded or left out in the designer like the others. Following DocGen's rule that a
+  section a saved design does not mention is included, it appears in existing designs until
+  switched off (DocGen is not changed for this).
 - A produced report keeps its reference list as produced.
 
 ## 8. Storage
