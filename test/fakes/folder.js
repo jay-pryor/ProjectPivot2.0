@@ -64,7 +64,8 @@ class WritableFileStream {
    */
   async write(chunk) {
     this.assertOpen();
-    if (chunk && typeof chunk === 'object' && 'type' in chunk) {
+    // A Blob (and so a File) has a `type` too, but it is data, not a write command.
+    if (chunk && typeof chunk === 'object' && 'type' in chunk && !(chunk instanceof Blob)) {
       if (chunk.type === 'seek') return this.seek(chunk.position);
       if (chunk.type === 'truncate') return this.truncate(chunk.size);
       if (chunk.type === 'write') {

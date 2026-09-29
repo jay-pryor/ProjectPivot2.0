@@ -41,7 +41,7 @@ export async function readText(root, path) {
 /**
  * Replace a file whole or not at all: the browser commits a writable stream on `close` and
  * discards it on `abort`. A file this call created is removed again if the write fails.
- * @param {Dir} root @param {string} path @param {string} text
+ * @param {Dir} root @param {string} path @param {string | Blob} text
  */
 export async function writeWhole(root, path, text) {
   const { dirs, name } = split(path);
@@ -70,6 +70,31 @@ export async function writeWhole(root, path, text) {
       try { await d.removeEntry(name); } catch { /* the caller is told the write failed either way */ }
     }
     throw new PivotError('write-failed', `${path} could not be written.`, { path, cause: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+/** @param {Dir} root @param {string} path @returns {Promise<File | null>} null when there is no such file */
+export async function readFile(root, path) {
+  const { dirs, name } = split(path);
+  try {
+    const d = await dirFor(root, dirs, false);
+    return await (await d.getFileHandle(name)).getFile();
+  } catch (e) {
+    if (isNotFound(e)) return null;
+    throw readFailed(path, e);
+  }
+}
+
+/** @param {Dir} root @param {string} path @returns {Promise<boolean>} */
+export async function exists(root, path) {
+  const { dirs, name } = split(path);
+  try {
+    const d = await dirFor(root, dirs, false);
+    await d.getFileHandle(name);
+    return true;
+  } catch (e) {
+    if (isNotFound(e)) return false;
+    throw readFailed(path, e);
   }
 }
 

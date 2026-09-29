@@ -85,7 +85,8 @@ export function formValues(entries) {
   /** @type {Record<string, any>} */
   const out = {};
   for (const [k, v] of entries) {
-    const s = String(v);
+    // A chosen file stays a File; everything else is text.
+    const s = typeof v === 'string' ? v : v && typeof v === 'object' ? v : String(v);
     if (!(k in out)) out[k] = s;
     else if (Array.isArray(out[k])) out[k].push(s);
     else out[k] = [out[k], s];

@@ -6,3 +6,9 @@ test('form values: a field given several times (ticked boxes) becomes a list; on
   const entries = [['hazardId', 'h1'], ['controlId', 'c1'], ['controlId', 'c2'], ['kind:c1', 'mitigating']];
   assert.deepEqual(formValues(entries), { hazardId: 'h1', controlId: ['c1', 'c2'], 'kind:c1': 'mitigating' });
 });
+test('form values: a chosen file stays a file', () => {
+  const file = new File(['x'], 'a.pdf');
+  const out = formValues([['title', 'Doc'], ['file', file]]);
+  assert.equal(out.title, 'Doc');
+  assert.equal(out.file, file);
+});

@@ -9,7 +9,7 @@ import { emptyData, validateData, normalizeData, needText } from '../core/data.j
 import { PivotError } from '../core/errors.js';
 import { newId } from '../core/ids.js';
 import { seal, serialize, openEnvelope } from './envelope.js';
-import { readText, writeWhole } from './folder.js';
+import { readText, writeWhole, readFile, exists } from './folder.js';
 
 /** @typedef {import('../core/data.js').Data} Data */
 /** @typedef {import('./envelope.js').SaveStamp} SaveStamp */
@@ -238,4 +238,40 @@ export async function writeExport(fileHandle, text) {
     }
     throw new PivotError('export-failed', `${fileHandle.name} could not be written.`, { cause: e instanceof Error ? e.message : String(e) });
   }
+}
+
+/** An uploaded file's name made safe for a Windows folder. @param {string} name */
+export function safeName(name) {
+  const s = String(name ?? '').replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '-').replace(/[. ]+$/, '').trim();
+  return (s || 'file').slice(0, 120);
+}
+
+/**
+ * Copy an uploaded file into the data folder, whole or not at all, at a path never used before.
+ * @param {Dir} handle @param {string} referenceId @param {number} n @param {Blob & { name: string }} file
+ * @returns {Promise<string>} the stored path
+ */
+export async function storeReferenceFile(handle, referenceId, n, file) {
+  let k = n;
+  let stored = '';
+  do {
+    stored = `${FILES.files}/${referenceId}/${k}-${safeName(file.name)}`;
+    k += 1;
+  } while (await exists(handle, stored));
+  await writeWhole(handle, stored, file);
+  return stored;
+}
+
+/** @param {Dir} handle @param {string} stored @returns {Promise<File>} */
+export async function openReferenceFile(handle, stored) {
+  const f = await readFile(handle, stored);
+  if (!f) throw new PivotError('file-missing', `${stored} is missing from the data folder.`, { stored });
+  return f;
+}
+
+/** The stored paths not found in the folder. @param {Dir} handle @param {string[]} paths */
+export async function missingFiles(handle, paths) {
+  const out = [];
+  for (const p of paths) if (!(await exists(handle, p))) out.push(p);
+  return out;
 }
