@@ -121,7 +121,7 @@ export function hazardView(state, data, id) {
   if (tab && tab.startsWith('p:')) return html`${head}${platformTab(state, data, h, tab.slice(2))}`;
   const actions = h.status === 'live'
     ? html`<button type="button" ${dataAttrs({ action: 'retireHazard', id: h.id })}>Retire</button>
-       ${confirmButton('Delete…', 'Delete this hazard, its causal factors, consequences and control links', dataAttrs({ action: 'deleteHazard', id: h.id }))}`
+       ${confirmButton('Delete…', 'Delete this hazard, its causal factors, consequences, control links, lifecycle phases and safety reports', dataAttrs({ action: 'deleteHazard', id: h.id }))}`
     : h.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'hazard', id: h.id })}>Restore</button>` : '';
   return html`${head}
     <article class="doc">

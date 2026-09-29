@@ -6,6 +6,7 @@ import { assignNumbers } from '../../src/core/ops/hazards.js';
 import { setAssessment, setRatingCell, setSfarp, setControlStatus } from '../../src/core/ops/assessment.js';
 import { setControlAnalysis, linkExistingControl, updateControl, retireControl } from '../../src/core/ops/controls.js';
 import { pickerView } from '../../src/ui/screens/picker.js';
+import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
 import { seed, act } from '../helpers.js';
 
 const state = { ...initialState(), screen: 'main', today: '2026-09-28', profileId: 'u1', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }, { id: 'u2', name: 'Grace', createdAt: '' }] };
@@ -177,4 +178,43 @@ test('acknowledgements and notices name the control, hazard and platform a recor
   assert.equal(recordName('assessment', d.records.assessment['ra:h1:p1:residual:environment'], d), 'Residual environment risk of H-0001 on Alpha');
   assert.equal(recordName('sfarp', d.records.sfarp['sf:h1:p1'], d), 'SFARP of H-0001 on Alpha');
   assert.equal(recordName('ruling', d.records.ruling['ru:h1:c1:p1']), 'Control decision', 'without the data, the kind');
+});
+
+function reported() {
+  let d = data();
+  d = createSafetyReport(d, act, { id: 'sr1', hazardId: 'h1', platformId: 'p1', number: 'SR-10', date: '2026-03-04', reportType: 'Near miss', summary: 'Rotor <b>strike</b>', location: 'Hangar 3', parties: 'Crew A', description: 'Blade tip hit a stand' });
+  return createSafetyReport(d, act, { id: 'sr2', hazardId: 'h1', platformId: 'p2', summary: 'On Bravo' });
+}
+
+test('a platform tab lists that platform\'s safety reports after the overview, + to add, double-click to edit, ✕ to delete', () => {
+  const out = hazardView(on('p:p1'), reported(), 'h1').toString();
+  const order = ['Overview', 'Safety reports', 'Existing controls'].map((h) => out.indexOf(`<h2>${h}`));
+  assert.ok(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1])), `sections in SSRA order: ${order}`);
+  assert.match(out, /data-table="safetyReports"[\s\S]*?SR-10[\s\S]*?4 Mar 2026[\s\S]*?Near miss[\s\S]*?Rotor &lt;b&gt;strike&lt;\/b&gt;[\s\S]*?Hangar 3[\s\S]*?Crew A/);
+  assert.doesNotMatch(out, /On Bravo/);
+  assert.match(out, /data-dblclick="startEdit" data-kind="safetyReport" data-id="sr1"/);
+  assert.match(out, /data-action="deleteSafetyReport" data-id="sr1"/);
+  assert.match(out, /data-action="startEdit" data-kind="safetyReport" data-id="new:p1"/);
+  assert.doesNotMatch(out, /<b>strike<\/b>/);
+});
+
+test('the safety report form adds a new one, or edits one with its values filled in', () => {
+  const adding = hazardView({ ...on('p:p1'), editing: { kind: 'safetyReport', id: 'new:p1' } }, reported(), 'h1').toString();
+  assert.match(adding, /<form data-action="createSafetyReport" data-hazard-id="h1" data-platform-id="p1" class="report-form">/);
+  assert.match(adding, /<select name="reportType"[^>]*>[\s\S]*?<option value="Occurrence" selected>/);
+  assert.match(adding, /<input name="summary" required/);
+  const editing = hazardView({ ...on('p:p1'), editing: { kind: 'safetyReport', id: 'sr1' } }, reported(), 'h1').toString();
+  assert.match(editing, /<form data-action="updateSafetyReport" data-id="sr1" class="report-form">/);
+  assert.match(editing, /<input type="date" name="date" value="2026-03-04"/);
+  assert.match(editing, /<option value="Near miss" selected>/);
+  assert.match(editing, /<textarea name="description"[^>]*>Blade tip hit a stand<\/textarea>/);
+});
+
+test('deleting a hazard or a platform warns that its safety reports go too', async () => {
+  const { platformView } = await import('../../src/ui/screens/platforms.js');
+  assert.match(hazardView(state, reported(), 'h2').toString(), /lifecycle phases and safety reports/);
+  let d = reported();
+  const { createPlatform } = await import('../../src/core/ops/platforms.js');
+  d = createPlatform(d, act, { id: 'p3', name: 'Charlie', ownerId: 'u1' });
+  assert.match(platformView(state, d, 'p3').toString(), /Delete this platform and its safety reports/);
 });

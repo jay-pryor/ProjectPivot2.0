@@ -16,6 +16,7 @@ import * as reviews from '../core/ops/reviews.js';
 import * as acks from '../core/acks.js';
 import * as references from '../core/ops/references.js';
 import * as phases from '../core/ops/phases.js';
+import * as safetyReports from '../core/ops/safety-reports.js';
 import { setReportDesign } from '../core/ops/reports.js';
 import { createDocHost } from '../reports/docgen-host.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
@@ -45,6 +46,7 @@ const EDITS = {
   retireReference: references.retireReference, deleteReference: references.deleteReference,
   createPhase: phases.createPhase, renamePhase: phases.renamePhase, retirePhase: phases.retirePhase, deletePhase: phases.deletePhase,
   linkPhase: phases.linkPhase, unlinkPhase: phases.unlinkPhase,
+  createSafetyReport: safetyReports.createSafetyReport, updateSafetyReport: safetyReports.updateSafetyReport, deleteSafetyReport: safetyReports.deleteSafetyReport,
   linkReference: references.linkReference, unlinkReference: references.unlinkReference,
   addComment,
 };

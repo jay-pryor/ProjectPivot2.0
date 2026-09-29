@@ -8,7 +8,9 @@ import { referencesCard } from './references.js';
 import { textTable } from './hazards.js';
 import { get } from '../../core/data.js';
 import { ids, controlLabel } from '../../core/ids.js';
-import { assessmentOf, ratingsOf, sfarpOf, hazardDetail, existingControlsOn, controlsOnPlatform } from '../../core/queries.js';
+import { assessmentOf, ratingsOf, sfarpOf, hazardDetail, existingControlsOn, controlsOnPlatform, safetyReportsOn } from '../../core/queries.js';
+import { SAFETY_REPORT_TYPES } from '../../core/ops/safety-reports.js';
+import { day } from '../names.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
 import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
 import { CONSEQUENCES, LIKELIHOODS, ratingFor } from '../../core/matrix.js';
@@ -65,6 +67,49 @@ function analysisSection(state, data, h, platformId, platformName) {
   });
 }
 
+/** The form to add a safety report, or to edit one. @param {any} h the hazard @param {string} platformId @param {any} r the report, or null to add */
+function safetyReportForm(h, platformId, r) {
+  const at = r ? { action: 'updateSafetyReport', id: r.id } : { action: 'createSafetyReport', 'hazard-id': h.id, 'platform-id': platformId };
+  const v = r ?? { number: '', date: '', type: 'Occurrence', summary: '', description: '', location: '', parties: '' };
+  return html`<form ${dataAttrs(at)} class="report-form">
+    <label>Report number<input name="number" value="${v.number}" autocomplete="off"></label>
+    <label>Date<input type="date" name="date" value="${v.date ?? ''}"></label>
+    <label>Type<select name="reportType" aria-label="Type">${SAFETY_REPORT_TYPES.map((t) => option(t, t, v.type))}</select></label>
+    <label class="wide">Summary<input name="summary" required value="${v.summary}" autocomplete="off"></label>
+    <label>Location<input name="location" value="${v.location}" autocomplete="off"></label>
+    <label>Parties involved<input name="parties" value="${v.parties}" autocomplete="off"></label>
+    <label class="wide">Description<textarea name="description" rows="4">${v.description}</textarea></label>
+    <div class="actions wide"><button type="submit" class="primary">${r ? 'Save' : 'Add'}</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></div>
+  </form>`;
+}
+
+/** This platform's safety reports for the hazard. @param {any} state @param {Data} data @param {any} h @param {string} platformId */
+function safetyReportsSection(state, data, h, platformId) {
+  const rows = safetyReportsOn(data, h.id, platformId);
+  const editing = state.editing?.kind === 'safetyReport' ? state.editing.id : null;
+  /** @param {any} r @param {unknown} text */
+  const cell = (r, text) => html`<span class="cell-text" ${dataAttrs({ dblclick: 'startEdit', kind: 'safetyReport', id: r.id })} title="Double-click to edit">${text}</span>`;
+  const edited = editing && rows.find((r) => r.id === editing);
+  return html`${dataTable(state, {
+    id: 'safetyReports',
+    rowKey: (r) => r.id,
+    rows,
+    empty: 'No safety reports for this platform yet.',
+    tools: plus({ action: 'startEdit', kind: 'safetyReport', id: `new:${platformId}` }, 'Add a safety report'),
+    columns: [
+      { key: 'number', label: 'Report', width: 200, minWidth: 110, value: (r) => r.number, render: (r) => cell(r, r.number || '—') },
+      { key: 'date', label: 'Date', width: 190, minWidth: 120, value: (r) => r.date ?? '', render: (r) => cell(r, r.date ? day(r.date) : '—') },
+      { key: 'type', label: 'Type', width: 210, minWidth: 120, value: (r) => r.type, render: (r) => cell(r, r.type) },
+      { key: 'summary', label: 'Summary', width: 560, minWidth: 200, value: (r) => r.summary, render: (r) => cell(r, r.summary) },
+      { key: 'location', label: 'Location', width: 260, minWidth: 120, value: (r) => r.location, render: (r) => cell(r, r.location) },
+      { key: 'parties', label: 'Parties involved', width: 300, minWidth: 140, value: (r) => r.parties, render: (r) => cell(r, r.parties) },
+      { key: 'actions', label: '', width: 110, minWidth: 80, sortable: false,
+        render: (r) => html`<div class="row-actions">${confirmButton('✕', 'Delete this safety report', dataAttrs({ action: 'deleteSafetyReport', id: r.id }))}</div>` },
+    ],
+  })}
+  ${editing === `new:${platformId}` ? safetyReportForm(h, platformId, null) : edited ? safetyReportForm(h, platformId, edited) : ''}`;
+}
+
 const WORD = { initial: 'Initial', residual: 'Residual', personnel: 'Personnel', environment: 'Environment' };
 
 /** The assessed level of a pair, as a band tag; a half-entered one says so. @param {any} pair */
@@ -115,6 +160,7 @@ export function platformTab(state, data, h, platformId) {
       <section class="block">${textTable(state, 'CausalFactor', d.causalFactors, h.id)}</section>
       <section class="block">${textTable(state, 'Consequence', d.consequences, h.id)}</section>
     </section>
+    <section class="ssra-sec"><h2>Safety reports</h2><section class="block">${safetyReportsSection(state, data, h, platformId)}</section></section>
     <section class="ssra-sec"><h2>Existing controls</h2><section class="block">${existingSection(state, data, h, platformId)}</section></section>
     <section class="ssra-sec"><h2>References ${SHARED}</h2><section class="block">${referencesCard(state, data, { kind: 'hazard', id: h.id })}</section></section>
     <section class="ssra-sec"><h2>Initial risk</h2>${riskPanels(state, data, h, platformId, 'initial')}</section>

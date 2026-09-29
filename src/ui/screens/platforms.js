@@ -93,7 +93,7 @@ export function platformView(state, data, id) {
   const editing = (/** @type {string} */ kind, /** @type {string} */ key) => state.editing?.kind === kind && state.editing.id === key;
   const actions = p.status === 'live'
     ? html`<button type="button" ${dataAttrs({ action: 'retirePlatform', id })}>Retire</button>
-       ${rows.length ? '' : confirmButton('Delete…', 'Delete this platform', dataAttrs({ action: 'deletePlatform', id }))}`
+       ${rows.length ? '' : confirmButton('Delete…', 'Delete this platform and its safety reports', dataAttrs({ action: 'deletePlatform', id }))}`
     : p.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'platform', id })}>Restore</button>` : '';
   return html`${head}
     <article class="doc">
