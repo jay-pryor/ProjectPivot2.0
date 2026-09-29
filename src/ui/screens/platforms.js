@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, stateTag, go, confirmButton, pageTabs, historyTable, plus, idTag, reviewTag } from './common.js';
+import { dataAttrs, option, statusTag, stateTag, go, confirmButton, deletePanel, deleteName, pageTabs, historyTable, plus, idTag, reviewTag } from './common.js';
 import { reviewLine, reviewsTab } from './reviews.js';
 import { REVIEW_DETAIL_ACTIONS } from '../../core/ops/reviews.js';
 import { waitingChanges } from '../../core/acks.js';
@@ -93,7 +93,7 @@ export function platformView(state, data, id) {
   const editing = (/** @type {string} */ kind, /** @type {string} */ key) => state.editing?.kind === kind && state.editing.id === key;
   const actions = p.status === 'live'
     ? html`<button type="button" ${dataAttrs({ action: 'retirePlatform', id })}>Retire</button>
-       ${rows.length ? '' : confirmButton('Delete…', 'Delete this platform and its safety reports', dataAttrs({ action: 'deletePlatform', id }))}`
+       ${rows.length ? '' : confirmButton('Delete…', 'Delete this platform and its safety reports', dataAttrs({ action: 'askDelete', kind: 'platform', id }))}`
     : p.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'platform', id })}>Restore</button>` : '';
   return html`${head}
     <article class="doc">
@@ -151,7 +151,7 @@ export function platformView(state, data, id) {
       </section>
       <section class="block">${referencesCard(state, data, { kind: 'platform', id })}</section>
     </article>
-    <div class="actions page-actions">${actions}</div>`;
+    ${state.confirmDelete?.kind === 'platform' && state.confirmDelete.id === id ? deletePanel('platform', id, deleteName('platform', p)) : html`<div class="actions page-actions">${actions}</div>`}`;
 }
 
 export { stateTag };

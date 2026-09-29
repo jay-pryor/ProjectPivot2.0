@@ -5,6 +5,7 @@ import * as store from '../storage/store.js';
 import { writeMirror, readMirror, clearMirror, hasUnsaved, hasUnsavedRecords, restoreReportDocuments } from '../storage/mirror.js';
 import { PivotError } from '../core/errors.js';
 import { newId } from '../core/ids.js';
+import { deleteName } from './screens/common.js';
 import { emptyData, NUMBERED } from '../core/data.js';
 import { epochOf, aestDate, systemClock } from '../core/time.js';
 import { entries, unseenOverrides, markNoticesSeen, addComment } from '../core/history.js';
@@ -57,7 +58,7 @@ const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', createP
 const BACKUP_CHECK_MS = 60_000;
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
-const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner']);
+const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete']);
 
 export function initialState() {
   return {
@@ -65,7 +66,7 @@ export function initialState() {
     session: null, recoverable: null, notices: [], view: { name: 'hazards' },
     filters: { hazards: {}, controls: {} }, backups: [], pendingRestore: null,
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
-    tables: {}, editing: null, saving: false, picker: null,
+    tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
   };
 }
@@ -247,11 +248,32 @@ export function createController(env) {
       set({ session: { ...state.session, working }, notices: [], screen: 'main' });
       await afterChange();
     },
+    async askDelete({ kind, id }) {
+      if (kind !== 'hazard' && kind !== 'platform') throw new PivotError('not-found', 'Only a hazard or a platform is deleted this way.');
+      set({ confirmDelete: { kind, id } });
+    },
+    async cancelDelete() {
+      set({ confirmDelete: null });
+    },
+    async confirmDelete({ kind, id }) {
+      const before = state.session?.working;
+      const rec = before?.records[kind]?.[id];
+      if (!before || !rec || (kind !== 'hazard' && kind !== 'platform')) throw new PivotError('not-found', 'That record no longer exists.');
+      await applyEdit(kind === 'hazard' ? 'deleteHazard' : 'deletePlatform', { id });
+      const name = deleteName(kind, rec);
+      set({ confirmDelete: null, undo: { text: `Deleted ${name}.`, before, after: state.session?.working }, view: { name: kind === 'hazard' ? 'hazards' : 'platforms' } });
+    },
+    async undoDelete() {
+      const u = state.undo;
+      if (!u || !state.session || state.session.working !== u.after) { set({ undo: null }); return; }
+      set({ session: { ...state.session, working: u.before }, undo: null, message: { kind: 'info', text: u.text.replace(/^Deleted/, 'Restored') } });
+      await afterChange();
+    },
     async dismissMessage() {
       set({ message: null });
     },
     async go({ view, id, hazardId, platformId, tab, reviewId }) {
-      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null });
+      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null, confirmDelete: null });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
       if (view === 'references') await handlers.checkReferenceFiles();
       if (view === 'reference') await handlers.checkReferenceFiles({ id });

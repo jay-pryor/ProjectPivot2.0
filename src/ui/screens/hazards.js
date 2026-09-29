@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, bandTag, go, confirmButton, pageTabs, historyTable, historyCount, plus, idTag } from './common.js';
+import { dataAttrs, option, statusTag, bandTag, go, confirmButton, deletePanel, deleteName, pageTabs, historyTable, historyCount, plus, idTag } from './common.js';
 import { dataTable } from './table.js';
 import { referencesCard } from './references.js';
 import { tierColumn } from './controls.js';
@@ -121,7 +121,7 @@ export function hazardView(state, data, id) {
   if (tab && tab.startsWith('p:')) return html`${head}${platformTab(state, data, h, tab.slice(2))}`;
   const actions = h.status === 'live'
     ? html`<button type="button" ${dataAttrs({ action: 'retireHazard', id: h.id })}>Retire</button>
-       ${confirmButton('Delete…', 'Delete this hazard, its causal factors, consequences, control links, lifecycle phases and safety reports', dataAttrs({ action: 'deleteHazard', id: h.id }))}`
+       ${confirmButton('Delete…', 'Delete this hazard, its causal factors, consequences, control links, lifecycle phases and safety reports', dataAttrs({ action: 'askDelete', kind: 'hazard', id: h.id }))}`
     : h.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'hazard', id: h.id })}>Restore</button>` : '';
   return html`${head}
     <article class="doc">
@@ -175,5 +175,5 @@ export function hazardView(state, data, id) {
       </section>
       <section class="block">${referencesCard(state, data, { kind: 'hazard', id: h.id })}</section>
     </article>
-    <div class="actions page-actions">${actions}</div>`;
+    ${state.confirmDelete?.kind === 'hazard' && state.confirmDelete.id === h.id ? deletePanel('hazard', h.id, deleteName('hazard', h)) : html`<div class="actions page-actions">${actions}</div>`}`;
 }

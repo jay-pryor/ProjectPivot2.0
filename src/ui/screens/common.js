@@ -7,7 +7,7 @@ import { themeOf } from '../prefs.js';
 import { ratingFor, LIKELIHOODS, CONSEQUENCES } from '../../core/matrix.js';
 import { waitingChanges } from '../../core/acks.js';
 import { live } from '../../core/data.js';
-import { UNNUMBERED } from '../../core/ids.js';
+import { UNNUMBERED, hazardLabel } from '../../core/ids.js';
 
 /** @param {Record<string, unknown>} obj kebab-case keys @returns {import('../html.js').Raw} */
 export function dataAttrs(obj) {
@@ -47,13 +47,33 @@ export function confirmButton(summary, text, attrs) {
   return html`<details class="confirm"><summary>${summary}</summary><button type="button" class="danger" ${attrs}>${text}</button></details>`;
 }
 
+/** How a hazard or platform is named when deleting it. @param {'hazard' | 'platform'} kind @param {any} rec */
+export function deleteName(kind, rec) {
+  if (kind === 'platform') return rec.name;
+  const label = hazardLabel(rec);
+  return label === UNNUMBERED ? rec.title : `${label} ${rec.title}`;
+}
+
+/**
+ * The last step before deleting a hazard or platform: it replaces the page's actions, so the
+ * delete takes three deliberate clicks.
+ * @param {'hazard' | 'platform'} kind @param {string} id @param {string} what e.g. "H-0001 Fire"
+ */
+export function deletePanel(kind, id, what) {
+  return html`<div class="delete-panel" role="alertdialog" aria-label="Confirm delete">
+    <p><strong>Delete ${what}?</strong> You can undo it straight after, until you make another change or save.</p>
+    <div class="actions"><button type="button" class="danger" ${dataAttrs({ action: 'confirmDelete', kind, id })}>Yes, delete ${what}</button>
+      <button type="button" ${dataAttrs({ action: 'cancelDelete' })}>Keep it</button></div></div>`;
+}
+
 /** @param {any} state */
 export function messages(state) {
   const m = state.message;
   const warnings = state.warnings ?? [];
+  const u = state.undo && state.session?.working === state.undo.after ? state.undo : null;
   return html`${m ? html`<div class="msg msg-${m.kind}" role="${m.kind === 'error' ? 'alert' : 'status'}">
       <strong>${m.text}</strong>${m.items?.length ? html`<ul>${m.items.map((/** @type {string} */ i) => html`<li>${i}</li>`)}</ul>` : ''}
-      <button type="button" class="link" ${dataAttrs({ action: 'dismissMessage' })}>Dismiss</button></div>` : ''}${warnings.map((/** @type {string} */ w) => html`<div class="msg msg-warning" role="status">${w}</div>`)}`;
+      <button type="button" class="link" ${dataAttrs({ action: 'dismissMessage' })}>Dismiss</button></div>` : ''}${u ? html`<div class="msg msg-info" role="status"><strong>${u.text}</strong> <button type="button" ${dataAttrs({ action: 'undoDelete' })}>Undo</button></div>` : ''}${warnings.map((/** @type {string} */ w) => html`<div class="msg msg-warning" role="status">${w}</div>`)}`;
 }
 
 const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['references', 'References'], ['phases', 'Phases'], ['reports', 'Reports'], ['backups', 'Backups']];
