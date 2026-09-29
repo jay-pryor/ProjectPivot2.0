@@ -301,7 +301,10 @@ user's changes) and `loadedStamp`.
    - a record only I changed takes mine; only they changed takes theirs; neither, base;
    - a record we both changed to different values is a **conflict**, and mine wins;
    - history is the union of both;
-   - `nextHazardNumber` is taken from disk (only saves change it).
+   - `nextHazardNumber` is the larger of the two, and above every number in use, so a number is
+     never given twice even when data.json has been replaced;
+   - a record I loaded that is missing from disk is kept: nothing is ever removed from data.json,
+     so its absence means the file was replaced, not that it was deleted. The saver is told.
 4. Check the rules on `merged`. A rule broken by the combination (for example they linked a hazard to
    a platform while I retired it) is also a **conflict**. Mine wins: each record in the broken rule
    takes my version, or base if I did not touch it. Check again; if a rule is still broken, the save
