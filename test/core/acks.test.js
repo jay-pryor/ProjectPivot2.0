@@ -94,3 +94,34 @@ test('two people acknowledging the same change at once: both saves merge, and it
   assert.deepEqual(conflicts, []);
   assert.deepEqual(waitingChanges(data, 'p1'), []);
 });
+
+test('Final I1: what waits is worked out once per version of the data, and acknowledging many at once is quick', () => {
+  let d = started();
+  for (let i = 0; i < 1500; i++) {
+    const s = String(i % 60).padStart(2, '0');
+    const m = String(Math.floor(i / 60) % 60).padStart(2, '0');
+    d = updateHazard(d, { by: 'u3', at: `2026-09-28T11:${m}:${s}+10:00` }, { id: 'h1', title: `T${i}` });
+  }
+  const w = waitingChanges(d, 'p1');
+  assert.equal(w.length, 1500);
+  assert.equal(waitingChanges(d, 'p1'), w, 'the same data gives the same answer without working it out again');
+  const t = performance.now();
+  const a = acknowledgeAll(d, at('13:00', 'u1'), { keys: w.slice(0, 300).map((e) => `${e.id}|p1`) });
+  assert.ok(performance.now() - t < 250, `acknowledging 300 took ${Math.round(performance.now() - t)} ms`);
+  assert.equal(waitingChanges(a, 'p1').length, 1200);
+  assert.equal(Object.values(a.history).filter((e) => e.type === 'ack').length, 300);
+});
+
+test('Final I2: after two transfers merge, the owner is the one the platform actually has', () => {
+  const b = started();
+  const mine = setOwner(b, at('11:00', 'u1'), { id: 'p1', ownerId: 'u3' });
+  const theirs = setOwner(b, at('11:10', 'u1'), { id: 'p1', ownerId: 'u2' });
+  let { data } = mergeData(b, mine, theirs, at('11:30', 'u1'));
+  assert.equal(data.records.platform.p1.ownerId, 'u3', 'mine wins the record');
+  assert.equal(ownerAt(data, 'p1', '2026-09-28T12:00:00+10:00'), 'u3');
+  data = updateHazard(data, at('12:00', 'u3'), { id: 'h1', title: 'By u3, the owner' });
+  data = setReportId(data, at('12:05', 'u2'), { hazardId: 'h1', platformId: 'p1', reportId: 'R-2' });
+  const waiting = waitingChanges(data, 'p1').map((e) => [e.action, e.by]);
+  assert.ok(!waiting.some(([a, by]) => a === 'Edit hazard' && by === 'u3'), 'the owner\'s own edit does not wait');
+  assert.ok(waiting.some(([a, by]) => a === 'Set report ID' && by === 'u2'), 'u2 is not the owner, so their edit waits');
+});
