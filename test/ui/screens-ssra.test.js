@@ -139,3 +139,17 @@ test('the existing-controls picker offers live controls not already listed there
   assert.doesNotMatch(out, /value="c2"/, 'already an existing control here');
   assert.doesNotMatch(out, /value="c1"/, 'retired');
 });
+
+test('the Controls list shows existing uses as their own rows, and a control page lists them', async () => {
+  const { controlsView, controlView } = await import('../../src/ui/screens/controls.js');
+  const d = controlled();
+  const list = controlsView(state, d).toString();
+  assert.match(list, /<th data-col="role"/);
+  assert.match(list, /data-row="c2:h1:p1:existing"/);
+  const only = controlsView({ ...state, tables: { controls: { filters: { role: 'existing' } } } }, d).toString();
+  assert.match(only, /data-row="c2:h1:p1:existing"/);
+  assert.doesNotMatch(only, /data-row="c1:/);
+  const page = controlView(state, d, 'c2').toString();
+  assert.match(page, /data-table="controlExisting"[\s\S]*?Fire[\s\S]*?Alpha[\s\S]*?mitigating/);
+  assert.doesNotMatch(page, /Delete this control/);
+});

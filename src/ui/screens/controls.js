@@ -6,7 +6,7 @@ import { statusColumn, idColumn, newRecord, notFound } from './hazards.js';
 import { get, live } from '../../core/data.js';
 import { hazardLabel, controlLabel } from '../../core/ids.js';
 import { BANDS } from '../../core/matrix.js';
-import { filterControls, controlUsage, platformsReached } from '../../core/queries.js';
+import { filterControls, controlUsage, existingUsage, platformsReached } from '../../core/queries.js';
 import { CONTROL_KINDS, CONTROL_TIERS, tierRank } from '../../core/ops/controls.js';
 import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
 
@@ -31,7 +31,7 @@ export function controlsView(state, data) {
     <p class="muted">One row per control on each hazard and platform it serves, so its state there can be seen and filtered.</p>
     ${dataTable(state, {
       id: 'controls',
-      rowKey: (r) => `${r.control.id}:${r.hazard?.id ?? ''}:${r.platform?.id ?? ''}`,
+      rowKey: (r) => `${r.control.id}:${r.hazard?.id ?? ''}:${r.platform?.id ?? ''}${r.role === 'existing' ? ':existing' : ''}`,
       rows: filterControls(data, { status: 'any' }),
       empty: 'No controls yet.',
       columns: [
@@ -43,6 +43,9 @@ export function controlsView(state, data) {
         { key: 'platform', label: 'Platform', width: 280, minWidth: 130, value: (r) => r.platform?.name ?? '', filter: 'select',
           options: live(data, 'platform').map((p) => /** @type {[string, string]} */ ([p.id, p.name])),
           match: (r, v) => r.platform?.id === v, render: (r) => r.platform?.name ?? '—' },
+        { key: 'role', label: 'Role', width: 220, minWidth: 110, value: (r) => r.role ?? '', filter: 'select',
+          options: /** @type {[string, string][]} */ ([['additional', 'Additional'], ['existing', 'Existing']]),
+          render: (r) => (r.role === 'existing' ? 'Existing' : r.role === 'additional' ? 'Additional' : '—') },
         tierColumn((r) => r.control),
         { key: 'kind', label: 'Kind', width: 240, minWidth: 130, value: (r) => r.kind ?? '', filter: 'select',
           options: CONTROL_KINDS.map((k) => /** @type {[string, string]} */ ([k, k])), render: (r) => r.kind ?? '—' },
@@ -67,10 +70,11 @@ export function controlView(state, data, id) {
     ${pageTabs('control', { id }, tab, historyCount(state, data, 'control', id))}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'control', id)}`;
   const usage = controlUsage(data, id);
+  const existing = existingUsage(data, id);
   const reach = platformsReached(data, 'control', c).map((pid) => get(data, 'platform', pid)?.name ?? pid);
   const actions = c.status === 'live'
     ? html`<button type="button" ${dataAttrs({ action: 'retireControl', id })}>Retire</button>
-       ${usage.length ? '' : confirmButton('Delete…', 'Delete this control', dataAttrs({ action: 'deleteControl', id }))}`
+       ${usage.length || existing.length ? '' : confirmButton('Delete…', 'Delete this control', dataAttrs({ action: 'deleteControl', id }))}`
     : c.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'control', id })}>Restore</button>` : '';
   return html`${head}
     <article class="doc">
@@ -84,11 +88,25 @@ export function controlView(state, data, id) {
           rows: usage,
           empty: 'Not linked to any hazard. Link it from a hazard\'s page.',
           columns: [
-            { key: 'hazard', label: 'Used by hazards', width: 600, minWidth: 200, value: (u) => `${hazardLabel(u.hazard)} ${u.hazard.title}`,
+            { key: 'hazard', label: 'Additional control for hazards', width: 600, minWidth: 200, value: (u) => `${hazardLabel(u.hazard)} ${u.hazard.title}`,
               render: (u) => html`<span class="id">${idTag(hazardLabel(u.hazard))}</span> ${go(u.hazard.title, 'hazard', { id: u.hazard.id })}` },
             { key: 'kind', label: 'Kind', width: 260, minWidth: 130, value: (u) => u.kind },
             { key: 'platforms', label: 'Platforms', width: 720, minWidth: 200, value: (u) => u.platforms.map((p) => p.platform.name).join(', '),
               render: (u) => (u.platforms.length ? u.platforms.map((p) => html`<span class="onplat">${p.platform.name} ${stateTag(p.state)}</span> `) : '—') },
+          ],
+        })}
+      </section>
+      <section class="block">
+        ${dataTable(state, {
+          id: 'controlExisting',
+          rowKey: (u) => `${u.hazard.id}:${u.platform.id}`,
+          rows: existing,
+          empty: 'Not an existing control anywhere.',
+          columns: [
+            { key: 'hazard', label: 'Existing control on', width: 600, minWidth: 200, value: (u) => `${hazardLabel(u.hazard)} ${u.hazard.title}`,
+              render: (u) => html`<span class="id">${idTag(hazardLabel(u.hazard))}</span> ${go(u.hazard.title, 'hazard', { id: u.hazard.id, tab: `p:${u.platform.id}` })}` },
+            { key: 'platform', label: 'Platform', width: 360, minWidth: 140, value: (u) => u.platform.name },
+            { key: 'kind', label: 'Kind', width: 260, minWidth: 130, value: (u) => u.kind },
           ],
         })}
       </section>

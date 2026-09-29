@@ -248,10 +248,19 @@ export function filterControls(data, f = {}) {
         const band = worseResidual(data, hazard.id, hp.platformId);
         if (f.band && band !== f.band) continue;
         if (f.controlState && state !== f.controlState) continue;
-        rows.push({ control, hazard, platform: /** @type {Rec} */ (get(data, 'platform', hp.platformId)), kind: hc.kind, state, band });
+        rows.push({ control, hazard, platform: /** @type {Rec} */ (get(data, 'platform', hp.platformId)), kind: hc.kind, state, band, role: 'additional' });
       }
     }
-    if (!used && !narrowed) rows.push({ control, hazard: null, platform: null, kind: null, state: null, band: null });
+    for (const ec of live(data, 'existingControl').filter((l) => l.controlId === control.id)) {
+      used = true;
+      if (f.platformId && ec.platformId !== f.platformId) continue;
+      if (f.controlState) continue;
+      const hazard = /** @type {Rec} */ (get(data, 'hazard', ec.hazardId));
+      const band = worseResidual(data, hazard.id, ec.platformId);
+      if (f.band && band !== f.band) continue;
+      rows.push({ control, hazard, platform: /** @type {Rec} */ (get(data, 'platform', ec.platformId)), kind: ec.kind, state: null, band, role: 'existing' });
+    }
+    if (!used && !narrowed) rows.push({ control, hazard: null, platform: null, kind: null, state: null, band: null, role: null });
   }
   return rows;
 }
