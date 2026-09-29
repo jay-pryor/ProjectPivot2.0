@@ -104,5 +104,6 @@ test('history shows a rating change as its matrix cell and band, not raw data', 
   d = setRating(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', consequence: 3, likelihood: 'D' });
   const out = historyTable(state, d, 'platform', 'p1', historyReaching(d, 'p1')).toString();
   assert.doesNotMatch(out, /consequence&quot;|"consequence"/);
-  assert.match(out, /2C [A-Z][a-z]+ → 3D [A-Z][a-z]+/);
+  assert.match(out, /Residual personnel[\s\S]*?consequence<\/strong>: 2 Critical → 3 Marginal[\s\S]*?likelihood<\/strong>: C Occasional → D Remote/);
+  assert.match(out, /Residual environment/);
 });

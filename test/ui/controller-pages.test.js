@@ -6,6 +6,7 @@ import { fixedClock } from '../../src/core/time.js';
 import { createController } from '../../src/ui/controller.js';
 import { ids } from '../../src/core/ids.js';
 import { historyReaching, commentsOn, entries } from '../../src/core/history.js';
+import { ratingOf } from '../../src/core/queries.js';
 
 const env = (f) => ({ clock: fixedClock('2026-09-28T10:00:00+10:00'), storage: new MemoryStorage(), minSaveMs: 0,
   pickFolder: async () => f.handle, pickSaveFile: async (n) => f.handle.getFileHandle(n, { create: true }), pickOpenFile: async () => null });
@@ -68,7 +69,7 @@ test('ratings from a cell dropdown, and comments on history entries', async () =
   const c = await ready();
   await c.dispatch({ type: 'linkHazards', platformId: 'p1', hazardId: 'h1' });
   await c.dispatch({ type: 'setRatingCell', hazardId: 'h1', platformId: 'p1', stage: 'initial', value: '1C' });
-  assert.deepEqual(W(c).records.rating[ids.rating('h1', 'p1')].initial, { consequence: 1, likelihood: 'C' });
+  assert.deepEqual(ratingOf(W(c), 'h1', 'p1').initial, { consequence: 1, likelihood: 'C' });
   const entry = historyReaching(W(c), 'p1').at(-1);
   assert.equal(entry.action, 'Set initial rating');
   await c.dispatch({ type: 'addComment', entryId: entry.id, text: 'From the 2025 survey' });

@@ -52,9 +52,11 @@ export function checkRules(data) {
     if (!liveRec('hazardPlatform', hp)) out.push({ rule: 'ruling-without-platform-link', message: 'A control is ruled on for a platform the hazard is not on.', records: [{ kind: 'ruling', id: r.id }, { kind: 'hazardPlatform', id: hp }] });
     if (r.state === 'excluded' && !String(r.reason ?? '').trim()) out.push({ rule: 'exclusion-without-reason', message: 'A control is excluded with no reason.', records: [{ kind: 'ruling', id: r.id }] });
   }
-  for (const r of live(data, 'rating')) {
-    const hp = ids.hazardPlatform(r.hazardId, r.platformId);
-    if (!liveRec('hazardPlatform', hp)) out.push({ rule: 'rating-without-platform-link', message: 'A rating exists for a platform the hazard is not on.', records: [{ kind: 'rating', id: r.id }, { kind: 'hazardPlatform', id: hp }] });
+  for (const kind of ['rating', 'assessment', 'sfarp']) {
+    for (const r of live(data, kind)) {
+      const hp = ids.hazardPlatform(r.hazardId, r.platformId);
+      if (!liveRec('hazardPlatform', hp)) out.push({ rule: `${kind}-without-platform-link`, message: `A ${kind === 'sfarp' ? 'SFARP record' : 'risk assessment'} exists for a platform the hazard is not on.`, records: [{ kind, id: r.id }, { kind: 'hazardPlatform', id: hp }] });
+    }
   }
   // Reviews: an open review needs a live platform, and there is one at a time per platform.
   /** @type {Map<string, any>} */

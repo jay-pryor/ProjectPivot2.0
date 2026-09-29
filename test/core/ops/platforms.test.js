@@ -7,6 +7,7 @@ import { retireHazard } from '../../../src/core/ops/hazards.js';
 import {
   createPlatform, updatePlatform, setOwner, retirePlatform, deletePlatform, linkHazard, unlinkHazard, setReportId,
 } from '../../../src/core/ops/platforms.js';
+import { setRating } from '../../../src/core/ops/assessment.js';
 import { act, later, seed } from '../../helpers.js';
 
 const code = (c) => (e) => e.code === c;
@@ -48,11 +49,11 @@ test('unlinking a hazard from a platform deletes its rulings and rating there, a
   let d = seed();
   d = put(d, 'ruling', created(act, ids.ruling('h1', 'c1', 'p1'), { hazardId: 'h1', controlId: 'c1', platformId: 'p1', state: 'confirmed', reason: '' }));
   d = put(d, 'ruling', created(act, ids.ruling('h1', 'c1', 'p2'), { hazardId: 'h1', controlId: 'c1', platformId: 'p2', state: 'confirmed', reason: '' }));
-  d = put(d, 'rating', created(act, ids.rating('h1', 'p1'), { hazardId: 'h1', platformId: 'p1', initial: null, residual: { consequence: 2, likelihood: 'C' } }));
+  d = setRating(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', consequence: 2, likelihood: 'C' });
   d = unlinkHazard(d, later, { hazardId: 'h1', platformId: 'p1' });
   assert.equal(d.records.hazardPlatform['hp:h1:p1'].status, 'deleted');
   assert.equal(d.records.ruling['ru:h1:c1:p1'].status, 'deleted');
-  assert.equal(d.records.rating['rt:h1:p1'].status, 'deleted');
+  assert.equal(d.records.assessment['ra:h1:p1:residual:personnel'].status, 'deleted');
   assert.equal(d.records.ruling['ru:h1:c1:p2'].status, 'live', 'the other platform keeps its ruling');
   assert.deepEqual(entries(d).at(-1).platforms, ['p1']);
   d = unlinkHazard(d, later, { hazardId: 'h1', platformId: 'p2' });

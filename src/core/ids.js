@@ -47,6 +47,10 @@ export const ids = Object.freeze({
   ruling: (h, c, p) => `ru:${h}:${c}:${p}`,
   /** @param {string} h @param {string} p */
   rating: (h, p) => `rt:${h}:${p}`,
+  /** @param {string} h @param {string} p @param {string} s stage @param {string} r receptor */
+  assessment: (h, p, s, r) => `ra:${h}:${p}:${s}:${r}`,
+  /** @param {string} h @param {string} p */
+  sfarp: (h, p) => `sf:${h}:${p}`,
   /** @param {string} r a review id @param {string} h */
   reviewRow: (r, h) => `rr:${r}:${h}`,
   /** @param {string} r a reference id @param {string} k the target's kind @param {string} t the target's id */

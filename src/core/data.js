@@ -7,6 +7,7 @@ export const KINDS = Object.freeze([
   'hazardControl', 'hazardPlatform', 'ruling', 'rating', 'report',
   'review', 'reviewRow',
   'reference', 'referenceLink',
+  'assessment', 'sfarp',
 ]);
 
 export const STATUSES = Object.freeze(['live', 'retired', 'deleted']);
@@ -34,6 +35,29 @@ export function normalizeData(value) {
   records.control = Object.fromEntries(Object.entries(records.control).map(([id, c]) => [
     id, isObject(c) && !('tier' in c) ? { ...c, tier: null } : c,
   ]));
+  // Ratings written before assessments existed become four assessments, personnel and
+  // environment alike, and the rating is retired. The same file always converts the same way,
+  // so two people opening it write identical records.
+  const assessment = { ...records.assessment };
+  const rating = { ...records.rating };
+  for (const [rid, r] of Object.entries(rating)) {
+    if (!isObject(r) || r.status === 'deleted') continue;
+    for (const stage of ['initial', 'residual']) {
+      for (const receptor of ['personnel', 'environment']) {
+        const id = `ra:${r.hazardId}:${r.platformId}:${stage}:${receptor}`;
+        if (assessment[id]) continue;
+        const pair = isObject(r[stage]) ? r[stage] : null;
+        assessment[id] = {
+          id, status: r.status, createdBy: r.createdBy, createdAt: r.createdAt, updatedBy: r.updatedBy, updatedAt: r.updatedAt,
+          hazardId: r.hazardId, platformId: r.platformId, stage, receptor,
+          likelihood: pair?.likelihood ?? null, consequence: pair?.consequence ?? null, likelihoodWhy: '', consequenceWhy: '',
+        };
+      }
+    }
+    rating[rid] = { ...r, status: 'deleted' };
+  }
+  records.assessment = assessment;
+  records.rating = rating;
   // Platforms written before reviews existed have no schedule.
   records.platform = Object.fromEntries(Object.entries(records.platform).map(([id, p]) => [
     id, isObject(p) && !('reviewDue' in p) ? { ...p, reviewMonths: null, reviewDue: null } : p,

@@ -4,7 +4,7 @@ import { historyOf, commentsOn } from '../../core/history.js';
 import { hasUnsaved } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
 import { themeOf } from '../prefs.js';
-import { ratingFor } from '../../core/matrix.js';
+import { ratingFor, LIKELIHOODS, CONSEQUENCES } from '../../core/matrix.js';
 import { waitingChanges } from '../../core/acks.js';
 import { live } from '../../core/data.js';
 import { UNNUMBERED } from '../../core/ids.js';
@@ -129,9 +129,24 @@ const CHANGE_WORD = { created: 'Created', deleted: 'Deleted', retired: 'Retired'
 
 /** One history item's change: an edit as each field's before → after, otherwise a word. @param {any} item */
 export function changeDetail(item) {
+  /** @param {any} f @param {any} v */
+  const value = (f, v) => (item.kind === 'assessment' ? scaleValue(f.field, v) : show(v));
   return item.change === 'edited'
-    ? html`<ul class="plain">${item.fields.map((/** @type {any} */ f) => html`<li><strong>${f.field}</strong>: ${show(f.before)} → ${show(f.after)}</li>`)}</ul>`
+    ? html`<ul class="plain">${item.fields.map((/** @type {any} */ f) => html`<li><strong>${f.field}</strong>: ${value(f, f.before)} → ${value(f, f.after)}</li>`)}</ul>`
     : CHANGE_WORD[/** @type {keyof typeof CHANGE_WORD} */ (item.change)] ?? item.change;
+}
+
+/** An assessment's likelihood or consequence as the matrix names it, e.g. "C Occasional". @param {string} field @param {any} v */
+function scaleValue(field, v) {
+  const named = field === 'likelihood' ? LIKELIHOODS.find((x) => x.letter === v) : field === 'consequence' ? CONSEQUENCES.find((x) => x.level === v) : null;
+  return named ? `${v} ${named.label}` : show(v);
+}
+
+/** The assessment an item is about, e.g. "Residual personnel", read from its id. @param {any} item */
+function itemLabel(item) {
+  if (item.kind !== 'assessment') return '';
+  const [, , , stage, receptor] = String(item.id).split(':');
+  return `${stage[0].toUpperCase()}${stage.slice(1)} ${receptor}`;
 }
 
 /**
@@ -141,6 +156,11 @@ export function changeDetail(item) {
  */
 export function historyTable(state, data, kind, id, list = historyOf(data, kind, id)) {
   const rows = list.slice().reverse().map((e) => ({ e, item: e.items.find((/** @type {any} */ i) => i.kind === kind && i.id === id) ?? (e.items.length === 1 ? e.items[0] : null) }));
+  // An entry that set several assessments at once (both receptors) shows each of them.
+  /** @param {any} e */
+  const several = (e) => e.items.every((/** @type {any} */ i) => i.kind === 'assessment')
+    ? html`${e.items.map((/** @type {any} */ i) => html`<div><span class="muted">${itemLabel(i)}</span> ${changeDetail(i)}</div>`)}`
+    : '';
   return dataTable(state, {
     id: 'history',
     rowKey: (r) => r.e.id,
@@ -150,7 +170,7 @@ export function historyTable(state, data, kind, id, list = historyOf(data, kind,
       { key: 'when', label: 'When', width: 300, minWidth: 150, value: (r) => r.e.at, render: (r) => when(r.e.at) },
       { key: 'who', label: 'Who', width: 260, minWidth: 100, value: (r) => profileName(state, r.e.by), filter: 'text' },
       { key: 'what', label: 'What', width: 400, minWidth: 140, value: (r) => r.e.action, filter: 'text' },
-      { key: 'changes', label: 'Changes', width: 720, minWidth: 240, sortable: false, render: (r) => (r.item ? changeDetail(r.item) : '') },
+      { key: 'changes', label: 'Changes', width: 720, minWidth: 240, sortable: false, render: (r) => (r.item ? changeDetail(r.item) : several(r.e)) },
       { key: 'comments', label: 'Comments', width: 560, minWidth: 200, sortable: false, render: (r) => {
         const comments = commentsOn(data, r.e.id);
         const adding = state.editing?.kind === 'comment' && state.editing.id === r.e.id;

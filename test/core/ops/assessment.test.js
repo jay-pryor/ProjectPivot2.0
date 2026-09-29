@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { ids } from '../../../src/core/ids.js';
 import { entries } from '../../../src/core/history.js';
 import { confirmControl, excludeControl, resetControl, setRating } from '../../../src/core/ops/assessment.js';
+import { ratingOf } from '../../../src/core/queries.js';
 import { act, later, seed } from '../../helpers.js';
 
 const code = (c) => (e) => e.code === c;
@@ -37,13 +38,13 @@ test('a ruling on one platform reaches that platform only', () => {
 test('setRating stores each stage exactly as entered, form strings included', () => {
   let d = setRating(seed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', consequence: '2', likelihood: 'C' });
   d = setRating(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', consequence: 3, likelihood: 'D' });
-  const r = d.records.rating[ids.rating('h1', 'p1')];
+  const r = ratingOf(d, 'h1', 'p1');
   assert.deepEqual(r.initial, { consequence: 2, likelihood: 'C' });
   assert.deepEqual(r.residual, { consequence: 3, likelihood: 'D' });
   d = setRating(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', consequence: '', likelihood: '' });
-  assert.equal(d.records.rating[ids.rating('h1', 'p1')].residual, null);
+  assert.equal(ratingOf(d, 'h1', 'p1').residual, null);
   d = setRating(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', consequence: '4', likelihood: '' });
-  assert.deepEqual(d.records.rating[ids.rating('h1', 'p1')].residual, { consequence: 4, likelihood: null });
+  assert.deepEqual(ratingOf(d, 'h1', 'p1').residual, { consequence: 4, likelihood: null });
 });
 
 test('setRating refuses values off the scales, an unknown stage, or a hazard not on the platform', () => {
@@ -58,8 +59,8 @@ test('setRating refuses values off the scales, an unknown stage, or a hazard not
 test('setRatingCell sets a stage from one matrix cell, e.g. "2C"; blank clears it; a cell off the matrix is refused', async () => {
   const { setRatingCell } = await import('../../../src/core/ops/assessment.js');
   let d = setRatingCell(seed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', value: '2C' });
-  assert.deepEqual(d.records.rating[ids.rating('h1', 'p1')].residual, { consequence: 2, likelihood: 'C' });
+  assert.deepEqual(ratingOf(d, 'h1', 'p1').residual, { consequence: 2, likelihood: 'C' });
   d = setRatingCell(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', value: '' });
-  assert.equal(d.records.rating[ids.rating('h1', 'p1')].residual, null);
+  assert.equal(ratingOf(d, 'h1', 'p1').residual, null);
   assert.throws(() => setRatingCell(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', value: '7Z' }), (e) => e.code === 'rating.cell');
 });

@@ -72,8 +72,11 @@ export function unlinkHazard(data, act, { hazardId, platformId }) {
   for (const r of live(data, 'ruling')) {
     if (r.hazardId === hazardId && r.platformId === platformId) recs.push({ kind: 'ruling', rec: changed(r, act, { status: 'deleted' }) });
   }
-  const rating = get(data, 'rating', ids.rating(hazardId, platformId));
-  if (rating && rating.status === 'live') recs.push({ kind: 'rating', rec: changed(rating, act, { status: 'deleted' }) });
+  for (const kind of ['assessment', 'sfarp', 'rating']) {
+    for (const r of live(data, kind)) {
+      if (r.hazardId === hazardId && r.platformId === platformId) recs.push({ kind, rec: changed(r, act, { status: 'deleted' }) });
+    }
+  }
   return commit(data, act, 'Unlink hazard from platform', recs);
 }
 

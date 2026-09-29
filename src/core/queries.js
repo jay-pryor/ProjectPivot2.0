@@ -50,6 +50,8 @@ export function platformsReached(data, kind, rec) {
     case 'hazardPlatform':
     case 'ruling':
     case 'rating':
+    case 'assessment':
+    case 'sfarp':
     case 'report': return [rec.platformId];
     case 'review': return [rec.platformId];
     case 'reference':
@@ -77,10 +79,41 @@ export function controlState(data, hazardId, controlId, platformId) {
   return r && r.status === 'live' ? { state: /** @type {string} */ (r.state), ruling: r } : { state: 'awaiting', ruling: null };
 }
 
+/** One assessment's live record, or null. @param {Data} data @param {string} hazardId @param {string} platformId @param {string} stage @param {string} receptor */
+export function assessmentOf(data, hazardId, platformId, stage, receptor) {
+  const r = get(data, 'assessment', ids.assessment(hazardId, platformId, stage, receptor));
+  return r && r.status === 'live' ? r : null;
+}
+
+/**
+ * Both stages for both receptors, each as `{ consequence, likelihood }` (the matrix's input), or
+ * null when neither is set.
+ * @param {Data} data @param {string} hazardId @param {string} platformId
+ */
+export function ratingsOf(data, hazardId, platformId) {
+  /** @param {string} stage @param {string} receptor */
+  const pair = (stage, receptor) => {
+    const a = assessmentOf(data, hazardId, platformId, stage, receptor);
+    return a && (a.likelihood != null || a.consequence != null) ? { consequence: a.consequence, likelihood: a.likelihood } : null;
+  };
+  return {
+    initial: { personnel: pair('initial', 'personnel'), environment: pair('initial', 'environment') },
+    residual: { personnel: pair('residual', 'personnel'), environment: pair('residual', 'environment') },
+  };
+}
+
+/** One receptor's initial and residual (personnel unless named): the shape callers had before assessments. @param {Data} data @param {string} hazardId @param {string} platformId @param {'personnel' | 'environment'} [receptor] */
+export function ratingOf(data, hazardId, platformId, receptor = 'personnel') {
+  const r = ratingsOf(data, hazardId, platformId);
+  return { initial: r.initial[receptor], residual: r.residual[receptor] };
+}
+
 /** @param {Data} data @param {string} hazardId @param {string} platformId */
-export function ratingOf(data, hazardId, platformId) {
-  const r = get(data, 'rating', ids.rating(hazardId, platformId));
-  return r && r.status === 'live' ? { initial: r.initial ?? null, residual: r.residual ?? null } : { initial: null, residual: null };
+export function sfarpOf(data, hazardId, platformId) {
+  const r = get(data, 'sfarp', ids.sfarp(hazardId, platformId));
+  return r && r.status === 'live'
+    ? { justification: r.justification ?? '', conclusion: r.conclusion ?? '', conditions: r.conditions ?? '' }
+    : { justification: '', conclusion: '', conditions: '' };
 }
 
 /** @param {{ consequence: number | null, likelihood: string | null } | null | undefined} pair */

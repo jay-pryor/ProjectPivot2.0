@@ -43,42 +43,92 @@ export function resetControl(data, act, t) {
 }
 
 export const STAGES = Object.freeze(['initial', 'residual']);
+export const RECEPTORS = Object.freeze(['personnel', 'environment']);
+
+/** @param {unknown} v */
+const blank = (v) => v === '' || v == null;
 
 /** @param {unknown} consequence @param {unknown} likelihood */
 function readPair(consequence, likelihood) {
-  const c = consequence === '' || consequence == null ? null : Number(consequence);
-  const l = likelihood === '' || likelihood == null ? null : String(likelihood);
-  ratingFor(c, l); // throws when either is off its scale
-  return c === null && l === null ? null : { consequence: c, likelihood: l };
+  const c = blank(consequence) ? null : Number(consequence);
+  const l = blank(likelihood) ? null : String(likelihood);
+  ratingFor(c, l); // throws rating.consequence or rating.likelihood when either is off its scale
+  return { consequence: c, likelihood: l };
+}
+
+/** @param {string} stage @param {string} receptor */
+function needScope(stage, receptor) {
+  if (!STAGES.includes(stage)) throw new PivotError('rating.stage', 'A risk assessment is initial or residual.');
+  if (!RECEPTORS.includes(receptor)) throw new PivotError('rating.receptor', 'A risk assessment is for personnel or the environment.');
 }
 
 /**
+ * The record one assessment becomes after a change; fields left out keep their value.
  * @param {Data} data @param {Act} act
- * @param {{ hazardId: string, platformId: string, stage: string, consequence: unknown, likelihood: unknown }} args
+ * @param {{ hazardId: string, platformId: string, stage: string, receptor: string, likelihood?: unknown, consequence?: unknown, likelihoodWhy?: unknown, consequenceWhy?: unknown }} a
  */
-export function setRating(data, act, { hazardId, platformId, stage, consequence, likelihood }) {
-  if (!STAGES.includes(stage)) throw new PivotError('rating.stage', 'A rating is either initial or residual.');
-  need(data, 'hazardPlatform', ids.hazardPlatform(hazardId, platformId));
-  const value = readPair(consequence, likelihood);
-  const id = ids.rating(hazardId, platformId);
-  const existing = get(data, 'rating', id);
-  let rec;
-  if (existing && existing.status === 'live') rec = changed(existing, act, { [stage]: value });
-  else if (existing) rec = changed(existing, act, { status: 'live', initial: null, residual: null, [stage]: value });
-  else rec = created(act, id, { hazardId, platformId, initial: null, residual: null, [stage]: value });
-  return commit(data, act, stage === 'initial' ? 'Set initial rating' : 'Set residual rating', [{ kind: 'rating', rec }]);
+function assessmentRec(data, act, a) {
+  needScope(a.stage, a.receptor);
+  need(data, 'hazardPlatform', ids.hazardPlatform(a.hazardId, a.platformId));
+  const id = ids.assessment(a.hazardId, a.platformId, a.stage, a.receptor);
+  const existing = get(data, 'assessment', id);
+  const cur = existing && existing.status === 'live' ? existing : { likelihood: null, consequence: null, likelihoodWhy: '', consequenceWhy: '' };
+  const pair = readPair(a.consequence === undefined ? cur.consequence : a.consequence, a.likelihood === undefined ? cur.likelihood : a.likelihood);
+  const fields = {
+    likelihood: pair.likelihood, consequence: pair.consequence,
+    likelihoodWhy: a.likelihoodWhy === undefined ? cur.likelihoodWhy : String(a.likelihoodWhy ?? '').trim(),
+    consequenceWhy: a.consequenceWhy === undefined ? cur.consequenceWhy : String(a.consequenceWhy ?? '').trim(),
+  };
+  if (!existing) return created(act, id, { hazardId: a.hazardId, platformId: a.platformId, stage: a.stage, receptor: a.receptor, ...fields });
+  return changed(existing, act, { ...fields, status: 'live' });
 }
 
 /**
- * Set one stage's rating from a matrix cell as a single dropdown gives it: `2C`, or blank for
- * not entered.
+ * One of the four risk assessments of a hazard on a platform.
  * @param {Data} data @param {Act} act
- * @param {{ hazardId: string, platformId: string, stage: string, value: string }} args
+ * @param {{ hazardId: string, platformId: string, stage: string, receptor: string, likelihood?: unknown, consequence?: unknown, likelihoodWhy?: unknown, consequenceWhy?: unknown }} args
  */
-export function setRatingCell(data, act, { hazardId, platformId, stage, value }) {
+export function setAssessment(data, act, args) {
+  return commit(data, act, `Set ${args.stage} ${args.receptor} risk`, [{ kind: 'assessment', rec: assessmentRec(data, act, args) }]);
+}
+
+/**
+ * A stage's likelihood and consequence for one receptor, or for both when none is named.
+ * @param {Data} data @param {Act} act
+ * @param {{ hazardId: string, platformId: string, stage: string, consequence: unknown, likelihood: unknown, receptor?: string }} args
+ */
+export function setRating(data, act, { hazardId, platformId, stage, consequence, likelihood, receptor }) {
+  const receptors = receptor ? [receptor] : RECEPTORS;
+  const recs = receptors.map((r) => ({ kind: 'assessment', rec: assessmentRec(data, act, { hazardId, platformId, stage, receptor: r, consequence, likelihood }) }));
+  const action = receptor ? `Set ${stage} ${receptor} risk` : stage === 'initial' ? 'Set initial rating' : 'Set residual rating';
+  return commit(data, act, action, recs);
+}
+
+/**
+ * A stage's rating from a matrix cell as a single dropdown gives it: `2C`, or blank.
+ * @param {Data} data @param {Act} act
+ * @param {{ hazardId: string, platformId: string, stage: string, receptor?: string, value: string }} args
+ */
+export function setRatingCell(data, act, { hazardId, platformId, stage, receptor, value }) {
   const v = String(value ?? '').trim();
-  if (v === '') return setRating(data, act, { hazardId, platformId, stage, consequence: null, likelihood: null });
+  if (v === '') return setRating(data, act, { hazardId, platformId, stage, receptor, consequence: null, likelihood: null });
   const m = /^([1-5])([A-G])$/.exec(v);
   if (!m) throw new PivotError('rating.cell', `${v} is not a cell of the risk matrix.`);
-  return setRating(data, act, { hazardId, platformId, stage, consequence: Number(m[1]), likelihood: m[2] });
+  return setRating(data, act, { hazardId, platformId, stage, receptor, consequence: Number(m[1]), likelihood: m[2] });
+}
+
+/**
+ * SFARP considerations for a hazard on a platform; fields left out keep their value.
+ * @param {Data} data @param {Act} act
+ * @param {{ hazardId: string, platformId: string, justification?: unknown, conclusion?: unknown, conditions?: unknown }} args
+ */
+export function setSfarp(data, act, { hazardId, platformId, justification, conclusion, conditions }) {
+  need(data, 'hazardPlatform', ids.hazardPlatform(hazardId, platformId));
+  const id = ids.sfarp(hazardId, platformId);
+  const existing = get(data, 'sfarp', id);
+  const cur = existing && existing.status === 'live' ? existing : { justification: '', conclusion: '', conditions: '' };
+  const text = (/** @type {unknown} */ v, /** @type {string} */ was) => (v === undefined ? was : String(v ?? '').trim());
+  const fields = { justification: text(justification, cur.justification), conclusion: text(conclusion, cur.conclusion), conditions: text(conditions, cur.conditions) };
+  const rec = existing ? changed(existing, act, { ...fields, status: 'live' }) : created(act, id, { hazardId, platformId, ...fields });
+  return commit(data, act, 'Edit SFARP considerations', [{ kind: 'sfarp', rec }]);
 }
