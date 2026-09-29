@@ -120,6 +120,13 @@ export function reviewTag(state) {
 
 const CHANGE_WORD = { created: 'Created', deleted: 'Deleted', retired: 'Retired', restored: 'Restored' };
 
+/** One history item's change: an edit as each field's before → after, otherwise a word. @param {any} item */
+export function changeDetail(item) {
+  return item.change === 'edited'
+    ? html`<ul class="plain">${item.fields.map((/** @type {any} */ f) => html`<li><strong>${f.field}</strong>: ${show(f.before)} → ${show(f.after)}</li>`)}</ul>`
+    : CHANGE_WORD[/** @type {keyof typeof CHANGE_WORD} */ (item.change)] ?? item.change;
+}
+
 /**
  * A record's history as a table: when, who, what, and each field's before and after.
  * @param {any} state @param {import('../../core/data.js').Data} data @param {string} kind @param {string} id
@@ -136,9 +143,7 @@ export function historyTable(state, data, kind, id, list = historyOf(data, kind,
       { key: 'when', label: 'When', width: 300, minWidth: 150, value: (r) => r.e.at, render: (r) => when(r.e.at) },
       { key: 'who', label: 'Who', width: 260, minWidth: 100, value: (r) => profileName(state, r.e.by), filter: 'text' },
       { key: 'what', label: 'What', width: 400, minWidth: 140, value: (r) => r.e.action, filter: 'text' },
-      { key: 'changes', label: 'Changes', width: 720, minWidth: 240, sortable: false, render: (r) => (!r.item ? '' : r.item.change === 'edited'
-        ? html`<ul class="plain">${r.item.fields.map((/** @type {any} */ f) => html`<li><strong>${f.field}</strong>: ${show(f.before)} → ${show(f.after)}</li>`)}</ul>`
-        : CHANGE_WORD[/** @type {keyof typeof CHANGE_WORD} */ (r.item.change)] ?? r.item.change) },
+      { key: 'changes', label: 'Changes', width: 720, minWidth: 240, sortable: false, render: (r) => (r.item ? changeDetail(r.item) : '') },
       { key: 'comments', label: 'Comments', width: 560, minWidth: 200, sortable: false, render: (r) => {
         const comments = commentsOn(data, r.e.id);
         const adding = state.editing?.kind === 'comment' && state.editing.id === r.e.id;

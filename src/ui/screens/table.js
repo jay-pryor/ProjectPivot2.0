@@ -43,18 +43,15 @@ function compare(a, b) {
 const valueOf = (c, row) => (c.value ? c.value(row) : undefined);
 
 /**
- * @param {any} state
- * @param {{ id: string, columns: Column[], rows: any[], rowKey: (row: any) => string, empty?: string, tools?: any }} spec
- *   tools: something small (a + button) shown beside the first column's title
+ * The rows a table shows, after its filters (defaults, then the user's) and its sort.
+ * @param {any} state @param {{ id: string, columns: Column[], rows: any[] }} spec
  */
-export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing here yet.', tools = '' }) {
-  const minOf = (/** @type {Column} */ c) => c.minWidth ?? DEFAULT_MIN_WIDTH;
+function rowsView(state, { id, columns, rows }) {
   const t = state.tables?.[id] ?? {};
   /** @type {Record<string, string>} */
   const filters = {};
   for (const c of columns) if (c.defaultFilter) filters[c.key] = c.defaultFilter;
   Object.assign(filters, t.filters ?? {});
-
   let shown = rows.filter((row) => columns.every((c) => {
     const v = filters[c.key];
     if (!c.filter || !v) return true;
@@ -67,7 +64,22 @@ export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing h
     const sign = t.sort.dir === 'desc' ? -1 : 1;
     shown = [...shown].sort((a, b) => sign * compare(valueOf(sortCol, a), valueOf(sortCol, b)));
   }
+  return { t, filters, shown };
+}
 
+/** Exactly the rows `dataTable` shows for the same state and spec, in its order. @param {any} state @param {{ id: string, columns: Column[], rows: any[] }} spec */
+export function shownRows(state, spec) {
+  return rowsView(state, spec).shown;
+}
+
+/**
+ * @param {any} state
+ * @param {{ id: string, columns: Column[], rows: any[], rowKey: (row: any) => string, empty?: string, tools?: any }} spec
+ *   tools: something small (a + button) shown beside the first column's title
+ */
+export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing here yet.', tools = '' }) {
+  const minOf = (/** @type {Column} */ c) => c.minWidth ?? DEFAULT_MIN_WIDTH;
+  const { t, filters, shown } = rowsView(state, { id, columns, rows });
   const filtering = columns.some((c) => c.filter && filters[c.key] && filters[c.key] !== c.defaultFilter);
   const head = columns.map((c, i) => {
     const sorted = t.sort?.key === c.key ? t.sort.dir : null;

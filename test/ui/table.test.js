@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dataTable } from '../../src/ui/screens/table.js';
+import { dataTable, shownRows } from '../../src/ui/screens/table.js';
 import { initialState } from '../../src/ui/controller.js';
 
 const rows = [
@@ -88,4 +88,9 @@ test('a column never renders narrower than its minimum, whatever the profile say
 test('the default column width is doubled to 320px', async () => {
   const { DEFAULT_WIDTH } = await import('../../src/ui/screens/table.js');
   assert.equal(DEFAULT_WIDTH, 320);
+});
+test('shownRows gives exactly the rows the table shows, filtered and sorted', () => {
+  const st = state({ t: { sort: { key: 'n', dir: 'asc' }, filters: { status: 'any', kind: 'x' } } });
+  assert.deepEqual(shownRows(st, { id: 't', columns, rows, rowKey: (r) => r.id }).map((r) => r.id), ['c', 'a']);
+  assert.deepEqual(shownRows(state(), { id: 't', columns, rows, rowKey: (r) => r.id }).map((r) => r.id), ['a', 'c'], 'the default filter applies');
 });
