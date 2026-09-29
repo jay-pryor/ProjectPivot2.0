@@ -51,7 +51,8 @@ src/ui/screens/common.js       Phases in the nav; history labels for the new kin
 src/ui/screens/picker.js       + linkPhases picker
 src/ui/render.js               phases view
 src/ui/controller.js           edits; linkPhases handler
-src/ui/styles.css              chips, report form
+src/ui/styles.css              chips, report form, delete panel
+src/ui/screens/common.js       + deletePanel; the undo offer in messages
 ```
 
 ---
@@ -1012,7 +1013,203 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
-### Task 6: Build, and a check in the browser
+### Task 6: Deleting a hazard or platform takes three clicks, and can be undone
+
+(jay's request at plan review: deleting a hazard or platform must not happen by accident, and an Undo must appear in case it does.)
+
+**Files:**
+- Modify: `src/ui/screens/common.js` (`deletePanel`, the undo message in `messages`), `src/ui/screens/hazards.js`, `src/ui/screens/platforms.js`, `src/ui/controller.js`, `src/ui/styles.css`
+- Test: `test/ui/delete-undo.test.js` (create)
+
+**Interfaces:**
+- Produces:
+  - Click 1 opens the *Delete…* disclosure; click 2 (its red button) dispatches `askDelete` (`data-action="askDelete" data-kind="hazard|platform" data-id`), which sets `state.confirmDelete = { kind, id }` and deletes nothing; click 3 is *Yes, delete …* in the panel that replaces the page's actions (`data-action="confirmDelete" data-kind data-id`), beside *Keep it* (`data-action="cancelDelete"`).
+  - `deleteName(kind, rec)` (common.js) names what is deleted: a platform's name; a hazard as `H-0001 Fire`, or just its title while it is unnumbered (`hazardLabel` gives `TBC`).
+  - `confirmDelete` runs `deleteHazard`/`deletePlatform`, goes to the list, and sets `state.undo = { text: 'Deleted <name>.', before, after }` (the working data before and after).
+  - While `state.undo` is set and the working data is still `after`, the message area shows `Deleted <name>.` with an *Undo* button (`data-action="undoDelete"`); another change or a save replaces the working data, and the offer disappears.
+  - `undoDelete` puts `before` back as the working data (the delete leaves no trace: the edit was never saved) and says `Restored <name>.`.
+  - `go` clears `confirmDelete`; `askDelete` and `cancelDelete` are quiet (in `QUIET`).
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/ui/delete-undo.test.js`:
+
+```js
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { MemoryFolder } from '../fakes/folder.js';
+import { MemoryStorage } from '../fakes/storage.js';
+import { fixedClock } from '../../src/core/time.js';
+import { createController, initialState } from '../../src/ui/controller.js';
+import { hazardView } from '../../src/ui/screens/hazards.js';
+import { platformView } from '../../src/ui/screens/platforms.js';
+import { messages } from '../../src/ui/screens/common.js';
+import { seed } from '../helpers.js';
+
+const env = (f) => ({ clock: fixedClock('2026-09-28T10:00:00+10:00'), storage: new MemoryStorage(), minSaveMs: 0,
+  pickFolder: async () => f.handle, pickSaveFile: async (n) => f.handle.getFileHandle(n, { create: true }), pickOpenFile: async () => null });
+
+async function ready() {
+  const c = createController(env(new MemoryFolder()));
+  await c.dispatch({ type: 'chooseFolder' });
+  await c.dispatch({ type: 'createProfile', name: 'Ada' });
+  await c.dispatch({ type: 'selectProfile', id: c.getState().profiles[0].id });
+  await c.dispatch({ type: 'createHazard', id: 'h1', title: 'Fire' });
+  await c.dispatch({ type: 'createPlatform', id: 'p1', name: 'Alpha', ownerId: c.getState().profileId });
+  return c;
+}
+const W = (c) => c.getState().session.working;
+const state = { ...initialState(), screen: 'main', today: '2026-09-28', profileId: 'u1', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }] };
+
+test('the second click only asks; the third deletes; Undo puts it back', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'askDelete', kind: 'hazard', id: 'h1' });
+  assert.deepEqual(c.getState().confirmDelete, { kind: 'hazard', id: 'h1' });
+  assert.equal(W(c).records.hazard.h1.status, 'live', 'nothing deleted yet');
+  await c.dispatch({ type: 'cancelDelete' });
+  assert.equal(c.getState().confirmDelete, null);
+  await c.dispatch({ type: 'askDelete', kind: 'hazard', id: 'h1' });
+  const before = W(c);
+  await c.dispatch({ type: 'confirmDelete', kind: 'hazard', id: 'h1' });
+  assert.equal(W(c).records.hazard.h1.status, 'deleted');
+  assert.equal(c.getState().view.name, 'hazards');
+  assert.equal(c.getState().confirmDelete, null);
+  assert.match(messages(c.getState()).toString(), /Deleted Fire\.[\s\S]*?data-action="undoDelete"/);
+  await c.dispatch({ type: 'undoDelete' });
+  assert.equal(W(c), before, 'exactly as before the delete');
+  assert.equal(W(c).records.hazard.h1.status, 'live');
+  assert.doesNotMatch(messages(c.getState()).toString(), /undoDelete/);
+  assert.match(c.getState().message.text, /Restored Fire/);
+});
+
+test('Undo is offered only until the next change', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'askDelete', kind: 'platform', id: 'p1' });
+  await c.dispatch({ type: 'confirmDelete', kind: 'platform', id: 'p1' });
+  assert.equal(c.getState().view.name, 'platforms');
+  assert.match(messages(c.getState()).toString(), /Deleted Alpha\./);
+  await c.dispatch({ type: 'createHazard', id: 'h9', title: 'Later' });
+  assert.doesNotMatch(messages(c.getState()).toString(), /undoDelete/);
+  await c.dispatch({ type: 'undoDelete' });
+  assert.equal(W(c).records.platform.p1.status, 'deleted', 'too late: nothing is undone');
+  assert.ok(W(c).records.hazard.h9);
+});
+
+test('the pages ask before deleting: the red button asks, and the final panel deletes or keeps', () => {
+  const d = seed();
+  const h = hazardView({ ...state, view: { name: 'hazard', id: 'h2' } }, d, 'h2').toString();
+  assert.match(h, /<summary>Delete…<\/summary><button type="button" class="danger" data-action="askDelete" data-kind="hazard" data-id="h2">/);
+  assert.doesNotMatch(h, /data-action="deleteHazard"/);
+  const asking = hazardView({ ...state, view: { name: 'hazard', id: 'h2' }, confirmDelete: { kind: 'hazard', id: 'h2' } }, d, 'h2').toString();
+  assert.match(asking, /class="delete-panel"[\s\S]*?data-action="confirmDelete" data-kind="hazard" data-id="h2"[^>]*>Yes, delete Flood<\/button>[\s\S]*?data-action="cancelDelete"[^>]*>Keep it</);
+  const p = platformView({ ...state, confirmDelete: { kind: 'platform', id: 'p3' } }, (() => { const x = structuredClone(d); x.records.platform.p3 = { ...x.records.platform.p1, id: 'p3', name: 'Charlie' }; return x; })(), 'p3').toString();
+  assert.match(p, /data-action="confirmDelete" data-kind="platform" data-id="p3"[^>]*>Yes, delete Charlie</);
+});
+```
+
+(An unnumbered hazard is named by its title alone; a numbered one as `H-0001 Fire`.)
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `node --test test/ui/delete-undo.test.js`
+Expected: FAIL — `askDelete` is not a known action (or no `confirmDelete` state).
+
+- [ ] **Step 3: Write the implementation**
+
+`src/ui/screens/common.js` (import `UNNUMBERED` and `hazardLabel` from `../../core/ids.js` if not already):
+
+```js
+/** How a hazard or platform is named when deleting it. @param {'hazard' | 'platform'} kind @param {any} rec */
+export function deleteName(kind, rec) {
+  if (kind === 'platform') return rec.name;
+  const label = hazardLabel(rec);
+  return label === UNNUMBERED ? rec.title : `${label} ${rec.title}`;
+}
+
+/**
+ * The last step before deleting a hazard or platform: it replaces the page's actions, so the
+ * delete takes three deliberate clicks.
+ * @param {'hazard' | 'platform'} kind @param {string} id @param {string} what e.g. "H-0001 Fire"
+ */
+export function deletePanel(kind, id, what) {
+  return html`<div class="delete-panel" role="alertdialog" aria-label="Confirm delete">
+    <p><strong>Delete ${what}?</strong> You can undo it straight after, until you make another change or save.</p>
+    <div class="actions"><button type="button" class="danger" ${dataAttrs({ action: 'confirmDelete', kind, id })}>Yes, delete ${what}</button>
+      <button type="button" ${dataAttrs({ action: 'cancelDelete' })}>Keep it</button></div></div>`;
+}
+```
+
+and in `messages(state)`, before the warnings, add the undo offer:
+
+```js
+  const u = state.undo && state.session?.working === state.undo.after ? state.undo : null;
+```
+
+rendering, when `u` is set, `html`<div class="msg msg-info" role="status"><strong>${u.text}</strong> <button type="button" ${dataAttrs({ action: 'undoDelete' })}>Undo</button></div>``.
+
+`src/ui/screens/hazards.js`, `hazardView`: the Delete confirmation button's attributes become `dataAttrs({ action: 'askDelete', kind: 'hazard', id: h.id })`; and where the page's actions are rendered, show `deletePanel('hazard', h.id, deleteName('hazard', h))` instead when `state.confirmDelete?.kind === 'hazard' && state.confirmDelete.id === h.id`.
+
+`src/ui/screens/platforms.js`, `platformView`: likewise with `dataAttrs({ action: 'askDelete', kind: 'platform', id })` and `deletePanel('platform', id, deleteName('platform', p))`.
+
+`src/ui/controller.js` (import `deleteName` from `./screens/common.js`):
+- `initialState()` gains `confirmDelete: null, undo: null`.
+- `QUIET` gains `'askDelete', 'cancelDelete'`.
+- `go` also sets `confirmDelete: null`.
+- handlers:
+
+```js
+    async askDelete({ kind, id }) {
+      if (kind !== 'hazard' && kind !== 'platform') throw new PivotError('not-found', 'Only a hazard or a platform is deleted this way.');
+      set({ confirmDelete: { kind, id } });
+    },
+    async cancelDelete() {
+      set({ confirmDelete: null });
+    },
+    async confirmDelete({ kind, id }) {
+      const before = state.session?.working;
+      const rec = before?.records[kind]?.[id];
+      if (!before || !rec || (kind !== 'hazard' && kind !== 'platform')) throw new PivotError('not-found', 'That record no longer exists.');
+      await applyEdit(kind === 'hazard' ? 'deleteHazard' : 'deletePlatform', { id });
+      const name = deleteName(kind, rec);
+      set({ confirmDelete: null, undo: { text: `Deleted ${name}.`, before, after: state.session?.working }, view: { name: kind === 'hazard' ? 'hazards' : 'platforms' } });
+    },
+    async undoDelete() {
+      const u = state.undo;
+      if (!u || !state.session || state.session.working !== u.after) { set({ undo: null }); return; }
+      set({ session: { ...state.session, working: u.before }, undo: null, message: { kind: 'info', text: u.text.replace(/^Deleted/, 'Restored') } });
+      await afterChange();
+    },
+```
+
+(If `applyEdit` throws — e.g. the hazard is still on a platform — the handler stops there, the error shows as usual, and no undo is offered.)
+
+`src/ui/styles.css`, append:
+
+```css
+.delete-panel { border: 1px solid var(--p-danger); border-radius: 10px; padding: 12px 14px; margin: 12px 0; background: var(--p-error-bg); }
+.delete-panel p { margin: 0 0 10px; }
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `node --test test/ui/delete-undo.test.js`
+Expected: PASS.
+
+- [ ] **Step 5: Run everything, then commit**
+
+Run: `npm test && npm run typecheck`
+Expected: all pass (update tests that pinned `data-action="deleteHazard"` / `"deletePlatform"` on the pages, or dispatched those directly through the page's button, to the new flow; tests dispatching the `deleteHazard` edit directly still work).
+
+```bash
+git add src/ui test/ui
+git commit -m "Deleting a hazard or platform takes three clicks, and an Undo is offered until the next change
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 7: Build, and a check in the browser
 
 - [ ] **Step 1: Build**
 
@@ -1030,7 +1227,8 @@ Serve `dist/` and drive it with the Playwright MCP tools (folder picker stubbed 
 5. Unlink the hazard from that platform and link it back: the safety report is there again.
 6. The hazard's History shows the phase and safety report entries, labelled.
 7. Save, produce a report: the Markdown has a Lifecycle phases column (if the design shows optional columns) and a Safety reports table with the markup escaped.
-8. Both themes.
+8. Delete a hazard: *Delete…*, the red button, then *Yes, delete*; it is gone from the list and *Undo* brings it back; delete it again, make another change, and the Undo offer has gone.
+9. Both themes.
 
 Fix anything that does not behave as described, with a test where the fault is in rendering or the controller.
 
