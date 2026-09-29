@@ -48,10 +48,10 @@ are additions that `normalizeData` fills in.
 
 | Kind | Fields beyond the header | Id |
 |---|---|---|
-| review | `platformId`, `status` (`open` or `completed`), `outcome`, `dueBefore`, `dueAfter`, `completedBy`, `completedAt` | uuid |
+| review | `platformId`, `state` (`open` or `completed`), `outcome`, `dueBefore`, `dueAfter`, `completedBy`, `completedAt` | uuid |
 | reviewRow | `reviewId`, `hazardId`, `reviewed` (boolean), `note` | `rr:<review>:<hazard>` |
 
-A review's record `status` (live, retired, deleted) is separate from its review `status` field (open,
+A review's record `status` (live, retired, deleted) is separate from its `state` field (open,
 completed). Abandoning a review sets the record to `deleted`. `dueBefore`, `dueAfter`, `completedBy`
 and `completedAt` are null until completion.
 
@@ -84,9 +84,11 @@ entry, like every other op.
 - `setOutcome({ reviewId, outcome })`: open reviews only.
 - `completeReview({ reviewId })`: refused if the platform has no schedule ("Set a review schedule
   first"). Sets `dueBefore` = the platform's `reviewDue`, `dueAfter` = `addMonths(dueBefore,
-  reviewMonths)`, `completedBy`/`completedAt` from the act, `status: 'completed'`, and the platform's
-  `reviewDue` = `dueAfter`, in one entry. The due date moves on from the old due date, not from today:
-  a late review does not pull the schedule forward and an early one does not push it out.
+  k × reviewMonths)` for the smallest k ≥ 1 that puts it after the completion date,
+  `completedBy`/`completedAt` from the act, `state: 'completed'`, and the platform's `reviewDue` =
+  `dueAfter`, in one entry. The due date moves on from the old due date, in whole periods, not from
+  today: a late review does not pull the schedule forward and an early one does not push it out, and
+  a review completed more than a period late does not leave the platform still overdue.
 - `abandonReview({ reviewId })`: sets the open review and its rows to `deleted`.
 
 The history entry's `platforms` is the review's platform for all of these.
@@ -99,8 +101,9 @@ Added to `rules.js`, checked by the ops and after a merge:
    when the row was last changed. (A hazard unlinked later keeps its row; the row is shown as "no
    longer on this platform" in an open review and as recorded in a completed one.)
 8. A platform has at most one live open review.
-9. A completed review, and its rows, are never changed again. Ops refuse; the merge treats any
-   change to one as a conflict that keeps the completed version.
+9. A completed review, and its rows, are never changed again. Ops refuse; after a merge, a row
+   changed after its review was completed is a conflict that keeps the completed version, and a
+   row of a live review is deleted only with its review.
 10. Retiring or deleting a platform abandons its open review in the same entry.
 
 ## 6. Merge
@@ -122,8 +125,9 @@ In `queries.js`:
 - `reviewRows(data, reviewId)`: for an open review, each hazard now live on the platform (in the
   platform's order) joined with its row, if any, plus rows for hazards since unlinked; for a
   completed review, exactly its rows and the hazards it listed at completion. Each item carries the
-  hazard, its report ID, both ratings with bands, control-state counts (`confirmed`, `excluded`,
-  `awaiting`), `reviewed` and `note`.
+  hazard, its report ID, `reviewed` and `note`; in an open review, also both current ratings with bands
+  and control-state counts (`confirmed`, `excluded`, `awaiting`). A completed review's items carry no
+  ratings, because the review does not record what they were when it was completed.
 - `completedReviews(data, platformId)`: newest first.
 - `lastReviewed(data, platformId)`: the latest `completedAt` date, or null.
 - `hazardLastReviewed(data, hazardId, platformId)`: the latest completed review of that platform in
