@@ -7,6 +7,8 @@ import { initialState } from '../../src/ui/controller.js';
 import { assignNumbers } from '../../src/core/ops/hazards.js';
 import { setSchedule, startReview, markRow, completeReview, setReviewOutcome } from '../../src/core/ops/reviews.js';
 import { entries } from '../../src/core/history.js';
+import { reportsView } from '../../src/ui/screens/reports.js';
+import { createReport } from '../../src/core/ops/reports.js';
 import { seed, act } from '../helpers.js';
 
 export const state = { ...initialState(), screen: 'main', today: '2026-09-28', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }, { id: 'u2', name: 'Grace', createdAt: '' }], profileId: 'u1' };
@@ -133,4 +135,26 @@ test('the platform History tab leaves out ticks and notes but keeps starting and
   assert.match(out, /Start review/);
   assert.match(out, /Complete review/);
   assert.doesNotMatch(out, /Mark review row/);
+});
+
+test('the Reports screen warns about an overdue platform but still lets the report be produced', () => {
+  const d = data();
+  const first = reportsView(state, d).toString();
+  assert.match(first, /<select name="platformId"[^>]*data-change="chooseReportPlatform"/);
+  assert.match(first, /Alpha was due for review on 1 Sep 2026 \(never reviewed\)\. You can still produce the report; it will be marked as produced while overdue\./);
+  assert.match(first, /<button type="submit" class="primary">Produce<\/button>/);
+  const bravo = reportsView({ ...state, reportPlatformId: 'p2' }, d).toString();
+  assert.match(bravo, /<option value="p2" selected>/);
+  assert.match(bravo, /Bravo is due for review on 10 Oct 2026\./);
+  assert.doesNotMatch(bravo, /produced while overdue\./);
+  assert.doesNotMatch(reportsView(state, seed()).toString(), /due for review/);
+});
+
+test('a report produced while overdue carries a badge in the list', () => {
+  const report = { platformId: 'p1', platformName: 'Alpha', ownerName: 'Ada', producedAt: act.at, producedBy: 'u1', title: 'Alpha hazards', classification: '', rows: [],
+    review: { state: 'overdue', due: '2026-09-01', months: 6, lastReviewed: null }, markdown: '', html: '' };
+  const d = createReport(data(), act, { id: 'rep1', report });
+  assert.match(reportsView(state, d).toString(), /Alpha hazards <span class="tag review-overdue"[^>]*>Overdue<\/span>/);
+  const fine = createReport(data(), act, { id: 'rep2', report: { ...report, review: { state: 'ok', due: '2027-01-01', months: 6, lastReviewed: null } } });
+  assert.doesNotMatch(reportsView(state, fine).toString(), /review-overdue/);
 });

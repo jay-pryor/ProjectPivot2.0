@@ -63,17 +63,17 @@ function openReviewBlock(state, data, p, review) {
       rows: items,
       empty: 'This platform has no hazards to review.',
       columns: [
-        { key: 'reportId', label: 'ID', width: 200, minWidth: 100, value: (i) => i.reportId, render: (i) => idTag(i.reportId) },
-        { key: 'hazard', label: 'Hazard', width: 520, minWidth: 200, value: (i) => i.hazard.title, filter: 'text',
+        { key: 'reportId', label: 'ID', width: 140, minWidth: 100, value: (i) => i.reportId, render: (i) => idTag(i.reportId) },
+        { key: 'hazard', label: 'Hazard', width: 340, minWidth: 200, value: (i) => i.hazard.title, filter: 'text',
           render: (i) => html`${go(i.hazard.title, 'hazard', { id: i.hazard.id })}${i.onPlatform ? '' : html` <span class="muted">(no longer on this platform)</span>`}` },
-        { key: 'initial', label: 'Initial', width: 220, minWidth: 120, value: (i) => (i.rating ? BANDS.indexOf(band(i.rating.initial)) : null),
+        { key: 'initial', label: 'Initial', width: 150, minWidth: 120, value: (i) => (i.rating ? BANDS.indexOf(band(i.rating.initial)) : null),
           render: (i) => (i.rating ? bandTag(band(i.rating.initial)) : '—') },
-        { key: 'residual', label: 'Residual', width: 220, minWidth: 120, value: (i) => (i.rating ? BANDS.indexOf(band(i.rating.residual)) : null),
+        { key: 'residual', label: 'Residual', width: 150, minWidth: 120, value: (i) => (i.rating ? BANDS.indexOf(band(i.rating.residual)) : null),
           render: (i) => (i.rating ? bandTag(band(i.rating.residual)) : '—') },
-        { key: 'controls', label: 'Controls', width: 400, minWidth: 180, sortable: false, render: (i) => (i.counts ? controlSummary(i.counts) : '—') },
-        { key: 'reviewed', label: 'Reviewed', width: 200, minWidth: 120, value: (i) => (i.reviewed ? 'yes' : 'no'), filter: 'select', options: [['yes', 'Yes'], ['no', 'No']],
+        { key: 'controls', label: 'Controls', width: 260, minWidth: 180, sortable: false, render: (i) => (i.counts ? controlSummary(i.counts) : '—') },
+        { key: 'reviewed', label: 'Reviewed', width: 130, minWidth: 110, value: (i) => (i.reviewed ? 'yes' : 'no'), filter: 'select', options: [['yes', 'Yes'], ['no', 'No']],
           render: (i) => html`<input type="checkbox" name="reviewed" aria-label="Reviewed: ${i.hazard.title}"${i.reviewed ? raw(' checked') : ''}${i.onPlatform ? '' : raw(' disabled')} ${dataAttrs({ change: 'tickReviewRow', 'review-id': review.id, 'hazard-id': i.hazard.id })}>` },
-        { key: 'note', label: 'Note', width: 640, minWidth: 220, value: (i) => i.note, filter: 'text',
+        { key: 'note', label: 'Note', width: 420, minWidth: 220, value: (i) => i.note, filter: 'text',
           render: (i) => (noting(i)
             ? html`<input class="cell-edit" name="note" value="${i.note}" placeholder="What was checked or found…" aria-label="Note on ${i.hazard.title}" autofocus ${dataAttrs({ change: 'markRow', 'review-id': review.id, 'hazard-id': i.hazard.id })}>`
             : i.onPlatform
@@ -101,10 +101,10 @@ function completedReview(state, data, p, review) {
       rows: reviewRows(data, review.id),
       empty: 'The platform had no hazards when this review was completed.',
       columns: [
-        { key: 'reportId', label: 'ID', width: 200, minWidth: 100, value: (i) => i.reportId, render: (i) => idTag(i.reportId) },
-        { key: 'hazard', label: 'Hazard', width: 560, minWidth: 200, value: (i) => i.hazard.title, render: (i) => go(i.hazard.title, 'hazard', { id: i.hazard.id }) },
-        { key: 'reviewed', label: 'Reviewed', width: 200, minWidth: 120, value: (i) => (i.reviewed ? 'Yes' : 'No'), filter: 'select', options: [['Yes', 'Yes'], ['No', 'No']] },
-        { key: 'note', label: 'Note', width: 720, minWidth: 220, value: (i) => i.note },
+        { key: 'reportId', label: 'ID', width: 140, minWidth: 100, value: (i) => i.reportId, render: (i) => idTag(i.reportId) },
+        { key: 'hazard', label: 'Hazard', width: 440, minWidth: 200, value: (i) => i.hazard.title, render: (i) => go(i.hazard.title, 'hazard', { id: i.hazard.id }) },
+        { key: 'reviewed', label: 'Reviewed', width: 150, minWidth: 110, value: (i) => (i.reviewed ? 'Yes' : 'No'), filter: 'select', options: [['Yes', 'Yes'], ['No', 'No']] },
+        { key: 'note', label: 'Note', width: 600, minWidth: 220, value: (i) => i.note },
       ],
     })}</section>`;
 }
@@ -117,13 +117,13 @@ function pastReviews(state, data, p) {
     rows: completedReviews(data, p.id),
     empty: 'No completed reviews yet.',
     columns: [
-      { key: 'completed', label: 'Completed', width: 260, minWidth: 140, value: (c) => c.review.completedAt,
+      { key: 'completed', label: 'Completed', width: 190, minWidth: 140, value: (c) => c.review.completedAt,
         render: (c) => go(day(c.review.completedAt), 'platform', { id: p.id, tab: 'reviews', 'review-id': c.review.id }) },
-      { key: 'by', label: 'By', width: 220, minWidth: 100, value: (c) => profileName(state, c.review.completedBy) },
-      { key: 'cleared', label: 'Review due', width: 240, minWidth: 130, value: (c) => c.review.dueBefore, render: (c) => day(c.review.dueBefore) },
-      { key: 'outcome', label: 'Outcome', width: 640, minWidth: 200, value: (c) => c.review.outcome },
-      { key: 'ticked', label: 'Reviewed', width: 180, minWidth: 100, value: (c) => c.ticked },
-      { key: 'notTicked', label: 'Not reviewed', width: 200, minWidth: 110, value: (c) => c.notTicked },
+      { key: 'by', label: 'By', width: 170, minWidth: 100, value: (c) => profileName(state, c.review.completedBy) },
+      { key: 'cleared', label: 'Review due', width: 180, minWidth: 130, value: (c) => c.review.dueBefore, render: (c) => day(c.review.dueBefore) },
+      { key: 'outcome', label: 'Outcome', width: 460, minWidth: 200, value: (c) => c.review.outcome },
+      { key: 'ticked', label: 'Reviewed', width: 140, minWidth: 100, value: (c) => c.ticked },
+      { key: 'notTicked', label: 'Not reviewed', width: 160, minWidth: 110, value: (c) => c.notTicked },
     ],
   });
 }
