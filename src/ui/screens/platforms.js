@@ -1,13 +1,15 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, stateTag, go, confirmButton, pageTabs, historyTable, plus, idTag } from './common.js';
+import { dataAttrs, option, statusTag, stateTag, go, confirmButton, pageTabs, historyTable, plus, idTag, reviewTag } from './common.js';
+import { reviewLine } from './reviews.js';
+import { reviewState } from '../../core/time.js';
 import { dataTable } from './table.js';
 import { notFound, statusColumn, idColumn, newRecord } from './hazards.js';
 import { all, get, live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
-import { platformHazards, bandOf } from '../../core/queries.js';
+import { platformHazards, bandOf, openReview } from '../../core/queries.js';
 import { historyReaching } from '../../core/history.js';
 import { CONSEQUENCES, LIKELIHOODS, BANDS, ratingFor } from '../../core/matrix.js';
-import { profileName, when } from '../names.js';
+import { profileName, when, day } from '../names.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -27,6 +29,10 @@ export function platformsView(state, data) {
         { key: 'owner', label: 'Owner', width: 400, minWidth: 140, value: (p) => profileName(state, p.ownerId), filter: 'select',
           options: state.profiles.map((/** @type {any} */ pr) => /** @type {[string, string]} */ ([pr.id, pr.name])), match: (p, v) => p.ownerId === v },
         { key: 'hazards', label: 'Hazards', width: 220, minWidth: 100, value: (p) => count(p.id) },
+        { key: 'review', label: 'Next review', width: 340, minWidth: 170, value: (p) => p.reviewDue ?? null, filter: 'select',
+          options: [['overdue', 'Overdue'], ['dueSoon', 'Due soon'], ['ok', 'Not due yet'], ['none', 'No schedule']],
+          match: (p, v) => reviewState(p, state.today) === v,
+          render: (p) => (p.reviewDue ? html`${day(p.reviewDue)}${reviewTag(reviewState(p, state.today))}` : '—') },
         statusColumn((p) => p.status),
       ],
     })}`;
@@ -58,7 +64,7 @@ export function platformView(state, data, id) {
   const head = html`<p>${go('← Platforms', 'platforms')}</p>
     <div class="doc-head"><span class="doc-id">${idTag(platformLabel(p))}</span>${statusTag(p.status)}</div>
     <input class="doc-title" name="name" value="${p.name}" required aria-label="Platform name" ${dataAttrs({ change: 'updatePlatform', id })}>
-    ${pageTabs('platform', { id }, tab, reaching.length)}`;
+    ${pageTabs('platform', { id }, tab, reaching.length, [['reviews', openReview(data, id) ? 'Reviews (in progress)' : 'Reviews']])}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'platform', id, reaching)}`;
 
   const rows = platformHazards(data, id);
@@ -71,6 +77,7 @@ export function platformView(state, data, id) {
   return html`${head}
     <article class="doc">
       <p class="doc-meta">Owned by <select class="quiet inline-select" name="ownerId" aria-label="Owner" ${dataAttrs({ change: 'setOwner', id })}>${state.profiles.map((/** @type {any} */ pr) => option(pr.id, pr.name, p.ownerId))}</select></p>
+      ${reviewLine(state, data, p)}
       <section class="block">
         ${dataTable(state, {
           id: 'platformHazards',

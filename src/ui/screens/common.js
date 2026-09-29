@@ -96,16 +96,26 @@ function show(v) {
 }
 
 /**
- * Details and History as tabs of a record's page.
+ * Details, any extra tabs, and History, as tabs of a record's page.
  * @param {string} view @param {Record<string, string>} where e.g. { id } or { 'hazard-id', 'platform-id' }
  * @param {string | undefined} tab @param {number} changes
+ * @param {[string, unknown][]} [extra] [tab, label] pairs shown between Details and History
  */
-export function pageTabs(view, where, tab, changes) {
-  const on = (/** @type {boolean} */ b) => (b ? ' on' : '');
+export function pageTabs(view, where, tab, changes, extra = []) {
+  const current = tab || 'details';
+  const on = (/** @type {string} */ t) => (current === t ? ' on' : '');
   return html`<nav class="tabs">
-    <button type="button" class="tab${on(tab !== 'history')}" ${dataAttrs({ action: 'go', view, ...where })}>Details</button>
-    <button type="button" class="tab${on(tab === 'history')}" ${dataAttrs({ action: 'go', view, ...where, tab: 'history' })}>History (${changes})</button>
+    <button type="button" class="tab${on('details')}" ${dataAttrs({ action: 'go', view, ...where })}>Details</button>
+    ${extra.map(([t, label]) => html`<button type="button" class="tab${on(t)}" ${dataAttrs({ action: 'go', view, ...where, tab: t })}>${label}</button>`)}
+    <button type="button" class="tab${on('history')}" ${dataAttrs({ action: 'go', view, ...where, tab: 'history' })}>History (${changes})</button>
   </nav>`;
+}
+
+/** A badge for a review that is due soon or overdue; nothing otherwise. @param {string} state from reviewState */
+export function reviewTag(state) {
+  if (state === 'overdue') return html` <span class="tag review-overdue">Overdue</span>`;
+  if (state === 'dueSoon') return html` <span class="tag review-due-soon">Due soon</span>`;
+  return '';
 }
 
 const CHANGE_WORD = { created: 'Created', deleted: 'Deleted', retired: 'Retired', restored: 'Restored' };

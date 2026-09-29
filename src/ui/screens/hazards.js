@@ -3,7 +3,8 @@ import { dataAttrs, option, statusTag, bandTag, go, confirmButton, pageTabs, his
 import { dataTable } from './table.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
-import { hazardRows, hazardDetail, ratingOf, bandOf } from '../../core/queries.js';
+import { hazardRows, hazardDetail, ratingOf, bandOf, hazardLastReviewed } from '../../core/queries.js';
+import { day } from '../names.js';
 import { BANDS } from '../../core/matrix.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
 
@@ -144,6 +145,11 @@ export function hazardView(state, data, id) {
             { key: 'reportId', label: 'Report ID', width: 320, minWidth: 150, value: (p) => p.reportId, render: (p) => idTag(p.reportId) },
             { key: 'risk', label: 'Residual risk', width: 300, minWidth: 150, value: (p) => BANDS.indexOf(bandOf(ratingOf(data, h.id, p.platform.id).residual)),
               render: (p) => bandTag(bandOf(ratingOf(data, h.id, p.platform.id).residual)) },
+            { key: 'lastReviewed', label: 'Last reviewed', width: 280, minWidth: 140, value: (p) => hazardLastReviewed(data, h.id, p.platform.id),
+              render: (p) => {
+                const at = hazardLastReviewed(data, h.id, p.platform.id);
+                return at ? day(at) : html`<span class="muted">Never</span>`;
+              } },
           ],
         })}
       </section>

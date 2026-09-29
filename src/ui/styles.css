@@ -216,3 +216,12 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 .pick-list li:last-child { border-bottom: 0; }
 .pick-list li[hidden] { display: none; }
 .pick-list label { display: flex; gap: 8px; align-items: center; cursor: pointer; flex: 1; }
+
+/* Reviews */
+.review-overdue { background: var(--p-error-bg); color: var(--p-danger); }
+.review-due-soon { background: var(--p-warn-bg); color: var(--p-warn); }
+.review-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 16px; }
+.review-line input.months { width: 72px; }
+.review-line input.quiet { border-color: transparent; background: transparent; color: var(--p-fg); }
+.review-line input.quiet:hover, .review-line input.quiet:focus { border-color: var(--p-line); background: var(--p-surface); }
+.review-line > button:not(.link) { margin-left: 8px; }

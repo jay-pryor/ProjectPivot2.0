@@ -31,3 +31,11 @@ export function profileName(state, id) {
 export function when(ts) {
   return ts.slice(0, 16).replace('T', ' ');
 }
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** @param {string} date `YYYY-MM-DD`, or an AEST timestamp @returns {string} e.g. `12 Aug 2026` */
+export function day(date) {
+  const [y, m, d] = date.slice(0, 10).split('-');
+  return `${Number(d)} ${MONTH_NAMES[Number(m) - 1]} ${y}`;
+}
