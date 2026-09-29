@@ -68,3 +68,60 @@ test('a remembered folder with no name is still offered', async () => {
   await c.dispatch({ type: 'recallFolder' });
   assert.match(openScreen(c.getState()).toString(), />Reconnect to the last folder</);
 });
+
+async function inside(folders) {
+  let i = 0;
+  const saved = [];
+  const c = createController({
+    clock: fixedClock('2026-09-28T10:00:00+10:00'), storage: new MemoryStorage(), minSaveMs: 0,
+    pickFolder: async () => { const f = folders[i++]; if (!f) throw new DOMException('cancelled', 'AbortError'); return f.handle; },
+    pickSaveFile: async () => null, pickOpenFile: async () => null,
+    rememberFolder: async (h) => { saved.push(h.name); },
+  });
+  await c.dispatch({ type: 'chooseFolder' });
+  await c.dispatch({ type: 'createProfile', name: 'Ada' });
+  await c.dispatch({ type: 'selectProfile', id: c.getState().profiles[0].id });
+  return { c, saved };
+}
+
+test('the Folder part of the top bar chooses a different folder', async () => {
+  const { shell } = await import('../../src/ui/screens/common.js');
+  const { html } = await import('../../src/ui/html.js');
+  const { c } = await inside([new MemoryFolder('Wrong')]);
+  const out = shell(c.getState(), html``).toString();
+  assert.match(out, /<button type="button" class="folder" data-action="changeFolder" title="Choose a different data folder">Folder: Wrong<\/button>/);
+});
+
+test('changing folder starts afresh in the new one, and it is remembered', async () => {
+  const { c, saved } = await inside([new MemoryFolder('Wrong'), new MemoryFolder('Right')]);
+  await c.dispatch({ type: 'save' });
+  await c.dispatch({ type: 'changeFolder' });
+  const s = c.getState();
+  assert.deepEqual([s.screen, s.folderName, s.session, s.profileId], ['profile', 'Right', null, null]);
+  assert.deepEqual(saved, ['Wrong', 'Right']);
+});
+
+test('changing folder with unsaved changes asks to save first, and changes nothing', async () => {
+  const { c } = await inside([new MemoryFolder('Wrong'), new MemoryFolder('Right')]);
+  await c.dispatch({ type: 'createHazard', title: 'Fire' });
+  await c.dispatch({ type: 'changeFolder' });
+  assert.equal(c.getState().folderName, 'Wrong');
+  assert.equal(c.getState().screen, 'main');
+  assert.match(c.getState().message.text, /Save/);
+});
+
+test('cancelling the folder picker leaves everything as it was', async () => {
+  const { c } = await inside([new MemoryFolder('Wrong')]);
+  await c.dispatch({ type: 'changeFolder' });
+  assert.equal(c.getState().folderName, 'Wrong');
+  assert.equal(c.getState().screen, 'main');
+  assert.equal(c.getState().message, null);
+});
+
+test('the profile screen offers a different folder too', async () => {
+  const { profileScreen } = await import('../../src/ui/screens/start.js');
+  const f = new MemoryFolder('Wrong');
+  const c = createController(env(f).env);
+  await c.dispatch({ type: 'chooseFolder' });
+  assert.match(profileScreen(c.getState()).toString(), /data-action="chooseFolder">Choose a different folder…<\/button>/);
+});

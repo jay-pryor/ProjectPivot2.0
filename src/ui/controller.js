@@ -218,6 +218,14 @@ export function createController(env) {
       }
       await openFolder(h);
     },
+    async changeFolder() {
+      // Switching mid-session would lose unsaved work with the folder it belongs to.
+      if (state.session && hasUnsaved(state.session)) {
+        set({ message: { kind: 'warning', text: 'Save your changes before choosing a different folder.' } });
+        return;
+      }
+      await handlers.chooseFolder();
+    },
     async chooseFolder() {
       const h = await env.pickFolder();
       try { await env.rememberFolder?.(h); } catch { /* remembering is a convenience; opening goes on without it */ }
@@ -552,6 +560,8 @@ export function createController(env) {
   /** Open a folder the person chose, or allowed again: check its files, then ask who they are. @param {any} h */
   async function openFolder(h) {
     handle = h;
+    // A different folder is a fresh start: nothing of the last one's session carries over.
+    set({ session: null, profileId: null, view: initialState().view, editing: null, picker: null, confirmDelete: null, undo: null, recoverable: null });
     const check = await store.checkFolder(h);
     const profilesBad = check.failed.some((x) => x.file === store.FILES.profiles);
     const dataBlocked = check.failed.some((x) => x.file === store.FILES.data);

@@ -103,7 +103,7 @@ export function shell(state, body) {
     <span class="brand">${raw(FULCRUM_SVG)}PIVOT</span>
     <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${view === 'home' && waiting ? `${label} (${waiting})` : label}</button>`)}</nav>
     <span class="spacer"></span>
-    <span class="folder" title="The data folder">Folder: ${state.folderName}</span>
+    <button type="button" class="folder" ${dataAttrs({ action: 'changeFolder' })} title="Choose a different data folder">Folder: ${state.folderName}</button>
     ${save}
     <button type="button" class="theme" ${dataAttrs({ action: 'setTheme', theme: other })} title="Switch to ${other} mode" aria-label="Switch to ${other} mode">${theme === 'dark' ? '☀' : '☾'}</button>
     <span class="profile" title="Active profile">${profileName(state, state.profileId)}</span>

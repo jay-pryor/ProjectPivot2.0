@@ -28,7 +28,7 @@ export function checkScreen(state) {
 
 /** @param {any} state */
 export function profileScreen(state) {
-  return html`<div class="start"><h1>Who are you?</h1><p class="muted">${state.folderName}</p>
+  return html`<div class="start"><h1>Who are you?</h1><p class="muted row">${state.folderName} <button type="button" ${dataAttrs({ action: 'chooseFolder' })}>Choose a different folder…</button></p>
     ${messages(state)}
     ${state.profiles.length
       ? html`<ul class="profiles">${state.profiles.map((/** @type {any} */ p) => html`<li><button type="button" ${dataAttrs({ action: 'selectProfile', id: p.id })}>${p.name}</button></li>`)}</ul>`
