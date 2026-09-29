@@ -92,7 +92,7 @@ export function addMonths(date, n) {
 export const DUE_SOON_DAYS = 30;
 
 /**
- * @param {{ reviewMonths?: number | null, reviewDue?: string | null }} platform
+ * @param {{ reviewMonths?: number | null, reviewDue?: string | null, [field: string]: any }} platform
  * @param {string} today `YYYY-MM-DD`, AEST
  * @returns {'none' | 'ok' | 'dueSoon' | 'overdue'}
  */

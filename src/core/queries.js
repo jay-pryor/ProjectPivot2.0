@@ -1,6 +1,7 @@
 import { get, all, live, byCreated } from './data.js';
 import { ids, hazardLabel } from './ids.js';
 import { ratingFor, BANDS } from './matrix.js';
+import { reviewState } from './time.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Rec} Rec */
@@ -205,4 +206,73 @@ export function hazardRows(data) {
 /** The review in progress on a platform, if any. @param {Data} data @param {string} platformId @returns {Rec | null} */
 export function openReview(data, platformId) {
   return live(data, 'review').find((r) => r.platformId === platformId && r.state === 'open') ?? null;
+}
+
+/** @param {{ state: string }[]} controls */
+function controlCounts(controls) {
+  const counts = { confirmed: 0, excluded: 0, awaiting: 0 };
+  for (const c of controls) counts[/** @type {keyof typeof counts} */ (c.state)] += 1;
+  return counts;
+}
+
+/**
+ * A review's checklist. Open: every hazard now on the platform, with its current ratings and
+ * control decisions, plus any row whose hazard has since left the platform. Completed: exactly
+ * the rows it recorded, with no ratings, since the review does not say what they were then.
+ * @param {Data} data @param {string} reviewId
+ */
+export function reviewRows(data, reviewId) {
+  const review = get(data, 'review', reviewId);
+  if (!review) return [];
+  const rows = live(data, 'reviewRow').filter((r) => r.reviewId === reviewId);
+  const rowOf = new Map(rows.map((r) => [r.hazardId, r]));
+  const onNow = new Map(platformHazards(data, review.platformId).map((ph) => [ph.hazard.id, ph]));
+  /** @param {Rec} hazard */
+  const reportIdOf = (hazard) => onNow.get(hazard.id)?.reportId ?? hazardLabel(hazard);
+  /** @param {Rec} hazard @param {boolean} current */
+  const item = (hazard, current) => {
+    const row = rowOf.get(hazard.id);
+    const ph = current ? onNow.get(hazard.id) : undefined;
+    return {
+      hazard, reportId: reportIdOf(hazard), onPlatform: onNow.has(hazard.id),
+      reviewed: Boolean(row?.reviewed), note: row?.note ?? '',
+      rating: ph ? ph.rating : null, counts: ph ? controlCounts(ph.controls) : null,
+    };
+  };
+  const hazardOf = (/** @type {Rec} */ row) => /** @type {Rec} */ (get(data, 'hazard', row.hazardId));
+  if (review.state === 'completed') return rows.map((r) => item(hazardOf(r), false)).sort((a, b) => byNumber(a.hazard, b.hazard));
+  const off = rows.filter((r) => !onNow.has(r.hazardId)).map(hazardOf);
+  return [...[...onNow.values()].map((ph) => item(ph.hazard, true)), ...off.map((h) => item(h, false))].sort((a, b) => byNumber(a.hazard, b.hazard));
+}
+
+/** A platform's completed reviews, newest first, with how many hazards each ticked. @param {Data} data @param {string} platformId */
+export function completedReviews(data, platformId) {
+  return live(data, 'review').filter((r) => r.platformId === platformId && r.state === 'completed')
+    .sort((a, b) => (a.completedAt < b.completedAt ? 1 : a.completedAt > b.completedAt ? -1 : 0))
+    .map((review) => {
+      const rows = live(data, 'reviewRow').filter((r) => r.reviewId === review.id);
+      const ticked = rows.filter((r) => r.reviewed).length;
+      return { review, ticked, notTicked: rows.length - ticked };
+    });
+}
+
+/** @param {Data} data @param {string} platformId @returns {string | null} when it was last reviewed */
+export function lastReviewed(data, platformId) {
+  return completedReviews(data, platformId)[0]?.review.completedAt ?? null;
+}
+
+/** @param {Data} data @param {string} hazardId @param {string} platformId @returns {string | null} */
+export function hazardLastReviewed(data, hazardId, platformId) {
+  const hit = completedReviews(data, platformId).find(({ review }) => {
+    const row = get(data, 'reviewRow', ids.reviewRow(review.id, hazardId));
+    return row && row.status === 'live' && row.reviewed;
+  });
+  return hit?.review.completedAt ?? null;
+}
+
+/** Every live platform with a review schedule, soonest due first. @param {Data} data @param {string} today */
+export function reviewDueList(data, today) {
+  return live(data, 'platform').filter((p) => p.reviewMonths && p.reviewDue)
+    .map((platform) => ({ platform, state: reviewState(platform, today), due: /** @type {string} */ (platform.reviewDue) }))
+    .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
 }
