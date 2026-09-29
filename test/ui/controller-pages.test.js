@@ -53,15 +53,15 @@ test('a control\'s state on a platform from one dropdown: confirmed, awaiting, o
   await c.dispatch({ type: 'linkHazards', platformId: 'p1', hazardId: 'h1' });
   const t = { hazardId: 'h1', controlId: 'c1', platformId: 'p1' };
   const ruling = () => W(c).records.ruling[ids.ruling('h1', 'c1', 'p1')];
-  await c.dispatch({ type: 'setControlState', ...t, value: 'confirmed' });
-  assert.equal(ruling().state, 'confirmed');
-  await c.dispatch({ type: 'setControlState', ...t, value: 'excluded' });
-  assert.equal(ruling().state, 'confirmed', 'nothing changes until a reason is given');
-  assert.deepEqual(c.getState().editing, { kind: 'exclusion', id: 'h1|c1|p1' });
-  await c.dispatch({ type: 'excludeControl', ...t, reason: 'Not fitted' });
-  assert.equal(ruling().state, 'excluded');
+  await c.dispatch({ type: 'setControlState', ...t, value: 'implemented' });
+  assert.equal(ruling().state, 'implemented');
+  await c.dispatch({ type: 'setControlState', ...t, value: 'rejected' });
+  assert.equal(ruling().state, 'implemented', 'nothing changes until a reason is given');
+  assert.deepEqual(c.getState().editing, { kind: 'rejection', id: 'h1|c1|p1' });
+  await c.dispatch({ type: 'rejectControl', ...t, reason: 'Not fitted' });
+  assert.equal(ruling().state, 'rejected');
   assert.equal(c.getState().editing, null);
-  await c.dispatch({ type: 'setControlState', ...t, value: 'awaiting' });
+  await c.dispatch({ type: 'setControlState', ...t, value: 'recommended' });
   assert.equal(ruling().status, 'deleted');
 });
 

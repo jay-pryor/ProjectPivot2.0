@@ -42,9 +42,9 @@ export function reviewLine(state, data, p) {
     ${start}</div>`;
 }
 
-/** @param {{ confirmed: number, excluded: number, awaiting: number }} c */
+/** @param {{ recommended: number, planned: number, implemented: number, rejected: number }} c */
 function controlSummary(c) {
-  const parts = [['confirmed', c.confirmed], ['excluded', c.excluded], ['awaiting', c.awaiting]].filter(([, n]) => n);
+  const parts = /** @type {[string, number][]} */ ([['implemented', c.implemented], ['planned', c.planned], ['recommended', c.recommended], ['rejected', c.rejected]]).filter(([, n]) => n);
   return parts.length ? parts.map(([s, n]) => `${n} ${s}`).join(' · ') : html`<span class="muted">No controls</span>`;
 }
 

@@ -128,12 +128,14 @@ ul.plain { list-style: none; margin: 0; padding: 0; }
 .tag-retired { color: var(--p-muted); }
 .tag-deleted { background: var(--p-error-bg); color: var(--p-danger); }
 .tag-tbc { background: var(--p-warn-bg); color: var(--p-warn); border: 1px dashed var(--p-warn); letter-spacing: .04em; font-variant-numeric: normal; }
-.state-confirmed { background: #1c3a28; color: #6fdc9b; }
-.state-excluded { background: #2e2342; color: #c9a8ff; }
-.state-awaiting { background: #16304a; color: #8cc8ff; }
-:root[data-theme="light"] .state-confirmed { background: #e7f5ec; color: #1d7a46; }
-:root[data-theme="light"] .state-excluded { background: #f1eafa; color: #6b3fa0; }
-:root[data-theme="light"] .state-awaiting { background: #ddf4ff; color: #0a3069; }
+.state-recommended { background: #16304a; color: #8cc8ff; }
+.state-planned { background: #3a2e12; color: #f2c14e; }
+.state-implemented { background: #1c3a28; color: #6fdc9b; }
+.state-rejected { background: #2e2342; color: #c9a8ff; }
+:root[data-theme="light"] .state-recommended { background: #ddf4ff; color: #0a3069; }
+:root[data-theme="light"] .state-planned { background: #fff4d6; color: #7a5200; }
+:root[data-theme="light"] .state-implemented { background: #e7f5ec; color: #1d7a46; }
+:root[data-theme="light"] .state-rejected { background: #f1eafa; color: #6b3fa0; }
 .band { display: inline-block; padding: 0 7px; border-radius: 4px; font-size: 12px; font-weight: 700; }
 .band-high { background: #c2352b; color: #fff; }
 .band-serious { background: #e8710a; color: #fff; }
@@ -201,7 +203,7 @@ select.rating.band-high { border-left-color: #c2352b; }
 select.rating.band-serious { border-left-color: #e8710a; }
 select.rating.band-medium { border-left-color: #f2cc3f; }
 select.rating.band-low { border-left-color: #2e8b57; }
-select.state-select.state-confirmed, select.state-select.state-excluded, select.state-select.state-awaiting { font-weight: 700; }
+select.state-select { font-weight: 700; }
 .th-title { display: flex; align-items: center; gap: 8px; }
 .plus { display: inline-flex; align-items: center; justify-content: center; flex: none; border: 1px solid var(--p-line); background: transparent; color: var(--p-muted); width: 24px; height: 24px; padding: 0; border-radius: 50%; }
 .plus svg { width: 12px; height: 12px; display: block; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; fill: none; }

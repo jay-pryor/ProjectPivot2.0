@@ -37,12 +37,12 @@ test('each broken rule is found and names the records involved', () => {
   assert.deepEqual(rulesOf(d), ['parent-deleted']);
 
   d = seed();
-  d = put(d, 'ruling', created(act, ids.ruling('h2', 'c1', 'p1'), { hazardId: 'h2', controlId: 'c1', platformId: 'p1', state: 'confirmed', reason: '' }));
+  d = put(d, 'ruling', created(act, ids.ruling('h2', 'c1', 'p1'), { hazardId: 'h2', controlId: 'c1', platformId: 'p1', state: 'implemented', reason: '' }));
   assert.deepEqual(rulesOf(d), ['ruling-without-control-link', 'ruling-without-platform-link']);
 
   d = seed();
-  d = put(d, 'ruling', created(act, ids.ruling('h1', 'c1', 'p1'), { hazardId: 'h1', controlId: 'c1', platformId: 'p1', state: 'excluded', reason: ' ' }));
-  assert.deepEqual(rulesOf(d), ['exclusion-without-reason']);
+  d = put(d, 'ruling', created(act, ids.ruling('h1', 'c1', 'p1'), { hazardId: 'h1', controlId: 'c1', platformId: 'p1', state: 'rejected', reason: ' ' }));
+  assert.deepEqual(rulesOf(d), ['rejection-without-reason']);
 
   d = seed();
   d = put(d, 'rating', created(act, ids.rating('h2', 'p1'), { hazardId: 'h2', platformId: 'p1', initial: null, residual: null }));

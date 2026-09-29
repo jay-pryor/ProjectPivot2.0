@@ -47,8 +47,8 @@ test('a retired hazard, or a retired platform, cannot be linked', () => {
 
 test('unlinking a hazard from a platform deletes its rulings and rating there, and then it can be retired', () => {
   let d = seed();
-  d = put(d, 'ruling', created(act, ids.ruling('h1', 'c1', 'p1'), { hazardId: 'h1', controlId: 'c1', platformId: 'p1', state: 'confirmed', reason: '' }));
-  d = put(d, 'ruling', created(act, ids.ruling('h1', 'c1', 'p2'), { hazardId: 'h1', controlId: 'c1', platformId: 'p2', state: 'confirmed', reason: '' }));
+  d = put(d, 'ruling', created(act, ids.ruling('h1', 'c1', 'p1'), { hazardId: 'h1', controlId: 'c1', platformId: 'p1', state: 'implemented', reason: '' }));
+  d = put(d, 'ruling', created(act, ids.ruling('h1', 'c1', 'p2'), { hazardId: 'h1', controlId: 'c1', platformId: 'p2', state: 'implemented', reason: '' }));
   d = setRating(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', consequence: 2, likelihood: 'C' });
   d = unlinkHazard(d, later, { hazardId: 'h1', platformId: 'p1' });
   assert.equal(d.records.hazardPlatform['hp:h1:p1'].status, 'deleted');

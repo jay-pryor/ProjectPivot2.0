@@ -25,7 +25,7 @@ test('an open review lists every hazard on the platform with its current ratings
     ['h1', 'H-0001', true, true, 'Fine'],
     ['h2', 'H-0002', true, false, ''],
   ]);
-  assert.deepEqual(items[0].counts, { confirmed: 1, excluded: 0, awaiting: 1 });
+  assert.deepEqual(items[0].counts, { recommended: 1, planned: 0, implemented: 1, rejected: 0 });
   assert.deepEqual(items[0].rating, { initial: null, residual: null });
 });
 

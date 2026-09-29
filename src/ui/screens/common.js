@@ -29,7 +29,7 @@ export function bandTag(band) {
   return html`<span class="band band-${band.toLowerCase().replace(/\s+/g, '-')}">${band}</span>`;
 }
 
-/** @param {string} state confirmed | excluded | awaiting */
+/** @param {string} state recommended | planned | implemented | rejected */
 export function stateTag(state) {
   return html`<span class="tag state-${state}">${state}</span>`;
 }

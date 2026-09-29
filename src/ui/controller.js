@@ -34,8 +34,7 @@ const EDITS = {
   createPlatform: platforms.createPlatform, updatePlatform: platforms.updatePlatform, setOwner: platforms.setOwner,
   retirePlatform: platforms.retirePlatform, deletePlatform: platforms.deletePlatform, linkHazard: platforms.linkHazard,
   unlinkHazard: platforms.unlinkHazard, setReportId: platforms.setReportId,
-  confirmControl: assessment.confirmControl, excludeControl: assessment.excludeControl,
-  resetControl: assessment.resetControl, setRating: assessment.setRating, setRatingCell: assessment.setRatingCell,
+  setControlStatus: assessment.setControlStatus, setRating: assessment.setRating, setRatingCell: assessment.setRatingCell,
   setAssessment: assessment.setAssessment, setSfarp: assessment.setSfarp,
   setSchedule: reviews.setSchedule, startReview: reviews.startReview, markRow: reviews.markRow,
   setReviewOutcome: reviews.setReviewOutcome, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,
@@ -389,10 +388,11 @@ export function createController(env) {
       set({ picker: null });
     },
     async setControlState({ hazardId, controlId, platformId, value }) {
-      const t = { hazardId, controlId, platformId };
-      if (value === 'confirmed') await applyEdit('confirmControl', t);
-      else if (value === 'awaiting') await applyEdit('resetControl', t);
-      else if (value === 'excluded') set({ editing: { kind: 'exclusion', id: `${hazardId}|${controlId}|${platformId}` } });
+      if (value === 'rejected') set({ editing: { kind: 'rejection', id: `${hazardId}|${controlId}|${platformId}` } });
+      else await applyEdit('setControlStatus', { hazardId, controlId, platformId, status: value });
+    },
+    async rejectControl({ hazardId, controlId, platformId, reason }) {
+      await applyEdit('setControlStatus', { hazardId, controlId, platformId, status: 'rejected', reason });
     },
     async setScheduleField({ platformId, months, due }) {
       const p = state.session?.working.records.platform[platformId];

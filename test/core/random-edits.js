@@ -2,7 +2,7 @@ import { PivotError } from '../../src/core/errors.js';
 import { createHazard, updateHazard, retireHazard, deleteHazard, restoreRecord, addCausalFactor, deleteCausalFactor } from '../../src/core/ops/hazards.js';
 import { createControl, updateControl, retireControl, deleteControl, linkControl, unlinkControl } from '../../src/core/ops/controls.js';
 import { createPlatform, linkHazard, unlinkHazard, setReportId, retirePlatform } from '../../src/core/ops/platforms.js';
-import { confirmControl, excludeControl, resetControl, setRating, setAssessment, setSfarp } from '../../src/core/ops/assessment.js';
+import { confirmControl, excludeControl, resetControl, setControlStatus, setRating, setAssessment, setSfarp } from '../../src/core/ops/assessment.js';
 import { setSchedule, startReview, markRow, setReviewOutcome, completeReview, abandonReview } from '../../src/core/ops/reviews.js';
 
 /** A small, seeded pseudo-random generator (mulberry32), so a failure can be replayed. @param {number} seed */
@@ -54,6 +54,7 @@ export function randomEdit(d, rand, act) {
     () => confirmControl(d, act, triple()),
     () => excludeControl(d, act, { ...triple(), reason: `Reason ${n()}` }),
     () => resetControl(d, act, triple()),
+    () => setControlStatus(d, act, { ...triple(), status: pick(rand, ['recommended', 'planned', 'implemented', 'rejected']), reason: `R ${n()}` }),
     () => setRating(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), stage: pick(rand, ['initial', 'residual']), consequence: 1 + Math.floor(rand() * 5), likelihood: pick(rand, [...'ABCDEFG']) }),
     () => setAssessment(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), stage: pick(rand, ['initial', 'residual']), receptor: pick(rand, ['personnel', 'environment']), likelihood: pick(rand, [...'ABCDEFG']), likelihoodWhy: `Why ${n()}` }),
     () => setSfarp(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), conclusion: `C ${n()}` }),

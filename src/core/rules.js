@@ -50,7 +50,7 @@ export function checkRules(data) {
     const hp = ids.hazardPlatform(r.hazardId, r.platformId);
     if (!liveRec('hazardControl', hc)) out.push({ rule: 'ruling-without-control-link', message: 'A control is ruled on for a hazard it is not linked to.', records: [{ kind: 'ruling', id: r.id }, { kind: 'hazardControl', id: hc }] });
     if (!liveRec('hazardPlatform', hp)) out.push({ rule: 'ruling-without-platform-link', message: 'A control is ruled on for a platform the hazard is not on.', records: [{ kind: 'ruling', id: r.id }, { kind: 'hazardPlatform', id: hp }] });
-    if (r.state === 'excluded' && !String(r.reason ?? '').trim()) out.push({ rule: 'exclusion-without-reason', message: 'A control is excluded with no reason.', records: [{ kind: 'ruling', id: r.id }] });
+    if (r.state === 'rejected' && !String(r.reason ?? '').trim()) out.push({ rule: 'rejection-without-reason', message: 'A control is rejected with no reason.', records: [{ kind: 'ruling', id: r.id }] });
   }
   for (const kind of ['rating', 'assessment', 'sfarp']) {
     for (const r of live(data, kind)) {

@@ -8,6 +8,7 @@ import { hazardLabel, controlLabel } from '../../core/ids.js';
 import { BANDS } from '../../core/matrix.js';
 import { filterControls, controlUsage, platformsReached } from '../../core/queries.js';
 import { CONTROL_KINDS, CONTROL_TIERS, tierRank } from '../../core/ops/controls.js';
+import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -22,7 +23,7 @@ export const tierColumn = (controlOf, filter = true) => ({
   } : {}),
 });
 
-const STATES = /** @type {[string, string][]} */ ([['confirmed', 'confirmed'], ['excluded', 'excluded'], ['awaiting', 'awaiting']]);
+const STATES = /** @type {[string, string][]} */ (CONTROL_STATUSES.map((s) => [s, s]));
 
 /** @param {any} state @param {Data} data */
 export function controlsView(state, data) {

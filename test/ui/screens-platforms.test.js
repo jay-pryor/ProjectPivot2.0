@@ -42,5 +42,5 @@ test('a platform\'s History tab shows every change that reached it', () => {
   const out = platformView({ ...state, view: { name: 'platform', id: 'p1', tab: 'history' } }, data(), 'p1').toString();
   assert.match(out, /data-table="history"/);
   assert.match(out, /Set residual rating/);
-  assert.match(out, /Exclude control from platform/);
+  assert.match(out, /Set control to rejected/);
 });

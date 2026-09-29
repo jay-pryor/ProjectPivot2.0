@@ -58,6 +58,11 @@ export function normalizeData(value) {
   }
   records.assessment = assessment;
   records.rating = rating;
+  // Control decisions written before statuses: confirmed is implemented, excluded is rejected.
+  const OLD_STATE = { confirmed: 'implemented', excluded: 'rejected' };
+  records.ruling = Object.fromEntries(Object.entries(records.ruling).map(([id, r]) => [
+    id, isObject(r) && r.state in OLD_STATE ? { ...r, state: OLD_STATE[/** @type {'confirmed'} */ (r.state)] } : r,
+  ]));
   // Platforms written before reviews existed have no schedule.
   records.platform = Object.fromEntries(Object.entries(records.platform).map(([id, p]) => [
     id, isObject(p) && !('reviewDue' in p) ? { ...p, reviewMonths: null, reviewDue: null } : p,

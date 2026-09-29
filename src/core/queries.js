@@ -76,7 +76,7 @@ export function byNumber(a, b) {
 /** @param {Data} data @param {string} hazardId @param {string} controlId @param {string} platformId */
 export function controlState(data, hazardId, controlId, platformId) {
   const r = get(data, 'ruling', ids.ruling(hazardId, controlId, platformId));
-  return r && r.status === 'live' ? { state: /** @type {string} */ (r.state), ruling: r } : { state: 'awaiting', ruling: null };
+  return r && r.status === 'live' ? { state: /** @type {string} */ (r.state), ruling: r } : { state: 'recommended', ruling: null };
 }
 
 /** One assessment's live record, or null. @param {Data} data @param {string} hazardId @param {string} platformId @param {string} stage @param {string} receptor */
@@ -277,7 +277,7 @@ export function openReview(data, platformId) {
 
 /** @param {{ state: string }[]} controls */
 function controlCounts(controls) {
-  const counts = { confirmed: 0, excluded: 0, awaiting: 0 };
+  const counts = { recommended: 0, planned: 0, implemented: 0, rejected: 0 };
   for (const c of controls) counts[/** @type {keyof typeof counts} */ (c.state)] += 1;
   return counts;
 }
@@ -361,7 +361,7 @@ export function openItems(data, today, ownerId) {
       out.reviews.push({ platform, state, due: platform.reviewDue ?? null, lastReviewed: lastReviewed(data, platform.id), open });
     }
     for (const ph of platformHazards(data, platform.id)) {
-      for (const c of ph.controls) if (c.state === 'awaiting') out.awaiting.push({ platform, hazard: ph.hazard, control: c.control });
+      for (const c of ph.controls) if (c.state === 'recommended') out.awaiting.push({ platform, hazard: ph.hazard, control: c.control });
       const incomplete = (/** @type {any} */ pair) => !pair || pair.consequence == null || pair.likelihood == null;
       const missing = [];
       for (const stage of ['initial', 'residual']) for (const receptor of ['personnel', 'environment']) {
@@ -439,7 +439,7 @@ export function platformCards(data, today, ownerId) {
     return {
       platform, state: reviewState(platform, today), due: platform.reviewDue ?? null, lastReviewed: lastReviewed(data, platform.id),
       open: Boolean(openReview(data, platform.id)), hazards: hazards.length,
-      awaiting: hazards.reduce((n, h) => n + h.controls.filter((c) => c.state === 'awaiting').length, 0),
+      awaiting: hazards.reduce((n, h) => n + h.controls.filter((c) => c.state === 'recommended').length, 0),
       acks: waitingChanges(data, platform.id).length, bands,
     };
   });

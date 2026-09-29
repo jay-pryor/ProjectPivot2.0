@@ -42,7 +42,7 @@ test('a platform page: report IDs as text, changed by double-click; ratings and 
   assert.match(out, /<select[^>]*data-change="setRatingCell" data-hazard-id="h1" data-platform-id="p1" data-stage="residual"[\s\S]*?<option value="2C" selected>/);
   assert.match(out, /data-change="setRatingCell"[^>]*data-stage="initial"/);
   assert.match(out, /data-table="platformControls"/);
-  assert.match(out, /data-change="setControlState" data-hazard-id="h1" data-control-id="c2" data-platform-id="p1"[\s\S]*?<option value="excluded" selected>/);
+  assert.match(out, /data-change="setControlState" data-hazard-id="h1" data-control-id="c2" data-platform-id="p1"[\s\S]*?<option value="rejected" selected>/);
   assert.match(out, /No crew/);
   assert.match(out, /data-action="openPicker" data-picker="linkHazards" data-platform-id="p1"/);
 });
@@ -50,8 +50,8 @@ test('a platform page: report IDs as text, changed by double-click; ratings and 
 test('editing in place: a report ID, and the reason when a control is set to excluded', () => {
   const rid = platformView({ ...state, editing: { kind: 'reportId', id: 'h1' } }, data(), 'p1').toString();
   assert.match(rid, /<input class="cell-edit" name="reportId" value="" placeholder="H-0001"[^>]*data-change="setReportId" data-hazard-id="h1" data-platform-id="p1"/);
-  const why = platformView({ ...state, editing: { kind: 'exclusion', id: 'h1|c1|p1' } }, data(), 'p1').toString();
-  assert.match(why, /name="reason"[^>]*data-change="excludeControl" data-hazard-id="h1" data-control-id="c1" data-platform-id="p1"/);
+  const why = platformView({ ...state, editing: { kind: 'rejection', id: 'h1|c1|p1' } }, data(), 'p1').toString();
+  assert.match(why, /name="reason"[^>]*data-change="rejectControl" data-hazard-id="h1" data-control-id="c1" data-platform-id="p1"/);
 });
 
 test('a hazard page reads like a report: the title and description are the document, + buttons add rows and link controls', () => {

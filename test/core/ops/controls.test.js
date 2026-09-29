@@ -48,7 +48,7 @@ test('linkControl links as preventative or mitigating, one link id per pair, and
 test('unlinking a control from a hazard deletes its rulings for that hazard on every platform', () => {
   let d = linkControl(base(), act, { hazardId: 'h1', controlId: 'c1', kind: 'preventative' });
   for (const p of ['p1', 'p2']) {
-    d = put(d, 'ruling', created(act, ids.ruling('h1', 'c1', p), { hazardId: 'h1', controlId: 'c1', platformId: p, state: 'confirmed', reason: '' }));
+    d = put(d, 'ruling', created(act, ids.ruling('h1', 'c1', p), { hazardId: 'h1', controlId: 'c1', platformId: p, state: 'implemented', reason: '' }));
   }
   d = unlinkControl(d, later, { hazardId: 'h1', controlId: 'c1' });
   assert.equal(d.records.ruling['ru:h1:c1:p1'].status, 'deleted');

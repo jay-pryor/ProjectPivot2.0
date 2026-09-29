@@ -14,6 +14,7 @@ import { platformHazards, bandOf, openReview } from '../../core/queries.js';
 import { historyReaching } from '../../core/history.js';
 import { CONSEQUENCES, LIKELIHOODS, BANDS, ratingFor } from '../../core/matrix.js';
 import { profileName, when, day } from '../names.js';
+import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -57,6 +58,20 @@ function ratingOptions(pair) {
 function ratingCell(pair, attrs) {
   const band = bandOf(pair);
   return html`<select class="quiet rating band-edge band-${band.toLowerCase().replace(/\s+/g, '-')}" name="value" aria-label="${attrs.stage} ${attrs.receptor} rating" ${dataAttrs({ change: 'setRatingCell', ...attrs })}>${ratingOptions(pair)}</select>`;
+}
+
+/**
+ * The reason a control is rejected (double-click to change), or who set its status and when.
+ * @param {any} state @param {any} c a controlsOnPlatform row @param {string} hazardId @param {string} platformId @param {string} platformName
+ */
+export function rejectionCell(state, c, hazardId, platformId, platformName) {
+  const key = `${hazardId}|${c.control.id}|${platformId}`;
+  if (state.editing?.kind === 'rejection' && state.editing.id === key) {
+    return html`<input class="cell-edit" name="reason" value="${c.ruling?.state === 'rejected' ? c.ruling.reason : ''}" required placeholder="Why this control is not used on ${platformName}…" aria-label="Reason for rejecting ${c.control.title}" autofocus ${dataAttrs({ change: 'rejectControl', 'hazard-id': hazardId, 'control-id': c.control.id, 'platform-id': platformId })}>`;
+  }
+  if (c.state === 'rejected') return html`<span class="cell-text reason" ${dataAttrs({ dblclick: 'startEdit', kind: 'rejection', id: key })} title="Double-click to change">${c.ruling.reason}</span>`;
+  if (c.ruling) return html`<span class="muted">${profileName(state, c.ruling.updatedBy)}, ${when(c.ruling.updatedAt)}</span>`;
+  return '';
 }
 
 /** @param {any} state @param {Data} data @param {string} id */
@@ -126,19 +141,11 @@ export function platformView(state, data, id) {
               render: (c) => go(idTag(hazardLabel(c.hazard)), 'hazard', { id: c.hazard.id }) },
             tierColumn((c) => c.control),
             { key: 'kind', label: 'Kind', width: 240, minWidth: 120, value: (c) => c.kind },
-            { key: 'state', label: 'State', width: 260, minWidth: 150, value: (c) => c.state, filter: 'select',
-              options: [['confirmed', 'confirmed'], ['excluded', 'excluded'], ['awaiting', 'awaiting']],
-              render: (c) => html`<select class="quiet state-select state-${c.state}" name="value" aria-label="State of ${c.control.title}" ${dataAttrs({ change: 'setControlState', 'hazard-id': c.hazard.id, 'control-id': c.control.id, 'platform-id': id })}>
-                ${['awaiting', 'confirmed', 'excluded'].map((s) => option(s, s, c.state))}</select>` },
-            { key: 'reason', label: 'Reason excluded, or who confirmed', width: 640, minWidth: 220, sortable: false, render: (c) => {
-              const key = `${c.hazard.id}|${c.control.id}|${id}`;
-              if (editing('exclusion', key)) {
-                return html`<input class="cell-edit" name="reason" value="${c.ruling?.state === 'excluded' ? c.ruling.reason : ''}" required placeholder="Why this control is left off ${p.name}…" aria-label="Reason for excluding ${c.control.title}" autofocus ${dataAttrs({ change: 'excludeControl', 'hazard-id': c.hazard.id, 'control-id': c.control.id, 'platform-id': id })}>`;
-              }
-              if (c.state === 'excluded') return html`<span class="cell-text reason" ${dataAttrs({ dblclick: 'startEdit', kind: 'exclusion', id: key })} title="Double-click to change">${c.ruling.reason}</span>`;
-              if (c.state === 'confirmed') return html`<span class="muted">${profileName(state, c.ruling.updatedBy)}, ${when(c.ruling.updatedAt)}</span>`;
-              return '';
-            } },
+            { key: 'state', label: 'Status', width: 260, minWidth: 150, value: (c) => CONTROL_STATUSES.indexOf(c.state), filter: 'select',
+              options: CONTROL_STATUSES.map((s) => /** @type {[string, string]} */ ([s, s])), match: (c, v) => c.state === v,
+              render: (c) => html`<select class="quiet state-select state-${c.state}" name="value" aria-label="Status of ${c.control.title}" ${dataAttrs({ change: 'setControlState', 'hazard-id': c.hazard.id, 'control-id': c.control.id, 'platform-id': id })}>
+                ${CONTROL_STATUSES.map((s) => option(s, s, c.state))}</select>` },
+            { key: 'reason', label: 'Reason rejected, or who set it', width: 640, minWidth: 220, sortable: false, render: (c) => rejectionCell(state, c, c.hazard.id, id, p.name) },
           ],
         })}
       </section>

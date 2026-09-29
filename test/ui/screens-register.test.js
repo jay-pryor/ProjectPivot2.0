@@ -33,14 +33,14 @@ test('the hazard list filters: status (live by default), platform, and risk on t
 
 
 test('the control library and a control\'s page show where it is used and its state on each platform', () => {
-  const list = controlsView({ ...state, tables: { controls: { filters: { state: 'confirmed' } } } }, data()).toString();
+  const list = controlsView({ ...state, tables: { controls: { filters: { state: 'implemented' } } } }, data()).toString();
   assert.match(list, /data-action="startEdit" data-kind="newControl"/);
   assert.match(list, /Sprinklers/);
   assert.doesNotMatch(list, /Fire drills/, 'filtered to confirmed');
   const page = controlView(state, data(), 'c1').toString();
   assert.match(page, /data-change="updateControl" data-id="c1"/);
-  assert.match(page, /state-confirmed/);
-  assert.match(page, /state-awaiting/);
+  assert.match(page, /state-implemented/);
+  assert.match(page, /state-recommended/);
   assert.match(page, /data-action="retireControl"/);
 });
 

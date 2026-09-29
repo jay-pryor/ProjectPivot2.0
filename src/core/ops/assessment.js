@@ -15,32 +15,33 @@ function needTriple(data, t) {
   return ids.ruling(t.hazardId, t.controlId, t.platformId);
 }
 
-/** @param {Data} data @param {Act} act @param {Triple} t @param {'confirmed' | 'excluded'} state @param {string} reason @param {string} action */
-function rule(data, act, t, state, reason, action) {
-  const id = needTriple(data, t);
+export const CONTROL_STATUSES = Object.freeze(['recommended', 'planned', 'implemented', 'rejected']);
+
+/**
+ * A control's status on a platform. Recommended is the default and is stored as no record.
+ * @param {Data} data @param {Act} act @param {Triple & { status: string, reason?: string }} t
+ */
+export function setControlStatus(data, act, { hazardId, controlId, platformId, status, reason }) {
+  if (!CONTROL_STATUSES.includes(status)) throw new PivotError('control.status', `A control's status is one of ${CONTROL_STATUSES.join(', ')}.`);
+  const id = needTriple(data, { hazardId, controlId, platformId });
   const existing = get(data, 'ruling', id);
-  const fields = { hazardId: t.hazardId, controlId: t.controlId, platformId: t.platformId, state, reason };
+  const action = `Set control to ${status}`;
+  if (status === 'recommended') {
+    if (!existing || existing.status !== 'live') return data;
+    return commit(data, act, action, [{ kind: 'ruling', rec: changed(existing, act, { status: 'deleted' }) }]);
+  }
+  const why = status === 'rejected' ? needText(reason, 'A reason for rejecting the control') : '';
+  const fields = { hazardId, controlId, platformId, state: status, reason: why };
   const rec = existing ? changed(existing, act, { ...fields, status: 'live' }) : created(act, id, fields);
   return commit(data, act, action, [{ kind: 'ruling', rec }]);
 }
 
 /** @param {Data} data @param {Act} act @param {Triple} t */
-export function confirmControl(data, act, t) {
-  return rule(data, act, t, 'confirmed', '', 'Confirm control on platform');
-}
-
+export const confirmControl = (data, act, t) => setControlStatus(data, act, { ...t, status: 'implemented' });
 /** @param {Data} data @param {Act} act @param {Triple & { reason: string }} t */
-export function excludeControl(data, act, t) {
-  return rule(data, act, t, 'excluded', needText(t.reason, 'A reason for excluding the control'), 'Exclude control from platform');
-}
-
+export const excludeControl = (data, act, t) => setControlStatus(data, act, { ...t, status: 'rejected' });
 /** @param {Data} data @param {Act} act @param {Triple} t */
-export function resetControl(data, act, t) {
-  const id = needTriple(data, t);
-  const r = get(data, 'ruling', id);
-  if (!r || r.status !== 'live') return data;
-  return commit(data, act, 'Reset control to awaiting', [{ kind: 'ruling', rec: changed(r, act, { status: 'deleted' }) }]);
-}
+export const resetControl = (data, act, t) => setControlStatus(data, act, { ...t, status: 'recommended' });
 
 export const STAGES = Object.freeze(['initial', 'residual']);
 export const RECEPTORS = Object.freeze(['personnel', 'environment']);

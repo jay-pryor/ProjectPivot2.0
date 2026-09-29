@@ -20,10 +20,10 @@ function assessed() {
 
 test('controlState: confirmed, excluded, or awaiting', () => {
   const d = assessed();
-  assert.equal(controlState(d, 'h1', 'c1', 'p1').state, 'confirmed');
-  assert.equal(controlState(d, 'h1', 'c2', 'p1').state, 'excluded');
+  assert.equal(controlState(d, 'h1', 'c1', 'p1').state, 'implemented');
+  assert.equal(controlState(d, 'h1', 'c2', 'p1').state, 'rejected');
   assert.equal(controlState(d, 'h1', 'c2', 'p1').ruling.reason, 'No crew');
-  assert.deepEqual(controlState(d, 'h1', 'c1', 'p2'), { state: 'awaiting', ruling: null });
+  assert.deepEqual(controlState(d, 'h1', 'c1', 'p2'), { state: 'recommended', ruling: null });
 });
 
 test('ratingOf and bandOf', () => {
@@ -51,14 +51,14 @@ test('platformHazards is the one list of a platform\'s hazards, with ratings and
   assert.equal(rows[0].hazard.id, 'h1');
   assert.equal(rows[0].reportId, 'H-0001');
   assert.deepEqual(rows[0].rating.residual, { consequence: 2, likelihood: 'C' });
-  assert.deepEqual(rows[0].controls.map((c) => `${c.control.title}:${c.kind}:${c.state}`), ['Sprinklers:preventative:confirmed', 'Fire drills:mitigating:excluded']);
+  assert.deepEqual(rows[0].controls.map((c) => `${c.control.title}:${c.kind}:${c.state}`), ['Sprinklers:preventative:implemented', 'Fire drills:mitigating:rejected']);
 });
 
 test('controlUsage shows where a control is used and its state on each platform', () => {
   const u = controlUsage(assessed(), 'c1');
   assert.equal(u.length, 1);
   assert.equal(u[0].hazard.id, 'h1');
-  assert.deepEqual(u[0].platforms.map((p) => `${p.platform.name}:${p.state}`), ['Alpha:confirmed', 'Bravo:awaiting']);
+  assert.deepEqual(u[0].platforms.map((p) => `${p.platform.name}:${p.state}`), ['Alpha:implemented', 'Bravo:recommended']);
 });
 
 test('hazardsNotOn and listHazards', () => {
@@ -84,9 +84,9 @@ test('filterHazards: by platform, band and status, singly and together; a subset
 test('filterControls: by platform, band, status and control state', () => {
   const d = assessed();
   const rows = filterControls(d, {});
-  assert.deepEqual(rows.map((r) => `${r.control.id}@${r.platform.id}:${r.state}`), ['c1@p1:confirmed', 'c1@p2:awaiting', 'c2@p1:excluded', 'c2@p2:awaiting']);
-  assert.deepEqual(filterControls(d, { controlState: 'awaiting' }).map((r) => r.platform.id), ['p2', 'p2']);
-  assert.deepEqual(filterControls(d, { platformId: 'p1', controlState: 'excluded' }).map((r) => r.control.id), ['c2']);
+  assert.deepEqual(rows.map((r) => `${r.control.id}@${r.platform.id}:${r.state}`), ['c1@p1:implemented', 'c1@p2:recommended', 'c2@p1:rejected', 'c2@p2:recommended']);
+  assert.deepEqual(filterControls(d, { controlState: 'recommended' }).map((r) => r.platform.id), ['p2', 'p2']);
+  assert.deepEqual(filterControls(d, { platformId: 'p1', controlState: 'rejected' }).map((r) => r.control.id), ['c2']);
   assert.deepEqual(filterControls(d, { band: 'Low' }).map((r) => r.control.id), ['c1', 'c2']);
 });
 

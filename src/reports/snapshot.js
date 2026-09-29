@@ -39,7 +39,7 @@ export function buildSnapshot(data, platformId, o) {
       description: r.hazard.description ?? '',
       causalFactors: d.causalFactors.map((x) => x.text),
       consequences: d.consequences.map((x) => x.text),
-      controls: r.controls.map((c) => ({ title: c.control.title, kind: c.kind, tier: c.control.tier ?? '', state: c.state, reason: c.state === 'excluded' ? c.ruling?.reason ?? '' : '' })),
+      controls: r.controls.map((c) => ({ title: c.control.title, kind: c.kind, tier: c.control.tier ?? '', state: c.state, reason: c.state === 'rejected' ? c.ruling?.reason ?? '' : '' })),
       initial: r.rating.initial,
       residual: r.rating.residual,
       ratings: {

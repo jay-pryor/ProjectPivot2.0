@@ -12,11 +12,11 @@ const triple = { hazardId: 'h1', controlId: 'c1', platformId: 'p1' };
 test('confirm records who and when; exclude needs a reason; each replaces the other; reset returns to awaiting', () => {
   let d = confirmControl(seed(), later, triple);
   const id = ids.ruling('h1', 'c1', 'p1');
-  assert.equal(d.records.ruling[id].state, 'confirmed');
+  assert.equal(d.records.ruling[id].state, 'implemented');
   assert.equal(d.records.ruling[id].updatedBy, 'u2');
   assert.throws(() => excludeControl(d, later, { ...triple, reason: '  ' }), code('empty'));
   d = excludeControl(d, act, { ...triple, reason: ' Not fitted on this hull ' });
-  assert.equal(d.records.ruling[id].state, 'excluded');
+  assert.equal(d.records.ruling[id].state, 'rejected');
   assert.equal(d.records.ruling[id].reason, 'Not fitted on this hull');
   d = confirmControl(d, later, triple);
   assert.equal(d.records.ruling[id].reason, '');
