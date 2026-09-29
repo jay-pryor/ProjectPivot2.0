@@ -68,3 +68,25 @@ test('the pages ask before deleting: the red button asks, and the final panel de
   const p = platformView({ ...state, confirmDelete: { kind: 'platform', id: 'p3' } }, (() => { const x = structuredClone(d); x.records.platform.p3 = { ...x.records.platform.p1, id: 'p3', name: 'Charlie' }; return x; })(), 'p3').toString();
   assert.match(p, /data-action="confirmDelete" data-kind="platform" data-id="p3"[^>]*>Yes, delete Charlie</);
 });
+
+test('a save ends the Undo offer, so a saved delete is never quietly unwritten', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'save' });
+  await c.dispatch({ type: 'askDelete', kind: 'hazard', id: 'h1' });
+  await c.dispatch({ type: 'confirmDelete', kind: 'hazard', id: 'h1' });
+  await c.dispatch({ type: 'save' });
+  assert.doesNotMatch(messages(c.getState()).toString(), /undoDelete/);
+  await c.dispatch({ type: 'undoDelete' });
+  assert.equal(W(c).records.hazard.h1.status, 'deleted', 'the saved delete stands');
+});
+
+test('Undo clicked while a save is running does nothing', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'askDelete', kind: 'hazard', id: 'h1' });
+  await c.dispatch({ type: 'confirmDelete', kind: 'hazard', id: 'h1' });
+  const saving = c.dispatch({ type: 'save' });
+  await c.dispatch({ type: 'undoDelete' });
+  await saving;
+  assert.equal(W(c).records.hazard.h1.status, 'deleted');
+  assert.doesNotMatch(messages(c.getState()).toString(), /undoDelete/);
+});

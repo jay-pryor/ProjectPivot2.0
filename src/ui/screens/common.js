@@ -70,7 +70,7 @@ export function deletePanel(kind, id, what) {
 export function messages(state) {
   const m = state.message;
   const warnings = state.warnings ?? [];
-  const u = state.undo && state.session?.working === state.undo.after ? state.undo : null;
+  const u = state.undo && !state.saving && state.session?.working === state.undo.after && state.session?.base === state.undo.base ? state.undo : null;
   return html`${m ? html`<div class="msg msg-${m.kind}" role="${m.kind === 'error' ? 'alert' : 'status'}">
       <strong>${m.text}</strong>${m.items?.length ? html`<ul>${m.items.map((/** @type {string} */ i) => html`<li>${i}</li>`)}</ul>` : ''}
       <button type="button" class="link" ${dataAttrs({ action: 'dismissMessage' })}>Dismiss</button></div>` : ''}${u ? html`<div class="msg msg-info" role="status"><strong>${u.text}</strong> <button type="button" ${dataAttrs({ action: 'undoDelete' })}>Undo</button></div>` : ''}${warnings.map((/** @type {string} */ w) => html`<div class="msg msg-warning" role="status">${w}</div>`)}`;

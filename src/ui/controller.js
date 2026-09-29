@@ -261,11 +261,11 @@ export function createController(env) {
       if (!before || !rec || (kind !== 'hazard' && kind !== 'platform')) throw new PivotError('not-found', 'That record no longer exists.');
       await applyEdit(kind === 'hazard' ? 'deleteHazard' : 'deletePlatform', { id });
       const name = deleteName(kind, rec);
-      set({ confirmDelete: null, undo: { text: `Deleted ${name}.`, before, after: state.session?.working }, view: { name: kind === 'hazard' ? 'hazards' : 'platforms' } });
+      set({ confirmDelete: null, undo: { text: `Deleted ${name}.`, before, after: state.session?.working, base: state.session?.base }, view: { name: kind === 'hazard' ? 'hazards' : 'platforms' } });
     },
     async undoDelete() {
       const u = state.undo;
-      if (!u || !state.session || state.session.working !== u.after) { set({ undo: null }); return; }
+      if (!u || !state.session || state.saving || state.session.working !== u.after || state.session.base !== u.base) { set({ undo: null }); return; }
       set({ session: { ...state.session, working: u.before }, undo: null, message: { kind: 'info', text: u.text.replace(/^Deleted/, 'Restored') } });
       await afterChange();
     },
@@ -281,7 +281,8 @@ export function createController(env) {
     async save() {
       if (!state.session) throw new PivotError('no-data', 'There is nothing to save yet.');
       const startWorking = state.session.working;
-      set({ saving: true });
+      // A save ends the Undo offer: undoing after it would unwrite a delete already on disk.
+      set({ saving: true, undo: null });
       /** @type {import('../storage/store.js').SaveResult} */
       let r;
       try {
