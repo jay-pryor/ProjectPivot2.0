@@ -2,6 +2,7 @@ import { get, all, live, byCreated } from './data.js';
 import { ids, hazardLabel } from './ids.js';
 import { ratingFor, BANDS } from './matrix.js';
 import { reviewState } from './time.js';
+import { waitingChanges } from './acks.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Rec} Rec */
@@ -275,4 +276,34 @@ export function reviewDueList(data, today) {
   return live(data, 'platform').filter((p) => p.reviewMonths && p.reviewDue)
     .map((platform) => ({ platform, state: reviewState(platform, today), due: /** @type {string} */ (platform.reviewDue) }))
     .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
+}
+
+/** @param {{ consequence: number | null, likelihood: string | null } | null | undefined} pair */
+const unratedPair = (pair) => !pair || pair.consequence == null || pair.likelihood == null;
+
+/**
+ * What is left to do on the live platforms of one owner (every owner when `ownerId` is null):
+ * changes to acknowledge, reviews due or in progress, controls awaiting a decision, and
+ * hazards missing a rating.
+ * @param {Data} data @param {string} today @param {string | null} ownerId
+ */
+export function openItems(data, today, ownerId) {
+  /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string }[] }} */
+  const out = { acks: [], reviews: [], awaiting: [], unrated: [] };
+  for (const platform of live(data, 'platform').filter((p) => ownerId == null || p.ownerId === ownerId)) {
+    for (const entry of waitingChanges(data, platform.id)) out.acks.push({ entry, platform });
+    const state = reviewState(platform, today);
+    const open = Boolean(openReview(data, platform.id));
+    if (state === 'overdue' || state === 'dueSoon' || open) {
+      out.reviews.push({ platform, state, due: platform.reviewDue ?? null, lastReviewed: lastReviewed(data, platform.id), open });
+    }
+    for (const ph of platformHazards(data, platform.id)) {
+      for (const c of ph.controls) if (c.state === 'awaiting') out.awaiting.push({ platform, hazard: ph.hazard, control: c.control });
+      const i = unratedPair(ph.rating.initial);
+      const r = unratedPair(ph.rating.residual);
+      if (i || r) out.unrated.push({ platform, hazard: ph.hazard, missing: i && r ? 'both' : i ? 'initial' : 'residual' });
+    }
+  }
+  out.acks.sort((a, b) => (a.entry.at < b.entry.at ? 1 : a.entry.at > b.entry.at ? -1 : 0));
+  return out;
 }
