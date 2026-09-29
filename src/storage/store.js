@@ -14,7 +14,7 @@ import { readText, writeWhole } from './folder.js';
 /** @typedef {import('../core/data.js').Data} Data */
 /** @typedef {import('./envelope.js').SaveStamp} SaveStamp */
 /** @typedef {import('../core/time.js').Clock} Clock */
-/** @typedef {{ id: string, name: string, createdAt: string }} Profile */
+/** @typedef {{ id: string, name: string, createdAt: string, prefs?: Record<string, any> }} Profile */
 /** @typedef {FileSystemDirectoryHandle} Dir */
 
 export const FILES = Object.freeze({
@@ -86,6 +86,22 @@ export async function readProfiles(handle) {
   /** @type {Profile[]} */
   const profiles = Object.values(opened.envelope.body.profiles ?? {});
   return profiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+}
+
+/**
+ * A person's settings (theme, column widths), kept on their profile so they follow them to any
+ * machine. Re-reads the file first, like createProfile, and merges `patch` into the stored prefs.
+ * @param {Dir} handle @param {string} profileId @param {Record<string, any>} patch @param {Clock} clock
+ * @returns {Promise<Profile>}
+ */
+export async function updateProfilePrefs(handle, profileId, patch, clock) {
+  const profiles = await readProfiles(handle);
+  const current = profiles.find((p) => p.id === profileId);
+  if (!current) throw new PivotError('not-found', 'That profile no longer exists.');
+  const updated = { ...current, prefs: { ...(current.prefs ?? {}), ...patch } };
+  const body = { profiles: Object.fromEntries(profiles.map((p) => [p.id, p.id === profileId ? updated : p])) };
+  await writeWhole(handle, FILES.profiles, serialize(await seal('profiles', body, null, clock.now())));
+  return updated;
 }
 
 /**

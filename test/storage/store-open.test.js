@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MemoryFolder } from '../fakes/folder.js';
-import { checkFolder, readProfiles, createProfile, load, listBackups, FILES } from '../../src/storage/store.js';
+import { checkFolder, readProfiles, createProfile, updateProfilePrefs, load, listBackups, FILES } from '../../src/storage/store.js';
 import { seal, serialize, newStamp } from '../../src/storage/envelope.js';
 import { emptyData } from '../../src/core/data.js';
 import { fixedClock } from '../../src/core/time.js';
@@ -66,4 +66,17 @@ test('Final review I3: a file the share refuses to read is reported as a read fa
   await assert.rejects(() => load(f.handle), isReadFailure('data.json'));
   await assert.rejects(() => readProfiles(f.handle), isReadFailure('profiles.json'));
   await assert.rejects(() => listBackups(f.handle), isReadFailure('backups'));
+});
+
+test('profile preferences: merged into the stored profile, kept for other profiles, and read back', async () => {
+  const f = new MemoryFolder();
+  const ada = await createProfile(f.handle, 'Ada', clock());
+  const grace = await createProfile(f.handle, 'Grace', clock());
+  await updateProfilePrefs(f.handle, ada.id, { theme: 'light' }, clock());
+  const updated = await updateProfilePrefs(f.handle, ada.id, { columnWidths: { 'hazards.title': 320 } }, clock());
+  assert.deepEqual(updated.prefs, { theme: 'light', columnWidths: { 'hazards.title': 320 } });
+  const read = await readProfiles(f.handle);
+  assert.deepEqual(read.find((p) => p.id === ada.id).prefs, { theme: 'light', columnWidths: { 'hazards.title': 320 } });
+  assert.equal(read.find((p) => p.id === grace.id).prefs, undefined, 'another profile is untouched');
+  await assert.rejects(() => updateProfilePrefs(f.handle, 'nope', { theme: 'dark' }, clock()), (e) => e.code === 'not-found');
 });
