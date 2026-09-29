@@ -1,5 +1,5 @@
 import { get, all, live, byCreated } from './data.js';
-import { ids, hazardLabel } from './ids.js';
+import { ids, hazardLabel, referenceLabel } from './ids.js';
 import { ratingFor, BANDS } from './matrix.js';
 import { reviewState } from './time.js';
 import { waitingChanges } from './acks.js';
@@ -15,6 +15,21 @@ function sortedUnique(xs) {
 /** @param {Data} data @param {string} hazardId @returns {string[]} */
 export function platformsOfHazard(data, hazardId) {
   return sortedUnique(live(data, 'hazardPlatform').filter((l) => l.hazardId === hazardId).map((l) => l.platformId));
+}
+
+/** The platforms a reference link's target is on. @param {Data} data @param {string} kind @param {string} id @returns {string[]} */
+function targetPlatforms(data, kind, id) {
+  switch (kind) {
+    case 'platform': return [id];
+    case 'hazard': return platformsOfHazard(data, id);
+    case 'causalFactor':
+    case 'consequence': {
+      const r = get(data, kind, id);
+      return r ? platformsOfHazard(data, r.hazardId) : [];
+    }
+    case 'control': return platformsReached(data, 'control', { id });
+    default: return [];
+  }
 }
 
 /**
@@ -37,6 +52,9 @@ export function platformsReached(data, kind, rec) {
     case 'rating':
     case 'report': return [rec.platformId];
     case 'review': return [rec.platformId];
+    case 'reference':
+      return sortedUnique(live(data, 'referenceLink').filter((l) => l.referenceId === rec.id).flatMap((l) => targetPlatforms(data, l.targetKind, l.targetId)));
+    case 'referenceLink': return sortedUnique(targetPlatforms(data, rec.targetKind, rec.targetId));
     case 'reviewRow': {
       const review = get(data, 'review', rec.reviewId);
       return review ? [review.platformId] : [];
@@ -306,4 +324,35 @@ export function openItems(data, today, ownerId) {
   }
   out.acks.sort((a, b) => (a.entry.at < b.entry.at ? 1 : a.entry.at > b.entry.at ? -1 : 0));
   return out;
+}
+
+/** @param {Rec} a @param {Rec} b references by label (numbered first), then title */
+const byReference = (a, b) => referenceLabel(a).localeCompare(referenceLabel(b), undefined, { numeric: true }) || String(a.title).localeCompare(String(b.title));
+
+/** The references linked to one record. @param {Data} data @param {string} targetKind @param {string} targetId */
+export function referencesFor(data, targetKind, targetId) {
+  return live(data, 'referenceLink').filter((l) => l.targetKind === targetKind && l.targetId === targetId)
+    .map((link) => ({ link, reference: /** @type {Rec} */ (get(data, 'reference', link.referenceId)) }))
+    .filter((x) => x.reference && x.reference.status !== 'deleted')
+    .sort((a, b) => byReference(a.reference, b.reference));
+}
+
+/** A hazard's references, then those of its causal factors and consequences. @param {Data} data @param {string} hazardId */
+export function hazardReferences(data, hazardId) {
+  const out = referencesFor(data, 'hazard', hazardId).map((x) => ({ ...x, forText: '' }));
+  for (const [kind, word] of [['causalFactor', 'Causal factor'], ['consequence', 'Consequence']]) {
+    for (const r of live(data, kind).filter((x) => x.hazardId === hazardId)) {
+      for (const x of referencesFor(data, kind, r.id)) out.push({ ...x, forText: `${word}: ${r.text}` });
+    }
+  }
+  return out;
+}
+
+/** What a reference supports: its live links, each with the record it points at. @param {Data} data @param {string} referenceId */
+export function referenceTargets(data, referenceId) {
+  return live(data, 'referenceLink').filter((l) => l.referenceId === referenceId).map((link) => {
+    const target = get(data, link.targetKind, link.targetId);
+    const hazard = target && (link.targetKind === 'causalFactor' || link.targetKind === 'consequence') ? get(data, 'hazard', target.hazardId) ?? null : null;
+    return { link, target, hazard };
+  }).filter((x) => x.target && x.target.status !== 'deleted');
 }

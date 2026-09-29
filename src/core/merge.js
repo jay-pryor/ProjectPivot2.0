@@ -90,6 +90,7 @@ export function mergeData(base, mine, theirs, act) {
     nextHazardNumber: counters.nextHazardNumber,
     nextControlNumber: counters.nextControlNumber,
     nextPlatformNumber: counters.nextPlatformNumber,
+    nextReferenceNumber: counters.nextReferenceNumber,
     history: { ...theirs.history, ...mine.history },
     reportDesign: reportDesign ?? {},
   };

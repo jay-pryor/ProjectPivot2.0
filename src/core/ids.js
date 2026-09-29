@@ -24,6 +24,11 @@ export function platformLabel(platform) {
   return numberLabel('P', platform);
 }
 
+/** @param {{ number?: number | null, [field: string]: any }} reference */
+export function referenceLabel(reference) {
+  return numberLabel('R', reference);
+}
+
 /** @param {string} prefix @param {{ number?: number | null }} rec */
 function numberLabel(prefix, rec) {
   return rec.number == null ? UNNUMBERED : `${prefix}-${String(rec.number).padStart(4, '0')}`;
@@ -44,4 +49,6 @@ export const ids = Object.freeze({
   rating: (h, p) => `rt:${h}:${p}`,
   /** @param {string} r a review id @param {string} h */
   reviewRow: (r, h) => `rr:${r}:${h}`,
+  /** @param {string} r a reference id @param {string} k the target's kind @param {string} t the target's id */
+  referenceLink: (r, k, t) => `rl:${r}:${k}:${t}`,
 });

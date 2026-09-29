@@ -6,6 +6,7 @@ export const KINDS = Object.freeze([
   'hazard', 'causalFactor', 'consequence', 'control', 'platform',
   'hazardControl', 'hazardPlatform', 'ruling', 'rating', 'report',
   'review', 'reviewRow',
+  'reference', 'referenceLink',
 ]);
 
 export const STATUSES = Object.freeze(['live', 'retired', 'deleted']);
@@ -17,6 +18,7 @@ export const NUMBERED = Object.freeze([
   { kind: 'hazard', counter: 'nextHazardNumber' },
   { kind: 'control', counter: 'nextControlNumber' },
   { kind: 'platform', counter: 'nextPlatformNumber' },
+  { kind: 'reference', counter: 'nextReferenceNumber' },
 ]);
 
 /**
@@ -48,7 +50,7 @@ export function normalizeData(value) {
  *   updatedBy: string, updatedAt: string, [field: string]: any }} Rec
  */
 /**
- * @typedef {{ records: Record<string, Record<string, Rec>>, nextHazardNumber: number, nextControlNumber: number, nextPlatformNumber: number,
+ * @typedef {{ records: Record<string, Record<string, Rec>>, nextHazardNumber: number, nextControlNumber: number, nextPlatformNumber: number, nextReferenceNumber: number,
  *   history: Record<string, any>, reportDesign: Record<string, any> }} Data
  */
 
@@ -57,7 +59,7 @@ export function emptyData() {
   /** @type {Record<string, Record<string, Rec>>} */
   const records = {};
   for (const k of KINDS) records[k] = {};
-  return { records, nextHazardNumber: 1, nextControlNumber: 1, nextPlatformNumber: 1, history: {}, reportDesign: {} };
+  return { records, nextHazardNumber: 1, nextControlNumber: 1, nextPlatformNumber: 1, nextReferenceNumber: 1, history: {}, reportDesign: {} };
 }
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
