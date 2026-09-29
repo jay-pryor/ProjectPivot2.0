@@ -30,7 +30,7 @@ test('the host is a valid DocGen host about platforms, offering Pivot\'s marking
   assert.equal(docs.host.subject.noun, 'platform');
   assert.deepEqual(docs.host.subject.list().map((p) => p.label), ['Alpha', 'Bravo']);
   assert.deepEqual(docs.host.classifications, ['OFFICIAL', 'OFFICIAL: Sensitive', 'PROTECTED']);
-  assert.deepEqual(docs.host.sections(null).map((s) => s.id), ['hazards', 'controls', 'existing', 'causes', 'references', 'assessments', 'sfarp']);
+  assert.deepEqual(docs.host.sections(null).map((s) => s.id), ['hazards', 'controls', 'existing', 'causes', 'references', 'assessments', 'sfarp', 'safetyReports']);
 });
 
 test('design changes made in the designer land in Pivot\'s data', () => {
@@ -85,7 +85,7 @@ test('Hazards has four risk columns; Risk assessments and SFARP sections', async
   const docs = createDocHost({ getData: () => data, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id });
   const secs = docs.host.sections({ subjectId: 'p1' });
   const hz = secs.find((s) => s.id === 'hazards');
-  assert.deepEqual(hz.columns.map((c) => c.id), ['title', 'initialPersonnel', 'initialEnvironment', 'residualPersonnel', 'residualEnvironment', 'description']);
+  assert.deepEqual(hz.columns.map((c) => c.id), ['title', 'initialPersonnel', 'initialEnvironment', 'residualPersonnel', 'residualEnvironment', 'phases', 'description']);
   assert.equal(hz.columns.find((c) => c.id === 'residualEnvironment').get(hz.rows()[0]), '2C = Serious');
   const ra = secs.find((s) => s.id === 'assessments');
   assert.equal(ra.label, 'Risk assessments');
@@ -114,4 +114,36 @@ test('Additional control analysis and Existing controls sections', async () => {
   assert.equal(ex.label, 'Existing controls');
   assert.deepEqual(ex.columns.map((c) => c.id), ['tier', 'number', 'control', 'description', 'kind']);
   assert.equal(ex.columns.find((c) => c.id === 'control').get(ex.rows()[0]), 'Fire drills');
+});
+
+test('Hazards has a Lifecycle phases column; a Safety reports section; markup stays literal in the output', async () => {
+  const { createPhase, linkPhase } = await import('../../src/core/ops/phases.js');
+  const { createSafetyReport } = await import('../../src/core/ops/safety-reports.js');
+  let data = assignHazardNumbers(seed());
+  data = createPhase(data, act, { id: 'ph1', name: 'Design' });
+  data = createPhase(data, act, { id: 'ph2', name: 'Operation' });
+  data = linkPhase(data, act, { hazardId: 'h1', phaseId: 'ph1' });
+  data = linkPhase(data, act, { hazardId: 'h1', phaseId: 'ph2' });
+  data = createSafetyReport(data, act, { hazardId: 'h1', platformId: 'p1', number: 'SR-7', date: '2026-04-01', summary: 'Spill <b>x</b>' });
+  const docs = createDocHost({ getData: () => data, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id });
+  const secs = docs.host.sections({ subjectId: 'p1' });
+  const hz = secs.find((s) => s.id === 'hazards');
+  assert.equal(hz.columns.find((c) => c.id === 'phases').get(hz.rows()[0]), 'Design, Operation');
+  const sr = secs.find((s) => s.id === 'safetyReports');
+  assert.equal(sr.label, 'Safety reports');
+  assert.deepEqual(sr.columns.map((c) => c.id), ['number', 'date', 'type', 'summary', 'location', 'parties', 'description']);
+  assert.deepEqual(['number', 'date', 'type', 'summary'].map((id) => sr.columns.find((c) => c.id === id).get(sr.rows()[0])), ['SR-7', '2026-04-01', 'Occurrence', 'Spill <b>x</b>']);
+});
+
+test('markup in a safety report or a justification is shown literally in the produced report', async () => {
+  const { createSafetyReport } = await import('../../src/core/ops/safety-reports.js');
+  const { setAssessment } = await import('../../src/core/ops/assessment.js');
+  const { docs } = setup((d) => {
+    let x = createSafetyReport(d, act, { hazardId: 'h1', platformId: 'p1', number: 'SR-1', summary: 'Spill <b>big</b>' });
+    return setAssessment(x, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihoodWhy: 'Seen <i>twice</i>' });
+  });
+  const { report } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'T' });
+  for (const raw of ['<b>big</b>', '<i>twice</i>']) assert.equal(report.html.includes(raw), false, `${raw} ran as markup`);
+  assert.ok(report.html.includes('&lt;b&gt;big&lt;/b&gt;'));
+  assert.ok(report.markdown.includes('\\<b\\>big\\</b\\>'));
 });

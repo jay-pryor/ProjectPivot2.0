@@ -1,6 +1,6 @@
 import { get } from '../core/data.js';
 import { PivotError } from '../core/errors.js';
-import { platformHazards, hazardDetail, lastReviewed, referencesFor, assessmentOf, sfarpOf, existingControlsOn } from '../core/queries.js';
+import { platformHazards, hazardDetail, lastReviewed, referencesFor, assessmentOf, sfarpOf, existingControlsOn, phasesOf, safetyReportsOn } from '../core/queries.js';
 import { formatRating } from '../core/matrix.js';
 import { referenceLabel, controlLabel } from '../core/ids.js';
 import { reviewState, aestDate } from '../core/time.js';
@@ -14,6 +14,8 @@ import { reviewState, aestDate } from '../core/time.js';
  * @typedef {{ hazardId: string, number: number | null, reportId: string, title: string, description: string,
  *   causalFactors: string[], consequences: string[], controls: { number: string, title: string, description: string, kind: string, tier: string, state: string, reason: string, recommendation: string, justification: string }[],
  *   existingControls: { number: string, title: string, description: string, kind: string, tier: string }[],
+ *   phases: string[],
+ *   safetyReports: { number: string, date: string | null, type: string, summary: string, description: string, location: string, parties: string }[],
  *   initial: any, residual: any,
  *   ratings: { initialPersonnel: any, initialEnvironment: any, residualPersonnel: any, residualEnvironment: any },
  *   assessments: { stage: string, receptor: string, likelihood: string | null, likelihoodWhy: string, consequence: number | null, consequenceWhy: string, level: string }[],
@@ -44,6 +46,10 @@ export function buildSnapshot(data, platformId, o) {
         number: controlLabel(c.control), title: c.control.title, description: c.control.description ?? '',
         kind: c.kind, tier: c.control.tier ?? '', state: c.state, reason: c.state === 'rejected' ? c.ruling?.reason ?? '' : '',
         recommendation: c.link?.recommendation ?? '', justification: c.link?.justification ?? '',
+      })),
+      phases: phasesOf(data, r.hazard.id).map((x) => x.phase.name),
+      safetyReports: safetyReportsOn(data, r.hazard.id, platformId).map((s) => ({
+        number: s.number, date: s.date, type: s.type, summary: s.summary, description: s.description, location: s.location, parties: s.parties,
       })),
       existingControls: existingControlsOn(data, r.hazard.id, platformId).map((x) => ({
         number: controlLabel(x.control), title: x.control.title, description: x.control.description ?? '', kind: x.kind, tier: x.control.tier ?? '',

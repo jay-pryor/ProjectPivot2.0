@@ -43,6 +43,7 @@ function sectionsFor(s) {
         { id: 'initialEnvironment', label: 'Initial risk (environment)', w: 3, get: (/** @type {any} */ r) => formatRating(r.ratings?.initialEnvironment ?? null) },
         { id: 'residualPersonnel', label: 'Residual risk (personnel)', w: 3, get: (/** @type {any} */ r) => formatRating(r.ratings?.residualPersonnel ?? r.residual) },
         { id: 'residualEnvironment', label: 'Residual risk (environment)', w: 3, get: (/** @type {any} */ r) => formatRating(r.ratings?.residualEnvironment ?? null) },
+        { id: 'phases', label: 'Lifecycle phases', w: 4, optional: true, get: (/** @type {any} */ r) => (r.phases ?? []).join(', ') },
         { id: 'description', label: 'Description', w: 6, optional: true, get: (/** @type {any} */ r) => r.description },
       ],
       rows: rows((x) => x.rows),
@@ -121,6 +122,20 @@ function sectionsFor(s) {
         { id: 'conditions', label: 'Conditions of validity', w: 5, get: (/** @type {any} */ r) => r.conditions },
       ],
       rows: rows((x) => x.rows.map((h) => ({ reportId: h.reportId, ...(h.sfarp ?? { justification: '', conclusion: '', conditions: '' }) }))),
+    },
+    {
+      id: 'safetyReports', label: 'Safety reports',
+      keyColumn: hazardKey,
+      columns: [
+        { id: 'number', label: 'Report', w: 2, get: (/** @type {any} */ r) => r.number },
+        { id: 'date', label: 'Date', w: 2, get: (/** @type {any} */ r) => r.date ?? '' },
+        { id: 'type', label: 'Type', w: 2, get: (/** @type {any} */ r) => r.type },
+        { id: 'summary', label: 'Summary', w: 5, get: (/** @type {any} */ r) => r.summary },
+        { id: 'location', label: 'Location', w: 3, get: (/** @type {any} */ r) => r.location },
+        { id: 'parties', label: 'Parties involved', w: 3, get: (/** @type {any} */ r) => r.parties },
+        { id: 'description', label: 'Description', w: 5, optional: true, get: (/** @type {any} */ r) => r.description },
+      ],
+      rows: rows((x) => x.rows.flatMap((h) => (h.safetyReports ?? []).map((s) => ({ reportId: h.reportId, ...s })))),
     },
   ];
 }

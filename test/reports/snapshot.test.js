@@ -7,6 +7,8 @@ import { assignHazardNumbers, updateHazard } from '../../src/core/ops/hazards.js
 import { confirmControl, excludeControl, setRating, setAssessment, setSfarp, setControlStatus } from '../../src/core/ops/assessment.js';
 import { setControlAnalysis, linkExistingControl, updateControl } from '../../src/core/ops/controls.js';
 import { entries } from '../../src/core/history.js';
+import { createPhase, linkPhase } from '../../src/core/ops/phases.js';
+import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
 import { setSchedule, startReview, completeReview } from '../../src/core/ops/reviews.js';
 import { createReference, linkReference, retireReference } from '../../src/core/ops/references.js';
 import { act, seed } from '../helpers.js';
@@ -121,4 +123,14 @@ test('a snapshot carries each additional control\'s analysis and status, and the
   assert.deepEqual([c1.state, c1.recommendation, c1.justification], ['planned', 'Fit in <bay 2>', 'Cuts spread']);
   assert.match(c1.number, /^C-\d{4}$/);
   assert.deepEqual(row.existingControls, [{ number: row.existingControls[0].number, title: 'Fire drills', description: 'Twice a year', kind: 'mitigating', tier: 'Administrative' }]);
+});
+
+test('a snapshot carries the hazard\'s lifecycle phases and its safety reports on the platform', () => {
+  let d = createPhase(assessed(), act, { id: 'ph1', name: 'Operation' });
+  d = linkPhase(d, act, { hazardId: 'h1', phaseId: 'ph1' });
+  d = createSafetyReport(d, act, { hazardId: 'h1', platformId: 'p1', number: 'SR-1', date: '2026-03-04', reportType: 'Near miss', summary: 'Rotor <strike>', location: 'Hangar', parties: 'Crew' });
+  d = createSafetyReport(d, act, { hazardId: 'h1', platformId: 'p2', summary: 'Elsewhere' });
+  const row = buildSnapshot(d, 'p1', opts).rows[0];
+  assert.deepEqual(row.phases, ['Operation']);
+  assert.deepEqual(row.safetyReports, [{ number: 'SR-1', date: '2026-03-04', type: 'Near miss', summary: 'Rotor <strike>', description: '', location: 'Hangar', parties: 'Crew' }]);
 });
