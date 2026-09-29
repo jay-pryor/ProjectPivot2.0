@@ -3,6 +3,7 @@ import { dataAttrs, option, go, bandTag, plus, confirmButton, statusTag, idTag }
 import { dataTable } from './table.js';
 import { tierColumn } from './controls.js';
 import { rejectionCell } from './platforms.js';
+import { phaseChips } from './phases.js';
 import { referencesCard } from './references.js';
 import { textTable } from './hazards.js';
 import { get } from '../../core/data.js';
@@ -110,6 +111,7 @@ export function platformTab(state, data, h, platformId) {
   return html`<article class="doc ssra">
     <section class="ssra-sec"><h2>Overview ${SHARED}</h2>
       <textarea class="doc-text" name="description" rows="3" placeholder="Add a description…" aria-label="Description" ${dataAttrs({ change: 'updateHazard', id: h.id })}>${h.description}</textarea>
+      ${phaseChips(data, h)}
       <section class="block">${textTable(state, 'CausalFactor', d.causalFactors, h.id)}</section>
       <section class="block">${textTable(state, 'Consequence', d.consequences, h.id)}</section>
     </section>

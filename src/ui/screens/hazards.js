@@ -11,6 +11,7 @@ import { day } from '../names.js';
 import { BANDS } from '../../core/matrix.js';
 import { CONTROL_KINDS, tierRank } from '../../core/ops/controls.js';
 import { analysisArea } from './ssra.js';
+import { phaseChips } from './phases.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -125,6 +126,7 @@ export function hazardView(state, data, id) {
   return html`${head}
     <article class="doc">
       <textarea class="doc-text" name="description" rows="3" placeholder="Add a description…" aria-label="Description" ${dataAttrs({ change: 'updateHazard', id: h.id })}>${h.description}</textarea>
+      ${phaseChips(data, h)}
       <section class="block">${textTable(state, 'CausalFactor', d.causalFactors, h.id)}</section>
       <section class="block">${textTable(state, 'Consequence', d.consequences, h.id)}</section>
       <section class="block">

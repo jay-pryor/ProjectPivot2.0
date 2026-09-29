@@ -7,6 +7,7 @@ import { pickerView } from './screens/picker.js';
 import { homeView, openItemsView } from './screens/home.js';
 import { referencesView, referenceView } from './screens/references.js';
 import { reportsView, backupsView } from './screens/reports.js';
+import { phasesView } from './screens/phases.js';
 
 /** @param {any} state */
 function mainView(state) {
@@ -23,6 +24,7 @@ function mainView(state) {
     case 'platform': return platformView(state, data, v.id);
     case 'references': return referencesView(state, data);
     case 'reference': return referenceView(state, data, v.id);
+    case 'phases': return phasesView(state, data);
     case 'reports': return reportsView(state, data);
     default: return hazardsView(state, data);
   }

@@ -2,7 +2,7 @@ import { html } from '../html.js';
 import { dataAttrs, option, idTag } from './common.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, referenceLabel, platformLabel } from '../../core/ids.js';
-import { hazardsNotOn, hazardDetail, referencesFor, referenceTargets, existingControlsOn } from '../../core/queries.js';
+import { hazardsNotOn, hazardDetail, referencesFor, referenceTargets, existingControlsOn, phasesOf } from '../../core/queries.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
 
 /**
@@ -40,6 +40,15 @@ export function pickerView(state, data) {
       <ul class="pick-list">${controls.map((c) => html`<li data-pick-text="${`${controlLabel(c)} ${c.title}`.toLowerCase()}"><label><input type="checkbox" name="controlId" value="${c.id}"> <span class="id">${idTag(controlLabel(c))}</span> ${c.title}</label>
         <select name="kind:${c.id}" aria-label="Kind of ${c.title}">${CONTROL_KINDS.map((k) => option(k, k))}</select></li>`)}</ul>
       ${controls.length ? '' : html`<p class="muted">${live(data, 'control').length ? 'Every live control is already listed here.' : 'The control library is empty: add controls on the Controls page.'}</p>`}
+      ${buttons('Add')}</form>`);
+  }
+  if (p.picker === 'linkPhases') {
+    const ticked = new Set(phasesOf(data, p.hazardId).map((x) => x.phase.id));
+    const phases = live(data, 'phase').filter((ph) => !ticked.has(ph.id)).sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+    return frame('Add lifecycle phases', html`<form data-action="linkPhases" ${dataAttrs({ 'hazard-id': p.hazardId })} class="picker-form">
+      ${search()}
+      <ul class="pick-list">${phases.map((ph) => html`<li data-pick-text="${String(ph.name).toLowerCase()}"><label><input type="checkbox" name="phaseId" value="${ph.id}"> ${ph.name}</label></li>`)}</ul>
+      ${phases.length ? '' : html`<p class="muted">${live(data, 'phase').length ? 'Every live phase is already ticked.' : 'No phases yet: add them on the Phases page.'}</p>`}
       ${buttons('Add')}</form>`);
   }
   if (p.picker === 'linkReferences') {

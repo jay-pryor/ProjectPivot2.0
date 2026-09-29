@@ -15,6 +15,7 @@ import * as assessment from '../core/ops/assessment.js';
 import * as reviews from '../core/ops/reviews.js';
 import * as acks from '../core/acks.js';
 import * as references from '../core/ops/references.js';
+import * as phases from '../core/ops/phases.js';
 import { setReportDesign } from '../core/ops/reports.js';
 import { createDocHost } from '../reports/docgen-host.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
@@ -42,6 +43,8 @@ const EDITS = {
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
   retireReference: references.retireReference, deleteReference: references.deleteReference,
+  createPhase: phases.createPhase, renamePhase: phases.renamePhase, retirePhase: phases.retirePhase, deletePhase: phases.deletePhase,
+  linkPhase: phases.linkPhase, unlinkPhase: phases.unlinkPhase,
   linkReference: references.linkReference, unlinkReference: references.unlinkReference,
   addComment,
 };
@@ -388,6 +391,10 @@ export function createController(env) {
       for (const controlId of list(args.controlId)) {
         await applyEdit('linkExistingControl', { hazardId: args.hazardId, platformId: args.platformId, controlId, kind: args[`kind:${controlId}`] || 'preventative' });
       }
+      set({ picker: null });
+    },
+    async linkPhases(args) {
+      for (const phaseId of list(args.phaseId)) await applyEdit('linkPhase', { hazardId: args.hazardId, phaseId });
       set({ picker: null });
     },
     async linkHazards(args) {
