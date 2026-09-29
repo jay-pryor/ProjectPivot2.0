@@ -5,11 +5,12 @@ import { referencesCard } from './references.js';
 import { tierColumn } from './controls.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
-import { hazardRows, hazardDetail, ratingOf, ratingsOf, bandOf, worseBand, hazardLastReviewed } from '../../core/queries.js';
+import { hazardRows, hazardDetail, ratingOf, ratingsOf, bandOf, worseBand, hazardLastReviewed, byNumber } from '../../core/queries.js';
 import { platformTab } from './ssra.js';
 import { day } from '../names.js';
 import { BANDS } from '../../core/matrix.js';
-import { CONTROL_KINDS } from '../../core/ops/controls.js';
+import { CONTROL_KINDS, tierRank } from '../../core/ops/controls.js';
+import { analysisArea } from './ssra.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -130,15 +131,18 @@ export function hazardView(state, data, id) {
         ${dataTable(state, {
           id: 'hazardControls',
           rowKey: (c) => c.control.id,
-          rows: d.controls,
+          rows: [...d.controls].sort((a, b) => tierRank(a.control.tier) - tierRank(b.control.tier) || byNumber(a.control, b.control)),
           empty: 'No controls linked yet.',
           tools: plus({ action: 'openPicker', picker: 'linkControls', 'hazard-id': h.id }, 'Link controls'),
           columns: [
-            { key: 'control', label: 'Controls', width: 720, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`,
+            { key: 'control', label: 'Additional controls', width: 720, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`,
               render: (c) => html`<span class="id">${idTag(controlLabel(c.control))}</span> ${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
             tierColumn((c) => c.control, false),
             { key: 'kind', label: 'Kind', width: 300, minWidth: 150, value: (c) => c.link.kind,
               render: (c) => html`<select class="quiet" name="kind" aria-label="Kind of ${c.control.title}" ${dataAttrs({ change: 'setControlKind', 'hazard-id': h.id, 'control-id': c.control.id })}>${CONTROL_KINDS.map((k) => option(k, k, c.link.kind))}</select>` },
+            { key: 'description', label: 'Description', width: 440, minWidth: 160, value: (c) => c.control.description ?? '', render: (c) => html`<span class="muted">${c.control.description ?? ''}</span>` },
+            { key: 'recommendation', label: 'Recommendation', width: 520, minWidth: 200, sortable: false, render: (c) => analysisArea('recommendation', c, h.id) },
+            { key: 'justification', label: 'Justification', width: 520, minWidth: 200, sortable: false, render: (c) => analysisArea('justification', c, h.id) },
             { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
               render: (c) => html`<div class="row-actions">${confirmButton('✕', 'Unlink, clearing its decisions on every platform', dataAttrs({ action: 'unlinkControl', 'hazard-id': h.id, 'control-id': c.control.id }))}</div>` },
           ],

@@ -2,7 +2,7 @@ import { html } from '../html.js';
 import { dataAttrs, option, idTag } from './common.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, referenceLabel, platformLabel } from '../../core/ids.js';
-import { hazardsNotOn, hazardDetail, referencesFor, referenceTargets } from '../../core/queries.js';
+import { hazardsNotOn, hazardDetail, referencesFor, referenceTargets, existingControlsOn } from '../../core/queries.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
 
 /**
@@ -31,6 +31,16 @@ export function pickerView(state, data) {
         <select name="kind:${c.id}" aria-label="Kind of ${c.title}">${CONTROL_KINDS.map((k) => option(k, k))}</select></li>`)}</ul>
       ${controls.length ? '' : html`<p class="muted">${live(data, 'control').length ? 'Every control in the library is already linked.' : 'The control library is empty: add controls on the Controls page.'}</p>`}
       ${buttons('Link')}</form>`);
+  }
+  if (p.picker === 'linkExistingControls') {
+    const listed = new Set(existingControlsOn(data, p.hazardId, p.platformId).map((x) => x.control.id));
+    const controls = live(data, 'control').filter((c) => !listed.has(c.id));
+    return frame('Add existing controls', html`<form data-action="linkExistingControls" ${dataAttrs({ 'hazard-id': p.hazardId, 'platform-id': p.platformId })} class="picker-form">
+      ${search()}
+      <ul class="pick-list">${controls.map((c) => html`<li data-pick-text="${`${controlLabel(c)} ${c.title}`.toLowerCase()}"><label><input type="checkbox" name="controlId" value="${c.id}"> <span class="id">${idTag(controlLabel(c))}</span> ${c.title}</label>
+        <select name="kind:${c.id}" aria-label="Kind of ${c.title}">${CONTROL_KINDS.map((k) => option(k, k))}</select></li>`)}</ul>
+      ${controls.length ? '' : html`<p class="muted">${live(data, 'control').length ? 'Every live control is already listed here.' : 'The control library is empty: add controls on the Controls page.'}</p>`}
+      ${buttons('Add')}</form>`);
   }
   if (p.picker === 'linkReferences') {
     const linked = new Set(referencesFor(data, p.targetKind, p.targetId).map((x) => x.reference.id));

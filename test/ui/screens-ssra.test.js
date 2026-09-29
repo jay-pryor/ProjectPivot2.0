@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { hazardView } from '../../src/ui/screens/hazards.js';
 import { initialState } from '../../src/ui/controller.js';
 import { assignNumbers } from '../../src/core/ops/hazards.js';
-import { setAssessment, setRatingCell, setSfarp } from '../../src/core/ops/assessment.js';
+import { setAssessment, setRatingCell, setSfarp, setControlStatus } from '../../src/core/ops/assessment.js';
+import { setControlAnalysis, linkExistingControl, updateControl, retireControl } from '../../src/core/ops/controls.js';
+import { pickerView } from '../../src/ui/screens/picker.js';
 import { seed, act } from '../helpers.js';
 
 const state = { ...initialState(), screen: 'main', today: '2026-09-28', profileId: 'u1', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }, { id: 'u2', name: 'Grace', createdAt: '' }] };
@@ -99,4 +101,41 @@ test('SSRA edits on a platform tab show in the hazard page\'s History, naming th
 test('unlinking a hazard from a platform warns that its assessments, justifications and SFARP go too', async () => {
   const { platformView } = await import('../../src/ui/screens/platforms.js');
   assert.match(platformView(state, data(), 'p1').toString(), /Unlink, clearing its risk assessments, justifications, SFARP considerations and control decisions here/);
+});
+
+function controlled() {
+  let d = data();
+  d = setControlAnalysis(d, act, { hazardId: 'h1', controlId: 'c1', recommendation: 'Fit <b>now</b>', justification: 'Cuts spread' });
+  d = setControlStatus(d, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'rejected', reason: 'No water main' });
+  d = updateControl(d, act, { id: 'c2', tier: 'Administrative' });
+  return linkExistingControl(d, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
+}
+
+test('a platform tab has Existing controls and the Additional control analysis, in SSRA order', () => {
+  const out = hazardView(on('p:p1'), controlled(), 'h1').toString();
+  const order = ['Overview', 'Existing controls', 'References', 'Initial risk', 'Additional control analysis', 'Residual risk', 'SFARP considerations'].map((h) => out.indexOf(`<h2>${h}`));
+  assert.ok(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1])), `sections in SSRA order: ${order}`);
+  assert.match(out, /data-table="existingControls"[\s\S]*?Administrative[\s\S]*?Fire drills/);
+  assert.match(out, /data-action="openPicker" data-picker="linkExistingControls" data-hazard-id="h1" data-platform-id="p1"/);
+  assert.match(out, /data-action="unlinkExistingControl" data-hazard-id="h1" data-platform-id="p1" data-control-id="c2"/);
+  assert.match(out, /data-table="controlAnalysis"[\s\S]*?<textarea class="cell-area" name="recommendation"[^>]*data-change="setControlAnalysis" data-hazard-id="h1" data-control-id="c1">Fit &lt;b&gt;now&lt;\/b&gt;<\/textarea>/);
+  assert.match(out, /aria-label="Status of Sprinklers"[\s\S]*?<option value="rejected" selected>rejected<\/option>/);
+  assert.match(out, /No water main/);
+  assert.doesNotMatch(out, /<b>now<\/b>/);
+});
+
+test('the Overview lists additional controls with their shared recommendation and justification', () => {
+  const out = hazardView(state, controlled(), 'h1').toString();
+  assert.match(out, /data-table="hazardControls"[\s\S]*?<th data-col="recommendation"[\s\S]*?<th data-col="justification"/);
+  assert.match(out, />Cuts spread<\/textarea>/);
+  assert.match(out, /<th data-col="description"/);
+});
+
+test('the existing-controls picker offers live controls not already listed there', () => {
+  let d = controlled();
+  d = retireControl(d, act, { id: 'c1' });
+  const out = pickerView({ ...state, picker: { picker: 'linkExistingControls', hazardId: 'h1', platformId: 'p1' } }, d).toString();
+  assert.match(out, /<form data-action="linkExistingControls" data-hazard-id="h1" data-platform-id="p1"/);
+  assert.doesNotMatch(out, /value="c2"/, 'already an existing control here');
+  assert.doesNotMatch(out, /value="c1"/, 'retired');
 });

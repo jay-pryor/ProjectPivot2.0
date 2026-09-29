@@ -30,7 +30,8 @@ const EDITS = {
   addConsequence: hazards.addConsequence, updateConsequence: hazards.updateConsequence, deleteConsequence: hazards.deleteConsequence,
   createControl: controls.createControl, updateControl: controls.updateControl, retireControl: controls.retireControl,
   deleteControl: controls.deleteControl, linkControl: controls.linkControl, setControlKind: controls.setControlKind,
-  unlinkControl: controls.unlinkControl,
+  unlinkControl: controls.unlinkControl, setControlAnalysis: controls.setControlAnalysis,
+  linkExistingControl: controls.linkExistingControl, unlinkExistingControl: controls.unlinkExistingControl, setExistingControlKind: controls.setExistingControlKind,
   createPlatform: platforms.createPlatform, updatePlatform: platforms.updatePlatform, setOwner: platforms.setOwner,
   retirePlatform: platforms.retirePlatform, deletePlatform: platforms.deletePlatform, linkHazard: platforms.linkHazard,
   unlinkHazard: platforms.unlinkHazard, setReportId: platforms.setReportId,
@@ -380,6 +381,12 @@ export function createController(env) {
     async linkControls(args) {
       for (const controlId of list(args.controlId)) {
         await applyEdit('linkControl', { hazardId: args.hazardId, controlId, kind: args[`kind:${controlId}`] || 'preventative' });
+      }
+      set({ picker: null });
+    },
+    async linkExistingControls(args) {
+      for (const controlId of list(args.controlId)) {
+        await applyEdit('linkExistingControl', { hazardId: args.hazardId, platformId: args.platformId, controlId, kind: args[`kind:${controlId}`] || 'preventative' });
       }
       set({ picker: null });
     },
