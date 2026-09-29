@@ -15,6 +15,21 @@ export const ROOT = path.resolve(HERE, '..');
 const ENTRY = 'src/main.js';
 const EXTRA_SOURCES = ['DocGen/doc-designer.js'];
 const STYLES = ['DocGen/doc-designer.css', 'src/ui/styles.css'];
+/** Embedded so the page needs no network: [file, weight, style]. Licence: assets/fonts/OFL.txt. */
+const FONTS = [
+  ['atkinson-hyperlegible-latin-400-normal.woff2', 400, 'normal'],
+  ['atkinson-hyperlegible-latin-400-italic.woff2', 400, 'italic'],
+  ['atkinson-hyperlegible-latin-700-normal.woff2', 700, 'normal'],
+  ['atkinson-hyperlegible-latin-700-italic.woff2', 700, 'italic'],
+];
+
+/** @param {string} root */
+function fontFaces(root) {
+  return FONTS.map(([file, weight, style]) => {
+    const data = fs.readFileSync(path.join(root, 'assets', 'fonts', String(file))).toString('base64');
+    return `@font-face { font-family: "Atkinson Hyperlegible"; font-weight: ${weight}; font-style: ${style}; font-display: swap; src: url(data:font/woff2;base64,${data}) format("woff2"); }`;
+  }).join('\n');
+}
 const IMPORT_RE = /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])([^'"\n]+)\2/g;
 
 /** @param {string} dir @returns {string[]} */
@@ -81,7 +96,7 @@ export function build({ root = ROOT, builtAt = new Date().toISOString() } = {}) 
     const text = rewriteImports(fs.readFileSync(path.join(root, rel), 'utf8'), rel, known);
     imports[rel] = `data:text/javascript;base64,${Buffer.from(text, 'utf8').toString('base64')}`;
   }
-  const css = STYLES.map((s) => fs.readFileSync(path.join(root, s), 'utf8')).join('\n').replace(/<\/style/gi, '<\\/style');
+  const css = [fontFaces(root), ...STYLES.map((s) => fs.readFileSync(path.join(root, s), 'utf8'))].join('\n').replace(/<\/style/gi, '<\\/style');
   const importMap = JSON.stringify({ imports }).replace(/</g, '\\u003c');
   return [
     '<!doctype html>',

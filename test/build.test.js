@@ -27,3 +27,14 @@ test('sources are src/**/*.js and DocGen', () => {
 test('a bare import is refused: the product has no dependencies', () => {
   assert.throws(() => rewriteImports("import x from 'lodash';", 'src/a.js', new Set(['src/a.js'])), /no dependenc/);
 });
+
+test('the Atkinson Hyperlegible font is embedded, regular and bold, upright and italic', () => {
+  const page = build({ builtAt: 'test' });
+  const faces = page.match(/@font-face \{[^}]*\}/g) || [];
+  assert.equal(faces.length, 4);
+  for (const f of faces) {
+    assert.match(f, /font-family: "Atkinson Hyperlegible"/);
+    assert.match(f, /src: url\(data:font\/woff2;base64,[A-Za-z0-9+/=]{1000,}\) format\("woff2"\)/);
+  }
+  assert.ok(faces.some((f) => /font-weight: 700/.test(f) && /font-style: italic/.test(f)));
+});
