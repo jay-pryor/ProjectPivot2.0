@@ -116,6 +116,17 @@ export function sfarpOf(data, hazardId, platformId) {
     : { justification: '', conclusion: '', conditions: '' };
 }
 
+/** The higher of two bands. @param {string} a @param {string} b */
+export function worseBand(a, b) {
+  return BANDS[Math.min(BANDS.indexOf(a), BANDS.indexOf(b))];
+}
+
+/** The worse residual band of a hazard on a platform, over personnel and environment. @param {Data} data @param {string} hazardId @param {string} platformId */
+function worseResidual(data, hazardId, platformId) {
+  const r = ratingsOf(data, hazardId, platformId).residual;
+  return worseBand(bandOf(r.personnel), bandOf(r.environment));
+}
+
 /** @param {{ consequence: number | null, likelihood: string | null } | null | undefined} pair */
 export function bandOf(pair) {
   return ratingFor(pair?.consequence ?? null, pair?.likelihood ?? null).band;
@@ -156,6 +167,7 @@ export function platformHazards(data, platformId) {
       hazard, link,
       reportId: link.reportId ?? hazardLabel(hazard),
       rating: ratingOf(data, hazard.id, platformId),
+      ratings: ratingsOf(data, hazard.id, platformId),
       controls: controlsOnPlatform(data, hazard.id, platformId),
     };
   }).sort((a, b) => byNumber(a.hazard, b.hazard));
@@ -204,7 +216,7 @@ export function filterHazards(data, f = {}) {
       continue;
     }
     for (const l of links) {
-      const band = bandOf(ratingOf(data, hazard.id, l.platformId).residual);
+      const band = worseResidual(data, hazard.id, l.platformId);
       if (f.band && band !== f.band) continue;
       rows.push({ hazard, platform: /** @type {Rec} */ (get(data, 'platform', l.platformId)), band });
     }
@@ -228,7 +240,7 @@ export function filterControls(data, f = {}) {
         used = true;
         if (f.platformId && hp.platformId !== f.platformId) continue;
         const { state } = controlState(data, hazard.id, control.id, hp.platformId);
-        const band = bandOf(ratingOf(data, hazard.id, hp.platformId).residual);
+        const band = worseResidual(data, hazard.id, hp.platformId);
         if (f.band && band !== f.band) continue;
         if (f.controlState && state !== f.controlState) continue;
         rows.push({ control, hazard, platform: /** @type {Rec} */ (get(data, 'platform', hp.platformId)), kind: hc.kind, state, band });
@@ -246,12 +258,15 @@ export function filterControls(data, f = {}) {
  */
 export function hazardRows(data) {
   return listHazards(data, 'any').map((hazard) => {
-    const platforms = live(data, 'hazardPlatform').filter((l) => l.hazardId === hazard.id).map((l) => ({
-      platform: /** @type {Rec} */ (get(data, 'platform', l.platformId)),
-      band: bandOf(ratingOf(data, hazard.id, l.platformId).residual),
-    }));
-    const worst = platforms.length ? BANDS[Math.min(...platforms.map((p) => BANDS.indexOf(p.band)))] : null;
-    return { hazard, platforms, worst };
+    const platforms = live(data, 'hazardPlatform').filter((l) => l.hazardId === hazard.id).map((l) => {
+      const r = ratingsOf(data, hazard.id, l.platformId).residual;
+      const personnel = bandOf(r.personnel);
+      const environment = bandOf(r.environment);
+      return { platform: /** @type {Rec} */ (get(data, 'platform', l.platformId)), band: worseBand(personnel, environment), personnel, environment };
+    });
+    /** @param {'band' | 'personnel' | 'environment'} k */
+    const worstOf = (k) => (platforms.length ? BANDS[Math.min(...platforms.map((p) => BANDS.indexOf(p[k])))] : null);
+    return { hazard, platforms, worst: worstOf('band'), worstPersonnel: worstOf('personnel'), worstEnvironment: worstOf('environment') };
   });
 }
 
@@ -288,7 +303,7 @@ export function reviewRows(data, reviewId) {
     return {
       hazard, reportId: reportIdOf(hazard), onPlatform: onNow.has(hazard.id),
       reviewed: Boolean(row?.reviewed), note: row?.note ?? '',
-      rating: ph ? ph.rating : null, counts: ph ? controlCounts(ph.controls) : null,
+      rating: ph ? ph.rating : null, ratings: ph ? ph.ratings : null, counts: ph ? controlCounts(ph.controls) : null,
     };
   };
   const hazardOf = (/** @type {Rec} */ row) => /** @type {Rec} */ (get(data, 'hazard', row.hazardId));
@@ -329,9 +344,6 @@ export function reviewDueList(data, today) {
     .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
 }
 
-/** @param {{ consequence: number | null, likelihood: string | null } | null | undefined} pair */
-const unratedPair = (pair) => !pair || pair.consequence == null || pair.likelihood == null;
-
 /**
  * What is left to do on the live platforms of one owner (every owner when `ownerId` is null):
  * changes to acknowledge, reviews due or in progress, controls awaiting a decision, and
@@ -339,7 +351,7 @@ const unratedPair = (pair) => !pair || pair.consequence == null || pair.likeliho
  * @param {Data} data @param {string} today @param {string | null} ownerId
  */
 export function openItems(data, today, ownerId) {
-  /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string }[] }} */
+  /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string[] }[] }} */
   const out = { acks: [], reviews: [], awaiting: [], unrated: [] };
   for (const platform of live(data, 'platform').filter((p) => ownerId == null || p.ownerId === ownerId)) {
     for (const entry of waitingChanges(data, platform.id)) out.acks.push({ entry, platform });
@@ -350,9 +362,12 @@ export function openItems(data, today, ownerId) {
     }
     for (const ph of platformHazards(data, platform.id)) {
       for (const c of ph.controls) if (c.state === 'awaiting') out.awaiting.push({ platform, hazard: ph.hazard, control: c.control });
-      const i = unratedPair(ph.rating.initial);
-      const r = unratedPair(ph.rating.residual);
-      if (i || r) out.unrated.push({ platform, hazard: ph.hazard, missing: i && r ? 'both' : i ? 'initial' : 'residual' });
+      const incomplete = (/** @type {any} */ pair) => !pair || pair.consequence == null || pair.likelihood == null;
+      const missing = [];
+      for (const stage of ['initial', 'residual']) for (const receptor of ['personnel', 'environment']) {
+        if (incomplete(ph.ratings[stage][receptor])) missing.push(`${stage} ${receptor}`);
+      }
+      if (missing.length) out.unrated.push({ platform, hazard: ph.hazard, missing });
     }
   }
   out.acks.sort((a, b) => (a.entry.at < b.entry.at ? 1 : a.entry.at > b.entry.at ? -1 : 0));
@@ -413,11 +428,13 @@ export function upcomingReviews(data, today, ownerId, days = 90) {
 export function platformCards(data, today, ownerId) {
   return live(data, 'platform').filter((p) => ownedBy(p, ownerId)).map((platform) => {
     const hazards = platformHazards(data, platform.id);
-    /** @type {Record<string, number>} */
-    const bands = {};
+    /** @type {{ personnel: Record<string, number>, environment: Record<string, number> }} */
+    const bands = { personnel: {}, environment: {} };
     for (const h of hazards) {
-      const b = bandOf(h.rating.residual);
-      bands[b] = (bands[b] ?? 0) + 1;
+      for (const receptor of /** @type {const} */ (['personnel', 'environment'])) {
+        const b = bandOf(h.ratings.residual[receptor]);
+        bands[receptor][b] = (bands[receptor][b] ?? 0) + 1;
+      }
     }
     return {
       platform, state: reviewState(platform, today), due: platform.reviewDue ?? null, lastReviewed: lastReviewed(data, platform.id),

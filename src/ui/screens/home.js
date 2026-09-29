@@ -100,8 +100,8 @@ export function openItemsView(state, data) {
         columns: [
           { key: 'platform', label: 'Platform', width: 300, minWidth: 140, value: (r) => r.platform.name, filter: 'text', render: (r) => platformLink(r.platform) },
           { key: 'hazard', label: 'Hazard', width: 520, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`, filter: 'text', render: hazardCell },
-          { key: 'missing', label: 'Missing', width: 280, minWidth: 140, value: (r) => r.missing,
-            render: (r) => ({ both: 'Initial and residual', initial: 'Initial', residual: 'Residual' })[/** @type {'both'} */ (r.missing)] },
+          { key: 'missing', label: 'Missing', width: 280, minWidth: 140, value: (r) => r.missing.join(', '),
+            render: (r) => r.missing.join(', ') },
         ],
       })}</section>
     </article>`;
@@ -128,7 +128,7 @@ function attentionRow(state, data, item) {
   if (item.type === 'control') {
     return html`<li>${chip}<span class="what">${item.control.title} on ${item.platform.name} <span class="muted">· ${hazardLabel(item.hazard)} ${item.hazard.title}</span></span>${go('Decide →', 'platform', { id: item.platform.id })}</li>`;
   }
-  const missing = item.missing === 'both' ? 'no ratings' : `no ${item.missing} rating`;
+  const missing = `no ${item.missing.join(', ')} rating`;
   return html`<li>${chip}<span class="what">${hazardLabel(item.hazard)} ${item.hazard.title} on ${item.platform.name} <span class="muted">· ${missing}</span></span>${go('Rate →', 'platform', { id: item.platform.id })}</li>`;
 }
 
@@ -180,7 +180,7 @@ export function homeView(state, data) {
     ${cards.length ? html`<div class="pcards">${cards.map((c) => html`<button type="button" class="pcard" ${dataAttrs({ action: 'go', view: 'platform', id: c.platform.id })}>
         <span class="pcard-h"><strong>${c.platform.name}</strong>${reviewTag(c.state)}${c.open ? html` <span class="tag">Review in progress</span>` : ''}</span>
         ${owner === 'everyone' ? html`<span class="muted">${profileName(state, c.platform.ownerId)}</span>` : ''}
-        ${riskBar(c.bands)}
+        ${riskBar(c.bands.personnel)}
         <span>${count(c.hazards, 'hazard', 'hazards')} · ${c.awaiting} awaiting · ${count(c.acks, 'change', 'changes')}</span>
         <span class="muted">${c.due ? `Due ${day(c.due)}` : 'No review schedule'}${c.lastReviewed ? ` · last ${day(c.lastReviewed)}` : ''}</span>
       </button>`)}</div>` : html`<p class="muted">No platforms.</p>`}`;

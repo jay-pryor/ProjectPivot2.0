@@ -8,7 +8,7 @@ import { checkRules } from '../../src/core/rules.js';
 import { mergeData } from '../../src/core/merge.js';
 import { RECEPTORS, STAGES, setAssessment, setRating, setRatingCell, setSfarp } from '../../src/core/ops/assessment.js';
 import { unlinkHazard, linkHazard } from '../../src/core/ops/platforms.js';
-import { assessmentOf, ratingsOf, ratingOf, sfarpOf, platformsReached, bandOf } from '../../src/core/queries.js';
+import { assessmentOf, ratingsOf, ratingOf, sfarpOf, platformsReached, bandOf, platformHazards, hazardRows, openItems, platformCards, worseBand, filterHazards } from '../../src/core/queries.js';
 import { act, later, seed } from '../helpers.js';
 
 const code = (c) => (e) => e instanceof PivotError && e.code === c;
@@ -94,4 +94,21 @@ test('old ratings become four assessments on load, the same each time, and the r
   assert.deepEqual(conflicts, []);
   assert.equal(data.records.assessment['ra:h1:p1:initial:personnel'].likelihoodWhy, 'Mine');
   assert.equal(data.records.assessment['ra:h1:p1:initial:environment'].likelihoodWhy, 'Theirs');
+});
+
+test('derived views carry personnel and environment separately; one-value views take the worse', () => {
+  let d = setRatingCell(seed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'personnel', value: '4D' });
+  d = setRatingCell(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'environment', value: '2C' });
+  assert.equal(worseBand('Low', 'Serious'), 'Serious');
+  assert.deepEqual(platformHazards(d, 'p1')[0].ratings.residual, { personnel: { consequence: 4, likelihood: 'D' }, environment: { consequence: 2, likelihood: 'C' } });
+  const row = hazardRows(d).find((r) => r.hazard.id === 'h1');
+  const p1 = row.platforms.find((p) => p.platform.id === 'p1');
+  assert.deepEqual([p1.personnel, p1.environment, p1.band], ['Low', 'Serious', 'Serious']);
+  assert.deepEqual([row.worstPersonnel, row.worstEnvironment, row.worst], ['Low', 'Serious', 'Serious']);
+  assert.deepEqual(filterHazards(d, { band: 'Serious' }).map((r) => r.platform.id), ['p1']);
+  const u = openItems(d, '2026-09-28', 'u1').unrated;
+  assert.deepEqual(u.map((x) => x.missing), [['initial personnel', 'initial environment']]);
+  const half = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihood: 'B' });
+  assert.deepEqual(openItems(half, '2026-09-28', 'u1').unrated[0].missing, ['initial personnel', 'initial environment'], 'a likelihood alone is not complete');
+  assert.deepEqual(platformCards(d, '2026-09-28', 'u1')[0].bands, { personnel: { Low: 1 }, environment: { Serious: 1 } });
 });
