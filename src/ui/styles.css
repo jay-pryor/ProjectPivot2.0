@@ -113,7 +113,7 @@ ul.plain { list-style: none; margin: 0; padding: 0; }
 .table-wrap { overflow-x: auto; max-width: 100%; }
 .grid { border-collapse: collapse; table-layout: fixed; background: var(--p-surface); }
 .grid th, .grid td { border: 1px solid var(--p-line); padding: 6px 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-.grid th { position: relative; background: var(--p-surface-2); font-weight: 700; vertical-align: bottom; }
+.grid th { position: relative; background: var(--p-surface-2); font-weight: 700; vertical-align: top; }
 .grid tbody tr:hover td { background: var(--p-surface-2); }
 .th { display: grid; gap: 4px; }
 .th .sort { border: 0; background: none; padding: 0; font-weight: 700; color: var(--p-fg); display: inline-flex; gap: 6px; align-items: center; }
@@ -187,6 +187,14 @@ section { margin: 0 0 22px; }
 .cell-edit { width: 100%; }
 select.quiet { border-color: transparent; background: transparent; padding-left: 2px; }
 select.quiet:hover, select.quiet:focus { border-color: var(--p-line); background: var(--p-surface); }
+/* A dropdown inside a table cell looks like one: a border and a raised background, the accent on hover. */
+.grid td select, .grid td select.quiet { border: 1px solid var(--p-muted); background: var(--p-surface-2); color: var(--p-fg); padding: 3px 6px; border-radius: 6px; max-width: 100%; }
+.grid td select:hover, .grid td select:focus { border-color: var(--p-accent); background: var(--p-surface-2); }
+.grid td select.rating { border-left-width: 4px; }
+.grid td select.rating.band-high { border-left-color: #c2352b; }
+.grid td select.rating.band-serious { border-left-color: #e8710a; }
+.grid td select.rating.band-medium { border-left-color: #f2cc3f; }
+.grid td select.rating.band-low { border-left-color: #2e8b57; }
 select.inline-select { font: inherit; color: var(--p-fg); }
 select.rating { border-left: 4px solid var(--p-line); padding-left: 6px; color: var(--p-fg); }
 select.rating.band-high { border-left-color: #c2352b; }
