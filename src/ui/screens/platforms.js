@@ -6,6 +6,7 @@ import { waitingChanges } from '../../core/acks.js';
 import { reviewState } from '../../core/time.js';
 import { dataTable } from './table.js';
 import { referencesCard } from './references.js';
+import { tierColumn } from './controls.js';
 import { notFound, statusColumn, idColumn, newRecord } from './hazards.js';
 import { all, get, live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
@@ -121,6 +122,7 @@ export function platformView(state, data, id) {
               render: (c) => html`<span class="id">${idTag(controlLabel(c.control))}</span> ${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
             { key: 'hazard', label: 'For hazard', width: 300, minWidth: 140, value: (c) => hazardLabel(c.hazard), filter: 'text',
               render: (c) => go(idTag(hazardLabel(c.hazard)), 'hazard', { id: c.hazard.id }) },
+            tierColumn((c) => c.control),
             { key: 'kind', label: 'Kind', width: 240, minWidth: 120, value: (c) => c.kind },
             { key: 'state', label: 'State', width: 260, minWidth: 150, value: (c) => c.state, filter: 'select',
               options: [['confirmed', 'confirmed'], ['excluded', 'excluded'], ['awaiting', 'awaiting']],

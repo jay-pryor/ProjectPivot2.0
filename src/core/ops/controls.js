@@ -9,6 +9,24 @@ import { linksTo } from './references.js';
 
 export const CONTROL_KINDS = Object.freeze(['preventative', 'mitigating']);
 
+/** The hierarchy of controls, most effective first. */
+export const CONTROL_TIERS = Object.freeze(['Elimination', 'Substitution', 'Engineering', 'Administrative', 'PPE']);
+
+/** A tier's place in the hierarchy, for sorting; a control with none sorts last. @param {string | null | undefined} tier */
+export function tierRank(tier) {
+  const i = CONTROL_TIERS.indexOf(/** @type {string} */ (tier));
+  return i < 0 ? CONTROL_TIERS.length : i;
+}
+
+/** @param {unknown} tier @returns {string | null} */
+function needTier(tier) {
+  if (tier === null || tier === undefined || tier === '') return null;
+  if (typeof tier !== 'string' || !CONTROL_TIERS.includes(tier)) {
+    throw new PivotError('control.tier', `A control's tier is one of ${CONTROL_TIERS.join(', ')}, or not set.`);
+  }
+  return tier;
+}
+
 /** @param {unknown} kind @returns {string} */
 function needKind(kind) {
   if (typeof kind !== 'string' || !CONTROL_KINDS.includes(kind)) {
@@ -17,19 +35,20 @@ function needKind(kind) {
   return kind;
 }
 
-/** @param {Data} data @param {Act} act @param {{ id?: string, title: string, description?: string }} args */
-export function createControl(data, act, { id = newId(), title, description = '' }) {
-  const rec = created(act, id, { number: null, title: needText(title, 'A control title'), description: String(description ?? '').trim() });
+/** @param {Data} data @param {Act} act @param {{ id?: string, title: string, description?: string, tier?: string | null }} args */
+export function createControl(data, act, { id = newId(), title, description = '', tier = null }) {
+  const rec = created(act, id, { number: null, title: needText(title, 'A control title'), description: String(description ?? '').trim(), tier: needTier(tier) });
   return commit(data, act, 'Create control', [{ kind: 'control', rec }]);
 }
 
-/** @param {Data} data @param {Act} act @param {{ id: string, title?: string, description?: string }} args */
-export function updateControl(data, act, { id, title, description }) {
+/** @param {Data} data @param {Act} act @param {{ id: string, title?: string, description?: string, tier?: string | null }} args */
+export function updateControl(data, act, { id, title, description, tier }) {
   const c = need(data, 'control', id);
-  /** @type {Record<string, string>} */
+  /** @type {Record<string, string | null>} */
   const fields = {};
   if (title !== undefined) fields.title = needText(title, 'A control title');
   if (description !== undefined) fields.description = String(description).trim();
+  if (tier !== undefined) fields.tier = needTier(tier);
   return commit(data, act, 'Edit control', [{ kind: 'control', rec: changed(c, act, fields) }]);
 }
 

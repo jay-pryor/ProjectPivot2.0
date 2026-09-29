@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, statusTag, bandTag, stateTag, go, confirmButton, pageTabs, historyTable, historyCount, idTag } from './common.js';
+import { dataAttrs, option, statusTag, bandTag, stateTag, go, confirmButton, pageTabs, historyTable, historyCount, idTag } from './common.js';
 import { dataTable } from './table.js';
 import { referencesCard } from './references.js';
 import { statusColumn, idColumn, newRecord, notFound } from './hazards.js';
@@ -7,9 +7,20 @@ import { get, live } from '../../core/data.js';
 import { hazardLabel, controlLabel } from '../../core/ids.js';
 import { BANDS } from '../../core/matrix.js';
 import { filterControls, controlUsage, platformsReached } from '../../core/queries.js';
-import { CONTROL_KINDS } from '../../core/ops/controls.js';
+import { CONTROL_KINDS, CONTROL_TIERS, tierRank } from '../../core/ops/controls.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
+
+/** A Tier column: in hierarchy order, filtered by tier or not set. @param {(row: any) => any} controlOf */
+export const tierColumn = (controlOf, filter = true) => ({
+  key: 'tier', label: 'Tier', width: 260, minWidth: 130, value: (/** @type {any} */ r) => tierRank(controlOf(r)?.tier),
+  render: (/** @type {any} */ r) => controlOf(r)?.tier || html`<span class="muted">Not set</span>`,
+  ...(filter ? {
+    filter: /** @type {const} */ ('select'),
+    options: /** @type {[string, string][]} */ ([...CONTROL_TIERS.map((t) => [t, t]), ['none', 'Not set']]),
+    match: (/** @type {any} */ r, /** @type {string} */ v) => (v === 'none' ? !controlOf(r)?.tier : controlOf(r)?.tier === v),
+  } : {}),
+});
 
 const STATES = /** @type {[string, string][]} */ ([['confirmed', 'confirmed'], ['excluded', 'excluded'], ['awaiting', 'awaiting']]);
 
@@ -31,6 +42,7 @@ export function controlsView(state, data) {
         { key: 'platform', label: 'Platform', width: 280, minWidth: 130, value: (r) => r.platform?.name ?? '', filter: 'select',
           options: live(data, 'platform').map((p) => /** @type {[string, string]} */ ([p.id, p.name])),
           match: (r, v) => r.platform?.id === v, render: (r) => r.platform?.name ?? '—' },
+        tierColumn((r) => r.control),
         { key: 'kind', label: 'Kind', width: 240, minWidth: 130, value: (r) => r.kind ?? '', filter: 'select',
           options: CONTROL_KINDS.map((k) => /** @type {[string, string]} */ ([k, k])), render: (r) => r.kind ?? '—' },
         { key: 'state', label: 'State', width: 240, minWidth: 120, value: (r) => r.state ?? '', filter: 'select', options: STATES,
@@ -62,6 +74,7 @@ export function controlView(state, data, id) {
   return html`${head}
     <article class="doc">
       <p class="doc-meta">${reach.length ? html`Used on ${reach.join(', ')}${reach.length > 1 ? '. Changes here reach all of them.' : '.'}` : 'Not used on any platform yet.'}</p>
+      <p class="doc-meta">Tier <select class="quiet inline-select" name="tier" aria-label="Tier" ${dataAttrs({ change: 'updateControl', id })}>${option('', 'Not set', c.tier ?? '')}${CONTROL_TIERS.map((t) => option(t, t, c.tier ?? ''))}</select></p>
       <textarea class="doc-text" name="description" rows="3" placeholder="Add a description…" aria-label="Description" ${dataAttrs({ change: 'updateControl', id })}>${c.description}</textarea>
       <section class="block">
         ${dataTable(state, {

@@ -50,6 +50,7 @@ function sectionsFor(s) {
       columns: [
         { id: 'control', label: 'Control', w: 5, get: (/** @type {any} */ r) => r.title },
         { id: 'kind', label: 'Kind', w: 2, get: (/** @type {any} */ r) => r.kind },
+        { id: 'tier', label: 'Tier', w: 3, optional: true, get: (/** @type {any} */ r) => r.tier ?? '' },
         { id: 'state', label: 'State', w: 2, get: (/** @type {any} */ r) => r.state },
         { id: 'reason', label: 'Reason excluded', w: 4, optional: true, get: (/** @type {any} */ r) => r.reason },
       ],

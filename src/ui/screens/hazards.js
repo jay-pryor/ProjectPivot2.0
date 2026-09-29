@@ -2,6 +2,7 @@ import { html } from '../html.js';
 import { dataAttrs, option, statusTag, bandTag, go, confirmButton, pageTabs, historyTable, historyCount, plus, idTag } from './common.js';
 import { dataTable } from './table.js';
 import { referencesCard } from './references.js';
+import { tierColumn } from './controls.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
 import { hazardRows, hazardDetail, ratingOf, bandOf, hazardLastReviewed } from '../../core/queries.js';
@@ -127,6 +128,7 @@ export function hazardView(state, data, id) {
           columns: [
             { key: 'control', label: 'Controls', width: 720, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`,
               render: (c) => html`<span class="id">${idTag(controlLabel(c.control))}</span> ${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
+            tierColumn((c) => c.control, false),
             { key: 'kind', label: 'Kind', width: 300, minWidth: 150, value: (c) => c.link.kind,
               render: (c) => html`<select class="quiet" name="kind" aria-label="Kind of ${c.control.title}" ${dataAttrs({ change: 'setControlKind', 'hazard-id': h.id, 'control-id': c.control.id })}>${CONTROL_KINDS.map((k) => option(k, k, c.link.kind))}</select>` },
             { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,

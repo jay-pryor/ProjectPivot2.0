@@ -30,6 +30,10 @@ export function normalizeData(value) {
   if (!isObject(value) || !isObject(value.records)) return value;
   const records = { ...value.records };
   for (const k of KINDS) if (!isObject(records[k])) records[k] = {};
+  // Controls written before tiers existed have none.
+  records.control = Object.fromEntries(Object.entries(records.control).map(([id, c]) => [
+    id, isObject(c) && !('tier' in c) ? { ...c, tier: null } : c,
+  ]));
   // Platforms written before reviews existed have no schedule.
   records.platform = Object.fromEntries(Object.entries(records.platform).map(([id, p]) => [
     id, isObject(p) && !('reviewDue' in p) ? { ...p, reviewMonths: null, reviewDue: null } : p,

@@ -11,7 +11,7 @@ import { reviewState, aestDate } from '../core/time.js';
  *   review: { state: string, due: string | null, months: number | null, lastReviewed: string | null },
  *   references: { number: string, title: string, docNumber: string, revision: string, supports: string }[] }} Snapshot
  * @typedef {{ hazardId: string, number: number | null, reportId: string, title: string, description: string,
- *   causalFactors: string[], consequences: string[], controls: { title: string, kind: string, state: string, reason: string }[],
+ *   causalFactors: string[], consequences: string[], controls: { title: string, kind: string, tier: string, state: string, reason: string }[],
  *   initial: any, residual: any }} SnapshotRow
  */
 
@@ -35,7 +35,7 @@ export function buildSnapshot(data, platformId, o) {
       description: r.hazard.description ?? '',
       causalFactors: d.causalFactors.map((x) => x.text),
       consequences: d.consequences.map((x) => x.text),
-      controls: r.controls.map((c) => ({ title: c.control.title, kind: c.kind, state: c.state, reason: c.state === 'excluded' ? c.ruling?.reason ?? '' : '' })),
+      controls: r.controls.map((c) => ({ title: c.control.title, kind: c.kind, tier: c.control.tier ?? '', state: c.state, reason: c.state === 'excluded' ? c.ruling?.reason ?? '' : '' })),
       initial: r.rating.initial,
       residual: r.rating.residual,
     };

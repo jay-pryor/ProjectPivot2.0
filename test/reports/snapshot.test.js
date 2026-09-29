@@ -39,8 +39,8 @@ test('a snapshot holds the platform, and each of its hazards with everything a r
     { reportId: 'H-0001', title: 'Fire', causalFactors: ['Hot works'], consequences: ['Burns'], initial: { consequence: 1, likelihood: 'C' }, residual: { consequence: 2, likelihood: 'C' } },
   );
   assert.deepEqual(r.controls, [
-    { title: 'Sprinklers', kind: 'preventative', state: 'confirmed', reason: '' },
-    { title: 'Fire drills', kind: 'mitigating', state: 'excluded', reason: 'No crew' },
+    { title: 'Sprinklers', kind: 'preventative', tier: '', state: 'confirmed', reason: '' },
+    { title: 'Fire drills', kind: 'mitigating', tier: '', state: 'excluded', reason: 'No crew' },
   ]);
 });
 
