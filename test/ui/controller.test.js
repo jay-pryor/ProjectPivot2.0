@@ -9,7 +9,7 @@ import { load, FILES } from '../../src/storage/store.js';
 /** @param {MemoryFolder} folder @param {MemoryStorage} [storage] */
 function env(folder, storage = new MemoryStorage()) {
   return {
-    clock: fixedClock('2026-09-28T10:00:00+10:00'),
+    clock: fixedClock('2026-09-28T10:00:00+10:00'), minSaveMs: 0,
     storage,
     pickFolder: async () => folder.handle,
     pickSaveFile: async (name) => folder.handle.getFileHandle(name, { create: true }),
@@ -46,7 +46,8 @@ test('open an empty folder, create a profile, add a hazard, save', async () => {
   assert.equal(view.name, 'hazard');
   assert.equal(session.working.records.hazard[view.id].title, 'Fire');
   await c.dispatch({ type: 'save' });
-  assert.equal(c.getState().message.text, 'Saved.');
+  assert.equal(c.getState().message, null, 'a plain save shows no pop-up; the Save button says Saved');
+  assert.equal(c.getState().session.working, c.getState().session.base);
   const stored = await load(f.handle);
   assert.equal(stored.data.records.hazard[view.id].number, 1);
 });
@@ -89,7 +90,8 @@ test('a full browser storage gives a warning, and work carries on', async () => 
   await c.dispatch({ type: 'createHazard', title: 'Fire' });
   assert.match(c.getState().warnings[0], /not being kept/);
   await c.dispatch({ type: 'save' });
-  assert.equal(c.getState().message.text, 'Saved.');
+  assert.equal(c.getState().message, null);
+  assert.equal(c.getState().session.working, c.getState().session.base, 'saved');
 });
 
 test('Review focus 5: recovered work merges with a save made by someone else since', async () => {

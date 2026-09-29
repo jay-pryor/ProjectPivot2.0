@@ -16,6 +16,7 @@ import { setReportDesign } from '../core/ops/reports.js';
 import { createDocHost } from '../reports/docgen-host.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
 import { recordName, profileName, KIND_LABEL } from './names.js';
+import { THEMES, MIN_COLUMN_WIDTH, activeProfile } from './prefs.js';
 import { mergeData } from '../core/merge.js';
 
 /** Every edit is an op called with the working data, the act, and the action's own fields. */
@@ -45,6 +46,7 @@ export function initialState() {
     session: null, recoverable: null, notices: [], view: { name: 'hazards' },
     filters: { hazards: {}, controls: {} }, backups: [], pendingRestore: null,
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
+    tables: {}, editing: null, saving: false,
   };
 }
 
@@ -52,7 +54,7 @@ export function initialState() {
  * @param {{ clock: import('../core/time.js').Clock, storage: Storage,
  *   pickFolder: () => Promise<FileSystemDirectoryHandle>,
  *   pickSaveFile: (name: string) => Promise<FileSystemFileHandle>,
- *   pickOpenFile: () => Promise<string> }} env
+ *   pickOpenFile: () => Promise<string>, minSaveMs?: number }} env  minSaveMs: shortest time a save shows as saving (default 900)
  */
 export function createController(env) {
   let state = initialState();
@@ -116,7 +118,8 @@ export function createController(env) {
 
   /** @param {import('../storage/store.js').SaveResult} r */
   function saveMessage(r) {
-    if (!r.merged) return { kind: 'info', text: 'Saved.' };
+    // A plain save says so on the Save button itself; only a merge has something to tell.
+    if (!r.merged) return null;
     const who = nameOf(r.lastSavedBy);
     const kept = r.supersededFile ? [`Their previous file is kept as ${r.supersededFile}.`] : [];
     if (r.missingFromDisk > 0) {
@@ -134,6 +137,13 @@ export function createController(env) {
       text: `Saved, but ${r.conflicts.length} of ${who}'s changes ${r.conflicts.length === 1 ? 'was' : 'were'} replaced by yours.`,
       items: [...r.conflicts.map((c) => `${KIND_LABEL[c.kind] ?? c.kind}: ${recordName(c.kind, c.theirs ?? c.mine)}`), ...kept],
     };
+  }
+
+  /** Merge settings into the active profile, kept in profiles.json. @param {Record<string, any>} patch */
+  async function savePrefs(patch) {
+    if (!state.profileId || !handle) throw new PivotError('no-profile', 'Pick your profile first.');
+    const updated = await store.updateProfilePrefs(handle, state.profileId, patch, env.clock);
+    set({ profiles: state.profiles.map((p) => (p.id === updated.id ? updated : p)) });
   }
 
   /** @type {Record<string, (args: any) => Promise<void>>} */
@@ -201,7 +211,18 @@ export function createController(env) {
     async save() {
       if (!state.session) throw new PivotError('no-data', 'There is nothing to save yet.');
       const startWorking = state.session.working;
-      const r = await store.save(/** @type {any} */ (handle), state.session, /** @type {string} */ (state.profileId), env.clock);
+      set({ saving: true });
+      /** @type {import('../storage/store.js').SaveResult} */
+      let r;
+      try {
+        // Never quicker than the minimum, so the progress bar is seen and the click feels taken.
+        [r] = await Promise.all([
+          store.save(/** @type {any} */ (handle), state.session, /** @type {string} */ (state.profileId), env.clock),
+          new Promise((done) => setTimeout(done, env.minSaveMs ?? 900)),
+        ]);
+      } finally {
+        set({ saving: false });
+      }
       // Edits made while the save was running are laid back over what was saved.
       const during = state.session.working !== startWorking;
       let working = during ? mergeData(startWorking, state.session.working, r.data, act()).data : r.data;
@@ -226,6 +247,33 @@ export function createController(env) {
         }
       }
       set({ message: saveMessage(r), warnings });
+    },
+    async setTheme({ theme }) {
+      if (!THEMES.includes(theme)) throw new PivotError('prefs.theme', `There is no ${theme} theme.`);
+      await savePrefs({ theme });
+    },
+    async setColumnWidth({ table, column, width }) {
+      const px = Math.max(MIN_COLUMN_WIDTH, Math.round(Number(width)));
+      if (!Number.isFinite(px)) return;
+      const widths = { ...(activeProfile(state)?.prefs?.columnWidths ?? {}), [`${table}.${column}`]: px };
+      await savePrefs({ columnWidths: widths });
+    },
+    async sortTable({ table, key }) {
+      const t = state.tables[table] ?? {};
+      const dir = t.sort?.key === key && t.sort.dir === 'asc' ? 'desc' : 'asc';
+      set({ tables: { ...state.tables, [table]: { ...t, sort: { key, dir } } } });
+    },
+    async filterTable({ table, key, value }) {
+      const t = state.tables[table] ?? {};
+      const filters = { ...(t.filters ?? {}) };
+      if (value) filters[key] = value; else delete filters[key];
+      set({ tables: { ...state.tables, [table]: { ...t, filters } } });
+    },
+    async startEdit({ kind, id }) {
+      set({ editing: { kind, id } });
+    },
+    async cancelEdit() {
+      set({ editing: null });
     },
     async setFilter({ list, field, value }) {
       const next = { ...state.filters[list] };
@@ -306,7 +354,7 @@ export function createController(env) {
         const shows = SHOW_CREATED[type];
         if (shows && !args.id) args.id = newId();
         const working = EDITS[type](state.session.working, act(), args);
-        set({ session: { ...state.session, working }, message: null });
+        set({ session: { ...state.session, working }, message: null, editing: null });
         if (shows) set({ view: { name: shows, id: args.id } });
         await afterChange();
         return;

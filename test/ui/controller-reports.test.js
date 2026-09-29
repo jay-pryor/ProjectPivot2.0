@@ -11,7 +11,7 @@ const HOUR = 3600_000;
 
 function env(folder, clock = fixedClock('2026-09-28T10:00:00+10:00'), openText = null) {
   return {
-    clock, storage: new MemoryStorage(),
+    clock, storage: new MemoryStorage(), minSaveMs: 0,
     pickFolder: async () => folder.handle,
     pickSaveFile: async (name) => folder.handle.getFileHandle(name, { create: true }),
     pickOpenFile: async () => openText,
