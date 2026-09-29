@@ -1,9 +1,12 @@
-import { html } from '../html.js';
-import { dataAttrs, confirmButton, reviewTag } from './common.js';
-import { openReview, lastReviewed } from '../../core/queries.js';
+import { html, raw } from '../html.js';
+import { dataAttrs, confirmButton, reviewTag, go, bandTag, idTag } from './common.js';
+import { dataTable } from './table.js';
+import { get } from '../../core/data.js';
+import { openReview, lastReviewed, reviewRows, completedReviews, bandOf } from '../../core/queries.js';
 import { reviewState } from '../../core/time.js';
 import { MAX_REVIEW_MONTHS } from '../../core/ops/reviews.js';
-import { day } from '../names.js';
+import { BANDS } from '../../core/matrix.js';
+import { day, when, profileName } from '../names.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -37,4 +40,105 @@ export function reviewLine(state, data, p) {
     ${lastText}
     ${confirmButton('✕', 'Remove the review schedule', dataAttrs({ action: 'setSchedule', 'platform-id': p.id }))}
     ${start}</div>`;
+}
+
+/** @param {{ confirmed: number, excluded: number, awaiting: number }} c */
+function controlSummary(c) {
+  const parts = [['confirmed', c.confirmed], ['excluded', c.excluded], ['awaiting', c.awaiting]].filter(([, n]) => n);
+  return parts.length ? parts.map(([s, n]) => `${n} ${s}`).join(' · ') : html`<span class="muted">No controls</span>`;
+}
+
+const needsSchedule = html`<p class="muted">Completing a review needs a review schedule: set one on the Details tab.</p>`;
+
+/** @param {any} state @param {Data} data @param {any} p @param {any} review */
+function openReviewBlock(state, data, p, review) {
+  const items = reviewRows(data, review.id);
+  const unticked = items.filter((i) => i.onPlatform && !i.reviewed).length;
+  const noting = (/** @type {any} */ i) => state.editing?.kind === 'reviewNote' && state.editing.id === i.hazard.id;
+  const band = (/** @type {any} */ pair) => bandOf(pair);
+  return html`<p class="muted">Started by ${profileName(state, review.createdBy)}, ${when(review.createdAt)}. Tick each hazard once its ratings and controls are checked on the Details tab.</p>
+    <section class="block">${dataTable(state, {
+      id: 'reviewRows',
+      rowKey: (i) => i.hazard.id,
+      rows: items,
+      empty: 'This platform has no hazards to review.',
+      columns: [
+        { key: 'reportId', label: 'ID', width: 200, minWidth: 100, value: (i) => i.reportId, render: (i) => idTag(i.reportId) },
+        { key: 'hazard', label: 'Hazard', width: 520, minWidth: 200, value: (i) => i.hazard.title, filter: 'text',
+          render: (i) => html`${go(i.hazard.title, 'hazard', { id: i.hazard.id })}${i.onPlatform ? '' : html` <span class="muted">(no longer on this platform)</span>`}` },
+        { key: 'initial', label: 'Initial', width: 220, minWidth: 120, value: (i) => (i.rating ? BANDS.indexOf(band(i.rating.initial)) : null),
+          render: (i) => (i.rating ? bandTag(band(i.rating.initial)) : '—') },
+        { key: 'residual', label: 'Residual', width: 220, minWidth: 120, value: (i) => (i.rating ? BANDS.indexOf(band(i.rating.residual)) : null),
+          render: (i) => (i.rating ? bandTag(band(i.rating.residual)) : '—') },
+        { key: 'controls', label: 'Controls', width: 400, minWidth: 180, sortable: false, render: (i) => (i.counts ? controlSummary(i.counts) : '—') },
+        { key: 'reviewed', label: 'Reviewed', width: 200, minWidth: 120, value: (i) => (i.reviewed ? 'yes' : 'no'), filter: 'select', options: [['yes', 'Yes'], ['no', 'No']],
+          render: (i) => html`<input type="checkbox" name="reviewed" aria-label="Reviewed: ${i.hazard.title}"${i.reviewed ? raw(' checked') : ''}${i.onPlatform ? '' : raw(' disabled')} ${dataAttrs({ change: 'tickReviewRow', 'review-id': review.id, 'hazard-id': i.hazard.id })}>` },
+        { key: 'note', label: 'Note', width: 640, minWidth: 220, value: (i) => i.note, filter: 'text',
+          render: (i) => (noting(i)
+            ? html`<input class="cell-edit" name="note" value="${i.note}" placeholder="What was checked or found…" aria-label="Note on ${i.hazard.title}" autofocus ${dataAttrs({ change: 'markRow', 'review-id': review.id, 'hazard-id': i.hazard.id })}>`
+            : i.onPlatform
+              ? html`<span class="cell-text" ${dataAttrs({ dblclick: 'startEdit', kind: 'reviewNote', id: i.hazard.id })} title="Double-click to change">${i.note}</span>`
+              : html`<span class="cell-text">${i.note}</span>`) },
+      ],
+    })}</section>
+    <label class="outcome">Outcome
+      <textarea name="outcome" rows="3" placeholder="What the review found, and anything to follow up…" ${dataAttrs({ change: 'setReviewOutcome', 'review-id': review.id })}>${review.outcome}</textarea></label>
+    <div class="actions">
+      <button type="button" class="primary" ${dataAttrs({ action: 'completeReview', 'review-id': review.id })}${p.reviewMonths ? '' : raw(' disabled')}>${unticked ? `Complete — ${unticked} not ticked` : 'Complete review'}</button>
+      ${confirmButton('Abandon…', 'Abandon this review, discarding its ticks and notes', dataAttrs({ action: 'abandonReview', 'review-id': review.id }))}
+    </div>
+    ${p.reviewMonths ? '' : needsSchedule}`;
+}
+
+/** @param {any} state @param {Data} data @param {any} p @param {any} review */
+function completedReview(state, data, p, review) {
+  return html`<p>${go('← All reviews', 'platform', { id: p.id, tab: 'reviews' })}</p>
+    <p class="doc-meta">Completed by ${profileName(state, review.completedBy)}, ${when(review.completedAt)}. It cleared the review due ${day(review.dueBefore)}; the next was then due ${day(review.dueAfter)}.</p>
+    ${review.outcome ? html`<p class="outcome-text">${review.outcome}</p>` : ''}
+    <section class="block">${dataTable(state, {
+      id: 'reviewRecord',
+      rowKey: (i) => i.hazard.id,
+      rows: reviewRows(data, review.id),
+      empty: 'The platform had no hazards when this review was completed.',
+      columns: [
+        { key: 'reportId', label: 'ID', width: 200, minWidth: 100, value: (i) => i.reportId, render: (i) => idTag(i.reportId) },
+        { key: 'hazard', label: 'Hazard', width: 560, minWidth: 200, value: (i) => i.hazard.title, render: (i) => go(i.hazard.title, 'hazard', { id: i.hazard.id }) },
+        { key: 'reviewed', label: 'Reviewed', width: 200, minWidth: 120, value: (i) => (i.reviewed ? 'Yes' : 'No'), filter: 'select', options: [['Yes', 'Yes'], ['No', 'No']] },
+        { key: 'note', label: 'Note', width: 720, minWidth: 220, value: (i) => i.note },
+      ],
+    })}</section>`;
+}
+
+/** @param {any} state @param {Data} data @param {any} p */
+function pastReviews(state, data, p) {
+  return dataTable(state, {
+    id: 'pastReviews',
+    rowKey: (c) => c.review.id,
+    rows: completedReviews(data, p.id),
+    empty: 'No completed reviews yet.',
+    columns: [
+      { key: 'completed', label: 'Completed', width: 260, minWidth: 140, value: (c) => c.review.completedAt,
+        render: (c) => go(day(c.review.completedAt), 'platform', { id: p.id, tab: 'reviews', 'review-id': c.review.id }) },
+      { key: 'by', label: 'By', width: 220, minWidth: 100, value: (c) => profileName(state, c.review.completedBy) },
+      { key: 'cleared', label: 'Review due', width: 240, minWidth: 130, value: (c) => c.review.dueBefore, render: (c) => day(c.review.dueBefore) },
+      { key: 'outcome', label: 'Outcome', width: 640, minWidth: 200, value: (c) => c.review.outcome },
+      { key: 'ticked', label: 'Reviewed', width: 180, minWidth: 100, value: (c) => c.ticked },
+      { key: 'notTicked', label: 'Not reviewed', width: 200, minWidth: 110, value: (c) => c.notTicked },
+    ],
+  });
+}
+
+/**
+ * The platform's Reviews tab: the review in progress (or a way to start one), and the past
+ * reviews, one of which can be opened read-only.
+ * @param {any} state @param {Data} data @param {any} p
+ */
+export function reviewsTab(state, data, p) {
+  const chosen = state.view?.reviewId ? get(data, 'review', state.view.reviewId) : null;
+  if (chosen && chosen.status === 'live' && chosen.state === 'completed' && chosen.platformId === p.id) return completedReview(state, data, p, chosen);
+  const open = openReview(data, p.id);
+  const top = open ? openReviewBlock(state, data, p, open)
+    : p.status !== 'live' ? html`<p class="muted">${p.name} is retired, so it cannot be reviewed.</p>`
+      : html`<p>No review in progress. <button type="button" ${dataAttrs({ action: 'beginReview', 'platform-id': p.id })}>Start review</button></p>${p.reviewMonths ? '' : needsSchedule}`;
+  return html`${top}<h2>Past reviews</h2><section class="block">${pastReviews(state, data, p)}</section>`;
 }

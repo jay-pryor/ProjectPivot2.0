@@ -1,6 +1,7 @@
 import { html } from '../html.js';
 import { dataAttrs, option, statusTag, stateTag, go, confirmButton, pageTabs, historyTable, plus, idTag, reviewTag } from './common.js';
-import { reviewLine } from './reviews.js';
+import { reviewLine, reviewsTab } from './reviews.js';
+import { REVIEW_DETAIL_ACTIONS } from '../../core/ops/reviews.js';
 import { reviewState } from '../../core/time.js';
 import { dataTable } from './table.js';
 import { notFound, statusColumn, idColumn, newRecord } from './hazards.js';
@@ -60,12 +61,14 @@ export function platformView(state, data, id) {
   const p = get(data, 'platform', id);
   if (!p) return notFound();
   const tab = state.view?.tab;
-  const reaching = historyReaching(data, id);
+  // Ticks, notes and outcome edits stay in the review itself rather than crowding the History tab.
+  const reaching = historyReaching(data, id).filter((e) => !REVIEW_DETAIL_ACTIONS.includes(e.action));
   const head = html`<p>${go('← Platforms', 'platforms')}</p>
     <div class="doc-head"><span class="doc-id">${idTag(platformLabel(p))}</span>${statusTag(p.status)}</div>
     <input class="doc-title" name="name" value="${p.name}" required aria-label="Platform name" ${dataAttrs({ change: 'updatePlatform', id })}>
     ${pageTabs('platform', { id }, tab, reaching.length, [['reviews', openReview(data, id) ? 'Reviews (in progress)' : 'Reviews']])}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'platform', id, reaching)}`;
+  if (tab === 'reviews') return html`${head}<article class="doc">${reviewsTab(state, data, p)}</article>`;
 
   const rows = platformHazards(data, id);
   const controlRows = rows.flatMap((r) => r.controls.map((c) => ({ ...c, hazard: r.hazard })));
