@@ -1,10 +1,11 @@
-import { html } from '../html.js';
+import { html, raw } from '../html.js';
+import { FULCRUM_SVG } from '../logo.js';
 import { dataAttrs, messages } from './common.js';
 import { profileName, recordName, when, KIND_LABEL } from '../names.js';
 
 /** @param {any} state */
 export function openScreen(state) {
-  return html`<div class="start"><h1>Pivot</h1>
+  return html`<div class="start"><h1 class="brand-title">${raw(FULCRUM_SVG)}PIVOT</h1>
     <p>Choose the shared data folder. A new, empty folder starts an empty register.</p>
     <button type="button" class="primary" ${dataAttrs({ action: 'chooseFolder' })}>Choose data folder…</button>
     ${messages(state)}</div>`;

@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FULCRUM_ICON } from '../src/ui/logo.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(HERE, '..');
@@ -106,6 +107,7 @@ export function build({ root = ROOT, builtAt = new Date().toISOString() } = {}) 
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<meta name="pivot-build" content="${builtAt}">`,
     '<title>Pivot</title>',
+    `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${encodeURIComponent(FULCRUM_ICON)}">`,
     `<style>\n${css}</style>`,
     `<script type="importmap">${importMap}</script>`,
     '</head>',

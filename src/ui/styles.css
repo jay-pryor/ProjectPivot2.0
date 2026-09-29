@@ -65,7 +65,9 @@ a { color: var(--p-link); }
 
 /* Top bar */
 .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 8px 20px; background: var(--p-bar); color: var(--p-bar-fg); flex-wrap: wrap; border-bottom: 1px solid var(--p-line); }
-.topbar .brand { font-weight: 700; letter-spacing: .02em; }
+.topbar .brand { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; letter-spacing: .08em; }
+.brand-logo { width: 1.45em; height: 1.45em; flex: none; }
+.brand-title { display: flex; align-items: center; gap: 10px; letter-spacing: .08em; }
 .topbar .folder { opacity: .7; }
 .topbar nav { display: flex; gap: 4px; }
 .topbar .nav { background: transparent; color: var(--p-bar-fg); border-color: transparent; }
@@ -327,3 +329,17 @@ button.small { padding: 2px 9px; font-size: 13px; }
 
 .delete-panel { border: 1px solid var(--p-danger); border-radius: 10px; padding: 12px 14px; margin: 12px 0; background: var(--p-error-bg); }
 .delete-panel p { margin: 0 0 10px; }
+
+/* The HIGHCOM splash as Pivot opens (src/ui/splash.js). It follows the app's theme, which is dark until a profile says otherwise. */
+.splash {
+  --hc-bg: #050505; --hc-bg-lift: #151413; --hc-fg: #ffffff; --hc-accent: #fa9a26; --hc-sheen-core: #ffd8a6;
+  position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding-inline: 16px; cursor: pointer;
+  background: radial-gradient(ellipse 58% 52% at 50% 50%, var(--hc-bg-lift), var(--hc-bg) 72%);
+}
+:root[data-theme="light"] .splash { --hc-bg: #ecebe8; --hc-bg-lift: #ffffff; --hc-fg: #000000; }
+.splash-flash { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(circle at 50% 50%, var(--hc-accent), transparent 42%); }
+.splash-logo { position: relative; width: min(100%, 860px); height: auto; max-height: 100%; overflow: visible; }
+.splash-logo .ink, .splash-logo .letter { fill: var(--hc-fg); }
+.splash-logo .letter { fill-rule: evenodd; }
+.splash-logo .trace { fill: none; stroke: var(--hc-accent); stroke-width: 1.8; stroke-linejoin: miter; stroke-linecap: square; }
+.splash-logo .spark, .splash-logo .hot { fill: var(--hc-accent); }

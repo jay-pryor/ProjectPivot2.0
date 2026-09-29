@@ -2,6 +2,7 @@ import { createController } from './ui/controller.js';
 import { mount } from './ui/mount.js';
 import { systemClock } from './core/time.js';
 import { viewableType } from './ui/files.js';
+import { playSplash } from './ui/splash.js';
 
 /** localStorage can be missing or refused by policy; the mirror reports that as a warning. */
 function browserStorage() {
@@ -40,3 +41,4 @@ const controller = createController({
   copyText: (text) => navigator.clipboard.writeText(text),
 });
 mount(/** @type {HTMLElement} */ (document.getElementById('pivot')), controller);
+void playSplash(document);

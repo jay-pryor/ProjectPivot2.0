@@ -8,6 +8,7 @@ import { ratingFor, LIKELIHOODS, CONSEQUENCES } from '../../core/matrix.js';
 import { waitingChanges } from '../../core/acks.js';
 import { live } from '../../core/data.js';
 import { UNNUMBERED, hazardLabel } from '../../core/ids.js';
+import { FULCRUM_SVG } from '../logo.js';
 
 /** @param {Record<string, unknown>} obj kebab-case keys @returns {import('../html.js').Raw} */
 export function dataAttrs(obj) {
@@ -99,7 +100,7 @@ export function shell(state, body) {
     ? live(data, 'platform').filter((p) => p.ownerId === state.profileId).reduce((n, p) => n + waitingChanges(data, p.id).length, 0)
     : 0;
   return html`<header class="topbar">
-    <span class="brand">Pivot</span><span class="folder" title="The data folder">Folder: ${state.folderName}</span>
+    <span class="brand">${raw(FULCRUM_SVG)}PIVOT</span><span class="folder" title="The data folder">Folder: ${state.folderName}</span>
     <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${view === 'home' && waiting ? `${label} (${waiting})` : label}</button>`)}</nav>
     <span class="spacer"></span>
     ${save}
