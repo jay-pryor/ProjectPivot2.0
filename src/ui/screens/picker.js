@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, option } from './common.js';
+import { dataAttrs, option, idTag } from './common.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel } from '../../core/ids.js';
 import { hazardsNotOn, hazardDetail } from '../../core/queries.js';
@@ -17,7 +17,7 @@ export function pickerView(state, data) {
     const hazards = hazardsNotOn(data, p.platformId);
     return frame('Link hazards', html`<form data-action="linkHazards" ${dataAttrs({ 'platform-id': p.platformId })} class="picker-form">
       ${search()}
-      <ul class="pick-list">${hazards.map((h) => html`<li data-pick-text="${`${hazardLabel(h)} ${h.title}`.toLowerCase()}"><label><input type="checkbox" name="hazardId" value="${h.id}"> <span class="id">${hazardLabel(h)}</span> ${h.title}</label></li>`)}</ul>
+      <ul class="pick-list">${hazards.map((h) => html`<li data-pick-text="${`${hazardLabel(h)} ${h.title}`.toLowerCase()}"><label><input type="checkbox" name="hazardId" value="${h.id}"> <span class="id">${idTag(hazardLabel(h))}</span> ${h.title}</label></li>`)}</ul>
       ${hazards.length ? '' : html`<p class="muted">Every live hazard is already on this platform.</p>`}
       ${buttons('Link')}</form>`);
   }
@@ -27,7 +27,7 @@ export function pickerView(state, data) {
     const controls = live(data, 'control').filter((c) => !linked.has(c.id));
     return frame('Link controls', html`<form data-action="linkControls" ${dataAttrs({ 'hazard-id': p.hazardId })} class="picker-form">
       ${search()}
-      <ul class="pick-list">${controls.map((c) => html`<li data-pick-text="${`${controlLabel(c)} ${c.title}`.toLowerCase()}"><label><input type="checkbox" name="controlId" value="${c.id}"> <span class="id">${controlLabel(c)}</span> ${c.title}</label>
+      <ul class="pick-list">${controls.map((c) => html`<li data-pick-text="${`${controlLabel(c)} ${c.title}`.toLowerCase()}"><label><input type="checkbox" name="controlId" value="${c.id}"> <span class="id">${idTag(controlLabel(c))}</span> ${c.title}</label>
         <select name="kind:${c.id}" aria-label="Kind of ${c.title}">${CONTROL_KINDS.map((k) => option(k, k))}</select></li>`)}</ul>
       ${controls.length ? '' : html`<p class="muted">${live(data, 'control').length ? 'Every control in the library is already linked.' : 'The control library is empty: add controls on the Controls page.'}</p>`}
       ${buttons('Link')}</form>`);

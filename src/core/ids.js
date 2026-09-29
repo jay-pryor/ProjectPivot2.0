@@ -3,8 +3,11 @@ export function newId() {
   return globalThis.crypto.randomUUID();
 }
 
+/** What a record's ID reads as until it is first saved and numbered. */
+export const UNNUMBERED = 'TBC';
+
 /**
- * The id a person reads: `H-0042`, or `New` until the hazard is first saved and numbered.
+ * The id a person reads: `H-0042`, or `TBC` (UNNUMBERED) until the hazard is first saved and numbered.
  * @param {{ number?: number | null, [field: string]: any }} hazard
  */
 export function hazardLabel(hazard) {
@@ -23,7 +26,7 @@ export function platformLabel(platform) {
 
 /** @param {string} prefix @param {{ number?: number | null }} rec */
 function numberLabel(prefix, rec) {
-  return rec.number == null ? 'New' : `${prefix}-${String(rec.number).padStart(4, '0')}`;
+  return rec.number == null ? UNNUMBERED : `${prefix}-${String(rec.number).padStart(4, '0')}`;
 }
 
 /**

@@ -44,7 +44,7 @@ test('ids: uuids, link ids, and the hazard label', () => {
   assert.equal(ids.rating('h', 'p'), 'rt:h:p');
   assert.equal(hazardLabel({ number: 7 }), 'H-0007');
   assert.equal(hazardLabel({ number: 12345 }), 'H-12345');
-  assert.equal(hazardLabel({ number: null }), 'New');
+  assert.equal(hazardLabel({ number: null }), 'TBC');
 });
 
 test('canonicalJson sorts keys at every level and keeps array order', () => {

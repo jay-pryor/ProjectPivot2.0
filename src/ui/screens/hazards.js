@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, bandTag, go, confirmButton, pageTabs, historyTable, historyCount, plus } from './common.js';
+import { dataAttrs, option, statusTag, bandTag, go, confirmButton, pageTabs, historyTable, historyCount, plus, idTag } from './common.js';
 import { dataTable } from './table.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
@@ -23,7 +23,7 @@ export const statusColumn = (statusOf) => ({
 export const idColumn = (recOf, label, render) => ({
   key: 'id', label: 'ID', width: 200, minWidth: 100, value: (/** @type {any} */ r) => recOf(r).number ?? Infinity, filter: /** @type {const} */ ('text'),
   match: (/** @type {any} */ r, /** @type {string} */ v) => label(recOf(r)).toLowerCase().includes(v.toLowerCase()),
-  render: render ?? ((/** @type {any} */ r) => label(recOf(r))),
+  render: render ?? ((/** @type {any} */ r) => idTag(label(recOf(r)))),
 });
 
 /**
@@ -50,7 +50,7 @@ export function hazardsView(state, data) {
       rows: hazardRows(data),
       empty: 'No hazards yet.',
       columns: [
-        idColumn((r) => r.hazard, hazardLabel, (r) => go(hazardLabel(r.hazard), 'hazard', { id: r.hazard.id })),
+        idColumn((r) => r.hazard, hazardLabel, (r) => go(idTag(hazardLabel(r.hazard)), 'hazard', { id: r.hazard.id })),
         { key: 'title', label: 'Hazard', width: 640, minWidth: 200, value: (r) => r.hazard.title, filter: 'text' },
         { key: 'platforms', label: 'Platforms (residual risk)', width: 640, minWidth: 200, value: (r) => r.platforms.map((p) => p.platform.name).join(', '),
           filter: 'select', options: platformOptions, match: (r, v) => r.platforms.some((p) => p.platform.id === v),
@@ -102,7 +102,7 @@ export function hazardView(state, data, id) {
   const h = d.hazard;
   const tab = state.view?.tab;
   const head = html`<p>${go('← Hazards', 'hazards')}</p>
-    <div class="doc-head"><span class="doc-id">${hazardLabel(h)}</span>${statusTag(h.status)}</div>
+    <div class="doc-head"><span class="doc-id">${idTag(hazardLabel(h))}</span>${statusTag(h.status)}</div>
     <input class="doc-title" name="title" value="${h.title}" required aria-label="Hazard title" ${dataAttrs({ change: 'updateHazard', id: h.id })}>
     ${pageTabs('hazard', { id: h.id }, tab, historyCount(state, data, 'hazard', h.id))}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'hazard', h.id)}`;
@@ -112,13 +112,10 @@ export function hazardView(state, data, id) {
     : h.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'hazard', id: h.id })}>Restore</button>` : '';
   return html`${head}
     <article class="doc">
-      <p class="doc-meta">${d.platforms.length
-        ? html`On ${d.platforms.length === 1 ? 'one platform' : `${d.platforms.length} platforms`}: ${d.platforms.map((p) => p.platform.name).join(', ')}${d.platforms.length > 1 ? '. Changes here reach all of them.' : '.'}`
-        : 'On no platform yet.'}</p>
       <textarea class="doc-text" name="description" rows="3" placeholder="Add a description…" aria-label="Description" ${dataAttrs({ change: 'updateHazard', id: h.id })}>${h.description}</textarea>
-      <section>${textTable(state, 'CausalFactor', d.causalFactors, h.id)}</section>
-      <section>${textTable(state, 'Consequence', d.consequences, h.id)}</section>
-      <section>
+      <section class="block">${textTable(state, 'CausalFactor', d.causalFactors, h.id)}</section>
+      <section class="block">${textTable(state, 'Consequence', d.consequences, h.id)}</section>
+      <section class="block">
         ${dataTable(state, {
           id: 'hazardControls',
           rowKey: (c) => c.control.id,
@@ -127,7 +124,7 @@ export function hazardView(state, data, id) {
           tools: plus({ action: 'openPicker', picker: 'linkControls', 'hazard-id': h.id }, 'Link controls'),
           columns: [
             { key: 'control', label: 'Controls', width: 720, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`,
-              render: (c) => html`<span class="id">${controlLabel(c.control)}</span> ${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
+              render: (c) => html`<span class="id">${idTag(controlLabel(c.control))}</span> ${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
             { key: 'kind', label: 'Kind', width: 300, minWidth: 150, value: (c) => c.link.kind,
               render: (c) => html`<select class="quiet" name="kind" aria-label="Kind of ${c.control.title}" ${dataAttrs({ change: 'setControlKind', 'hazard-id': h.id, 'control-id': c.control.id })}>${CONTROL_KINDS.map((k) => option(k, k, c.link.kind))}</select>` },
             { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
@@ -135,7 +132,7 @@ export function hazardView(state, data, id) {
           ],
         })}
       </section>
-      <section>
+      <section class="block">
         ${dataTable(state, {
           id: 'hazardPlatforms',
           rowKey: (p) => p.platform.id,
@@ -143,8 +140,8 @@ export function hazardView(state, data, id) {
           empty: 'On no platform. Link it from a platform\'s page.',
           columns: [
             { key: 'platform', label: 'Platforms', width: 520, minWidth: 200, value: (p) => p.platform.name,
-              render: (p) => html`<span class="id">${platformLabel(p.platform)}</span> ${go(p.platform.name, 'platform', { id: p.platform.id })}` },
-            { key: 'reportId', label: 'Report ID', width: 320, minWidth: 150, value: (p) => p.reportId },
+              render: (p) => html`<span class="id">${idTag(platformLabel(p.platform))}</span> ${go(p.platform.name, 'platform', { id: p.platform.id })}` },
+            { key: 'reportId', label: 'Report ID', width: 320, minWidth: 150, value: (p) => p.reportId, render: (p) => idTag(p.reportId) },
             { key: 'risk', label: 'Residual risk', width: 300, minWidth: 150, value: (p) => BANDS.indexOf(bandOf(ratingOf(data, h.id, p.platform.id).residual)),
               render: (p) => bandTag(bandOf(ratingOf(data, h.id, p.platform.id).residual)) },
           ],

@@ -5,6 +5,7 @@ import { hasUnsaved } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
 import { themeOf } from '../prefs.js';
 import { ratingFor } from '../../core/matrix.js';
+import { UNNUMBERED } from '../../core/ids.js';
 
 /** @param {Record<string, unknown>} obj kebab-case keys @returns {import('../html.js').Raw} */
 export function dataAttrs(obj) {
@@ -140,9 +141,14 @@ export function historyTable(state, data, kind, id, list = historyOf(data, kind,
   });
 }
 
-/** A small, quiet + button. @param {Record<string, unknown>} attrs @param {string} label what it does, for its tooltip */
+/** A small, quiet + button, drawn rather than typed so it sits dead centre. @param {Record<string, unknown>} attrs @param {string} label what it does, for its tooltip */
 export function plus(attrs, label) {
-  return html`<button type="button" class="plus" ${dataAttrs(attrs)} title="${label}" aria-label="${label}">+</button>`;
+  return html`<button type="button" class="plus" ${dataAttrs(attrs)} title="${label}" aria-label="${label}"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v9M1.5 6h9"/></svg></button>`;
+}
+
+/** A record's ID, or a TBC badge until it is first saved and numbered. @param {string} label */
+export function idTag(label) {
+  return label === UNNUMBERED ? html`<span class="tag tag-tbc" title="Numbered when first saved">${label}</span>` : label;
 }
 
 /** @param {any} state @param {import('../../core/data.js').Data} data @param {string} kind @param {string} id */

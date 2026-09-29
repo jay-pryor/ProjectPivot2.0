@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, stateTag, go, confirmButton, pageTabs, historyTable, plus } from './common.js';
+import { dataAttrs, option, statusTag, stateTag, go, confirmButton, pageTabs, historyTable, plus, idTag } from './common.js';
 import { dataTable } from './table.js';
 import { notFound, statusColumn, idColumn, newRecord } from './hazards.js';
 import { all, get, live } from '../../core/data.js';
@@ -22,7 +22,7 @@ export function platformsView(state, data) {
       rows: all(data, 'platform'),
       empty: 'No platforms yet.',
       columns: [
-        idColumn((p) => p, platformLabel, (p) => go(platformLabel(p), 'platform', { id: p.id })),
+        idColumn((p) => p, platformLabel, (p) => go(idTag(platformLabel(p)), 'platform', { id: p.id })),
         { key: 'name', label: 'Platform', width: 560, minWidth: 180, value: (p) => p.name, filter: 'text', render: (p) => go(p.name, 'platform', { id: p.id }) },
         { key: 'owner', label: 'Owner', width: 400, minWidth: 140, value: (p) => profileName(state, p.ownerId), filter: 'select',
           options: state.profiles.map((/** @type {any} */ pr) => /** @type {[string, string]} */ ([pr.id, pr.name])), match: (p, v) => p.ownerId === v },
@@ -56,7 +56,7 @@ export function platformView(state, data, id) {
   const tab = state.view?.tab;
   const reaching = historyReaching(data, id);
   const head = html`<p>${go('← Platforms', 'platforms')}</p>
-    <div class="doc-head"><span class="doc-id">${platformLabel(p)}</span>${statusTag(p.status)}</div>
+    <div class="doc-head"><span class="doc-id">${idTag(platformLabel(p))}</span>${statusTag(p.status)}</div>
     <input class="doc-title" name="name" value="${p.name}" required aria-label="Platform name" ${dataAttrs({ change: 'updatePlatform', id })}>
     ${pageTabs('platform', { id }, tab, reaching.length)}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'platform', id, reaching)}`;
@@ -71,7 +71,7 @@ export function platformView(state, data, id) {
   return html`${head}
     <article class="doc">
       <p class="doc-meta">Owned by <select class="quiet inline-select" name="ownerId" aria-label="Owner" ${dataAttrs({ change: 'setOwner', id })}>${state.profiles.map((/** @type {any} */ pr) => option(pr.id, pr.name, p.ownerId))}</select></p>
-      <section>
+      <section class="block">
         ${dataTable(state, {
           id: 'platformHazards',
           rowKey: (r) => r.hazard.id,
@@ -82,9 +82,9 @@ export function platformView(state, data, id) {
             { key: 'reportId', label: 'Report ID', width: 300, minWidth: 150, value: (r) => r.reportId,
               render: (r) => (editing('reportId', r.hazard.id)
                 ? html`<input class="cell-edit" name="reportId" value="${r.link.reportId ?? ''}" placeholder="${hazardLabel(r.hazard)}" aria-label="Report ID" autofocus ${dataAttrs({ change: 'setReportId', 'hazard-id': r.hazard.id, 'platform-id': id })}>`
-                : html`<span class="cell-text" ${dataAttrs({ dblclick: 'startEdit', kind: 'reportId', id: r.hazard.id })} title="Double-click to change">${r.reportId}</span>`) },
+                : html`<span class="cell-text" ${dataAttrs({ dblclick: 'startEdit', kind: 'reportId', id: r.hazard.id })} title="Double-click to change">${idTag(r.reportId)}</span>`) },
             { key: 'hazard', label: 'Hazards', width: 600, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`,
-              render: (r) => html`<span class="id">${hazardLabel(r.hazard)}</span> ${go(r.hazard.title, 'hazard', { id: r.hazard.id })}` },
+              render: (r) => html`<span class="id">${idTag(hazardLabel(r.hazard))}</span> ${go(r.hazard.title, 'hazard', { id: r.hazard.id })}` },
             { key: 'initial', label: 'Initial risk', width: 300, minWidth: 170, value: (r) => BANDS.indexOf(bandOf(r.rating.initial)),
               render: (r) => ratingCell(r.rating.initial, { 'hazard-id': r.hazard.id, 'platform-id': id, stage: 'initial' }) },
             { key: 'residual', label: 'Residual risk', width: 300, minWidth: 170, value: (r) => BANDS.indexOf(bandOf(r.rating.residual)),
@@ -94,7 +94,7 @@ export function platformView(state, data, id) {
           ],
         })}
       </section>
-      <section>
+      <section class="block">
         ${dataTable(state, {
           id: 'platformControls',
           rowKey: (c) => `${c.hazard.id}:${c.control.id}`,
@@ -102,9 +102,9 @@ export function platformView(state, data, id) {
           empty: 'The hazards here have no controls yet. Link controls on a hazard\'s page.',
           columns: [
             { key: 'control', label: `Controls on ${p.name}`, width: 520, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`,
-              render: (c) => html`<span class="id">${controlLabel(c.control)}</span> ${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
+              render: (c) => html`<span class="id">${idTag(controlLabel(c.control))}</span> ${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
             { key: 'hazard', label: 'For hazard', width: 300, minWidth: 140, value: (c) => hazardLabel(c.hazard), filter: 'text',
-              render: (c) => go(hazardLabel(c.hazard), 'hazard', { id: c.hazard.id }) },
+              render: (c) => go(idTag(hazardLabel(c.hazard)), 'hazard', { id: c.hazard.id }) },
             { key: 'kind', label: 'Kind', width: 240, minWidth: 120, value: (c) => c.kind },
             { key: 'state', label: 'State', width: 260, minWidth: 150, value: (c) => c.state, filter: 'select',
               options: [['confirmed', 'confirmed'], ['excluded', 'excluded'], ['awaiting', 'awaiting']],

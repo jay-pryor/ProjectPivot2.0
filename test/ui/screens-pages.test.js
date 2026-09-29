@@ -64,6 +64,14 @@ test('a hazard page reads like a report: the title and description are the docum
   assert.match(out, /data-dblclick="startEdit" data-kind="causalFactor" data-id="cf1"/);
   const adding = hazardView({ ...state, editing: { kind: 'newCausalFactor', id: 'h1' } }, data(), 'h1').toString();
   assert.match(adding, /<form data-action="addCausalFactor" data-hazard-id="h1"[\s\S]*?autofocus/);
+  assert.doesNotMatch(out, /On (one|\d+) platform/, 'the platforms table says where it is used');
+  assert.match(out, /<section class="block">[\s\S]*?data-table="causalFactor"/);
+});
+
+test('records not yet numbered show a TBC badge in place of an ID', () => {
+  const out = hazardsView(state, seed()).toString();
+  assert.match(out, /<span class="tag tag-tbc"[^>]*>TBC<\/span>/);
+  assert.doesNotMatch(out, />New</);
 });
 
 test('pickers: a list to tick, searchable, with a kind per control', () => {

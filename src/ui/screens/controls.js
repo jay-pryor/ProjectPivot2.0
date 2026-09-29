@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, statusTag, bandTag, stateTag, go, confirmButton, pageTabs, historyTable, historyCount } from './common.js';
+import { dataAttrs, statusTag, bandTag, stateTag, go, confirmButton, pageTabs, historyTable, historyCount, idTag } from './common.js';
 import { dataTable } from './table.js';
 import { statusColumn, idColumn, newRecord, notFound } from './hazards.js';
 import { get, live } from '../../core/data.js';
@@ -22,11 +22,11 @@ export function controlsView(state, data) {
       rows: filterControls(data, { status: 'any' }),
       empty: 'No controls yet.',
       columns: [
-        idColumn((r) => r.control, controlLabel, (r) => go(controlLabel(r.control), 'control', { id: r.control.id })),
+        idColumn((r) => r.control, controlLabel, (r) => go(idTag(controlLabel(r.control)), 'control', { id: r.control.id })),
         { key: 'control', label: 'Control', width: 440, minWidth: 180, value: (r) => r.control.title, filter: 'text',
           render: (r) => go(r.control.title, 'control', { id: r.control.id }) },
         { key: 'hazard', label: 'Hazard', width: 440, minWidth: 180, value: (r) => (r.hazard ? `${hazardLabel(r.hazard)} ${r.hazard.title}` : ''), filter: 'text',
-          render: (r) => (r.hazard ? go(`${hazardLabel(r.hazard)} ${r.hazard.title}`, 'hazard', { id: r.hazard.id }) : '—') },
+          render: (r) => (r.hazard ? go(html`${idTag(hazardLabel(r.hazard))} ${r.hazard.title}`, 'hazard', { id: r.hazard.id }) : '—') },
         { key: 'platform', label: 'Platform', width: 280, minWidth: 130, value: (r) => r.platform?.name ?? '', filter: 'select',
           options: live(data, 'platform').map((p) => /** @type {[string, string]} */ ([p.id, p.name])),
           match: (r, v) => r.platform?.id === v, render: (r) => r.platform?.name ?? '—' },
@@ -48,7 +48,7 @@ export function controlView(state, data, id) {
   if (!c) return notFound();
   const tab = state.view?.tab;
   const head = html`<p>${go('← Controls', 'controls')}</p>
-    <div class="doc-head"><span class="doc-id">${controlLabel(c)}</span>${statusTag(c.status)}</div>
+    <div class="doc-head"><span class="doc-id">${idTag(controlLabel(c))}</span>${statusTag(c.status)}</div>
     <input class="doc-title" name="title" value="${c.title}" required aria-label="Control title" ${dataAttrs({ change: 'updateControl', id })}>
     ${pageTabs('control', { id }, tab, historyCount(state, data, 'control', id))}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'control', id)}`;
@@ -62,7 +62,7 @@ export function controlView(state, data, id) {
     <article class="doc">
       <p class="doc-meta">${reach.length ? html`Used on ${reach.join(', ')}${reach.length > 1 ? '. Changes here reach all of them.' : '.'}` : 'Not used on any platform yet.'}</p>
       <textarea class="doc-text" name="description" rows="3" placeholder="Add a description…" aria-label="Description" ${dataAttrs({ change: 'updateControl', id })}>${c.description}</textarea>
-      <section>
+      <section class="block">
         ${dataTable(state, {
           id: 'controlUsage',
           rowKey: (u) => u.hazard.id,
@@ -70,7 +70,7 @@ export function controlView(state, data, id) {
           empty: 'Not linked to any hazard. Link it from a hazard\'s page.',
           columns: [
             { key: 'hazard', label: 'Used by hazards', width: 600, minWidth: 200, value: (u) => `${hazardLabel(u.hazard)} ${u.hazard.title}`,
-              render: (u) => html`<span class="id">${hazardLabel(u.hazard)}</span> ${go(u.hazard.title, 'hazard', { id: u.hazard.id })}` },
+              render: (u) => html`<span class="id">${idTag(hazardLabel(u.hazard))}</span> ${go(u.hazard.title, 'hazard', { id: u.hazard.id })}` },
             { key: 'kind', label: 'Kind', width: 260, minWidth: 130, value: (u) => u.kind },
             { key: 'platforms', label: 'Platforms', width: 720, minWidth: 200, value: (u) => u.platforms.map((p) => p.platform.name).join(', '),
               render: (u) => (u.platforms.length ? u.platforms.map((p) => html`<span class="onplat">${p.platform.name} ${stateTag(p.state)}</span> `) : '—') },
