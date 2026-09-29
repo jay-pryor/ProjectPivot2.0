@@ -154,11 +154,16 @@ function resizableColumns(el, dispatch) {
     const startX = e.clientX;
     const nominal = Number(col.dataset.width) || 0;
     const startWidth = grows ? /** @type {HTMLElement} */ (grip.closest('th')).getBoundingClientRect().width : nominal;
-    const startTotal = parseFloat(table.style.minWidth) || table.getBoundingClientRect().width;
+    const startTotal = parseFloat(table.style.minWidth) || parseFloat(table.style.width) || table.getBoundingClientRect().width;
     let width = startWidth;
+    const stretching = Boolean(table.querySelector('col[data-grow]'));
     const apply = () => {
-      if (!grows) col.style.width = `${width}px`;
-      table.style.minWidth = `${startTotal - nominal + width}px`;
+      const total = `${startTotal - nominal + width}px`;
+      // Dragging the fill column fixes its width, and the table then follows its columns, so it can
+      // shrink below the page; any other column moves alone.
+      if (grows) { col.style.width = `${width}px`; table.style.width = total; table.setAttribute('data-fit', ''); } else col.style.width = `${width}px`;
+      if (!stretching) table.style.width = total;
+      table.style.minWidth = total;
     };
     let frame = 0;
     let moved = false;
@@ -188,5 +193,12 @@ function resizableColumns(el, dispatch) {
     grip.addEventListener('pointermove', move);
     grip.addEventListener('pointerup', up);
     grip.addEventListener('pointercancel', up);
+  });
+  // Double-click a handle to forget that column's width: the fill column stretches again.
+  el.addEventListener('dblclick', (e) => {
+    const grip = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-resize]'));
+    if (!grip) return;
+    e.stopPropagation();
+    void dispatch({ type: 'resetColumnWidth', table: grip.dataset.table, column: grip.dataset.key });
   });
 }

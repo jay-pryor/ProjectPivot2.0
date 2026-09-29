@@ -51,7 +51,7 @@ const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', createP
 const BACKUP_CHECK_MS = 60_000;
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
-const QUIET = new Set(['setColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner']);
+const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner']);
 
 export function initialState() {
   return {
@@ -303,6 +303,11 @@ export function createController(env) {
       const px = Math.max(MIN_COLUMN_WIDTH, Math.round(Number(width)));
       if (!Number.isFinite(px)) return;
       const widths = { ...(activeProfile(state)?.prefs?.columnWidths ?? {}), [`${table}.${column}`]: px };
+      await savePrefs({ columnWidths: widths });
+    },
+    async resetColumnWidth({ table, column }) {
+      const widths = { ...(activeProfile(state)?.prefs?.columnWidths ?? {}) };
+      delete widths[`${table}.${column}`];
       await savePrefs({ columnWidths: widths });
     },
     async sortTable({ table, key }) {

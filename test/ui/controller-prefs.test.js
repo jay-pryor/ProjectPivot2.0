@@ -53,6 +53,10 @@ test('column widths dragged are kept on the profile', async () => {
   assert.deepEqual((await readProfiles(f.handle))[0].prefs.columnWidths, { 'hazards.title': 288 });
   await c.dispatch({ type: 'setColumnWidth', table: 'hazards', column: 'id', width: '10' });
   assert.equal(columnWidth(c.getState(), 'hazards', 'id'), 40, 'a column is never narrower than 40px');
+  await c.dispatch({ type: 'resetColumnWidth', table: 'hazards', column: 'title' });
+  assert.equal(columnWidth(c.getState(), 'hazards', 'title'), null, 'double-clicking the handle forgets the width');
+  assert.deepEqual((await readProfiles(f.handle))[0].prefs.columnWidths, { 'hazards.id': 40 });
+  assert.equal(c.getState().busy, false);
 });
 
 test('sorting cycles ascending, descending, off; filters set and clear; neither is kept on the profile', async () => {

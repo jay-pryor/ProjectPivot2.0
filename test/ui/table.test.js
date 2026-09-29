@@ -52,15 +52,26 @@ test('columns can be resized: a drag handle per column, and widths from the prof
 });
 
 test('the table spans the page: one fill column takes the leftover space, the rest keep exact widths', () => {
-  const out = render(state({}, { columnWidths: { 't.name': 250 } }));
+  const out = render(state({}, { columnWidths: { 't.kind': 250 } }));
   const widths = [...out.matchAll(/<col data-col="[^"]+"[^>]*data-width="(\d+)"/g)].map((m) => Number(m[1]));
   assert.equal(widths.length, columns.length, 'a column with no width given gets the default');
   const total = widths.reduce((a, b) => a + b, 0);
   assert.match(out, new RegExp(`<table class="grid" data-table="t" style="width:100%;min-width:${total}px">`), 'never narrower than its columns');
-  // name was narrowed to 250, so the widest column (the first at the default 320) fills
-  assert.match(out, /<col data-col="n" data-grow data-width="320">/, 'the fill column has no fixed width');
-  assert.match(out, /<col data-col="name" style="width:250px" data-width="250">/);
-  assert.match(out, /<col data-col="kind" style="width:320px" data-width="320">/, 'ties go to the first');
+  assert.match(out, /<col data-col="name" data-grow data-width="320">/, 'the widest by default (the first, on a tie) fills; it has no fixed width');
+  assert.match(out, /<col data-col="kind" style="width:250px" data-width="250">/);
+  assert.match(out, /<col data-col="n" style="width:320px" data-width="320">/);
+});
+
+test('once the fill column is given a width, the table is exactly as wide as its columns, and can be narrower than the page', () => {
+  const cols = [
+    { key: 'id', label: 'ID', value: (r) => r.id, width: 200 },
+    { key: 'name', label: 'Name', value: (r) => r.name, width: 640 },
+    { key: 'kind', label: 'Kind', value: (r) => r.kind, width: 300 },
+  ];
+  const out = dataTable(state({}, { columnWidths: { 't.name': 150 } }), { id: 't', columns: cols, rows, rowKey: (r) => r.id }).toString();
+  assert.match(out, /<table class="grid" data-table="t" data-fit style="width:650px">/, "marked, so its card can shrink to it");
+  assert.match(out, /<col data-col="name" style="width:150px" data-width="150" data-fill>/, 'still marked as the column that would fill');
+  assert.doesNotMatch(out, /data-grow/);
 });
 
 test('a column can ask to be the fill column', () => {
@@ -80,8 +91,8 @@ test('nothing matching says so, and the filters stay so they can be cleared', ()
 test('a column never renders narrower than its minimum, whatever the profile says', () => {
   const cols = [{ key: 'id', label: 'Report ID', value: (r) => r.id, width: 300, minWidth: 180 }];
   const out = dataTable(state({}, { columnWidths: { 't.id': 60 } }), { id: 't', columns: cols, rows, rowKey: (r) => r.id }).toString();
-  assert.match(out, /<col data-col="id" data-grow data-width="180">/);
-  assert.match(out, /style="width:100%;min-width:180px"/);
+  assert.match(out, /<col data-col="id" style="width:180px" data-width="180" data-fill>/);
+  assert.match(out, /style="width:180px"/);
   assert.match(out, /data-resize data-table="t" data-key="id" data-min="180"/);
 });
 

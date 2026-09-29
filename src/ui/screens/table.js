@@ -96,17 +96,22 @@ export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing h
       : html`<button type="button" class="sort" ${dataAttrs({ action: 'sortTable', table: id, key: c.key })} aria-sort="${ariaSort}">${c.label}<span class="arrow" aria-hidden="true">${sorted === 'asc' ? '▲' : sorted === 'desc' ? '▼' : '↕'}</span></button>`;
     return html`<th data-col="${c.key}"><div class="th"><div class="th-title">${label}${i === 0 ? tools : ''}</div>${control}</div><span class="col-resize" data-resize ${dataAttrs({ table: id, key: c.key, min: minOf(c) })} title="Drag to resize"></span></th>`;
   });
-  // The table spans the page. Every column but one keeps its exact width, so dragging it moves only
-  // that column; the fill column (no fixed width) takes what is left, and its own width is the
-  // least it takes. Past the window's width the table scrolls rather than squeezing a column.
+  // By default the table spans the page: every column but one keeps its exact width, so dragging it
+  // moves only that column, and the fill column (no fixed width) takes what is left, its own width
+  // being the least it takes. Once someone gives the fill column a width of their own, the table is
+  // exactly as wide as its columns, so it can be narrower than the page. Either way, past the
+  // window's width it scrolls rather than squeezing a column.
   const widths = columns.map((c) => Math.max(minOf(c), columnWidth(state, id, c.key) ?? c.width ?? DEFAULT_WIDTH));
+  const defaults = columns.map((c) => Math.max(minOf(c), c.width ?? DEFAULT_WIDTH));
   const asked = columns.findIndex((c) => c.grow);
-  const grow = asked >= 0 ? asked : widths.indexOf(Math.max(...widths));
-  const cols = columns.map((c, i) => (i === grow
+  const fill = asked >= 0 ? asked : defaults.indexOf(Math.max(...defaults));
+  const stretch = columnWidth(state, id, columns[fill].key) == null;
+  const cols = columns.map((c, i) => (i === fill && stretch
     ? html`<col data-col="${c.key}" data-grow data-width="${widths[i]}">`
-    : html`<col data-col="${c.key}" style="width:${raw(String(widths[i]))}px" data-width="${widths[i]}">`));
+    : html`<col data-col="${c.key}" style="width:${raw(String(widths[i]))}px" data-width="${widths[i]}"${i === fill ? raw(' data-fill') : ''}>`));
   const total = widths.reduce((a, b) => a + b, 0);
-  return html`<div class="table-wrap"><table class="grid" data-table="${id}" style="width:100%;min-width:${raw(String(total))}px">
+  const size = stretch ? `width:100%;min-width:${total}px` : `width:${total}px`;
+  return html`<div class="table-wrap"><table class="grid" data-table="${id}"${stretch ? '' : raw(' data-fit')} style="${raw(size)}">
     <colgroup>${cols}</colgroup>
     <thead><tr>${head}</tr></thead>
     <tbody>${shown.map((row) => html`<tr data-row="${rowKey(row)}">${columns.map((c) => html`<td>${c.render ? c.render(row) : text(valueOf(c, row))}</td>`)}</tr>`)}</tbody>
