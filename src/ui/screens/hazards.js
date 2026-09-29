@@ -69,7 +69,7 @@ function textTable(state, name, items, hazardId) {
       columns: [
         { key: 'text', label: name === 'CausalFactor' ? 'Causal factor' : 'Consequence', width: 520, value: (r) => r.text,
           render: (r) => (editing(r)
-            ? html`<form data-action="update${name}" ${dataAttrs({ id: r.id })} class="row inline"><input name="text" value="${r.text}" required aria-label="${what}" class="grow"><button type="submit">Save</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></form>`
+            ? html`<form data-action="update${name}" ${dataAttrs({ id: r.id })} class="row inline fill"><input name="text" value="${r.text}" required aria-label="${what}" class="grow"><button type="submit">Save</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></form>`
             : r.text) },
         { key: 'actions', label: '', width: 170, sortable: false,
           render: (r) => (editing(r) ? '' : html`<div class="actions"><button type="button" ${dataAttrs({ action: 'startEdit', kind, id: r.id })}>Edit</button>
