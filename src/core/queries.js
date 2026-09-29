@@ -3,6 +3,7 @@ import { ids, hazardLabel, referenceLabel } from './ids.js';
 import { ratingFor, BANDS } from './matrix.js';
 import { reviewState, addDays } from './time.js';
 import { waitingChanges } from './acks.js';
+import { tierRank } from './ops/controls.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Rec} Rec */
@@ -45,13 +46,17 @@ export function platformsReached(data, kind, rec) {
     case 'consequence':
     case 'hazardControl': return platformsOfHazard(data, rec.hazardId);
     case 'control':
-      return sortedUnique(live(data, 'hazardControl').filter((l) => l.controlId === rec.id).flatMap((l) => platformsOfHazard(data, l.hazardId)));
+      return sortedUnique([
+        ...live(data, 'hazardControl').filter((l) => l.controlId === rec.id).flatMap((l) => platformsOfHazard(data, l.hazardId)),
+        ...live(data, 'existingControl').filter((l) => l.controlId === rec.id).map((l) => l.platformId),
+      ]);
     case 'platform': return [rec.id];
     case 'hazardPlatform':
     case 'ruling':
     case 'rating':
     case 'assessment':
     case 'sfarp':
+    case 'existingControl':
     case 'report': return [rec.platformId];
     case 'review': return [rec.platformId];
     case 'reference':
@@ -457,4 +462,18 @@ export function attentionItems(items) {
     ...items.awaiting.map((x) => ({ type: 'control', ...x })),
     ...items.unrated.map((x) => ({ type: 'rating', ...x })),
   ];
+}
+
+/** A hazard's existing controls on a platform, by tier (most effective first), then number. @param {Data} data @param {string} hazardId @param {string} platformId */
+export function existingControlsOn(data, hazardId, platformId) {
+  return live(data, 'existingControl').filter((l) => l.hazardId === hazardId && l.platformId === platformId)
+    .map((link) => ({ link, control: /** @type {Rec} */ (get(data, 'control', link.controlId)), kind: /** @type {string} */ (link.kind) }))
+    .sort((a, b) => tierRank(a.control.tier) - tierRank(b.control.tier) || byNumber(a.control, b.control) || String(a.control.title).localeCompare(String(b.control.title)));
+}
+
+/** Where a control is an existing control. @param {Data} data @param {string} controlId */
+export function existingUsage(data, controlId) {
+  return live(data, 'existingControl').filter((l) => l.controlId === controlId).map((l) => ({
+    hazard: /** @type {Rec} */ (get(data, 'hazard', l.hazardId)), platform: /** @type {Rec} */ (get(data, 'platform', l.platformId)), kind: /** @type {string} */ (l.kind),
+  }));
 }

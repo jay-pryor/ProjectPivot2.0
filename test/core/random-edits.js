@@ -1,6 +1,6 @@
 import { PivotError } from '../../src/core/errors.js';
 import { createHazard, updateHazard, retireHazard, deleteHazard, restoreRecord, addCausalFactor, deleteCausalFactor } from '../../src/core/ops/hazards.js';
-import { createControl, updateControl, retireControl, deleteControl, linkControl, unlinkControl } from '../../src/core/ops/controls.js';
+import { createControl, updateControl, retireControl, deleteControl, linkControl, unlinkControl, linkExistingControl, unlinkExistingControl } from '../../src/core/ops/controls.js';
 import { createPlatform, linkHazard, unlinkHazard, setReportId, retirePlatform } from '../../src/core/ops/platforms.js';
 import { confirmControl, excludeControl, resetControl, setControlStatus, setRating, setAssessment, setSfarp } from '../../src/core/ops/assessment.js';
 import { setSchedule, startReview, markRow, setReviewOutcome, completeReview, abandonReview } from '../../src/core/ops/reviews.js';
@@ -55,6 +55,8 @@ export function randomEdit(d, rand, act) {
     () => excludeControl(d, act, { ...triple(), reason: `Reason ${n()}` }),
     () => resetControl(d, act, triple()),
     () => setControlStatus(d, act, { ...triple(), status: pick(rand, ['recommended', 'planned', 'implemented', 'rejected']), reason: `R ${n()}` }),
+    () => linkExistingControl(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), controlId: pick(rand, ct), kind: pick(rand, ['preventative', 'mitigating']) }),
+    () => unlinkExistingControl(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), controlId: pick(rand, ct) }),
     () => setRating(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), stage: pick(rand, ['initial', 'residual']), consequence: 1 + Math.floor(rand() * 5), likelihood: pick(rand, [...'ABCDEFG']) }),
     () => setAssessment(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), stage: pick(rand, ['initial', 'residual']), receptor: pick(rand, ['personnel', 'environment']), likelihood: pick(rand, [...'ABCDEFG']), likelihoodWhy: `Why ${n()}` }),
     () => setSfarp(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), conclusion: `C ${n()}` }),

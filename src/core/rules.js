@@ -58,6 +58,12 @@ export function checkRules(data) {
       if (!liveRec('hazardPlatform', hp)) out.push({ rule: `${kind}-without-platform-link`, message: `A ${kind === 'sfarp' ? 'SFARP record' : 'risk assessment'} exists for a platform the hazard is not on.`, records: [{ kind, id: r.id }, { kind: 'hazardPlatform', id: hp }] });
     }
   }
+  for (const r of live(data, 'existingControl')) {
+    const hp = ids.hazardPlatform(r.hazardId, r.platformId);
+    if (!liveRec('hazardPlatform', hp)) out.push({ rule: 'existingControl-without-platform-link', message: 'An existing control is listed for a platform the hazard is not on.', records: [{ kind: 'existingControl', id: r.id }, { kind: 'hazardPlatform', id: hp }] });
+    const c = get(data, 'control', r.controlId);
+    if (!c || c.status === 'deleted') out.push({ rule: 'existingControl-control-deleted', message: 'An existing control is a control that has been deleted.', records: [{ kind: 'existingControl', id: r.id }, { kind: 'control', id: r.controlId }] });
+  }
   // Reviews: an open review needs a live platform, and there is one at a time per platform.
   /** @type {Map<string, any>} */
   const openOn = new Map();

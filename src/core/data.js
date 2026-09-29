@@ -7,7 +7,7 @@ export const KINDS = Object.freeze([
   'hazardControl', 'hazardPlatform', 'ruling', 'rating', 'report',
   'review', 'reviewRow',
   'reference', 'referenceLink',
-  'assessment', 'sfarp',
+  'assessment', 'sfarp', 'existingControl',
 ]);
 
 export const STATUSES = Object.freeze(['live', 'retired', 'deleted']);

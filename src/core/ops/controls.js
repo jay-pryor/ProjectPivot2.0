@@ -66,6 +66,10 @@ export function deleteControl(data, act, { id }) {
   if (uses.length) {
     throw new PivotError('control.in-use', `${c.title} is still linked to ${uses.length === 1 ? 'a hazard' : `${uses.length} hazards`}. Unlink it first.`, { hazardIds: uses.map((u) => u.hazardId) });
   }
+  const existingUses = live(data, 'existingControl').filter((l) => l.controlId === id);
+  if (existingUses.length) {
+    throw new PivotError('control.in-use', `${c.title} is an existing control on ${existingUses.length === 1 ? 'a hazard' : `${existingUses.length} hazards`}. Remove it there first.`, { hazardIds: existingUses.map((u) => u.hazardId) });
+  }
   return commit(data, act, 'Delete control', [{ kind: 'control', rec: changed(c, act, { status: 'deleted' }) }, ...linksTo(data, act, [{ kind: 'control', id }])]);
 }
 
@@ -110,4 +114,28 @@ export function unlinkControl(data, act, { hazardId, controlId }) {
     if (r.hazardId === hazardId && r.controlId === controlId) recs.push({ kind: 'ruling', rec: changed(r, act, { status: 'deleted' }) });
   }
   return commit(data, act, 'Unlink control from hazard', recs);
+}
+
+/** @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string, controlId: string, kind: string }} args */
+export function linkExistingControl(data, act, { hazardId, platformId, controlId, kind }) {
+  need(data, 'hazardPlatform', ids.hazardPlatform(hazardId, platformId));
+  const c = need(data, 'control', controlId);
+  if (c.status !== 'live') throw new PivotError('control.retired', `${c.title} is retired, so it cannot be linked to a hazard.`);
+  const k = needKind(kind);
+  const id = ids.existingControl(hazardId, platformId, controlId);
+  const existing = get(data, 'existingControl', id);
+  const rec = existing ? changed(existing, act, { status: 'live', kind: k }) : created(act, id, { hazardId, platformId, controlId, kind: k });
+  return commit(data, act, 'Link existing control', [{ kind: 'existingControl', rec }]);
+}
+
+/** @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string, controlId: string }} args */
+export function unlinkExistingControl(data, act, { hazardId, platformId, controlId }) {
+  const l = need(data, 'existingControl', ids.existingControl(hazardId, platformId, controlId));
+  return commit(data, act, 'Unlink existing control', [{ kind: 'existingControl', rec: changed(l, act, { status: 'deleted' }) }]);
+}
+
+/** @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string, controlId: string, kind: string }} args */
+export function setExistingControlKind(data, act, { hazardId, platformId, controlId, kind }) {
+  const l = need(data, 'existingControl', ids.existingControl(hazardId, platformId, controlId));
+  return commit(data, act, 'Change existing control kind', [{ kind: 'existingControl', rec: changed(l, act, { kind: needKind(kind) }) }]);
 }

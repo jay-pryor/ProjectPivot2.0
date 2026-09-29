@@ -5,7 +5,7 @@ export const KIND_LABEL = Object.freeze({
   platform: 'Platform', hazardControl: 'Control link', hazardPlatform: 'Platform link',
   ruling: 'Control decision', rating: 'Rating', report: 'Report', reportDesign: 'Report design',
   review: 'Review', reviewRow: 'Review row', reference: 'Reference', referenceLink: 'Reference link',
-  assessment: 'Risk assessment', sfarp: 'SFARP considerations',
+  assessment: 'Risk assessment', sfarp: 'SFARP considerations', existingControl: 'Existing control',
 });
 
 /** How a record is named to a person. @param {string} kind @param {any} rec */

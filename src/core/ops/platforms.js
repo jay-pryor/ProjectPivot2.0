@@ -62,7 +62,7 @@ export function linkHazard(data, act, { hazardId, platformId }) {
 }
 
 /**
- * Also deletes the hazard's rulings and rating on that platform, so relinking starts every
+ * Also deletes the hazard's rulings, risk assessments, SFARP and existing controls on that platform, so relinking starts every
  * control at awaiting.
  * @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string }} args
  */
@@ -72,7 +72,7 @@ export function unlinkHazard(data, act, { hazardId, platformId }) {
   for (const r of live(data, 'ruling')) {
     if (r.hazardId === hazardId && r.platformId === platformId) recs.push({ kind: 'ruling', rec: changed(r, act, { status: 'deleted' }) });
   }
-  for (const kind of ['assessment', 'sfarp', 'rating']) {
+  for (const kind of ['assessment', 'sfarp', 'rating', 'existingControl']) {
     for (const r of live(data, kind)) {
       if (r.hazardId === hazardId && r.platformId === platformId) recs.push({ kind, rec: changed(r, act, { status: 'deleted' }) });
     }
