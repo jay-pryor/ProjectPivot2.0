@@ -239,7 +239,7 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 .ref-file { display: flex; align-items: center; gap: 8px; }
 .ref-fields { display: flex; gap: 28px; flex-wrap: wrap; margin: 0 0 8px; }
 .ref-field { display: inline-flex; align-items: center; gap: 8px; color: var(--p-muted); }
-.ref-where { padding: 10px 12px; display: grid; gap: 8px; }
+.doc section.ref-where { padding: 10px 12px; display: grid; gap: 8px; }
 .ref-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0; }
 .ref-row > strong { min-width: 130px; }
 .ref-row .grow { max-width: 900px; }
