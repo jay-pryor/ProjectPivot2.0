@@ -7,6 +7,7 @@ import { assignHazardNumbers, updateHazard } from '../../src/core/ops/hazards.js
 import { confirmControl, excludeControl, setRating } from '../../src/core/ops/assessment.js';
 import { entries } from '../../src/core/history.js';
 import { setSchedule, startReview, completeReview } from '../../src/core/ops/reviews.js';
+import { createReference, linkReference, retireReference } from '../../src/core/ops/references.js';
 import { act, seed } from '../helpers.js';
 
 const names = { u1: 'Ada', u2: 'Grace' };
@@ -79,4 +80,21 @@ test('a snapshot records whether the platform was due for review when the report
   d = completeReview(d, act, { reviewId: 'r1' });
   assert.equal(d.records.report.rep1.review.state, 'overdue', 'a later review does not change a produced report');
   assert.deepEqual(buildSnapshot(d, 'p1', opts).review, { state: 'ok', due: '2027-03-01', months: 6, lastReviewed: act.at });
+});
+
+test('a snapshot lists the references supporting the platform, each once, with what it supports', () => {
+  let d = assessed();
+  d = createReference(d, act, { id: 'r1', title: 'Safety case', docNumber: 'SC-1', revision: 'B', url: 'https://x' });
+  d = createReference(d, act, { id: 'r2', title: 'Sprinkler spec', path: '\\\\srv\\s.pdf' });
+  d = createReference(d, act, { id: 'r3', title: 'Retired', url: 'https://y' });
+  d = createReference(d, act, { id: 'r4', title: 'Elsewhere', url: 'https://z' });
+  for (const [r, k, t] of [['r1', 'platform', 'p1'], ['r1', 'hazard', 'h1'], ['r1', 'causalFactor', 'cf1'], ['r2', 'control', 'c1'], ['r3', 'hazard', 'h1'], ['r4', 'platform', 'p2']]) d = linkReference(d, act, { referenceId: r, targetKind: k, targetId: t });
+  d = retireReference(d, act, { id: 'r3' });
+  d = assignHazardNumbers(d);
+  const s = buildSnapshot(d, 'p1', opts);
+  assert.deepEqual(s.references, [
+    { number: 'R-0001', title: 'Safety case', docNumber: 'SC-1', revision: 'B', supports: 'Platform, H-0001, H-0001 causal factor' },
+    { number: 'R-0002', title: 'Sprinkler spec', docNumber: '', revision: '', supports: 'Sprinklers' },
+  ]);
+  assert.deepEqual(buildSnapshot(assessed(), 'p1', opts).references, []);
 });

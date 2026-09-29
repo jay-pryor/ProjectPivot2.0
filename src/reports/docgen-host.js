@@ -67,6 +67,17 @@ function sectionsFor(s) {
         ...h.consequences.map((text) => ({ reportId: h.reportId, type: 'Consequence', text })),
       ])),
     },
+    {
+      id: 'references', label: 'References',
+      keyColumn: { id: '_key', label: 'ID', w: 2, get: (/** @type {any} */ r) => r.number },
+      columns: [
+        { id: 'title', label: 'Reference', w: 5, get: (/** @type {any} */ r) => r.title },
+        { id: 'docNumber', label: 'Doc number', w: 3, get: (/** @type {any} */ r) => r.docNumber },
+        { id: 'revision', label: 'Revision', w: 2, get: (/** @type {any} */ r) => r.revision },
+        { id: 'supports', label: 'Supports', w: 4, get: (/** @type {any} */ r) => r.supports },
+      ],
+      rows: rows((x) => x.references ?? []),
+    },
   ];
 }
 

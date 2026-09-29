@@ -30,7 +30,7 @@ test('the host is a valid DocGen host about platforms, offering Pivot\'s marking
   assert.equal(docs.host.subject.noun, 'platform');
   assert.deepEqual(docs.host.subject.list().map((p) => p.label), ['Alpha', 'Bravo']);
   assert.deepEqual(docs.host.classifications, ['OFFICIAL', 'OFFICIAL: Sensitive', 'PROTECTED']);
-  assert.deepEqual(docs.host.sections(null).map((s) => s.id), ['hazards', 'controls', 'causes']);
+  assert.deepEqual(docs.host.sections(null).map((s) => s.id), ['hazards', 'controls', 'causes', 'references']);
 });
 
 test('design changes made in the designer land in Pivot\'s data', () => {
@@ -63,4 +63,16 @@ test('Review focus 4: markup in a hazard title is shown literally in the html, n
   assert.equal(report.html.includes('<script>alert(1)</script>'), false);
   assert.ok(report.html.includes('&lt;script&gt;'));
   assert.equal(report.rows[0].title, '<script>alert(1)</script> & "quotes" | *stars*');
+});
+
+test('the References section: ID, title, doc number, revision, what it supports', async () => {
+  const { createReference, linkReference } = await import('../../src/core/ops/references.js');
+  let data = createReference(assignHazardNumbers(seed()), act, { id: 'r1', title: 'Safety case', docNumber: 'SC-1', url: 'https://x' });
+  data = assignHazardNumbers(linkReference(data, act, { referenceId: 'r1', targetKind: 'platform', targetId: 'p1' }));
+  const docs = createDocHost({ getData: () => data, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id });
+  const sec = docs.host.sections({ subjectId: 'p1' }).find((s) => s.id === 'references');
+  assert.equal(sec.label, 'References');
+  assert.deepEqual([sec.keyColumn.label, ...sec.columns.map((c) => c.label)], ['ID', 'Reference', 'Doc number', 'Revision', 'Supports']);
+  const [row] = sec.rows();
+  assert.deepEqual([sec.keyColumn.get(row), ...sec.columns.map((c) => c.get(row))], ['R-0001', 'Safety case', 'SC-1', '', 'Platform']);
 });
