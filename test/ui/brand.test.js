@@ -34,10 +34,25 @@ test('the splash drawing is self-contained: every id is prefixed, every referenc
   for (const r of refs) assert.ok(ids.includes(r), `${r} is referenced but not defined`);
   assert.doesNotMatch(SPLASH_SVG, /https?:\/\/(?!www\.w3\.org)/);
   assert.doesNotMatch(SPLASH_SVG, /Replay|scrub|Slow/, 'the preview controls are not part of the app');
-  assert.ok(SPLASH_MS > 2700 && SPLASH_MS < 4500, 'about three and a half seconds, all told');
+  assert.ok(SPLASH_MS > 2300 && SPLASH_MS < 2900, 'a little quicker than the original: about two and a half seconds, all told');
 });
 
 test('the start screen heads with the same logo and PIVOT', async () => {
   const { openScreen } = await import('../../src/ui/screens/start.js');
   assert.match(openScreen({ ...initialState(), screen: 'open' }).toString(), /<h1 class="brand-title"><svg class="brand-logo"[\s\S]*?<\/svg>PIVOT<\/h1>/);
+});
+
+test('the folder name sits on the right of the top bar, after the navigation', () => {
+  const out = shell({ ...state, folderName: 'Safety' }, html``).toString();
+  assert.ok(out.indexOf('</nav>') < out.indexOf('class="folder"'), 'the folder comes after the buttons');
+  assert.ok(out.indexOf('class="spacer"') < out.indexOf('class="folder"'), 'pushed to the right');
+});
+
+test('the top-bar logo is cropped to its drawing, so it can be sized to the letters', () => {
+  assert.match(FULCRUM_SVG, /viewBox="2 15 60 47"/);
+});
+
+test('the splash names Pivot under the HIGHCOM wordmark, right-aligned, with a rule between', () => {
+  assert.match(SPLASH_SVG, /<line id="hc-rule"[^>]*x1="231\.6"[^>]*x2="864"/, 'the rule spans the wordmark');
+  assert.match(SPLASH_SVG, /<text id="hc-product" class="product" x="864"[^>]*text-anchor="end"[^>]*>PIVOT<\/text>/);
 });

@@ -6,10 +6,12 @@
  */
 
 const DUR = 2720;
-const HOLD = 450;
-const FADE = 380;
+/** Played a little quicker than the original's 2.72 s. */
+const SPEED = 1.3;
+const HOLD = 350;
+const FADE = 300;
 /** How long the splash lasts when left to play, from start to gone. */
-export const SPLASH_MS = DUR + HOLD + FADE;
+export const SPLASH_MS = Math.round(DUR / SPEED) + HOLD + FADE;
 
 /** The drawing. Ids carry an `hc-` prefix so they cannot meet the app's. */
 export const SPLASH_SVG = `<svg class="splash-logo" viewBox="-70 -95 1004 396" role="img" aria-label="HIGHCOM">
@@ -71,6 +73,8 @@ export const SPLASH_SVG = `<svg class="splash-logo" viewBox="-70 -95 1004 396" r
       <path class="letter accent" data-x="316.1" transform="translate(316.1 0)" opacity="0" d="M0,0 H14.5 L29.6,29.3 L44.7,0 H59.2 V68 H42.7 V39.8 L29.6,64.6 L16.5,39.8 V68 H0 Z"/>
     </g>
   </g>
+  <line id="hc-rule" class="rule" x1="231.6" y1="166" x2="864" y2="166" opacity="0"/>
+  <text id="hc-product" class="product" x="864" dx="14" y="216" text-anchor="end" opacity="0">PIVOT</text>
 </svg>`;
 
 /**
@@ -105,7 +109,7 @@ export function playSplash(doc) {
   const op = (/** @type {Element} */ el, /** @type {number} */ v) => el.setAttribute('opacity', v.toFixed(3));
 
   const shield = $('shield'), core = $('core'), frame = $('frame'), column = $('column'), leg = $('leg'), bar = $('crossbar'), sheen = $('sheen');
-  const clipRect = $('word-clip-rect');
+  const clipRect = $('word-clip-rect'), rule = $('rule'), product = $('product');
   const flash = /** @type {HTMLElement} */ (overlay.querySelector('.splash-flash'));
   const traces = [$('trace-l'), $('trace-r')];
   const sparks = [$('spark-l'), $('spark-r')];
@@ -174,6 +178,11 @@ export function playSplash(doc) {
         l.style.fill = m >= 1 ? 'var(--hc-accent)' : mix(m);
       }
     });
+    // Pivot, by HIGHCOM: a hairline draws out under the wordmark, then the product name rises into place.
+    const pr = ease.outCubic(P(t, 1950, 380));
+    tf(rule, `translate(231.6 0) scale(${Math.max(pr, 0.0001)} 1) translate(-231.6 0)`); op(rule, P(t, 1950, 60));
+    const pp = ease.outExpo(P(t, 2120, 520));
+    tf(product, `translate(0 ${12 * (1 - pp)})`); op(product, P(t, 2120, 300));
   }
 
   return new Promise((resolve) => {
@@ -201,7 +210,7 @@ export function playSplash(doc) {
     const tick = (/** @type {number} */ now) => {
       if (finished) return;
       if (start === null) start = now;
-      const t = Math.min(DUR, now - start);
+      const t = Math.min(DUR, (now - start) * SPEED);
       render(t);
       if (t < DUR) win.requestAnimationFrame(tick);
       else win.setTimeout(() => finish(FADE), HOLD);

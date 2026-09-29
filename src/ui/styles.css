@@ -65,9 +65,10 @@ a { color: var(--p-link); }
 
 /* Top bar */
 .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 8px 20px; background: var(--p-bar); color: var(--p-bar-fg); flex-wrap: wrap; border-bottom: 1px solid var(--p-line); }
-.topbar .brand { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; letter-spacing: .08em; }
-.brand-logo { width: 1.45em; height: 1.45em; flex: none; }
-.brand-title { display: flex; align-items: center; gap: 10px; letter-spacing: .08em; }
+/* The logo is as tall as the capitals and sits on their baseline, so the two line up. */
+.topbar .brand { display: inline-flex; align-items: baseline; gap: .35em; font-size: 22px; font-weight: 700; letter-spacing: .08em; line-height: 1; }
+.brand-logo { height: .7em; width: auto; flex: none; overflow: visible; }
+.brand-title { display: flex; align-items: baseline; gap: .35em; letter-spacing: .08em; }
 .topbar .folder { opacity: .7; }
 .topbar nav { display: flex; gap: 4px; }
 .topbar .nav { background: transparent; color: var(--p-bar-fg); border-color: transparent; }
@@ -343,3 +344,5 @@ button.small { padding: 2px 9px; font-size: 13px; }
 .splash-logo .letter { fill-rule: evenodd; }
 .splash-logo .trace { fill: none; stroke: var(--hc-accent); stroke-width: 1.8; stroke-linejoin: miter; stroke-linecap: square; }
 .splash-logo .spark, .splash-logo .hot { fill: var(--hc-accent); }
+.splash-logo .rule { stroke: var(--hc-accent); stroke-width: 2.4; }
+.splash-logo .product { fill: var(--hc-fg); font-family: "Atkinson Hyperlegible", system-ui, sans-serif; font-weight: 700; font-size: 46px; letter-spacing: 14px; }

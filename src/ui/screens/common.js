@@ -100,9 +100,10 @@ export function shell(state, body) {
     ? live(data, 'platform').filter((p) => p.ownerId === state.profileId).reduce((n, p) => n + waitingChanges(data, p.id).length, 0)
     : 0;
   return html`<header class="topbar">
-    <span class="brand">${raw(FULCRUM_SVG)}PIVOT</span><span class="folder" title="The data folder">Folder: ${state.folderName}</span>
+    <span class="brand">${raw(FULCRUM_SVG)}PIVOT</span>
     <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${view === 'home' && waiting ? `${label} (${waiting})` : label}</button>`)}</nav>
     <span class="spacer"></span>
+    <span class="folder" title="The data folder">Folder: ${state.folderName}</span>
     ${save}
     <button type="button" class="theme" ${dataAttrs({ action: 'setTheme', theme: other })} title="Switch to ${other} mode" aria-label="Switch to ${other} mode">${theme === 'dark' ? '☀' : '☾'}</button>
     <span class="profile" title="Active profile">${profileName(state, state.profileId)}</span>
