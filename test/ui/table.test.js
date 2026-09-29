@@ -64,3 +64,15 @@ test('nothing matching says so, and the filters stay so they can be cleared', ()
   assert.match(out, /No rows match the filters/);
   assert.match(out, /data-input="filterTable"[^>]*value="zzz"/);
 });
+
+test('a column never renders narrower than its minimum, whatever the profile says', () => {
+  const cols = [{ key: 'id', label: 'Report ID', value: (r) => r.id, width: 300, minWidth: 180 }];
+  const out = dataTable(state({}, { columnWidths: { 't.id': 60 } }), { id: 't', columns: cols, rows, rowKey: (r) => r.id }).toString();
+  assert.match(out, /<col data-col="id" style="width:180px">/);
+  assert.match(out, /data-resize data-table="t" data-key="id" data-min="180"/);
+});
+
+test('the default column width is doubled to 320px', async () => {
+  const { DEFAULT_WIDTH } = await import('../../src/ui/screens/table.js');
+  assert.equal(DEFAULT_WIDTH, 320);
+});

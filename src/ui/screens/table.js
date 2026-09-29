@@ -16,11 +16,14 @@ import { columnWidth } from '../prefs.js';
  * @property {string} [defaultFilter] applies until the user changes it
  * @property {(row: any, value: string, filters: Record<string, string>) => boolean} [match]
  * @property {number} [width] starting width in px
+ * @property {number} [minWidth] never narrower than this, so its content does not wrap badly
  * @property {boolean} [sortable] default true
  */
 
 /** A column's width when neither the table nor the profile gives one. */
-export const DEFAULT_WIDTH = 160;
+export const DEFAULT_WIDTH = 320;
+/** The narrowest a column may be, unless the column says otherwise. */
+export const DEFAULT_MIN_WIDTH = 80;
 
 /** @param {unknown} v */
 const text = (v) => (v == null ? '' : String(v));
@@ -42,6 +45,7 @@ const valueOf = (c, row) => (c.value ? c.value(row) : undefined);
  * @param {{ id: string, columns: Column[], rows: any[], rowKey: (row: any) => string, empty?: string }} spec
  */
 export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing here yet.' }) {
+  const minOf = (/** @type {Column} */ c) => c.minWidth ?? DEFAULT_MIN_WIDTH;
   const t = state.tables?.[id] ?? {};
   /** @type {Record<string, string>} */
   const filters = {};
@@ -75,11 +79,11 @@ export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing h
     const label = c.sortable === false
       ? html`<span class="th-label">${c.label}</span>`
       : html`<button type="button" class="sort" ${dataAttrs({ action: 'sortTable', table: id, key: c.key })} aria-sort="${ariaSort}">${c.label}<span class="arrow" aria-hidden="true">${sorted === 'asc' ? '▲' : sorted === 'desc' ? '▼' : '↕'}</span></button>`;
-    return html`<th data-col="${c.key}"><div class="th">${label}${control}</div><span class="col-resize" data-resize ${dataAttrs({ table: id, key: c.key })} title="Drag to resize"></span></th>`;
+    return html`<th data-col="${c.key}"><div class="th">${label}${control}</div><span class="col-resize" data-resize ${dataAttrs({ table: id, key: c.key, min: minOf(c) })} title="Drag to resize"></span></th>`;
   });
   // Every column has a width and the table is exactly their sum, so dragging one column moves
   // only that column: nothing is stretched to fill the window or squeezed to make room.
-  const widths = columns.map((c) => columnWidth(state, id, c.key) ?? c.width ?? DEFAULT_WIDTH);
+  const widths = columns.map((c) => Math.max(minOf(c), columnWidth(state, id, c.key) ?? c.width ?? DEFAULT_WIDTH));
   const cols = columns.map((c, i) => html`<col data-col="${c.key}" style="width:${raw(String(widths[i]))}px">`);
   const total = widths.reduce((a, b) => a + b, 0);
   return html`<div class="table-wrap"><table class="grid" data-table="${id}" style="width:${raw(String(total))}px">

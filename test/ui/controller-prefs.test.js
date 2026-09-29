@@ -103,3 +103,14 @@ test('saving: shown as saving for at least the minimum time, and a plain save sh
   assert.equal(c.getState().saving, false);
   assert.equal(c.getState().message, null, 'no pop-up for a plain save');
 });
+
+test('a dragged column width is applied at once, before profiles.json is written (no snap back)', async () => {
+  const f = new MemoryFolder();
+  const c = createController(env(f));
+  await openAs(c, 'Ada');
+  const seen = [];
+  c.subscribe((s) => seen.push(columnWidth(s, 'hazards', 'title')));
+  await c.dispatch({ type: 'setColumnWidth', table: 'hazards', column: 'title', width: '300' });
+  assert.equal(seen[0], 300, 'the very first redraw already has the new width');
+  assert.ok(seen.every((w) => w === 300), `never shown at the old width: ${seen}`);
+});

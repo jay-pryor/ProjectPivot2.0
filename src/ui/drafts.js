@@ -75,3 +75,20 @@ export function restoreDrafts(root, { values, focus }) {
     }
   }
 }
+
+/**
+ * A form's fields as an object; a field given more than once (ticked checkboxes) becomes a list.
+ * @param {Iterable<[string, FormDataEntryValue]>} entries
+ * @returns {Record<string, string | string[]>}
+ */
+export function formValues(entries) {
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const [k, v] of entries) {
+    const s = String(v);
+    if (!(k in out)) out[k] = s;
+    else if (Array.isArray(out[k])) out[k].push(s);
+    else out[k] = [out[k], s];
+  }
+  return out;
+}

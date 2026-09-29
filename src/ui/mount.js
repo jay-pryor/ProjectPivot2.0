@@ -1,5 +1,5 @@
 import { renderApp } from './render.js';
-import { captureDrafts, restoreDrafts, formIdentity } from './drafts.js';
+import { captureDrafts, restoreDrafts, formIdentity, formValues } from './drafts.js';
 import { themeOf } from './prefs.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
 
@@ -36,7 +36,7 @@ export function wire(el, dispatch, submitting = new Set()) {
     e.preventDefault();
     const identity = formIdentity({ ...f.dataset });
     submitting.add(identity);
-    void dispatch({ type: f.dataset.action, ...f.dataset, ...Object.fromEntries(new FormData(f)) }).finally(() => submitting.delete(identity));
+    void dispatch({ type: f.dataset.action, ...f.dataset, ...formValues(new FormData(f)) }).finally(() => submitting.delete(identity));
   });
   // Header filters apply as you type, a moment after the last key.
   /** @type {ReturnType<typeof setTimeout> | undefined} */
@@ -115,7 +115,7 @@ function resizableColumns(el, dispatch) {
     document.body.classList.add('resizing');
     /** @param {PointerEvent} m */
     const move = (m) => {
-      width = Math.max(40, Math.round(startWidth + m.clientX - startX));
+      width = Math.max(Number(grip.dataset.min) || 40, Math.round(startWidth + m.clientX - startX));
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;

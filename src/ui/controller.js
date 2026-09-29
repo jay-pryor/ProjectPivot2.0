@@ -40,6 +40,9 @@ const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', createP
 
 const BACKUP_CHECK_MS = 60_000;
 
+/** Actions that only change what is on screen or a preference: they never mark the app busy. */
+const QUIET = new Set(['setColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker']);
+
 export function initialState() {
   return {
     screen: 'open', folderName: '', check: { failed: [] }, profiles: [], profileId: null, dataBlocked: false,
@@ -142,7 +145,10 @@ export function createController(env) {
   /** Merge settings into the active profile, kept in profiles.json. @param {Record<string, any>} patch */
   async function savePrefs(patch) {
     if (!state.profileId || !handle) throw new PivotError('no-profile', 'Pick your profile first.');
-    const updated = await store.updateProfilePrefs(handle, state.profileId, patch, env.clock);
+    // Shown at once, before the file is written, so nothing redraws with the old setting.
+    const id = state.profileId;
+    set({ profiles: state.profiles.map((p) => (p.id === id ? { ...p, prefs: { ...(p.prefs ?? {}), ...patch } } : p)) });
+    const updated = await store.updateProfilePrefs(handle, id, patch, env.clock);
     set({ profiles: state.profiles.map((p) => (p.id === updated.id ? updated : p)) });
   }
 
@@ -363,8 +369,8 @@ export function createController(env) {
       }
       const h = handlers[type];
       if (!h) throw new Error(`unknown action: ${type}`);
-      running += 1;
-      set({ busy: true });
+      const quiet = QUIET.has(type);
+      if (!quiet) { running += 1; set({ busy: true }); }
       await h(args);
     } catch (e) {
       if (e && typeof e === 'object' && /** @type {any} */ (e).name === 'AbortError') return;
@@ -374,7 +380,7 @@ export function createController(env) {
           : { kind: 'error', text: `Something went wrong: ${e instanceof Error ? e.message : String(e)}`, items: ['This is a fault in Pivot. Your unsaved changes are still here; save them if you can.'] },
       });
     } finally {
-      if (!(type in EDITS) && handlers[type]) running -= 1;
+      if (!(type in EDITS) && handlers[type] && !QUIET.has(type)) running -= 1;
       if (running === 0 && state.busy) set({ busy: false });
     }
   }
