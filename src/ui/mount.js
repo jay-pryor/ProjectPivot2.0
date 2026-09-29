@@ -83,9 +83,11 @@ export function wire(el, dispatch, submitting = new Set()) {
     if (/** @type {HTMLElement} */ (e.target).classList?.contains('picker-overlay')) void dispatch({ type: 'closePicker' });
   });
   el.addEventListener('change', (e) => {
-    const t = /** @type {HTMLSelectElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-change]'));
+    const t = /** @type {HTMLInputElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-change]'));
     if (!t) return;
-    void dispatch({ type: t.dataset.change, ...t.dataset, [t.name || 'value']: t.value });
+    // A tickbox says whether it is ticked, not its value (which is always "on").
+    const value = t.type === 'checkbox' ? String(t.checked) : t.value;
+    void dispatch({ type: t.dataset.change, ...t.dataset, [t.name || 'value']: value });
   });
 }
 

@@ -6,12 +6,13 @@ import { writeMirror, readMirror, clearMirror, hasUnsaved, hasUnsavedRecords, re
 import { PivotError } from '../core/errors.js';
 import { newId } from '../core/ids.js';
 import { emptyData, NUMBERED } from '../core/data.js';
-import { epochOf } from '../core/time.js';
+import { epochOf, aestDate, systemClock } from '../core/time.js';
 import { entries, unseenOverrides, markNoticesSeen, addComment } from '../core/history.js';
 import * as hazards from '../core/ops/hazards.js';
 import * as controls from '../core/ops/controls.js';
 import * as platforms from '../core/ops/platforms.js';
 import * as assessment from '../core/ops/assessment.js';
+import * as reviews from '../core/ops/reviews.js';
 import { setReportDesign } from '../core/ops/reports.js';
 import { createDocHost } from '../reports/docgen-host.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
@@ -33,6 +34,8 @@ const EDITS = {
   unlinkHazard: platforms.unlinkHazard, setReportId: platforms.setReportId,
   confirmControl: assessment.confirmControl, excludeControl: assessment.excludeControl,
   resetControl: assessment.resetControl, setRating: assessment.setRating, setRatingCell: assessment.setRatingCell,
+  setSchedule: reviews.setSchedule, startReview: reviews.startReview, markRow: reviews.markRow,
+  setReviewOutcome: reviews.setReviewOutcome, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,
   addComment,
 };
 
@@ -42,7 +45,7 @@ const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', createP
 const BACKUP_CHECK_MS = 60_000;
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
-const QUIET = new Set(['setColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker']);
+const QUIET = new Set(['setColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform']);
 
 export function initialState() {
   return {
@@ -51,6 +54,7 @@ export function initialState() {
     filters: { hazards: {}, controls: {} }, backups: [], pendingRestore: null,
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
     tables: {}, editing: null, saving: false, picker: null,
+    today: aestDate(systemClock.now()), reportPlatformId: null,
   };
 }
 
@@ -71,7 +75,7 @@ export function createController(env) {
 
   /** @param {Record<string, any>} patch */
   function set(patch) {
-    state = { ...state, ...patch };
+    state = { ...state, ...patch, today: aestDate(env.clock.now()) };
     for (const f of listeners) f(state);
   }
   const act = () => ({ by: /** @type {string} */ (state.profileId), at: env.clock.now() });
@@ -211,8 +215,8 @@ export function createController(env) {
     async dismissMessage() {
       set({ message: null });
     },
-    async go({ view, id, hazardId, platformId, tab }) {
-      set({ view: { name: view, id, hazardId, platformId, tab }, message: null, editing: null });
+    async go({ view, id, hazardId, platformId, tab, reviewId }) {
+      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
     },
     async save() {
@@ -304,6 +308,21 @@ export function createController(env) {
       if (value === 'confirmed') await applyEdit('confirmControl', t);
       else if (value === 'awaiting') await applyEdit('resetControl', t);
       else if (value === 'excluded') set({ editing: { kind: 'exclusion', id: `${hazardId}|${controlId}|${platformId}` } });
+    },
+    async setScheduleField({ platformId, months, due }) {
+      const p = state.session?.working.records.platform[platformId];
+      if (!p) throw new PivotError('not-found', 'That platform no longer exists.');
+      await applyEdit('setSchedule', { platformId, months: months ?? p.reviewMonths, due: due ?? p.reviewDue });
+    },
+    async beginReview({ platformId }) {
+      await applyEdit('startReview', { platformId });
+      set({ view: { name: 'platform', id: platformId, tab: 'reviews' } });
+    },
+    async tickReviewRow({ reviewId, hazardId, reviewed }) {
+      await applyEdit('markRow', { reviewId, hazardId, reviewed: reviewed === 'true' });
+    },
+    async chooseReportPlatform({ platformId }) {
+      set({ reportPlatformId: platformId });
     },
     async startEdit({ kind, id }) {
       set({ editing: { kind, id } });
