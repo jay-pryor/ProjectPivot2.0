@@ -115,7 +115,7 @@ test('a platform tab has Existing controls and the Additional control analysis, 
   const out = hazardView(on('p:p1'), controlled(), 'h1').toString();
   const order = ['Overview', 'Existing controls', 'References', 'Initial risk', 'Additional control analysis', 'Residual risk', 'SFARP considerations'].map((h) => out.indexOf(`<h2>${h}`));
   assert.ok(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1])), `sections in SSRA order: ${order}`);
-  assert.match(out, /data-table="existingControls"[\s\S]*?Administrative[\s\S]*?Fire drills/);
+  assert.match(out, /data-table="existingControls"[\s\S]*?Fire drills[\s\S]*?Administrative/);
   assert.match(out, /data-action="openPicker" data-picker="linkExistingControls" data-hazard-id="h1" data-platform-id="p1"/);
   assert.match(out, /data-action="unlinkExistingControl" data-hazard-id="h1" data-platform-id="p1" data-control-id="c2"/);
   assert.match(out, /data-table="controlAnalysis"[\s\S]*?<textarea class="cell-area" name="recommendation"[^>]*data-change="setControlAnalysis" data-hazard-id="h1" data-control-id="c1">Fit &lt;b&gt;now&lt;\/b&gt;<\/textarea>/);
@@ -152,4 +152,11 @@ test('the Controls list shows existing uses as their own rows, and a control pag
   const page = controlView(state, d, 'c2').toString();
   assert.match(page, /data-table="controlExisting"[\s\S]*?Fire[\s\S]*?Alpha[\s\S]*?mitigating/);
   assert.doesNotMatch(page, /Delete this control/);
+});
+
+test('the control tables lead with the control, and the analysis shows its status before the long text columns', () => {
+  const out = hazardView(on('p:p1'), controlled(), 'h1').toString();
+  const heads = (id) => [...out.slice(out.indexOf(`data-table="${id}"`)).split('</thead>')[0].matchAll(/<th data-col="(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(heads('existingControls'), ['control', 'tier', 'kind', 'actions']);
+  assert.deepEqual(heads('controlAnalysis'), ['control', 'state', 'reason', 'tier', 'kind', 'recommendation', 'justification']);
 });

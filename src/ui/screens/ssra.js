@@ -33,8 +33,8 @@ function existingSection(state, data, h, platformId) {
     empty: 'No existing controls recorded for this platform yet.',
     tools: plus({ action: 'openPicker', picker: 'linkExistingControls', 'hazard-id': h.id, 'platform-id': platformId }, 'Add existing controls'),
     columns: [
-      tierColumn((x) => x.control, false),
       { key: 'control', label: 'Existing controls', width: 720, minWidth: 200, value: (x) => `${controlLabel(x.control)} ${x.control.title}`, render: controlCell },
+      tierColumn((x) => x.control, false),
       { key: 'kind', label: 'Kind', width: 300, minWidth: 150, value: (x) => x.kind,
         render: (x) => html`<select class="quiet" name="kind" aria-label="Kind of ${x.control.title}" ${dataAttrs({ change: 'setExistingControlKind', 'hazard-id': h.id, 'platform-id': platformId, 'control-id': x.control.id })}>${CONTROL_KINDS.map((k) => option(k, k, x.kind))}</select>` },
       { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
@@ -52,14 +52,14 @@ function analysisSection(state, data, h, platformId, platformName) {
     rows,
     empty: 'No additional controls. Link them on the Overview tab.',
     columns: [
-      { key: 'control', label: 'Additional controls', width: 480, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`, render: controlCell },
-      tierColumn((c) => c.control, false),
-      { key: 'kind', label: 'Kind', width: 220, minWidth: 120, value: (c) => c.kind },
-      { key: 'recommendation', label: 'Recommendation', width: 520, minWidth: 200, sortable: false, render: (c) => analysisArea('recommendation', c, h.id) },
-      { key: 'justification', label: 'Justification', width: 520, minWidth: 200, sortable: false, render: (c) => analysisArea('justification', c, h.id) },
-      { key: 'state', label: `Status on ${platformName}`, width: 260, minWidth: 150, value: (c) => CONTROL_STATUSES.indexOf(c.state),
+      { key: 'control', label: 'Additional controls', width: 360, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`, render: controlCell },
+      { key: 'state', label: `Status on ${platformName}`, width: 230, minWidth: 150, value: (c) => CONTROL_STATUSES.indexOf(c.state),
         render: (c) => html`<select class="quiet state-select state-${c.state}" name="value" aria-label="Status of ${c.control.title}" ${dataAttrs({ change: 'setControlState', 'hazard-id': h.id, 'control-id': c.control.id, 'platform-id': platformId })}>${CONTROL_STATUSES.map((s) => option(s, s, c.state))}</select>` },
-      { key: 'reason', label: 'Reason rejected, or who set it', width: 480, minWidth: 200, sortable: false, render: (c) => rejectionCell(state, c, h.id, platformId, platformName) },
+      { key: 'reason', label: 'Reason rejected, or who set it', width: 320, minWidth: 200, sortable: false, render: (c) => rejectionCell(state, c, h.id, platformId, platformName) },
+      tierColumn((c) => c.control, false),
+      { key: 'kind', label: 'Kind', width: 180, minWidth: 120, value: (c) => c.kind },
+      { key: 'recommendation', label: 'Recommendation', width: 420, minWidth: 200, sortable: false, render: (c) => analysisArea('recommendation', c, h.id) },
+      { key: 'justification', label: 'Justification', width: 420, minWidth: 200, sortable: false, render: (c) => analysisArea('justification', c, h.id) },
     ],
   });
 }
