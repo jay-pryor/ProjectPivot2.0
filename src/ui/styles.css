@@ -171,17 +171,14 @@ section { margin: 0 0 22px; }
 .doc-text { display: block; width: 100%; max-width: 1100px; border: 1px solid transparent; background: transparent; padding: 4px 6px; margin: 0 0 22px -7px; resize: vertical; line-height: 1.6; border-radius: 6px; }
 .doc-text:hover { border-color: var(--p-line); }
 .doc-text:focus { background: var(--p-surface); }
-.doc .grid { background: transparent; }
-.doc .grid th { background: transparent; border-width: 0 0 2px; border-color: var(--p-line); }
-.doc .grid td { border-width: 0 0 1px; }
-.doc .grid tbody tr:hover td { background: var(--p-surface); }
-/* Each list on a record page is its own block: a card with a tinted title bar and striped rows. */
-.doc section.block { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 8px; padding: 0 0 6px; overflow: hidden; }
-.doc .block .grid th { background: var(--p-head); border-color: var(--p-accent); padding: 9px 10px 7px; }
+/* Each list on a record page is its own card, holding the same grid as the list pages. The grid's
+   own outer edge is hidden so it does not double the card's border. */
+.doc section.block { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 8px; padding: 0; overflow: hidden; }
 .doc .block .grid th:first-child .th .sort, .doc .block .grid th:first-child .th-label { font-size: 16px; }
-.doc .block .grid td { border-color: transparent; padding: 7px 10px; }
-.doc .block .grid tbody tr:nth-child(even) td { background: var(--p-stripe); }
-.doc .block .grid tbody tr:hover td { background: var(--p-row-hover); }
+.doc .block .grid thead th { border-top: 0; }
+.doc .block .grid tr > :first-child { border-left: 0; }
+.doc .block .grid tr > :last-child { border-right: 0; }
+.doc .block .grid tbody tr:last-child td { border-bottom: 0; }
 .doc .block > .muted { margin: 8px 12px 4px; }
 .doc .block > .new-row { padding: 0 10px; }
 .cell-text { display: block; cursor: text; min-height: 1.5em; }
