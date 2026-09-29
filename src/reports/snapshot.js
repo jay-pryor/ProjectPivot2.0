@@ -1,11 +1,13 @@
 import { get } from '../core/data.js';
 import { PivotError } from '../core/errors.js';
-import { platformHazards, hazardDetail } from '../core/queries.js';
+import { platformHazards, hazardDetail, lastReviewed } from '../core/queries.js';
+import { reviewState, aestDate } from '../core/time.js';
 
 /** @typedef {import('../core/data.js').Data} Data */
 /**
  * @typedef {{ platformId: string, platformName: string, ownerName: string, producedAt: string, producedBy: string,
- *   title: string, classification: string, rows: SnapshotRow[] }} Snapshot
+ *   title: string, classification: string, rows: SnapshotRow[],
+ *   review: { state: string, due: string | null, months: number | null, lastReviewed: string | null } }} Snapshot
  * @typedef {{ hazardId: string, number: number | null, reportId: string, title: string, description: string,
  *   causalFactors: string[], consequences: string[], controls: { title: string, kind: string, state: string, reason: string }[],
  *   initial: any, residual: any }} SnapshotRow
@@ -39,5 +41,11 @@ export function buildSnapshot(data, platformId, o) {
   return structuredClone({
     platformId, platformName: platform.name, ownerName: o.profileName(platform.ownerId),
     producedAt: o.at, producedBy: o.by, title: o.title, classification: o.classification, rows,
+    review: {
+      state: reviewState(platform, aestDate(o.at)),
+      due: platform.reviewDue ?? null,
+      months: platform.reviewMonths ?? null,
+      lastReviewed: lastReviewed(data, platformId),
+    },
   });
 }

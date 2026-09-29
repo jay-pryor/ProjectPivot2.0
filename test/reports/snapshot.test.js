@@ -6,6 +6,7 @@ import { createReport, setReportDesign } from '../../src/core/ops/reports.js';
 import { assignHazardNumbers, updateHazard } from '../../src/core/ops/hazards.js';
 import { confirmControl, excludeControl, setRating } from '../../src/core/ops/assessment.js';
 import { entries } from '../../src/core/history.js';
+import { setSchedule, startReview, completeReview } from '../../src/core/ops/reviews.js';
 import { act, seed } from '../helpers.js';
 
 const names = { u1: 'Ada', u2: 'Grace' };
@@ -66,4 +67,16 @@ test('createReport stores the report as a record reaching its platform; setRepor
   assert.deepEqual(d3.reportDesign, { titleBlock: true });
   assert.equal(Object.keys(d3.history).length, Object.keys(d2.history).length);
   assert.equal(setReportDesign(d3, { titleBlock: true }), d3);
+});
+
+test('a snapshot records whether the platform was due for review when the report was produced', () => {
+  assert.deepEqual(buildSnapshot(assessed(), 'p1', opts).review, { state: 'none', due: null, months: null, lastReviewed: null });
+  let d = setSchedule(assessed(), act, { platformId: 'p1', months: 6, due: '2026-09-01' });
+  const overdue = buildSnapshot(d, 'p1', opts);
+  assert.deepEqual(overdue.review, { state: 'overdue', due: '2026-09-01', months: 6, lastReviewed: null });
+  const stored = createReport(d, act, { id: 'rep1', report: overdue });
+  d = startReview(stored, act, { id: 'r1', platformId: 'p1' });
+  d = completeReview(d, act, { reviewId: 'r1' });
+  assert.equal(d.records.report.rep1.review.state, 'overdue', 'a later review does not change a produced report');
+  assert.deepEqual(buildSnapshot(d, 'p1', opts).review, { state: 'ok', due: '2027-03-01', months: 6, lastReviewed: act.at });
 });
