@@ -80,13 +80,13 @@ export function historyOf(data, kind, id) {
 }
 
 /**
- * The hazard an SSRA item (an assessment or SFARP record) belongs to, read from its id
- * (`ra:<hazard>:…`, `sf:<hazard>:…`), so a hazard's history includes what was written on its
- * platform tabs; null for any other item.
+ * The hazard an SSRA item belongs to (an assessment, SFARP, existing control, control status or
+ * control link), read from its id (`ra:<hazard>:…`, `sf:`, `ec:`, `ru:`, `hc:`), so a hazard's
+ * history includes what was written on its pages; null for any other item.
  * @param {{ kind: string, id: string }} item
  */
 export function ssraHazardOf(item) {
-  return item.kind === 'assessment' || item.kind === 'sfarp' ? String(item.id).split(':')[1] : null;
+  return ['assessment', 'sfarp', 'existingControl', 'ruling', 'hazardControl'].includes(item.kind) ? String(item.id).split(':')[1] : null;
 }
 
 /**

@@ -1,5 +1,8 @@
 import { hazardLabel } from '../core/ids.js';
 
+/** @param {string} s */
+const cap = (s) => `${s[0].toUpperCase()}${s.slice(1)}`;
+
 export const KIND_LABEL = Object.freeze({
   hazard: 'Hazard', causalFactor: 'Causal factor', consequence: 'Consequence', control: 'Control',
   platform: 'Platform', hazardControl: 'Control link', hazardPlatform: 'Platform link',
@@ -8,10 +11,28 @@ export const KIND_LABEL = Object.freeze({
   assessment: 'Risk assessment', sfarp: 'SFARP considerations', existingControl: 'Existing control',
 });
 
-/** How a record is named to a person. @param {string} kind @param {any} rec */
-export function recordName(kind, rec) {
+/**
+ * How a record is named to a person. A record that joins others (a control on a hazard, an
+ * assessment on a platform) is named by what it joins when the data is given.
+ * @param {string} kind @param {any} rec @param {any} [data]
+ */
+export function recordName(kind, rec, data) {
   if (kind === 'reportDesign') return 'the report design';
   if (!rec) return KIND_LABEL[kind] ?? kind;
+  if (data) {
+    const h = data.records.hazard?.[rec.hazardId];
+    const hazard = h ? hazardLabel(h) : '';
+    const control = data.records.control?.[rec.controlId]?.title ?? '';
+    const platform = data.records.platform?.[rec.platformId]?.name ?? '';
+    switch (kind) {
+      case 'hazardControl': return `${control} for ${hazard}`;
+      case 'ruling':
+      case 'existingControl': return `${control} for ${hazard} on ${platform}`;
+      case 'assessment': return `${cap(rec.stage)} ${rec.receptor} risk of ${hazard} on ${platform}`;
+      case 'sfarp': return `SFARP of ${hazard} on ${platform}`;
+      default: break;
+    }
+  }
   switch (kind) {
     case 'hazard': return `${hazardLabel(rec)} ${rec.title}`;
     case 'control':

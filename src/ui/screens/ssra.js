@@ -7,8 +7,8 @@ import { referencesCard } from './references.js';
 import { textTable } from './hazards.js';
 import { get } from '../../core/data.js';
 import { ids, controlLabel } from '../../core/ids.js';
-import { assessmentOf, ratingsOf, sfarpOf, hazardDetail, existingControlsOn, controlsOnPlatform, byNumber } from '../../core/queries.js';
-import { CONTROL_KINDS, tierRank } from '../../core/ops/controls.js';
+import { assessmentOf, ratingsOf, sfarpOf, hazardDetail, existingControlsOn, controlsOnPlatform } from '../../core/queries.js';
+import { CONTROL_KINDS } from '../../core/ops/controls.js';
 import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
 import { CONSEQUENCES, LIKELIHOODS, ratingFor } from '../../core/matrix.js';
 
@@ -45,7 +45,7 @@ function existingSection(state, data, h, platformId) {
 
 /** The hazard's additional controls: shared analysis, and this platform's status. @param {any} state @param {Data} data @param {any} h @param {string} platformId @param {string} platformName */
 function analysisSection(state, data, h, platformId, platformName) {
-  const rows = controlsOnPlatform(data, h.id, platformId).sort((a, b) => tierRank(a.control.tier) - tierRank(b.control.tier) || byNumber(a.control, b.control));
+  const rows = controlsOnPlatform(data, h.id, platformId);
   return dataTable(state, {
     id: 'controlAnalysis',
     rowKey: (c) => c.control.id,

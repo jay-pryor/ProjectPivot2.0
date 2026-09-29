@@ -24,3 +24,13 @@ test('re-linking a control starts its analysis empty', () => {
   d = linkControl(d, act, { hazardId: 'h1', controlId: 'c1', kind: 'preventative' });
   assert.deepEqual([link(d).recommendation, link(d).justification], ['', '']);
 });
+
+test('a hazard\'s additional controls on a platform come by tier, then number', async () => {
+  const { updateControl, createControl, linkControl: link } = await import('../../src/core/ops/controls.js');
+  const { assignNumbers } = await import('../../src/core/ops/hazards.js');
+  let d = updateControl(seed(), act, { id: 'c1', tier: 'PPE' });
+  d = updateControl(d, act, { id: 'c2', tier: 'Engineering' });
+  d = createControl(d, act, { id: 'c3', title: 'Guard' });
+  d = link(assignNumbers(d), act, { hazardId: 'h1', controlId: 'c3', kind: 'preventative' });
+  assert.deepEqual(controlsOnPlatform(d, 'h1', 'p1').map((c) => c.control.id), ['c2', 'c1', 'c3'], 'Engineering, PPE, then no tier');
+});

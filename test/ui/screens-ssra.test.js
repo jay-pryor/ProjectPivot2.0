@@ -160,3 +160,21 @@ test('the control tables lead with the control, and the analysis shows its statu
   assert.deepEqual(heads('existingControls'), ['control', 'tier', 'kind', 'actions']);
   assert.deepEqual(heads('controlAnalysis'), ['control', 'state', 'reason', 'tier', 'kind', 'recommendation', 'justification']);
 });
+
+test('the hazard\'s History includes its control analysis, statuses and existing controls, each named', () => {
+  const out = hazardView(on('history'), controlled(), 'h1').toString();
+  assert.match(out, /Edit control analysis[\s\S]*?Control Sprinklers/);
+  assert.match(out, /Set control to rejected[\s\S]*?Alpha · Status of Sprinklers/);
+  assert.match(out, /Link existing control[\s\S]*?Alpha · Existing control Fire drills/);
+});
+
+test('acknowledgements and notices name the control, hazard and platform a record is about', async () => {
+  const { recordName } = await import('../../src/ui/names.js');
+  const d = controlled();
+  assert.equal(recordName('existingControl', d.records.existingControl['ec:h1:p1:c2'], d), 'Fire drills for H-0001 on Alpha');
+  assert.equal(recordName('ruling', d.records.ruling['ru:h1:c1:p1'], d), 'Sprinklers for H-0001 on Alpha');
+  assert.equal(recordName('hazardControl', d.records.hazardControl['hc:h1:c1'], d), 'Sprinklers for H-0001');
+  assert.equal(recordName('assessment', d.records.assessment['ra:h1:p1:residual:environment'], d), 'Residual environment risk of H-0001 on Alpha');
+  assert.equal(recordName('sfarp', d.records.sfarp['sf:h1:p1'], d), 'SFARP of H-0001 on Alpha');
+  assert.equal(recordName('ruling', d.records.ruling['ru:h1:c1:p1']), 'Control decision', 'without the data, the kind');
+});

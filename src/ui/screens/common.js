@@ -145,7 +145,12 @@ function scaleValue(field, v) {
 
 /** What an SSRA item is about, e.g. "Alpha · Residual personnel", read from its id. @param {any} data @param {any} item */
 function itemLabel(data, item) {
-  const [, , platformId, stage, receptor] = String(item.id).split(':');
+  const parts = String(item.id).split(':');
+  const name = (/** @type {string} */ kind, /** @type {string} */ id) => data.records[kind]?.[id]?.[kind === 'platform' ? 'name' : 'title'] ?? id;
+  if (item.kind === 'hazardControl') return `Control ${name('control', parts[2])}`;
+  if (item.kind === 'ruling') return `${name('platform', parts[3])} · Status of ${name('control', parts[2])}`;
+  if (item.kind === 'existingControl') return `${name('platform', parts[2])} · Existing control ${name('control', parts[3])}`;
+  const [, , platformId, stage, receptor] = parts;
   const platform = data.records.platform[platformId]?.name ?? platformId;
   return item.kind === 'sfarp' ? `${platform} · SFARP` : `${platform} · ${stage[0].toUpperCase()}${stage.slice(1)} ${receptor}`;
 }

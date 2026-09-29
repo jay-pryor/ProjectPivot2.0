@@ -157,7 +157,7 @@ export function controlsOnPlatform(data, hazardId, platformId) {
   return live(data, 'hazardControl').filter((l) => l.hazardId === hazardId).map((link) => {
     const s = controlState(data, hazardId, link.controlId, platformId);
     return { control: /** @type {Rec} */ (get(data, 'control', link.controlId)), kind: link.kind, state: s.state, ruling: s.ruling, link };
-  });
+  }).sort((a, b) => tierRank(a.control.tier) - tierRank(b.control.tier) || byNumber(a.control, b.control));
 }
 
 /**

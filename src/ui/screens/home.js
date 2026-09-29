@@ -20,7 +20,7 @@ export function homeOwnerId(state) {
 
 /** @param {Data} data @param {any} entry what the change did, record by record */
 function entryDetail(data, entry) {
-  return html`<ul class="plain">${entry.items.map((/** @type {any} */ i) => html`<li><strong>${KIND_LABEL[/** @type {keyof typeof KIND_LABEL} */ (i.kind)] ?? i.kind}: ${recordName(i.kind, get(data, i.kind, i.id))}</strong> ${changeDetail(i)}</li>`)}</ul>`;
+  return html`<ul class="plain">${entry.items.map((/** @type {any} */ i) => html`<li><strong>${KIND_LABEL[/** @type {keyof typeof KIND_LABEL} */ (i.kind)] ?? i.kind}: ${recordName(i.kind, get(data, i.kind, i.id), data)}</strong> ${changeDetail(i)}</li>`)}</ul>`;
 }
 
 /** @param {any} p a platform @param {string} [tab] */
@@ -121,7 +121,7 @@ function attentionRow(state, data, item) {
   }
   if (item.type === 'change') {
     const first = item.entry.items[0];
-    const subject = first ? recordName(first.kind, get(data, first.kind, first.id)) : '';
+    const subject = first ? recordName(first.kind, get(data, first.kind, first.id), data) : '';
     return html`<li>${chip}<span class="what">${item.entry.action}: ${subject} <span class="muted">· ${profileName(state, item.entry.by)} on ${item.platform.name}</span></span>
       <button type="button" class="small" ${dataAttrs({ action: 'acknowledge', 'entry-id': item.entry.id, 'platform-id': item.platform.id })}>Acknowledge</button></li>`;
   }

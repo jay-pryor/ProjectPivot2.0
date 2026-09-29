@@ -48,7 +48,7 @@ export function noticesScreen(state) {
   return html`<div class="start"><h1>Some of your saved changes were replaced</h1>
     <p>Someone saved over them after you. What they saved is what is stored now.</p>
     ${state.notices.map((/** @type {any} */ n) => html`<section class="notice"><h2>${when(n.at)}, by ${profileName(state, n.by)}</h2><ul>
-      ${n.items.map((/** @type {any} */ i) => html`<li>${KIND_LABEL[/** @type {keyof typeof KIND_LABEL} */ (i.kind)] ?? i.kind}: your “${recordName(i.kind, i.theirs)}” was replaced ${i.mine ? html`by “${recordName(i.kind, i.mine)}”` : 'and removed'}</li>`)}
+      ${n.items.map((/** @type {any} */ i) => html`<li>${KIND_LABEL[/** @type {keyof typeof KIND_LABEL} */ (i.kind)] ?? i.kind}: your “${recordName(i.kind, i.theirs, state.session?.working)}” was replaced ${i.mine ? html`by “${recordName(i.kind, i.mine, state.session?.working)}”` : 'and removed'}</li>`)}
     </ul></section>`)}
     <button type="button" class="primary" ${dataAttrs({ action: 'dismissNotices' })}>OK</button></div>`;
 }
