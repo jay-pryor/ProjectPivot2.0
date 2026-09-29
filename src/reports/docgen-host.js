@@ -31,6 +31,7 @@ function metaRows(s) {
 function sectionsFor(s) {
   /** @param {(s: Snapshot) => any[]} f */
   const rows = (f) => () => (s ? f(s) : []);
+  const STATUS_WORD = { recommended: 'Recommended', planned: 'Planned', implemented: 'Implemented', rejected: 'Rejected', confirmed: 'Implemented', excluded: 'Rejected', awaiting: 'Recommended' };
   const hazardKey = { id: '_key', label: 'Hazard', w: 3, get: (/** @type {any} */ r) => r.reportId };
   return [
     {
@@ -47,16 +48,32 @@ function sectionsFor(s) {
       rows: rows((x) => x.rows),
     },
     {
-      id: 'controls', label: 'Controls',
+      id: 'controls', label: 'Additional control analysis',
       keyColumn: hazardKey,
       columns: [
-        { id: 'control', label: 'Control', w: 5, get: (/** @type {any} */ r) => r.title },
-        { id: 'kind', label: 'Kind', w: 2, get: (/** @type {any} */ r) => r.kind },
+        { id: 'number', label: 'ID', w: 2, get: (/** @type {any} */ r) => r.number ?? '' },
+        { id: 'control', label: 'Control measure', w: 4, get: (/** @type {any} */ r) => r.title },
         { id: 'tier', label: 'Tier', w: 3, optional: true, get: (/** @type {any} */ r) => r.tier ?? '' },
-        { id: 'state', label: 'State', w: 2, get: (/** @type {any} */ r) => r.state },
-        { id: 'reason', label: 'Reason excluded', w: 4, optional: true, get: (/** @type {any} */ r) => r.reason },
+        { id: 'description', label: 'Description', w: 5, optional: true, get: (/** @type {any} */ r) => r.description ?? '' },
+        { id: 'kind', label: 'Kind', w: 2, get: (/** @type {any} */ r) => r.kind },
+        { id: 'recommendation', label: 'Recommendation', w: 5, get: (/** @type {any} */ r) => r.recommendation ?? '' },
+        { id: 'justification', label: 'Justification', w: 5, get: (/** @type {any} */ r) => r.justification ?? '' },
+        { id: 'state', label: 'Status', w: 2, get: (/** @type {any} */ r) => STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (r.state)] ?? r.state },
+        { id: 'reason', label: 'Reason rejected', w: 4, optional: true, get: (/** @type {any} */ r) => r.reason },
       ],
       rows: rows((x) => x.rows.flatMap((h) => h.controls.map((c) => ({ reportId: h.reportId, ...c })))),
+    },
+    {
+      id: 'existing', label: 'Existing controls',
+      keyColumn: hazardKey,
+      columns: [
+        { id: 'tier', label: 'Tier', w: 3, get: (/** @type {any} */ r) => r.tier || 'Not set' },
+        { id: 'number', label: 'ID', w: 2, get: (/** @type {any} */ r) => r.number },
+        { id: 'control', label: 'Control', w: 5, get: (/** @type {any} */ r) => r.title },
+        { id: 'description', label: 'Description', w: 5, optional: true, get: (/** @type {any} */ r) => r.description },
+        { id: 'kind', label: 'Kind', w: 2, get: (/** @type {any} */ r) => r.kind },
+      ],
+      rows: rows((x) => x.rows.flatMap((h) => (h.existingControls ?? []).map((c) => ({ reportId: h.reportId, ...c })))),
     },
     {
       id: 'causes', label: 'Causal factors and consequences',

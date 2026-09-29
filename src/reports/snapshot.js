@@ -1,8 +1,8 @@
 import { get } from '../core/data.js';
 import { PivotError } from '../core/errors.js';
-import { platformHazards, hazardDetail, lastReviewed, referencesFor, assessmentOf, sfarpOf } from '../core/queries.js';
+import { platformHazards, hazardDetail, lastReviewed, referencesFor, assessmentOf, sfarpOf, existingControlsOn } from '../core/queries.js';
 import { formatRating } from '../core/matrix.js';
-import { referenceLabel } from '../core/ids.js';
+import { referenceLabel, controlLabel } from '../core/ids.js';
 import { reviewState, aestDate } from '../core/time.js';
 
 /** @typedef {import('../core/data.js').Data} Data */
@@ -12,7 +12,8 @@ import { reviewState, aestDate } from '../core/time.js';
  *   review: { state: string, due: string | null, months: number | null, lastReviewed: string | null },
  *   references: { number: string, title: string, docNumber: string, revision: string, supports: string }[] }} Snapshot
  * @typedef {{ hazardId: string, number: number | null, reportId: string, title: string, description: string,
- *   causalFactors: string[], consequences: string[], controls: { title: string, kind: string, tier: string, state: string, reason: string }[],
+ *   causalFactors: string[], consequences: string[], controls: { number: string, title: string, description: string, kind: string, tier: string, state: string, reason: string, recommendation: string, justification: string }[],
+ *   existingControls: { number: string, title: string, description: string, kind: string, tier: string }[],
  *   initial: any, residual: any,
  *   ratings: { initialPersonnel: any, initialEnvironment: any, residualPersonnel: any, residualEnvironment: any },
  *   assessments: { stage: string, receptor: string, likelihood: string | null, likelihoodWhy: string, consequence: number | null, consequenceWhy: string, level: string }[],
@@ -39,7 +40,14 @@ export function buildSnapshot(data, platformId, o) {
       description: r.hazard.description ?? '',
       causalFactors: d.causalFactors.map((x) => x.text),
       consequences: d.consequences.map((x) => x.text),
-      controls: r.controls.map((c) => ({ title: c.control.title, kind: c.kind, tier: c.control.tier ?? '', state: c.state, reason: c.state === 'rejected' ? c.ruling?.reason ?? '' : '' })),
+      controls: r.controls.map((c) => ({
+        number: controlLabel(c.control), title: c.control.title, description: c.control.description ?? '',
+        kind: c.kind, tier: c.control.tier ?? '', state: c.state, reason: c.state === 'rejected' ? c.ruling?.reason ?? '' : '',
+        recommendation: c.link?.recommendation ?? '', justification: c.link?.justification ?? '',
+      })),
+      existingControls: existingControlsOn(data, r.hazard.id, platformId).map((x) => ({
+        number: controlLabel(x.control), title: x.control.title, description: x.control.description ?? '', kind: x.kind, tier: x.control.tier ?? '',
+      })),
       initial: r.rating.initial,
       residual: r.rating.residual,
       ratings: {

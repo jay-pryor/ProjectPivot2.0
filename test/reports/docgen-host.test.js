@@ -30,7 +30,7 @@ test('the host is a valid DocGen host about platforms, offering Pivot\'s marking
   assert.equal(docs.host.subject.noun, 'platform');
   assert.deepEqual(docs.host.subject.list().map((p) => p.label), ['Alpha', 'Bravo']);
   assert.deepEqual(docs.host.classifications, ['OFFICIAL', 'OFFICIAL: Sensitive', 'PROTECTED']);
-  assert.deepEqual(docs.host.sections(null).map((s) => s.id), ['hazards', 'controls', 'causes', 'references', 'assessments', 'sfarp']);
+  assert.deepEqual(docs.host.sections(null).map((s) => s.id), ['hazards', 'controls', 'existing', 'causes', 'references', 'assessments', 'sfarp']);
 });
 
 test('design changes made in the designer land in Pivot\'s data', () => {
@@ -94,4 +94,24 @@ test('Hazards has four risk columns; Risk assessments and SFARP sections', async
   const sf = secs.find((s) => s.id === 'sfarp');
   assert.deepEqual(sf.columns.map((c) => c.label), ['Justification', 'Conclusion', 'Conditions of validity']);
   assert.equal(sf.columns[1].get(sf.rows()[0]), 'SFARP achieved');
+});
+
+test('Additional control analysis and Existing controls sections', async () => {
+  const { setControlAnalysis, linkExistingControl } = await import('../../src/core/ops/controls.js');
+  const { setControlStatus } = await import('../../src/core/ops/assessment.js');
+  let data = assignHazardNumbers(seed());
+  data = setControlAnalysis(data, act, { hazardId: 'h1', controlId: 'c1', recommendation: 'Fit', justification: 'Because' });
+  data = setControlStatus(data, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'rejected', reason: 'No water' });
+  data = linkExistingControl(data, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
+  const docs = createDocHost({ getData: () => data, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id });
+  const secs = docs.host.sections({ subjectId: 'p1' });
+  const ctl = secs.find((s) => s.id === 'controls');
+  assert.equal(ctl.label, 'Additional control analysis');
+  assert.deepEqual(ctl.columns.map((c) => c.id), ['number', 'control', 'tier', 'description', 'kind', 'recommendation', 'justification', 'state', 'reason']);
+  const sprinklers = ctl.rows().find((r) => r.title === 'Sprinklers');
+  assert.deepEqual(['recommendation', 'justification', 'state', 'reason'].map((id) => ctl.columns.find((c) => c.id === id).get(sprinklers)), ['Fit', 'Because', 'Rejected', 'No water']);
+  const ex = secs.find((s) => s.id === 'existing');
+  assert.equal(ex.label, 'Existing controls');
+  assert.deepEqual(ex.columns.map((c) => c.id), ['tier', 'number', 'control', 'description', 'kind']);
+  assert.equal(ex.columns.find((c) => c.id === 'control').get(ex.rows()[0]), 'Fire drills');
 });
