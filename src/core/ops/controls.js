@@ -77,7 +77,8 @@ export function linkControl(data, act, { hazardId, controlId, kind }) {
   const k = needKind(kind);
   const id = ids.hazardControl(hazardId, controlId);
   const existing = get(data, 'hazardControl', id);
-  const rec = existing ? changed(existing, act, { status: 'live', kind: k }) : created(act, id, { hazardId, controlId, kind: k });
+  const fields = { kind: k, recommendation: '', justification: '' };
+  const rec = existing ? changed(existing, act, { status: 'live', ...fields }) : created(act, id, { hazardId, controlId, ...fields });
   return commit(data, act, 'Link control to hazard', [{ kind: 'hazardControl', rec }]);
 }
 
@@ -85,6 +86,20 @@ export function linkControl(data, act, { hazardId, controlId, kind }) {
 export function setControlKind(data, act, { hazardId, controlId, kind }) {
   const l = need(data, 'hazardControl', ids.hazardControl(hazardId, controlId));
   return commit(data, act, 'Change control kind', [{ kind: 'hazardControl', rec: changed(l, act, { kind: needKind(kind) }) }]);
+}
+
+/**
+ * The additional control analysis for a control on a hazard, shared by every platform; fields
+ * left out keep their value.
+ * @param {Data} data @param {Act} act @param {{ hazardId: string, controlId: string, recommendation?: unknown, justification?: unknown }} args
+ */
+export function setControlAnalysis(data, act, { hazardId, controlId, recommendation, justification }) {
+  const l = need(data, 'hazardControl', ids.hazardControl(hazardId, controlId));
+  /** @type {Record<string, string>} */
+  const fields = {};
+  if (recommendation !== undefined) fields.recommendation = String(recommendation ?? '').trim();
+  if (justification !== undefined) fields.justification = String(justification ?? '').trim();
+  return commit(data, act, 'Edit control analysis', [{ kind: 'hazardControl', rec: changed(l, act, fields) }]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ hazardId: string, controlId: string }} args */

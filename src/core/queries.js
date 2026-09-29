@@ -151,7 +151,7 @@ export function hazardDetail(data, hazardId) {
 export function controlsOnPlatform(data, hazardId, platformId) {
   return live(data, 'hazardControl').filter((l) => l.hazardId === hazardId).map((link) => {
     const s = controlState(data, hazardId, link.controlId, platformId);
-    return { control: /** @type {Rec} */ (get(data, 'control', link.controlId)), kind: link.kind, state: s.state, ruling: s.ruling };
+    return { control: /** @type {Rec} */ (get(data, 'control', link.controlId)), kind: link.kind, state: s.state, ruling: s.ruling, link };
   });
 }
 
