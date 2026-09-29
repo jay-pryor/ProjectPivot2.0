@@ -1,6 +1,6 @@
 import { html, raw, esc } from '../html.js';
 import { dataTable } from './table.js';
-import { historyOf, commentsOn } from '../../core/history.js';
+import { historyOf, commentsOn, ssraHazardOf } from '../../core/history.js';
 import { hasUnsaved } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
 import { themeOf } from '../prefs.js';
@@ -143,11 +143,11 @@ function scaleValue(field, v) {
   return named ? `${v} ${named.label}` : show(v);
 }
 
-/** The assessment an item is about, e.g. "Residual personnel", read from its id. @param {any} item */
-function itemLabel(item) {
-  if (item.kind !== 'assessment') return '';
-  const [, , , stage, receptor] = String(item.id).split(':');
-  return `${stage[0].toUpperCase()}${stage.slice(1)} ${receptor}`;
+/** What an SSRA item is about, e.g. "Alpha · Residual personnel", read from its id. @param {any} data @param {any} item */
+function itemLabel(data, item) {
+  const [, , platformId, stage, receptor] = String(item.id).split(':');
+  const platform = data.records.platform[platformId]?.name ?? platformId;
+  return item.kind === 'sfarp' ? `${platform} · SFARP` : `${platform} · ${stage[0].toUpperCase()}${stage.slice(1)} ${receptor}`;
 }
 
 /**
@@ -157,11 +157,11 @@ function itemLabel(item) {
  */
 export function historyTable(state, data, kind, id, list = historyOf(data, kind, id)) {
   const rows = list.slice().reverse().map((e) => ({ e, item: e.items.find((/** @type {any} */ i) => i.kind === kind && i.id === id) ?? (e.items.length === 1 ? e.items[0] : null) }));
-  // An entry that set several assessments at once (both receptors) shows each of them.
+  // SSRA edits (assessments, SFARP) say which platform and which assessment each item is.
   /** @param {any} e */
-  const several = (e) => e.items.every((/** @type {any} */ i) => i.kind === 'assessment')
-    ? html`${e.items.map((/** @type {any} */ i) => html`<div><span class="muted">${itemLabel(i)}</span> ${changeDetail(i)}</div>`)}`
-    : '';
+  const ssra = (e) => e.items.every((/** @type {any} */ i) => ssraHazardOf(i) !== null);
+  /** @param {any} e */
+  const labelled = (e) => html`${e.items.map((/** @type {any} */ i) => html`<div><span class="muted">${itemLabel(data, i)}</span> ${changeDetail(i)}</div>`)}`;
   return dataTable(state, {
     id: 'history',
     rowKey: (r) => r.e.id,
@@ -171,7 +171,7 @@ export function historyTable(state, data, kind, id, list = historyOf(data, kind,
       { key: 'when', label: 'When', width: 300, minWidth: 150, value: (r) => r.e.at, render: (r) => when(r.e.at) },
       { key: 'who', label: 'Who', width: 260, minWidth: 100, value: (r) => profileName(state, r.e.by), filter: 'text' },
       { key: 'what', label: 'What', width: 400, minWidth: 140, value: (r) => r.e.action, filter: 'text' },
-      { key: 'changes', label: 'Changes', width: 720, minWidth: 240, sortable: false, render: (r) => (r.item ? changeDetail(r.item) : several(r.e)) },
+      { key: 'changes', label: 'Changes', width: 720, minWidth: 240, sortable: false, render: (r) => (ssra(r.e) ? labelled(r.e) : r.item ? changeDetail(r.item) : '') },
       { key: 'comments', label: 'Comments', width: 560, minWidth: 200, sortable: false, render: (r) => {
         const comments = commentsOn(data, r.e.id);
         const adding = state.editing?.kind === 'comment' && state.editing.id === r.e.id;

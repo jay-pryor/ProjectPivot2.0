@@ -109,7 +109,7 @@ export function platformView(state, data, id) {
                 render: (/** @type {any} */ r) => ratingCell(r.ratings[stage][receptor], { 'hazard-id': r.hazard.id, 'platform-id': id, stage, receptor }) };
             })),
             { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
-              render: (r) => html`<div class="row-actions">${confirmButton('✕', 'Unlink, clearing its ratings and control decisions here', dataAttrs({ action: 'unlinkHazard', 'hazard-id': r.hazard.id, 'platform-id': id }))}</div>` },
+              render: (r) => html`<div class="row-actions">${confirmButton('✕', 'Unlink, clearing its risk assessments, justifications, SFARP considerations and control decisions here', dataAttrs({ action: 'unlinkHazard', 'hazard-id': r.hazard.id, 'platform-id': id }))}</div>` },
           ],
         })}
       </section>

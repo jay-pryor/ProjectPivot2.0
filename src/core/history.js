@@ -76,7 +76,17 @@ export function entries(data) {
 
 /** @param {Data} data @param {string} kind @param {string} id */
 export function historyOf(data, kind, id) {
-  return entries(data).filter((e) => e.type === 'change' && e.items.some((/** @type {any} */ i) => i.kind === kind && i.id === id));
+  return entries(data).filter((e) => e.type === 'change' && e.items.some((/** @type {any} */ i) => (i.kind === kind && i.id === id) || (kind === 'hazard' && ssraHazardOf(i) === id)));
+}
+
+/**
+ * The hazard an SSRA item (an assessment or SFARP record) belongs to, read from its id
+ * (`ra:<hazard>:…`, `sf:<hazard>:…`), so a hazard's history includes what was written on its
+ * platform tabs; null for any other item.
+ * @param {{ kind: string, id: string }} item
+ */
+export function ssraHazardOf(item) {
+  return item.kind === 'assessment' || item.kind === 'sfarp' ? String(item.id).split(':')[1] : null;
 }
 
 /**

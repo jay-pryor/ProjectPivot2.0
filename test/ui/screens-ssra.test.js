@@ -84,3 +84,19 @@ test('dashboard cards show a personnel and an environment bar; unrated items nam
   assert.match(out, /<span class="rx">Environment<\/span><span class="riskbar">[\s\S]*?band-serious/);
   assert.match(out, /no initial personnel, initial environment rating/);
 });
+
+test('SSRA edits on a platform tab show in the hazard page\'s History, naming the platform and assessment', () => {
+  const d = setAssessment(data(), act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihoodWhy: 'Seen monthly' });
+  const out = hazardView(on('history'), d, 'h1').toString();
+  assert.match(out, /Set initial personnel risk/);
+  assert.match(out, /Alpha · Initial personnel<\/span> <ul class="plain"><li><strong>likelihoodWhy<\/strong>: Seen twice a year → Seen monthly/);
+  assert.match(out, /Alpha · Initial personnel<\/span> Created/);
+  assert.match(out, /Edit SFARP considerations[\s\S]*?Alpha · SFARP<\/span> Created/);
+  assert.match(out, /History \(\d+\)/);
+  assert.doesNotMatch(out, /History \(1\)/, 'the count includes SSRA edits');
+});
+
+test('unlinking a hazard from a platform warns that its assessments, justifications and SFARP go too', async () => {
+  const { platformView } = await import('../../src/ui/screens/platforms.js');
+  assert.match(platformView(state, data(), 'p1').toString(), /Unlink, clearing its risk assessments, justifications, SFARP considerations and control decisions here/);
+});
