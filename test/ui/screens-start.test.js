@@ -80,3 +80,13 @@ test('filterBar and historyBlock', () => {
   assert.match(hist, /title: Fire → Big fire/);
   assert.match(hist, /Ada/);
 });
+
+test('the top bar highlights the section a view belongs to', () => {
+  const data = emptyData();
+  const base = { ...initialState(), screen: 'main', profiles: [], profileId: 'u1', session: { base: data, working: data, loadedStamp: null } };
+  const on = (view) => (/class="nav on"[^>]*>([^<]*)</.exec(shell({ ...base, view }, html``).toString()) || [])[1];
+  assert.equal(on({ name: 'assessment', hazardId: 'h', platformId: 'p' }), 'Platforms');
+  assert.equal(on({ name: 'hazard', id: 'h' }), 'Hazards');
+  assert.equal(on({ name: 'control', id: 'c' }), 'Controls');
+  assert.equal(on({ name: 'backups' }), 'Backups');
+});

@@ -76,9 +76,17 @@ export function clearMirror(storage) {
   try { storage.removeItem(MIRROR_KEY); } catch { /* nothing to clear */ }
 }
 
+/** Last answer per working data, so a redraw does not compare the whole data again. */
+const unsavedCache = new WeakMap();
+
 /** @param {{ base: unknown, working: unknown }} session */
 export function hasUnsaved(session) {
-  return !sameJson(session.base, session.working);
+  const w = session.working;
+  const cached = w && typeof w === 'object' ? unsavedCache.get(w) : undefined;
+  if (cached && cached.base === session.base) return cached.result;
+  const result = !sameJson(session.base, w);
+  if (w && typeof w === 'object') unsavedCache.set(w, { base: session.base, result });
+  return result;
 }
 
 /**

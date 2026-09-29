@@ -2,7 +2,7 @@ import { html } from '../html.js';
 import { dataAttrs, statusTag, bandTag, stateTag, go, confirmButton, filterBar, historyBlock } from './common.js';
 import { get } from '../../core/data.js';
 import { hazardLabel } from '../../core/ids.js';
-import { filterControls, controlUsage } from '../../core/queries.js';
+import { filterControls, controlUsage, platformsReached } from '../../core/queries.js';
 import { notFound } from './hazards.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
@@ -30,8 +30,10 @@ export function controlView(state, data, id) {
     ? html`<button type="button" ${dataAttrs({ action: 'retireControl', id })}>Retire</button>
        ${usage.length ? '' : confirmButton('Delete…', 'Delete this control', dataAttrs({ action: 'deleteControl', id }))}`
     : c.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'control', id })}>Restore</button>` : '';
+  const reach = platformsReached(data, 'control', c).map((pid) => get(data, 'platform', pid)?.name ?? pid);
   return html`<p>${go('← Controls', 'controls')}</p>
     <h1>${c.title}${statusTag(c.status)}</h1>
+    ${reach.length > 1 ? html`<p class="note">Changes to this control reach ${reach.length} platforms: ${reach.join(', ')}.</p>` : ''}
     <form data-action="updateControl" ${dataAttrs({ id })} class="stack">
       <label>Title <input name="title" value="${c.title}" required></label>
       <label>Description <textarea name="description" rows="3">${c.description}</textarea></label>

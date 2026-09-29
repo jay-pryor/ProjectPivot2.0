@@ -54,13 +54,16 @@ export function messages(state) {
 
 const NAV = [['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['reports', 'Reports'], ['backups', 'Backups']];
 
+/** The top-bar section each view belongs to. */
+const SECTION = { hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', assessment: 'platforms', reports: 'reports', backups: 'backups' };
+
 /** @param {any} state @param {import('../html.js').Raw} body */
 export function shell(state, body) {
   const unsaved = state.session ? hasUnsaved(state.session) : false;
-  const current = String(state.view?.name ?? '');
+  const current = SECTION[/** @type {keyof typeof SECTION} */ (state.view?.name)] ?? '';
   return html`<header class="topbar">
     <span class="brand">Pivot</span><span class="folder">${state.folderName}</span>
-    <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current.startsWith(view.slice(0, -1)) ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${label}</button>`)}</nav>
+    <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${label}</button>`)}</nav>
     <span class="spacer"></span>
     ${unsaved ? html`<span class="unsaved">Unsaved changes</span>` : ''}
     <button type="button" class="primary" ${dataAttrs({ action: 'save' })}${state.busy ? raw(' disabled') : ''}>Save</button>

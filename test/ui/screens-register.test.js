@@ -54,3 +54,7 @@ test('an unknown id shows a not-found note, not a crash', () => {
   assert.match(hazardView(state, data(), 'nope').toString(), /no longer exists/);
   assert.match(controlView(state, data(), 'nope').toString(), /no longer exists/);
 });
+
+test('a control used on several platforms says which ones its changes reach', () => {
+  assert.match(controlView(state, data(), 'c1').toString(), /Changes to this control reach 2 platforms: Alpha, Bravo/);
+});

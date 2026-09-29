@@ -59,6 +59,7 @@ export function createController(env) {
   /** @type {FileSystemDirectoryHandle | null} */
   let handle = null;
   let lastBackupCheck = -Infinity;
+  let running = 0;
   /** @type {Set<(s: any) => void>} */
   const listeners = new Set();
 
@@ -312,6 +313,7 @@ export function createController(env) {
       }
       const h = handlers[type];
       if (!h) throw new Error(`unknown action: ${type}`);
+      running += 1;
       set({ busy: true });
       await h(args);
     } catch (e) {
@@ -322,7 +324,8 @@ export function createController(env) {
           : { kind: 'error', text: `Something went wrong: ${e instanceof Error ? e.message : String(e)}`, items: ['This is a fault in Pivot. Your unsaved changes are still here; save them if you can.'] },
       });
     } finally {
-      if (state.busy) set({ busy: false });
+      if (!(type in EDITS) && handlers[type]) running -= 1;
+      if (running === 0 && state.busy) set({ busy: false });
     }
   }
 

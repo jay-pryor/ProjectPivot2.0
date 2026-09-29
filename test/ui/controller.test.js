@@ -241,3 +241,18 @@ test('Final review I2: profiles.json unreadable just after a merged save leaves 
   assert.notEqual(s.message.kind, 'error');
   assert.ok(s.warnings.some((w) => /profiles/.test(w)), JSON.stringify(s.warnings));
 });
+
+test('busy stays on until every running action has finished', async () => {
+  const f = new MemoryFolder();
+  let release;
+  const slow = new Promise((r) => { release = r; });
+  const e = { ...env(f), pickOpenFile: async () => { await slow; throw new DOMException('cancelled', 'AbortError'); } };
+  const c = createController(e);
+  await openAs(c, 'Ada');
+  const restoring = c.dispatch({ type: 'prepareRestoreFromFile' });
+  await c.dispatch({ type: 'dismissMessage' });
+  assert.equal(c.getState().busy, true, 'the slower action is still running');
+  release();
+  await restoring;
+  assert.equal(c.getState().busy, false);
+});
