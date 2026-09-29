@@ -5,6 +5,7 @@ export const SCHEMA_VERSION = 2;
 export const KINDS = Object.freeze([
   'hazard', 'causalFactor', 'consequence', 'control', 'platform',
   'hazardControl', 'hazardPlatform', 'ruling', 'rating', 'report',
+  'review', 'reviewRow',
 ]);
 
 export const STATUSES = Object.freeze(['live', 'retired', 'deleted']);
@@ -27,6 +28,10 @@ export function normalizeData(value) {
   if (!isObject(value) || !isObject(value.records)) return value;
   const records = { ...value.records };
   for (const k of KINDS) if (!isObject(records[k])) records[k] = {};
+  // Platforms written before reviews existed have no schedule.
+  records.platform = Object.fromEntries(Object.entries(records.platform).map(([id, p]) => [
+    id, isObject(p) && !('reviewDue' in p) ? { ...p, reviewMonths: null, reviewDue: null } : p,
+  ]));
   const out = { ...value, records };
   for (const { kind, counter } of NUMBERED) {
     if (!Number.isInteger(out[counter])) {

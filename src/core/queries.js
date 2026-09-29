@@ -34,6 +34,11 @@ export function platformsReached(data, kind, rec) {
     case 'ruling':
     case 'rating':
     case 'report': return [rec.platformId];
+    case 'review': return [rec.platformId];
+    case 'reviewRow': {
+      const review = get(data, 'review', rec.reviewId);
+      return review ? [review.platformId] : [];
+    }
     default: return [];
   }
 }
@@ -195,4 +200,9 @@ export function hazardRows(data) {
     const worst = platforms.length ? BANDS[Math.min(...platforms.map((p) => BANDS.indexOf(p.band)))] : null;
     return { hazard, platforms, worst };
   });
+}
+
+/** The review in progress on a platform, if any. @param {Data} data @param {string} platformId @returns {Rec | null} */
+export function openReview(data, platformId) {
+  return live(data, 'review').find((r) => r.platformId === platformId && r.state === 'open') ?? null;
 }

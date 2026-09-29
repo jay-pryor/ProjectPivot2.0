@@ -42,4 +42,6 @@ export const ids = Object.freeze({
   ruling: (h, c, p) => `ru:${h}:${c}:${p}`,
   /** @param {string} h @param {string} p */
   rating: (h, p) => `rt:${h}:${p}`,
+  /** @param {string} r a review id @param {string} h */
+  reviewRow: (r, h) => `rr:${r}:${h}`,
 });
