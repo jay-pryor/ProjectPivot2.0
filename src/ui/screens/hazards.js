@@ -5,7 +5,8 @@ import { referencesCard } from './references.js';
 import { tierColumn } from './controls.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
-import { hazardRows, hazardDetail, ratingOf, bandOf, hazardLastReviewed } from '../../core/queries.js';
+import { hazardRows, hazardDetail, ratingOf, ratingsOf, bandOf, worseBand, hazardLastReviewed } from '../../core/queries.js';
+import { platformTab } from './ssra.js';
 import { day } from '../names.js';
 import { BANDS } from '../../core/matrix.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
@@ -75,7 +76,7 @@ export function hazardsView(state, data) {
  * and a row's text changed by double-clicking it.
  * @param {any} state @param {'CausalFactor' | 'Consequence'} name @param {any[]} items @param {string} hazardId
  */
-function textTable(state, name, items, hazardId) {
+export function textTable(state, name, items, hazardId) {
   const kind = name === 'CausalFactor' ? 'causalFactor' : 'consequence';
   const what = name === 'CausalFactor' ? 'causal factor' : 'consequence';
   const editing = (/** @type {any} */ r) => state.editing?.kind === kind && state.editing.id === r.id;
@@ -104,11 +105,16 @@ export function hazardView(state, data, id) {
   if (!d) return notFound();
   const h = d.hazard;
   const tab = state.view?.tab;
+  const platformTabs = d.platforms.map((p) => {
+    const r = ratingsOf(data, h.id, p.platform.id).residual;
+    return /** @type {[string, unknown]} */ ([`p:${p.platform.id}`, html`${p.platform.name} ${bandTag(worseBand(bandOf(r.personnel), bandOf(r.environment)))}`]);
+  });
   const head = html`<p>${go('← Hazards', 'hazards')}</p>
     <div class="doc-head"><span class="doc-id">${idTag(hazardLabel(h))}</span>${statusTag(h.status)}</div>
     <input class="doc-title" name="title" value="${h.title}" required aria-label="Hazard title" ${dataAttrs({ change: 'updateHazard', id: h.id })}>
-    ${pageTabs('hazard', { id: h.id }, tab, historyCount(state, data, 'hazard', h.id))}`;
+    ${pageTabs('hazard', { id: h.id }, tab, historyCount(state, data, 'hazard', h.id), platformTabs, 'Overview')}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'hazard', h.id)}`;
+  if (tab && tab.startsWith('p:')) return html`${head}${platformTab(state, data, h, tab.slice(2))}`;
   const actions = h.status === 'live'
     ? html`<button type="button" ${dataAttrs({ action: 'retireHazard', id: h.id })}>Retire</button>
        ${confirmButton('Delete…', 'Delete this hazard, its causal factors, consequences and control links', dataAttrs({ action: 'deleteHazard', id: h.id }))}`
@@ -146,8 +152,11 @@ export function hazardView(state, data, id) {
             { key: 'platform', label: 'Platforms', width: 520, minWidth: 200, value: (p) => p.platform.name,
               render: (p) => html`<span class="id">${idTag(platformLabel(p.platform))}</span> ${go(p.platform.name, 'platform', { id: p.platform.id })}` },
             { key: 'reportId', label: 'Report ID', width: 320, minWidth: 150, value: (p) => p.reportId, render: (p) => idTag(p.reportId) },
-            { key: 'risk', label: 'Residual risk', width: 300, minWidth: 150, value: (p) => BANDS.indexOf(bandOf(ratingOf(data, h.id, p.platform.id).residual)),
-              render: (p) => bandTag(bandOf(ratingOf(data, h.id, p.platform.id).residual)) },
+            { key: 'personnel', label: 'Residual (personnel)', width: 260, minWidth: 150, value: (p) => BANDS.indexOf(bandOf(ratingsOf(data, h.id, p.platform.id).residual.personnel)),
+              render: (p) => bandTag(bandOf(ratingsOf(data, h.id, p.platform.id).residual.personnel)) },
+            { key: 'environment', label: 'Residual (environment)', width: 260, minWidth: 150, value: (p) => BANDS.indexOf(bandOf(ratingsOf(data, h.id, p.platform.id).residual.environment)),
+              render: (p) => bandTag(bandOf(ratingsOf(data, h.id, p.platform.id).residual.environment)) },
+            { key: 'ssra', label: '', width: 170, minWidth: 120, sortable: false, render: (p) => go('Open SSRA →', 'hazard', { id: h.id, tab: `p:${p.platform.id}` }) },
             { key: 'lastReviewed', label: 'Last reviewed', width: 280, minWidth: 140, value: (p) => hazardLastReviewed(data, h.id, p.platform.id),
               render: (p) => {
                 const at = hazardLastReviewed(data, h.id, p.platform.id);

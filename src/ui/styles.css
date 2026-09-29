@@ -289,3 +289,18 @@ button.small { padding: 2px 9px; font-size: 13px; }
 .riskbar > span { display: block; border: 0; }
 .riskbar .band-eliminated, .riskbar .band-not-credible, .riskbar .band-uncategorised { background: var(--p-line); }
 .small-text { font-size: 12px; }
+
+/* The SSRA on a platform tab */
+.ssra-sec { margin: 0 0 26px; }
+.ssra-sec > h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+.shared-mark { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 4px; background: var(--p-info-bg); color: var(--p-link); }
+.risk-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px; }
+.risk-panel { display: grid; gap: 8px; align-content: start; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 10px; padding: 12px 14px; }
+.risk-panel h3 { margin: 0; font-size: 15px; }
+.risk-field { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.risk-field select { font-weight: 400; border: 1px solid var(--p-muted); background: var(--p-surface-2); }
+.risk-panel textarea, .sfarp textarea { width: 100%; resize: vertical; }
+.risk-level { display: flex; align-items: center; gap: 8px; color: var(--p-muted); }
+.sfarp { display: grid; gap: 12px; max-width: 1100px; }
+.sfarp label { display: grid; gap: 4px; font-weight: 700; }
+.sfarp textarea { font-weight: 400; }
