@@ -7,7 +7,7 @@ import { PivotError } from '../core/errors.js';
 import { newId } from '../core/ids.js';
 import { emptyData, NUMBERED } from '../core/data.js';
 import { epochOf } from '../core/time.js';
-import { entries, unseenOverrides, markNoticesSeen } from '../core/history.js';
+import { entries, unseenOverrides, markNoticesSeen, addComment } from '../core/history.js';
 import * as hazards from '../core/ops/hazards.js';
 import * as controls from '../core/ops/controls.js';
 import * as platforms from '../core/ops/platforms.js';
@@ -32,7 +32,8 @@ const EDITS = {
   retirePlatform: platforms.retirePlatform, deletePlatform: platforms.deletePlatform, linkHazard: platforms.linkHazard,
   unlinkHazard: platforms.unlinkHazard, setReportId: platforms.setReportId,
   confirmControl: assessment.confirmControl, excludeControl: assessment.excludeControl,
-  resetControl: assessment.resetControl, setRating: assessment.setRating,
+  resetControl: assessment.resetControl, setRating: assessment.setRating, setRatingCell: assessment.setRatingCell,
+  addComment,
 };
 
 /** After creating one of these, show it. */
@@ -49,7 +50,7 @@ export function initialState() {
     session: null, recoverable: null, notices: [], view: { name: 'hazards' },
     filters: { hazards: {}, controls: {} }, backups: [], pendingRestore: null,
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
-    tables: {}, editing: null, saving: false,
+    tables: {}, editing: null, saving: false, picker: null,
   };
 }
 
@@ -282,6 +283,28 @@ export function createController(env) {
       if (value) filters[key] = value; else delete filters[key];
       set({ tables: { ...state.tables, [table]: { ...t, filters } } });
     },
+    async openPicker({ picker, hazardId, platformId }) {
+      set({ picker: { picker, ...(hazardId ? { hazardId } : {}), ...(platformId ? { platformId } : {}) } });
+    },
+    async closePicker() {
+      set({ picker: null });
+    },
+    async linkControls(args) {
+      for (const controlId of list(args.controlId)) {
+        await applyEdit('linkControl', { hazardId: args.hazardId, controlId, kind: args[`kind:${controlId}`] || 'preventative' });
+      }
+      set({ picker: null });
+    },
+    async linkHazards(args) {
+      for (const hazardId of list(args.hazardId)) await applyEdit('linkHazard', { hazardId, platformId: args.platformId });
+      set({ picker: null });
+    },
+    async setControlState({ hazardId, controlId, platformId, value }) {
+      const t = { hazardId, controlId, platformId };
+      if (value === 'confirmed') await applyEdit('confirmControl', t);
+      else if (value === 'awaiting') await applyEdit('resetControl', t);
+      else if (value === 'excluded') set({ editing: { kind: 'exclusion', id: `${hazardId}|${controlId}|${platformId}` } });
+    },
     async startEdit({ kind, id }) {
       set({ editing: { kind, id } });
     },
@@ -358,18 +381,26 @@ export function createController(env) {
     },
   };
 
+  /** @param {unknown} v @returns {string[]} */
+  const list = (v) => (Array.isArray(v) ? v : v ? [String(v)] : []);
+
+  /** Make one edit to the working data. @param {string} type @param {Record<string, any>} args */
+  async function applyEdit(type, args) {
+    if (!state.session || !state.profileId) throw new PivotError('no-data', 'Select your profile before changing anything.');
+    const shows = SHOW_CREATED[/** @type {keyof typeof SHOW_CREATED} */ (type)];
+    if (shows && !args.id) args.id = newId();
+    const working = EDITS[/** @type {keyof typeof EDITS} */ (type)](state.session.working, act(), /** @type {any} */ (args));
+    set({ session: { ...state.session, working }, message: null, editing: null });
+    if (shows) set({ view: { name: shows, id: args.id } });
+    await afterChange();
+  }
+
   /** @param {{ type: string, [k: string]: any }} action */
   async function dispatch(action) {
     const { type, ...args } = action;
     try {
       if (type in EDITS) {
-        if (!state.session || !state.profileId) throw new PivotError('no-data', 'Select your profile before changing anything.');
-        const shows = SHOW_CREATED[type];
-        if (shows && !args.id) args.id = newId();
-        const working = EDITS[type](state.session.working, act(), args);
-        set({ session: { ...state.session, working }, message: null, editing: null });
-        if (shows) set({ view: { name: shows, id: args.id } });
-        await afterChange();
+        await applyEdit(type, args);
         return;
       }
       const h = handlers[type];

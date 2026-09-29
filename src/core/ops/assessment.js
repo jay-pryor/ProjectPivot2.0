@@ -68,3 +68,17 @@ export function setRating(data, act, { hazardId, platformId, stage, consequence,
   else rec = created(act, id, { hazardId, platformId, initial: null, residual: null, [stage]: value });
   return commit(data, act, stage === 'initial' ? 'Set initial rating' : 'Set residual rating', [{ kind: 'rating', rec }]);
 }
+
+/**
+ * Set one stage's rating from a matrix cell as a single dropdown gives it: `2C`, or blank for
+ * not entered.
+ * @param {Data} data @param {Act} act
+ * @param {{ hazardId: string, platformId: string, stage: string, value: string }} args
+ */
+export function setRatingCell(data, act, { hazardId, platformId, stage, value }) {
+  const v = String(value ?? '').trim();
+  if (v === '') return setRating(data, act, { hazardId, platformId, stage, consequence: null, likelihood: null });
+  const m = /^([1-5])([A-G])$/.exec(v);
+  if (!m) throw new PivotError('rating.cell', `${v} is not a cell of the risk matrix.`);
+  return setRating(data, act, { hazardId, platformId, stage, consequence: Number(m[1]), likelihood: m[2] });
+}

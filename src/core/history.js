@@ -1,5 +1,6 @@
 import { newId } from './ids.js';
 import { canonicalJson } from './json.js';
+import { PivotError } from './errors.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Rec} Rec */
@@ -108,4 +109,27 @@ export function markNoticesSeen(data, act, entryIds) {
   let d = data;
   for (const entryId of entryIds) d = append(d, { id: newId(), type: 'noticeSeen', at: act.at, by: act.by, entryId });
   return d;
+}
+
+/**
+ * A remark against one history entry: who, when, and what they said. Kept as an entry of its own,
+ * so it merges like the rest of the history and can never be altered afterwards.
+ * @param {Data} data @param {Act} act @param {{ entryId: string, text: string }} args
+ */
+export function addComment(data, act, { entryId, text }) {
+  const t = typeof text === 'string' ? text.trim() : '';
+  if (!t) throw new PivotError('empty', 'A comment cannot be empty.');
+  const target = data.history[entryId];
+  if (!target || target.type !== 'change') throw new PivotError('not-found', 'That history entry no longer exists.');
+  return append(data, { id: newId(), type: 'comment', at: act.at, by: act.by, entryId, text: t });
+}
+
+/** The comments on one history entry, oldest first. @param {Data} data @param {string} entryId */
+export function commentsOn(data, entryId) {
+  return entries(data).filter((e) => e.type === 'comment' && e.entryId === entryId);
+}
+
+/** Every change that reached a platform, oldest first: its own edits, its links, ratings and control decisions. @param {Data} data @param {string} platformId */
+export function historyReaching(data, platformId) {
+  return entries(data).filter((e) => e.type === 'change' && e.platforms.includes(platformId));
 }

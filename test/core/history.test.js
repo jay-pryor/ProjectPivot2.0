@@ -107,3 +107,15 @@ test('an override is shown once to each user whose edit it overrode', () => {
   assert.equal(unseenOverrides(d, 'u3').length, 1, 'seeing it for u2 does not clear it for u3');
   assert.deepEqual(unseenOverrides(d, 'u1'), []);
 });
+
+test('comments on a history entry: kept with who and when, listed for that entry, and never counted as changes', async () => {
+  const { addComment, commentsOn } = await import('../../src/core/history.js');
+  let d = seeded();
+  d = commit(d, act, 'Edit hazard', [{ kind: 'hazard', rec: changed(d.records.hazard.h1, act, { title: 'A' }) }]);
+  const entry = historyOf(d, 'hazard', 'h1')[0];
+  d = addComment(d, later, { entryId: entry.id, text: '  Agreed with the owner  ' });
+  assert.deepEqual(commentsOn(d, entry.id).map((c) => [c.by, c.text]), [['u2', 'Agreed with the owner']]);
+  assert.equal(historyOf(d, 'hazard', 'h1').length, 1, 'a comment is not a change');
+  assert.throws(() => addComment(d, later, { entryId: entry.id, text: ' ' }), (e) => e.code === 'empty');
+  assert.throws(() => addComment(d, later, { entryId: 'nope', text: 'x' }), (e) => e.code === 'not-found');
+});

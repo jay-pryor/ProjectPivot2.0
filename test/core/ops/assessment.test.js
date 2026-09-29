@@ -54,3 +54,12 @@ test('setRating refuses values off the scales, an unknown stage, or a hazard not
   assert.throws(() => setRating(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'final', consequence: '2', likelihood: 'A' }), code('rating.stage'));
   assert.throws(() => setRating(d, act, { hazardId: 'h2', platformId: 'p1', stage: 'initial', consequence: '2', likelihood: 'A' }), code('not-found'));
 });
+
+test('setRatingCell sets a stage from one matrix cell, e.g. "2C"; blank clears it; a cell off the matrix is refused', async () => {
+  const { setRatingCell } = await import('../../../src/core/ops/assessment.js');
+  let d = setRatingCell(seed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', value: '2C' });
+  assert.deepEqual(d.records.rating[ids.rating('h1', 'p1')].residual, { consequence: 2, likelihood: 'C' });
+  d = setRatingCell(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', value: '' });
+  assert.equal(d.records.rating[ids.rating('h1', 'p1')].residual, null);
+  assert.throws(() => setRatingCell(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', value: '7Z' }), (e) => e.code === 'rating.cell');
+});
