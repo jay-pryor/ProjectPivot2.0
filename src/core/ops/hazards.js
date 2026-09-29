@@ -1,6 +1,6 @@
 import { PivotError } from '../errors.js';
 import { newId, hazardLabel } from '../ids.js';
-import { get, put, all, live, created, changed, need, needText } from '../data.js';
+import { get, put, all, live, created, changed, need, needText, NUMBERED } from '../data.js';
 import { commit } from '../apply.js';
 import { platformsOfHazard } from '../queries.js';
 
@@ -102,16 +102,22 @@ export const updateConsequence = conseq.update;
 export const deleteConsequence = conseq.remove;
 
 /**
- * Give each hazard that has no number the next one, oldest first. Run at save time, after the
- * merge, so two users creating hazards at once never take the same number.
+ * Give each hazard, control and platform that has no number the next one of its kind, oldest
+ * first. Run at save time, after the merge, so two users creating records at once never take the
+ * same number; each kind's counter only counts up, so a number is never reused.
  * @param {Data} data
  * @returns {Data}
  */
-export function assignHazardNumbers(data) {
-  const fresh = all(data, 'hazard').filter((h) => h.number == null && h.status !== 'deleted');
-  if (fresh.length === 0) return data;
-  let n = data.nextHazardNumber;
+export function assignNumbers(data) {
   let d = data;
-  for (const h of fresh) d = put(d, 'hazard', { ...h, number: n++ });
-  return { ...d, nextHazardNumber: n };
+  for (const { kind, counter } of NUMBERED) {
+    const fresh = all(d, kind).filter((r) => r.number == null && r.status !== 'deleted');
+    if (fresh.length === 0) continue;
+    let n = /** @type {number} */ (/** @type {any} */ (d)[counter]);
+    for (const r of fresh) d = put(d, kind, { ...r, number: n++ });
+    d = { ...d, [counter]: n };
+  }
+  return d;
 }
+
+export const assignHazardNumbers = assignNumbers;

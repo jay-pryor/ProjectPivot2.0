@@ -11,13 +11,39 @@ export const STATUSES = Object.freeze(['live', 'retired', 'deleted']);
 
 const HEADER_TEXT = ['createdBy', 'createdAt', 'updatedBy', 'updatedAt'];
 
+/** The kinds that get a number a person reads, and the counter that only counts up for each. */
+export const NUMBERED = Object.freeze([
+  { kind: 'hazard', counter: 'nextHazardNumber' },
+  { kind: 'control', counter: 'nextControlNumber' },
+  { kind: 'platform', counter: 'nextPlatformNumber' },
+]);
+
+/**
+ * Bring data written by an earlier version up to date: a kind it has no collection for gets an
+ * empty one, and a counter it lacks starts above every number already in use.
+ * @param {any} value @returns {any}
+ */
+export function normalizeData(value) {
+  if (!isObject(value) || !isObject(value.records)) return value;
+  const records = { ...value.records };
+  for (const k of KINDS) if (!isObject(records[k])) records[k] = {};
+  const out = { ...value, records };
+  for (const { kind, counter } of NUMBERED) {
+    if (!Number.isInteger(out[counter])) {
+      const used = Object.values(records[kind]).map((r) => (isObject(r) && Number.isInteger(r.number) ? r.number : 0));
+      out[counter] = Math.max(0, ...used) + 1;
+    }
+  }
+  return out;
+}
+
 /** @typedef {{ by: string, at: string }} Act who is acting, and when (AEST) */
 /**
  * @typedef {{ id: string, status: 'live' | 'retired' | 'deleted', createdBy: string, createdAt: string,
  *   updatedBy: string, updatedAt: string, [field: string]: any }} Rec
  */
 /**
- * @typedef {{ records: Record<string, Record<string, Rec>>, nextHazardNumber: number,
+ * @typedef {{ records: Record<string, Record<string, Rec>>, nextHazardNumber: number, nextControlNumber: number, nextPlatformNumber: number,
  *   history: Record<string, any>, reportDesign: Record<string, any> }} Data
  */
 
@@ -26,7 +52,7 @@ export function emptyData() {
   /** @type {Record<string, Record<string, Rec>>} */
   const records = {};
   for (const k of KINDS) records[k] = {};
-  return { records, nextHazardNumber: 1, history: {}, reportDesign: {} };
+  return { records, nextHazardNumber: 1, nextControlNumber: 1, nextPlatformNumber: 1, history: {}, reportDesign: {} };
 }
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
@@ -56,7 +82,9 @@ export function validateData(value) {
     }
     for (const k of Object.keys(value.records)) if (!KINDS.includes(k)) problems.push(`records.${k} is not a record kind`);
   }
-  if (!Number.isInteger(value.nextHazardNumber) || value.nextHazardNumber < 1) problems.push('nextHazardNumber is not a whole number from 1');
+  for (const counter of NUMBERED.map((n) => n.counter)) {
+    if (!Number.isInteger(value[counter]) || value[counter] < 1) problems.push(`${counter} is not a whole number from 1`);
+  }
   if (!isObject(value.history)) problems.push('history is missing');
   if (!isObject(value.reportDesign)) problems.push('reportDesign is missing');
   return problems;

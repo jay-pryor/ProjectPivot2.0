@@ -8,7 +8,22 @@ export function newId() {
  * @param {{ number?: number | null, [field: string]: any }} hazard
  */
 export function hazardLabel(hazard) {
-  return hazard.number == null ? 'New' : `H-${String(hazard.number).padStart(4, '0')}`;
+  return numberLabel('H', hazard);
+}
+
+/** @param {{ number?: number | null, [field: string]: any }} control */
+export function controlLabel(control) {
+  return numberLabel('C', control);
+}
+
+/** @param {{ number?: number | null, [field: string]: any }} platform */
+export function platformLabel(platform) {
+  return numberLabel('P', platform);
+}
+
+/** @param {string} prefix @param {{ number?: number | null }} rec */
+function numberLabel(prefix, rec) {
+  return rec.number == null ? 'New' : `${prefix}-${String(rec.number).padStart(4, '0')}`;
 }
 
 /**

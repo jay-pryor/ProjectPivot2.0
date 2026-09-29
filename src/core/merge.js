@@ -1,4 +1,4 @@
-import { KINDS, put } from './data.js';
+import { KINDS, NUMBERED, put } from './data.js';
 import { PivotError } from './errors.js';
 import { sameJson } from './json.js';
 import { checkRules } from './rules.js';
@@ -62,23 +62,32 @@ export function mergeData(base, mine, theirs, act) {
     kind: 'reportDesign', id: 'reportDesign', reason: 'both-changed', mine: mine.reportDesign, theirs: theirs.reportDesign, overriddenBy: null,
   }));
 
-  // A replaced file restarts hazard numbering; a number the other file gave that one of my
-  // loaded hazards already holds is cleared, so the save numbers that hazard afresh.
+  // A replaced file restarts numbering; a number the other file gave that one of my loaded
+  // records already holds is cleared, so the save numbers that record afresh.
   if (missingFromDisk > 0) {
-    const held = new Set(Object.values(records.hazard).filter((h) => base.records.hazard[h.id] !== undefined && h.number != null).map((h) => h.number));
-    for (const h of Object.values(records.hazard)) {
-      if (base.records.hazard[h.id] === undefined && mine.records.hazard[h.id] === undefined && h.number != null && held.has(h.number)) {
-        records.hazard[h.id] = { ...h, number: null };
-        conflicts.set(`hazard:${h.id}`, { kind: 'hazard', id: h.id, reason: 'renumbered', mine: records.hazard[h.id], theirs: h, overriddenBy: h.updatedBy });
+    for (const { kind } of NUMBERED) {
+      const held = new Set(Object.values(records[kind]).filter((r) => base.records[kind][r.id] !== undefined && r.number != null).map((r) => r.number));
+      for (const r of Object.values(records[kind])) {
+        if (base.records[kind][r.id] === undefined && mine.records[kind][r.id] === undefined && r.number != null && held.has(r.number)) {
+          records[kind][r.id] = { ...r, number: null };
+          conflicts.set(`${kind}:${r.id}`, { kind, id: r.id, reason: 'renumbered', mine: records[kind][r.id], theirs: r, overriddenBy: r.updatedBy });
+        }
       }
     }
   }
-  const highest = Math.max(0, ...Object.values(records.hazard).map((h) => h.number ?? 0));
+  /** @type {Record<string, number>} */
+  const counters = {};
+  for (const { kind, counter } of NUMBERED) {
+    const highest = Math.max(0, ...Object.values(records[kind]).map((r) => r.number ?? 0));
+    counters[counter] = Math.max(/** @type {any} */ (theirs)[counter] ?? 1, /** @type {any} */ (mine)[counter] ?? 1, highest + 1);
+  }
 
   /** @type {Data} */
   let data = {
     records,
-    nextHazardNumber: Math.max(theirs.nextHazardNumber, mine.nextHazardNumber, highest + 1),
+    nextHazardNumber: counters.nextHazardNumber,
+    nextControlNumber: counters.nextControlNumber,
+    nextPlatformNumber: counters.nextPlatformNumber,
     history: { ...theirs.history, ...mine.history },
     reportDesign: reportDesign ?? {},
   };

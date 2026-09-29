@@ -18,7 +18,7 @@ function needKind(kind) {
 
 /** @param {Data} data @param {Act} act @param {{ id?: string, title: string, description?: string }} args */
 export function createControl(data, act, { id = newId(), title, description = '' }) {
-  const rec = created(act, id, { title: needText(title, 'A control title'), description: String(description ?? '').trim() });
+  const rec = created(act, id, { number: null, title: needText(title, 'A control title'), description: String(description ?? '').trim() });
   return commit(data, act, 'Create control', [{ kind: 'control', rec }]);
 }
 

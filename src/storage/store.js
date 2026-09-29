@@ -2,10 +2,10 @@ import { epochOf, formatAest, compactStamp } from '../core/time.js';
 import { backupName, backupTime, BACKUP_RE } from './envelope.js';
 import { listNames, removeFile } from './folder.js';
 import { mergeData } from '../core/merge.js';
-import { assignHazardNumbers } from '../core/ops/hazards.js';
+import { assignNumbers } from '../core/ops/hazards.js';
 import { recordOverride } from '../core/history.js';
 import { newStamp, sameStamp, supersededName } from './envelope.js';
-import { emptyData, validateData, needText } from '../core/data.js';
+import { emptyData, validateData, normalizeData, needText } from '../core/data.js';
 import { PivotError } from '../core/errors.js';
 import { newId } from '../core/ids.js';
 import { seal, serialize, openEnvelope } from './envelope.js';
@@ -43,7 +43,7 @@ export async function checkFolder(handle) {
       continue;
     }
     if (kind === 'data') {
-      const problems = validateData(opened.envelope.body);
+      const problems = validateData(normalizeData(opened.envelope.body));
       if (problems.length) failed.push({ file, reason: 'invalid', detail: problems.slice(0, 5).join('; ') });
     }
   }
@@ -54,9 +54,10 @@ export async function checkFolder(handle) {
 async function openData(text) {
   const opened = await openEnvelope(text, 'data');
   if (!opened.ok) throw new PivotError('data.unreadable', `This data file cannot be used: ${opened.detail}.`, { reason: opened.reason });
-  const problems = validateData(opened.envelope.body);
+  const body = normalizeData(opened.envelope.body);
+  const problems = validateData(body);
   if (problems.length) throw new PivotError('data.invalid', `This data file cannot be used: ${problems[0]}.`, { problems });
-  return { data: opened.envelope.body, stamp: opened.envelope.stamp };
+  return { data: body, stamp: opened.envelope.stamp };
 }
 
 /** A data file's text as a restore source: checked like data.json. @param {string} text */
@@ -150,7 +151,7 @@ export async function save(handle, session, profileId, clock, hooks = {}) {
     let conflicts = [];
     let missingFromDisk = 0;
     if (changedOnDisk) ({ data: merged, conflicts, missingFromDisk } = mergeData(session.base, session.working, disk.data, act));
-    merged = assignHazardNumbers(merged);
+    merged = assignNumbers(merged);
     if (conflicts.length) merged = recordOverride(merged, act, conflicts);
     const stamp = newStamp(profileId, at);
     const text = serialize(await seal('data', merged, stamp, at));

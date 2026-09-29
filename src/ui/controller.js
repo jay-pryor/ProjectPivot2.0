@@ -5,7 +5,7 @@ import * as store from '../storage/store.js';
 import { writeMirror, readMirror, clearMirror, hasUnsaved, hasUnsavedRecords, restoreReportDocuments } from '../storage/mirror.js';
 import { PivotError } from '../core/errors.js';
 import { newId } from '../core/ids.js';
-import { emptyData } from '../core/data.js';
+import { emptyData, NUMBERED } from '../core/data.js';
 import { epochOf } from '../core/time.js';
 import { entries, unseenOverrides, markNoticesSeen } from '../core/history.js';
 import * as hazards from '../core/ops/hazards.js';
@@ -233,13 +233,18 @@ export function createController(env) {
       const during = state.session.working !== startWorking;
       let working = during ? mergeData(startWorking, state.session.working, r.data, act()).data : r.data;
       if (during) {
-        // The numbers the save gave stay with their hazards, whatever was edited meanwhile.
-        const hazards = { ...working.records.hazard };
-        for (const h of Object.values(hazards)) {
-          const savedNumber = r.data.records.hazard[h.id]?.number;
-          if (h.number == null && savedNumber != null) hazards[h.id] = { ...h, number: savedNumber };
+        // The numbers the save gave stay with their records, whatever was edited meanwhile.
+        const records = { ...working.records };
+        for (const { kind, counter } of NUMBERED) {
+          const recs = { ...records[kind] };
+          for (const rec of Object.values(recs)) {
+            const savedNumber = r.data.records[kind][rec.id]?.number;
+            if (rec.number == null && savedNumber != null) recs[rec.id] = { ...rec, number: savedNumber };
+          }
+          records[kind] = recs;
+          working = { ...working, [counter]: /** @type {any} */ (r.data)[counter] };
         }
-        working = { ...working, records: { ...working.records, hazard: hazards }, nextHazardNumber: r.data.nextHazardNumber };
+        working = { ...working, records };
       }
       set({ session: { base: r.data, working, loadedStamp: r.stamp } });
       if (during) await afterChange(); else clearMirror(env.storage);
