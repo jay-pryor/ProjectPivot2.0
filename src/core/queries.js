@@ -59,6 +59,9 @@ export function platformsReached(data, kind, rec) {
     case 'existingControl':
     case 'report': return [rec.platformId];
     case 'review': return [rec.platformId];
+    case 'hazardPhase': return platformsOfHazard(data, rec.hazardId);
+    case 'phase':
+      return sortedUnique(live(data, 'hazardPhase').filter((l) => l.phaseId === rec.id).flatMap((l) => platformsOfHazard(data, l.hazardId)));
     case 'reference':
       return sortedUnique(live(data, 'referenceLink').filter((l) => l.referenceId === rec.id).flatMap((l) => targetPlatforms(data, l.targetKind, l.targetId)));
     case 'referenceLink': return sortedUnique(targetPlatforms(data, rec.targetKind, rec.targetId));
@@ -485,4 +488,21 @@ export function existingUsage(data, controlId) {
   return live(data, 'existingControl').filter((l) => l.controlId === controlId).map((l) => ({
     hazard: /** @type {Rec} */ (get(data, 'hazard', l.hazardId)), platform: /** @type {Rec} */ (get(data, 'platform', l.platformId)), kind: /** @type {string} */ (l.kind),
   }));
+}
+
+/** The phases that are not deleted, in the order they were added. @param {Data} data */
+export function listPhases(data) {
+  return all(data, 'phase').filter((p) => p.status !== 'deleted').sort(byCreated);
+}
+
+/** A hazard's lifecycle phases, in the list's order. @param {Data} data @param {string} hazardId */
+export function phasesOf(data, hazardId) {
+  return live(data, 'hazardPhase').filter((l) => l.hazardId === hazardId)
+    .map((link) => ({ link, phase: /** @type {Rec} */ (get(data, 'phase', link.phaseId)) }))
+    .sort((a, b) => byCreated(a.phase, b.phase));
+}
+
+/** The hazards a phase is ticked on. @param {Data} data @param {string} phaseId */
+export function phaseUsage(data, phaseId) {
+  return live(data, 'hazardPhase').filter((l) => l.phaseId === phaseId).map((l) => /** @type {Rec} */ (get(data, 'hazard', l.hazardId))).sort(byNumber);
 }

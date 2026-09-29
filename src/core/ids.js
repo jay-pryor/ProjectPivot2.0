@@ -53,6 +53,8 @@ export const ids = Object.freeze({
   sfarp: (h, p) => `sf:${h}:${p}`,
   /** @param {string} h @param {string} p @param {string} c */
   existingControl: (h, p, c) => `ec:${h}:${p}:${c}`,
+  /** @param {string} h @param {string} ph a phase id */
+  hazardPhase: (h, ph) => `hph:${h}:${ph}`,
   /** @param {string} r a review id @param {string} h */
   reviewRow: (r, h) => `rr:${r}:${h}`,
   /** @param {string} r a reference id @param {string} k the target's kind @param {string} t the target's id */

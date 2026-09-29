@@ -8,6 +8,7 @@ export const KINDS = Object.freeze([
   'review', 'reviewRow',
   'reference', 'referenceLink',
   'assessment', 'sfarp', 'existingControl',
+  'phase', 'hazardPhase', 'safetyReport',
 ]);
 
 export const STATUSES = Object.freeze(['live', 'retired', 'deleted']);
