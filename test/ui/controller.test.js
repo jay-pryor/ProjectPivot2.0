@@ -258,3 +258,26 @@ test('busy stays on until every running action has finished', async () => {
   await restoring;
   assert.equal(c.getState().busy, false);
 });
+
+test('Final review C1: ticking a review someone else has completed: the save goes through and says the completed review was kept', async () => {
+  const f = new MemoryFolder();
+  const a = createController(env(f));
+  const ada = await openAs(a, 'Ada');
+  await a.dispatch({ type: 'createHazard', id: 'h1', title: 'Fire' });
+  await a.dispatch({ type: 'createPlatform', id: 'p1', name: 'Alpha', ownerId: ada });
+  await a.dispatch({ type: 'linkHazard', hazardId: 'h1', platformId: 'p1' });
+  await a.dispatch({ type: 'setSchedule', platformId: 'p1', months: '6', due: '2026-12-31' });
+  await a.dispatch({ type: 'startReview', id: 'r1', platformId: 'p1' });
+  await a.dispatch({ type: 'save' });
+  const g = createController(env(f));
+  await openAs(g, 'Grace');
+  await a.dispatch({ type: 'completeReview', reviewId: 'r1' });
+  await a.dispatch({ type: 'save' });
+  await g.dispatch({ type: 'tickReviewRow', reviewId: 'r1', hazardId: 'h1', reviewed: 'true' });
+  await g.dispatch({ type: 'save' });
+  const m = g.getState().message;
+  assert.notEqual(m.kind, 'error', m.text);
+  assert.doesNotMatch(m.text, /replaced by yours/);
+  assert.ok(m.items.some((i) => /already completed by Ada/.test(i)), JSON.stringify(m.items));
+  assert.equal((await load(f.handle)).data.records.review.r1.state, 'completed');
+});

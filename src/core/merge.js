@@ -75,6 +75,8 @@ export function mergeData(base, mine, theirs, act) {
       }
     }
   }
+  keepCompletedReviews(records, mine, theirs, act, conflicts);
+
   /** @type {Record<string, number>} */
   const counters = {};
   for (const { kind, counter } of NUMBERED) {
@@ -113,4 +115,41 @@ export function mergeData(base, mine, theirs, act) {
     }
   }
   throw new PivotError('merge.rules', 'Your changes and the other saves could not be combined without breaking a rule. Nothing was saved.', { violations: checkRules(data) });
+}
+
+/**
+ * A completed review is never changed again, whichever side saved last: if either side completed
+ * it, that side's review and its rows are kept (mine, if both completed), and any row only the
+ * other side has is dropped. Each record this replaces is a conflict naming whose edit was lost.
+ * @param {Data['records']} records the merged records, changed in place
+ * @param {Data} mine @param {Data} theirs @param {Act} act
+ * @param {Map<string, Conflict>} conflicts
+ */
+function keepCompletedReviews(records, mine, theirs, act, conflicts) {
+  const completed = (/** @type {any} */ r) => Boolean(r && r.status === 'live' && r.state === 'completed');
+  for (const id of new Set([...Object.keys(mine.records.review), ...Object.keys(theirs.records.review)])) {
+    const src = completed(mine.records.review[id]) ? mine : completed(theirs.records.review[id]) ? theirs : null;
+    if (!src) continue;
+    const other = src === mine ? theirs : mine;
+    const loser = src === mine ? other.records.review[id]?.updatedBy ?? null : act.by;
+    /** @param {string} kind @param {string} rid @param {any} want */
+    const keep = (kind, rid, want) => {
+      const cur = records[kind][rid];
+      if (sameJson(cur, want)) return;
+      records[kind][rid] = want;
+      conflicts.set(`${kind}:${rid}`, {
+        kind, id: rid, reason: 'review-completed', overriddenBy: loser,
+        mine: mine.records[kind][rid] ?? null, theirs: theirs.records[kind][rid] ?? null,
+      });
+    };
+    keep('review', id, src.records.review[id]);
+    const rowIds = new Set([...Object.keys(mine.records.reviewRow), ...Object.keys(theirs.records.reviewRow)]
+      .filter((rid) => (mine.records.reviewRow[rid] ?? theirs.records.reviewRow[rid]).reviewId === id));
+    for (const rid of rowIds) {
+      const want = src.records.reviewRow[rid];
+      const cur = records.reviewRow[rid];
+      if (want) keep('reviewRow', rid, want);
+      else if (cur && cur.status !== 'deleted') keep('reviewRow', rid, { ...cur, status: 'deleted', updatedBy: act.by, updatedAt: act.at });
+    }
+  }
 }

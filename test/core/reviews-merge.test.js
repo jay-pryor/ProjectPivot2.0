@@ -5,7 +5,7 @@ import { checkRules } from '../../src/core/rules.js';
 import { ids } from '../../src/core/ids.js';
 import { put, changed } from '../../src/core/data.js';
 import { retirePlatform, linkHazard } from '../../src/core/ops/platforms.js';
-import { setSchedule, startReview, markRow, completeReview, abandonReview } from '../../src/core/ops/reviews.js';
+import { setSchedule, startReview, markRow, completeReview, abandonReview, setReviewOutcome } from '../../src/core/ops/reviews.js';
 import { seed } from '../helpers.js';
 
 const setup = { by: 'u1', at: '2026-09-28T09:00:00+10:00' };
@@ -95,4 +95,29 @@ test('a row they add to a review I completed, for a hazard only they linked, is 
   const { data } = mergeData(b, completeReview(b, me, { reviewId: 'r1' }), theirs, saveAct);
   assert.equal(data.records.reviewRow[ids.reviewRow('r1', 'h2')].status, 'deleted');
   assert.deepEqual(checkRules(data), []);
+});
+
+test('Final C1: a tick made after someone else completed the review is not kept, and the save still goes through', () => {
+  const b = base();
+  const theirs = completeReview(b, { by: 'them', at: '2026-09-28T12:00:00+10:00' }, { reviewId: 'r1' });
+  const mine = markRow(b, { by: 'me', at: '2026-09-28T12:30:00+10:00' }, { reviewId: 'r1', hazardId: 'h1', reviewed: true });
+  const { data, conflicts } = mergeData(b, mine, theirs, saveAct);
+  assert.equal(data.records.review.r1.state, 'completed');
+  assert.equal(data.records.reviewRow[ids.reviewRow('r1', 'h1')].reviewed, false, 'the completed version of the row');
+  assert.ok(conflicts.some((c) => c.kind === 'reviewRow' && c.reason === 'review-completed' && c.overriddenBy === 'me'));
+  assert.deepEqual(checkRules(data), []);
+});
+
+test('Final I1: a review they completed stays completed when I had changed its outcome or abandoned it', () => {
+  const b = base();
+  const theirs = completeReview(b, them, { reviewId: 'r1' });
+  for (const mine of [setReviewOutcome(b, me, { reviewId: 'r1', outcome: 'Mine' }), abandonReview(b, me, { reviewId: 'r1' })]) {
+    const { data, conflicts } = mergeData(b, mine, theirs, saveAct);
+    assert.equal(data.records.review.r1.status, 'live');
+    assert.equal(data.records.review.r1.state, 'completed');
+    assert.equal(data.records.platform.p1.reviewDue, '2027-04-30');
+    assert.equal(data.records.reviewRow[ids.reviewRow('r1', 'h1')].status, 'live');
+    assert.ok(conflicts.some((c) => c.kind === 'review' && c.id === 'r1' && c.reason === 'review-completed'));
+    assert.deepEqual(checkRules(data), []);
+  }
 });

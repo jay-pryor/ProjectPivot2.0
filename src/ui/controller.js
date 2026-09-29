@@ -134,6 +134,14 @@ export function createController(env) {
       const n = r.missingFromDisk;
       kept.unshift(`${n} ${n === 1 ? 'record was' : 'records were'} missing from data.json on disk (the file had been replaced) and ${n === 1 ? 'is' : 'are'} kept.`);
     }
+    // A review the other user completed is kept over this user's own changes to it.
+    const ownLost = r.conflicts.filter((c) => c.reason === 'review-completed' && c.overriddenBy === state.profileId);
+    if (ownLost.length) {
+      const reviews = new Set(ownLost.map((c) => (c.kind === 'review' ? c.id : (c.theirs ?? c.mine)?.reviewId)));
+      kept.unshift(`${reviews.size === 1 ? 'A review you changed was' : `${reviews.size} reviews you changed were`} already completed by ${who}, so the completed ${reviews.size === 1 ? 'review is' : 'reviews are'} kept and your changes to ${reviews.size === 1 ? 'it' : 'them'} are not.`);
+      r = { ...r, conflicts: r.conflicts.filter((c) => !ownLost.includes(c)) };
+      if (r.conflicts.length === 0) return { kind: 'warning', text: `Saved. ${who} had saved since you opened Pivot; their changes are merged in.`, items: kept };
+    }
     if (r.conflicts.length === 0 && r.missingFromDisk > 0) {
       return { kind: 'warning', text: `Saved. ${who} had saved a different data.json since you opened Pivot; both are merged.`, items: kept };
     }
