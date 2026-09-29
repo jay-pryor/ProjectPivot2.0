@@ -7,8 +7,8 @@
   --p-line: #323843;
   --p-fg: #e6e8ec;
   --p-muted: #98a2b3;
-  --p-accent: #6aa7ff;
-  --p-accent-fg: #0b1220;
+  --p-accent: #fa9a26; /* the orange of COM in the HIGHCOM logo */
+  --p-accent-fg: #1a1206;
   --p-danger: #ff6b61;
   --p-bar: #0c0e11;
   --p-bar-fg: #e6e8ec;
@@ -30,8 +30,8 @@
   --p-line: #d0d7de;
   --p-fg: #1b1f23;
   --p-muted: #59636e;
-  --p-accent: #1f5fb0;
-  --p-accent-fg: #ffffff;
+  --p-accent: #fa9a26;
+  --p-accent-fg: #1a1206;
   --p-danger: #b3261e;
   --p-bar: #24292f;
   --p-bar-fg: #ffffff;

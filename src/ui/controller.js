@@ -58,7 +58,7 @@ const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', createP
 const BACKUP_CHECK_MS = 60_000;
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
-const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete']);
+const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder']);
 
 export function initialState() {
   return {
@@ -66,7 +66,7 @@ export function initialState() {
     session: null, recoverable: null, notices: [], view: { name: 'hazards' },
     filters: { hazards: {}, controls: {} }, backups: [], pendingRestore: null,
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
-    tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null,
+    tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
   };
 }
@@ -76,12 +76,15 @@ export function initialState() {
  *   pickFolder: () => Promise<FileSystemDirectoryHandle>,
  *   pickSaveFile: (name: string) => Promise<FileSystemFileHandle>,
  *   pickOpenFile: () => Promise<string>, minSaveMs?: number,
- *   openFile?: (file: File, name: string) => void, copyText?: (text: string) => Promise<void> }} env  minSaveMs: shortest time a save shows as saving (default 900)
+ *   openFile?: (file: File, name: string) => void, copyText?: (text: string) => Promise<void>,
+ *   rememberFolder?: (handle: FileSystemDirectoryHandle) => Promise<void>, recallFolder?: () => Promise<any> }} env  minSaveMs: shortest time a save shows as saving (default 900)
  */
 export function createController(env) {
   let state = initialState();
   /** @type {FileSystemDirectoryHandle | null} */
   let handle = null;
+  /** The folder chosen last time, kept by the browser, until it is reconnected to. @type {any} */
+  let remembered = null;
   let lastBackupCheck = -Infinity;
   let running = 0;
   /** When this session opened the data: the acknowledgement start, if the data has none yet. */
@@ -195,16 +198,31 @@ export function createController(env) {
 
   /** @type {Record<string, (args: any) => Promise<void>>} */
   const handlers = {
+    async recallFolder() {
+      // The folder chosen last time, if the browser kept it; opening it again needs a click.
+      try {
+        remembered = (await env.recallFolder?.()) ?? null;
+      } catch {
+        remembered = null;
+      }
+      set({ lastFolder: remembered ? remembered.name || 'the last folder' : null });
+    },
+    async reconnectFolder() {
+      const h = remembered;
+      if (!h) throw new PivotError('not-found', 'There is no folder to reconnect to. Choose one.');
+      // Asked straight away, while the click still counts as the person's own action.
+      const answer = h.requestPermission ? await h.requestPermission({ mode: 'readwrite' }) : 'granted';
+      if (answer !== 'granted') {
+        set({ message: { kind: 'error', text: `Pivot was not given access to ${h.name}. Reconnect and allow it, or choose the folder again.` } });
+        return;
+      }
+      await openFolder(h);
+    },
     async chooseFolder() {
-      handle = await env.pickFolder();
-      const check = await store.checkFolder(handle);
-      const profilesBad = check.failed.some((x) => x.file === store.FILES.profiles);
-      const dataBlocked = check.failed.some((x) => x.file === store.FILES.data);
-      set({
-        folderName: handle.name, check, dataBlocked, message: null,
-        profiles: profilesBad ? [] : await store.readProfiles(handle),
-        screen: check.failed.length ? 'check' : 'profile',
-      });
+      const h = await env.pickFolder();
+      try { await env.rememberFolder?.(h); } catch { /* remembering is a convenience; opening goes on without it */ }
+      remembered = h;
+      await openFolder(h);
     },
     async continueFromCheck() {
       if (state.check.failed.some((x) => x.file === store.FILES.profiles)) return;
@@ -531,6 +549,19 @@ export function createController(env) {
   const list = (v) => (Array.isArray(v) ? v : v ? [String(v)] : []);
 
   /** Make one edit to the working data. @param {string} type @param {Record<string, any>} args */
+  /** Open a folder the person chose, or allowed again: check its files, then ask who they are. @param {any} h */
+  async function openFolder(h) {
+    handle = h;
+    const check = await store.checkFolder(h);
+    const profilesBad = check.failed.some((x) => x.file === store.FILES.profiles);
+    const dataBlocked = check.failed.some((x) => x.file === store.FILES.data);
+    set({
+      folderName: h.name, check, dataBlocked, message: null,
+      profiles: profilesBad ? [] : await store.readProfiles(h),
+      screen: check.failed.length ? 'check' : 'profile',
+    });
+  }
+
   async function applyEdit(type, args) {
     if (!state.session || !state.profileId) throw new PivotError('no-data', 'Select your profile before changing anything.');
     const shows = SHOW_CREATED[/** @type {keyof typeof SHOW_CREATED} */ (type)];

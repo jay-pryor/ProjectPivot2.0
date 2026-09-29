@@ -7,7 +7,10 @@ import { profileName, recordName, when, KIND_LABEL } from '../names.js';
 export function openScreen(state) {
   return html`<div class="start"><h1 class="brand-title">${raw(FULCRUM_SVG)}PIVOT</h1>
     <p>Choose the shared data folder. A new, empty folder starts an empty register.</p>
-    <button type="button" class="primary" ${dataAttrs({ action: 'chooseFolder' })}>Choose data folder…</button>
+    ${state.lastFolder
+      ? html`<div class="row"><button type="button" class="primary" ${dataAttrs({ action: 'reconnectFolder' })}>Reconnect to ${state.lastFolder}</button>
+        <button type="button" ${dataAttrs({ action: 'chooseFolder' })}>Choose a different folder…</button></div>`
+      : html`<button type="button" class="primary" ${dataAttrs({ action: 'chooseFolder' })}>Choose data folder…</button>`}
     ${messages(state)}</div>`;
 }
 
