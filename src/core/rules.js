@@ -56,5 +56,28 @@ export function checkRules(data) {
     const hp = ids.hazardPlatform(r.hazardId, r.platformId);
     if (!liveRec('hazardPlatform', hp)) out.push({ rule: 'rating-without-platform-link', message: 'A rating exists for a platform the hazard is not on.', records: [{ kind: 'rating', id: r.id }, { kind: 'hazardPlatform', id: hp }] });
   }
+  // Reviews: an open review needs a live platform, and there is one at a time per platform.
+  /** @type {Map<string, any>} */
+  const openOn = new Map();
+  for (const r of live(data, 'review')) {
+    if (r.state !== 'open') continue;
+    const p = get(data, 'platform', r.platformId);
+    if (!p || p.status !== 'live') {
+      out.push({ rule: 'review-on-platform-not-live', message: 'A review is in progress on a platform that is not live.', records: [{ kind: 'review', id: r.id }, { kind: 'platform', id: r.platformId }] });
+    }
+    const first = openOn.get(r.platformId);
+    if (first) out.push({ rule: 'two-open-reviews', message: 'A platform has two reviews in progress.', records: [{ kind: 'review', id: first.id }, { kind: 'review', id: r.id }] });
+    else openOn.set(r.platformId, r);
+  }
+  // A review's rows go with it, and a completed review is never changed again.
+  for (const row of live(data, 'reviewRow')) {
+    const r = get(data, 'review', row.reviewId);
+    const reviewLive = Boolean(r && r.status === 'live');
+    if (!reviewLive) {
+      out.push({ rule: 'review-row-orphaned', message: 'A review row belongs to a review that no longer exists.', records: [{ kind: 'review', id: row.reviewId }, { kind: 'reviewRow', id: row.id }] });
+    } else if (r && r.state === 'completed' && row.updatedAt > r.completedAt) {
+      out.push({ rule: 'completed-review-changed', message: 'A completed review was changed after it was completed.', records: [{ kind: 'reviewRow', id: row.id }] });
+    }
+  }
   return out;
 }

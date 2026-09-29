@@ -3,6 +3,7 @@ import { createHazard, updateHazard, retireHazard, deleteHazard, restoreRecord, 
 import { createControl, updateControl, retireControl, deleteControl, linkControl, unlinkControl } from '../../src/core/ops/controls.js';
 import { createPlatform, linkHazard, unlinkHazard, setReportId, retirePlatform } from '../../src/core/ops/platforms.js';
 import { confirmControl, excludeControl, resetControl, setRating } from '../../src/core/ops/assessment.js';
+import { setSchedule, startReview, markRow, setReviewOutcome, completeReview, abandonReview } from '../../src/core/ops/reviews.js';
 
 /** A small, seeded pseudo-random generator (mulberry32), so a failure can be replayed. @param {number} seed */
 export function prng(seed) {
@@ -28,6 +29,7 @@ export function randomEdit(d, rand, act) {
   const ct = Object.keys(d.records.control);
   const pl = Object.keys(d.records.platform);
   const cf = Object.keys(d.records.causalFactor);
+  const rv = Object.keys(d.records.review);
   const n = () => String(Math.floor(rand() * 1000));
   const triple = () => ({ hazardId: pick(rand, hz), controlId: pick(rand, ct), platformId: pick(rand, pl) });
   const actions = [
@@ -53,6 +55,12 @@ export function randomEdit(d, rand, act) {
     () => excludeControl(d, act, { ...triple(), reason: `Reason ${n()}` }),
     () => resetControl(d, act, triple()),
     () => setRating(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), stage: pick(rand, ['initial', 'residual']), consequence: 1 + Math.floor(rand() * 5), likelihood: pick(rand, [...'ABCDEFG']) }),
+    () => setSchedule(d, act, { platformId: pick(rand, pl), months: 1 + Math.floor(rand() * 12), due: `2026-${String(1 + Math.floor(rand() * 12)).padStart(2, '0')}-28` }),
+    () => startReview(d, act, { platformId: pick(rand, pl) }),
+    () => markRow(d, act, { reviewId: pick(rand, rv), hazardId: pick(rand, hz), reviewed: rand() < 0.7, note: `Note ${n()}` }),
+    () => setReviewOutcome(d, act, { reviewId: pick(rand, rv), outcome: `Outcome ${n()}` }),
+    () => completeReview(d, act, { reviewId: pick(rand, rv) }),
+    () => abandonReview(d, act, { reviewId: pick(rand, rv) }),
   ];
   try {
     return pick(rand, actions)();

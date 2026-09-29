@@ -81,6 +81,8 @@ export function setReviewOutcome(data, act, { reviewId, outcome }) {
  * date after today: a late review does not pull the schedule forward, an early one does not push
  * it out, and one completed several periods late does not leave the platform still overdue. Every
  * hazard on the platform with no row gets one, not reviewed, so the review records what it covered.
+ * Every row is marked final, so a merge sees the completion as a change to each row: another
+ * user's abandoning the same review then conflicts with it, and the completed rows are kept.
  * @param {Data} data @param {Act} act @param {{ reviewId: string }} args
  */
 export function completeReview(data, act, { reviewId }) {
@@ -99,8 +101,9 @@ export function completeReview(data, act, { reviewId }) {
   for (const link of live(data, 'hazardPlatform').filter((l) => l.platformId === p.id)) {
     const id = ids.reviewRow(reviewId, link.hazardId);
     const row = get(data, 'reviewRow', id);
-    if (!row || row.status !== 'live') recs.push({ kind: 'reviewRow', rec: created(act, id, { reviewId, hazardId: link.hazardId, reviewed: false, note: '' }) });
+    if (!row || row.status !== 'live') recs.push({ kind: 'reviewRow', rec: created(act, id, { reviewId, hazardId: link.hazardId, reviewed: false, note: '', final: true }) });
   }
+  for (const row of live(data, 'reviewRow').filter((x) => x.reviewId === reviewId)) recs.push({ kind: 'reviewRow', rec: changed(row, act, { final: true }) });
   recs.push({ kind: 'review', rec: changed(r, act, { state: 'completed', dueBefore: p.reviewDue, dueAfter, completedBy: act.by, completedAt: act.at }) });
   recs.push({ kind: 'platform', rec: changed(p, act, { reviewDue: dueAfter }) });
   return commit(data, act, 'Complete review', recs);
