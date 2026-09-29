@@ -69,7 +69,7 @@ export function initialState() {
  *   pickFolder: () => Promise<FileSystemDirectoryHandle>,
  *   pickSaveFile: (name: string) => Promise<FileSystemFileHandle>,
  *   pickOpenFile: () => Promise<string>, minSaveMs?: number,
- *   openFile?: (file: File) => void, copyText?: (text: string) => Promise<void> }} env  minSaveMs: shortest time a save shows as saving (default 900)
+ *   openFile?: (file: File, name: string) => void, copyText?: (text: string) => Promise<void> }} env  minSaveMs: shortest time a save shows as saving (default 900)
  */
 export function createController(env) {
   let state = initialState();
@@ -247,7 +247,8 @@ export function createController(env) {
     async go({ view, id, hazardId, platformId, tab, reviewId }) {
       set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
-      if (view === 'references' || view === 'reference') await handlers.checkReferenceFiles();
+      if (view === 'references') await handlers.checkReferenceFiles();
+      if (view === 'reference') await handlers.checkReferenceFiles({ id });
     },
     async save() {
       if (!state.session) throw new PivotError('no-data', 'There is nothing to save yet.');
@@ -326,7 +327,7 @@ export function createController(env) {
       const f = chosenFile(file);
       const stored = f ? await storeFile(id, 1, f) : null;
       await applyEdit('createReference', { id, title, url, path, file: stored });
-      await handlers.checkReferenceFiles();
+      await handlers.checkReferenceFiles({ id });
     },
     async uploadReferenceFile({ id, file }) {
       const r = state.session?.working.records.reference[id];
@@ -334,22 +335,28 @@ export function createController(env) {
       const f = chosenFile(file);
       if (!f) throw new PivotError('reference.file', 'Choose a file to upload.');
       await applyEdit('attachFile', { id, file: await storeFile(id, 1 + (r.file ? 1 : 0) + r.pastFiles.length, f) });
-      await handlers.checkReferenceFiles();
+      await handlers.checkReferenceFiles({ id });
     },
     async openReferenceFile({ stored }) {
       if (!handle) throw new PivotError('no-data', 'Open the data folder first.');
       const file = await store.openReferenceFile(handle, stored);
-      env.openFile?.(file);
+      // Shown or downloaded under the name it was uploaded with, not its name in the folder.
+      const known = Object.values(state.session?.working.records.reference ?? {}).flatMap((r) => [r.file, ...r.pastFiles]).find((f) => f && f.stored === stored);
+      env.openFile?.(file, known?.name ?? file.name);
     },
     async copyPath({ path }) {
       await env.copyText?.(path);
       set({ message: { kind: 'info', text: 'Copied the path.' } });
     },
-    async checkReferenceFiles() {
+    async checkReferenceFiles({ id } = {}) {
       if (!handle || !state.session) return;
-      const paths = Object.values(state.session.working.records.reference).filter((r) => r.status !== 'deleted')
-        .flatMap((r) => [r.file, ...r.pastFiles]).filter(Boolean).map((f) => f.stored);
-      set({ missingFiles: await store.missingFiles(handle, [...new Set(paths)]) });
+      // One reference's page checks only its files; the list checks them all. Each check updates
+      // only the files it looked at, so checks that overlap do not undo each other.
+      const refs = Object.values(state.session.working.records.reference).filter((r) => r.status !== 'deleted' && (!id || r.id === id));
+      const paths = [...new Set(refs.flatMap((r) => [r.file, ...r.pastFiles]).filter(Boolean).map((f) => f.stored))];
+      const missing = await store.missingFiles(handle, paths);
+      const checked = new Set(paths);
+      set({ missingFiles: [...state.missingFiles.filter((p) => !checked.has(p)), ...missing] });
     },
     async linkReferences(args) {
       for (const referenceId of list(args.referenceId)) await applyEdit('linkReference', { referenceId, targetKind: args.targetKind, targetId: args.targetId });

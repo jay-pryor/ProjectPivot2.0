@@ -1,6 +1,7 @@
 import { createController } from './ui/controller.js';
 import { mount } from './ui/mount.js';
 import { systemClock } from './core/time.js';
+import { viewableType } from './ui/files.js';
 
 /** localStorage can be missing or refused by policy; the mirror reports that as a warning. */
 function browserStorage() {
@@ -25,15 +26,15 @@ const controller = createController({
     const [h] = await w.showOpenFilePicker({ types: [{ description: 'Pivot data file', accept: { 'application/json': ['.json'] } }] });
     return (await h.getFile()).text();
   },
-  openFile: (file) => {
-    const url = URL.createObjectURL(file);
-    // A new tab shows PDFs and images; where the browser blocks it, the file downloads instead.
-    if (!window.open(url, '_blank')) {
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      a.click();
-    }
+  openFile: (file, name = file.name) => {
+    // Only PDFs, images and plain text open in a tab, re-typed by their extension so a file cannot
+    // pass itself off as a web page; everything else downloads. The tab gets no handle on Pivot.
+    const type = viewableType(name);
+    const url = URL.createObjectURL(type ? new Blob([file], { type }) : file);
+    const a = document.createElement('a');
+    a.href = url;
+    if (type) { a.target = '_blank'; a.rel = 'noopener'; } else a.download = name;
+    a.click();
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   },
   copyText: (text) => navigator.clipboard.writeText(text),

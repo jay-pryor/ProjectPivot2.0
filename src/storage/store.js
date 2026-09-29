@@ -255,7 +255,8 @@ export async function storeReferenceFile(handle, referenceId, n, file) {
   let k = n;
   let stored = '';
   do {
-    stored = `${FILES.files}/${referenceId}/${k}-${safeName(file.name)}`;
+    // A short random part as well, so two uploads at the same moment can never pick one path.
+    stored = `${FILES.files}/${referenceId}/${k}-${newId().slice(0, 8)}-${safeName(file.name)}`;
     k += 1;
   } while (await exists(handle, stored));
   await writeWhole(handle, stored, file);
@@ -269,9 +270,25 @@ export async function openReferenceFile(handle, stored) {
   return f;
 }
 
-/** The stored paths not found in the folder. @param {Dir} handle @param {string[]} paths */
+/**
+ * The stored paths not found in the folder: one listing per reference folder, all at once. A
+ * folder that cannot be read counts as unknown, not missing.
+ * @param {Dir} handle @param {string[]} paths
+ */
 export async function missingFiles(handle, paths) {
-  const out = [];
-  for (const p of paths) if (!(await exists(handle, p))) out.push(p);
-  return out;
+  /** @type {Map<string, string[]>} */
+  const byDir = new Map();
+  for (const p of paths) {
+    const dir = p.slice(0, p.lastIndexOf('/'));
+    byDir.set(dir, [...(byDir.get(dir) ?? []), p]);
+  }
+  const found = await Promise.all([...byDir].map(async ([dir, ps]) => {
+    try {
+      const names = new Set(await listNames(handle, dir));
+      return ps.filter((p) => !names.has(p.slice(dir.length + 1)));
+    } catch {
+      return [];
+    }
+  }));
+  return found.flat();
 }

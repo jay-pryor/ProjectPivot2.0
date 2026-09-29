@@ -11,7 +11,7 @@ function setup() {
   const copied = [];
   const c = createController({ clock: fixedClock('2026-09-28T10:00:00+10:00'), storage: new MemoryStorage(), minSaveMs: 0,
     pickFolder: async () => f.handle, pickSaveFile: async (n) => f.handle.getFileHandle(n, { create: true }), pickOpenFile: async () => null,
-    openFile: (file) => opened.push(file), copyText: async (t) => { copied.push(t); } });
+    openFile: (file, name) => opened.push(Object.assign(file, { shownAs: name })), copyText: async (t) => { copied.push(t); } });
   return { f, c, opened, copied };
 }
 async function ready() {
@@ -33,7 +33,7 @@ test('adding a reference with a file stores the file first, then shows the new r
   await c.dispatch({ type: 'addReference', title: 'Safety case', url: '', path: '', file: pdf('SC.pdf', 'v1') });
   const r = R(c);
   assert.equal(r.title, 'Safety case');
-  assert.equal(r.file.stored, `files/${r.id}/1-SC.pdf`);
+  assert.match(r.file.stored, new RegExp(`^files/${r.id}/1-[0-9a-f]{8}-SC\\.pdf$`));
   assert.deepEqual([r.file.name, r.file.size, r.file.addedAt], ['SC.pdf', 2, '2026-09-28T10:00:00+10:00']);
   assert.equal(f.read(r.file.stored), 'v1');
   assert.deepEqual([c.getState().view.name, c.getState().view.id], ['reference', r.id]);
@@ -52,14 +52,16 @@ test('a new revision is stored alongside; the old one stays openable; a missing 
   await c.dispatch({ type: 'addReference', title: 'Spec', url: '', path: '', file: pdf('spec.pdf', 'rev A') });
   const id = R(c).id;
   await c.dispatch({ type: 'uploadReferenceFile', id, file: pdf('spec.pdf', 'rev B') });
-  assert.equal(R(c).file.stored, `files/${id}/2-spec.pdf`);
-  assert.deepEqual(R(c).pastFiles.map((x) => x.stored), [`files/${id}/1-spec.pdf`]);
-  await c.dispatch({ type: 'openReferenceFile', stored: `files/${id}/1-spec.pdf` });
+  assert.match(R(c).file.stored, new RegExp(`^files/${id}/2-[0-9a-f]{8}-spec\\.pdf$`));
+  const first = R(c).pastFiles[0].stored;
+  assert.match(first, new RegExp(`^files/${id}/1-[0-9a-f]{8}-spec\\.pdf$`));
+  await c.dispatch({ type: 'openReferenceFile', stored: first });
   assert.equal(await opened[0].text(), 'rev A');
-  f.remove(`files/${id}/1-spec.pdf`);
+  assert.equal(opened[0].shownAs, 'spec.pdf', 'opened or downloaded under the name it was uploaded with');
+  f.remove(first);
   await c.dispatch({ type: 'go', view: 'reference', id });
-  assert.deepEqual(c.getState().missingFiles, [`files/${id}/1-spec.pdf`]);
-  await c.dispatch({ type: 'openReferenceFile', stored: `files/${id}/1-spec.pdf` });
+  assert.deepEqual(c.getState().missingFiles, [first]);
+  await c.dispatch({ type: 'openReferenceFile', stored: first });
   assert.match(c.getState().message.text, /missing from the data folder/);
   await c.dispatch({ type: 'uploadReferenceFile', id, file: new File([], '') });
   assert.match(c.getState().message.text, /Choose a file/);
@@ -80,4 +82,18 @@ test('copying a path; linking from a record and from the reference', async () =>
   await c.dispatch({ type: 'linkTargets', referenceId: id, target: ['control|c1'] });
   const links = Object.values(W(c).records.referenceLink).filter((l) => l.status === 'live').map((l) => `${l.targetKind}:${l.targetId}`).sort();
   assert.deepEqual(links, ['control:c1', 'hazard:h1']);
+});
+
+test('Final I3: a reference page checks only its own files; the list checks them all', async () => {
+  const { f, c } = await ready();
+  await c.dispatch({ type: 'addReference', title: 'A', url: '', path: '', file: pdf('a.pdf') });
+  const a = R(c);
+  await c.dispatch({ type: 'addReference', title: 'B', url: '', path: '', file: pdf('b.pdf') });
+  const b = Object.values(W(c).records.reference).find((r) => r.title === 'B');
+  f.remove(a.file.stored);
+  f.remove(b.file.stored);
+  await c.dispatch({ type: 'go', view: 'reference', id: a.id });
+  assert.deepEqual(c.getState().missingFiles, [a.file.stored]);
+  await c.dispatch({ type: 'go', view: 'references' });
+  assert.deepEqual([...c.getState().missingFiles].sort(), [a.file.stored, b.file.stored].sort());
 });
