@@ -4,7 +4,7 @@ import { buildSnapshot } from '../../src/reports/snapshot.js';
 import { CLASSIFICATIONS } from '../../src/reports/classifications.js';
 import { createReport, setReportDesign } from '../../src/core/ops/reports.js';
 import { assignHazardNumbers, updateHazard } from '../../src/core/ops/hazards.js';
-import { confirmControl, excludeControl, setRating } from '../../src/core/ops/assessment.js';
+import { confirmControl, excludeControl, setRating, setAssessment, setSfarp } from '../../src/core/ops/assessment.js';
 import { entries } from '../../src/core/history.js';
 import { setSchedule, startReview, completeReview } from '../../src/core/ops/reviews.js';
 import { createReference, linkReference, retireReference } from '../../src/core/ops/references.js';
@@ -97,4 +97,14 @@ test('a snapshot lists the references supporting the platform, each once, with w
     { number: 'R-0002', title: 'Sprinkler spec', docNumber: '', revision: '', supports: 'Sprinklers' },
   ]);
   assert.deepEqual(buildSnapshot(assessed(), 'p1', opts).references, []);
+});
+
+test('a snapshot carries the four assessments with their justifications, and SFARP', () => {
+  let d = setAssessment(assessed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'environment', likelihood: 'E', consequence: 4, likelihoodWhy: 'Rare <spill>', consequenceWhy: 'Contained' });
+  d = setSfarp(d, act, { hazardId: 'h1', platformId: 'p1', justification: 'J', conclusion: 'C', conditions: 'V' });
+  const row = buildSnapshot(d, 'p1', opts).rows[0];
+  assert.deepEqual(row.ratings.initialEnvironment, { consequence: 4, likelihood: 'E' });
+  assert.deepEqual(row.assessments.map((a) => [a.stage, a.receptor]), [['initial', 'personnel'], ['initial', 'environment'], ['residual', 'personnel'], ['residual', 'environment']]);
+  assert.deepEqual(row.assessments[1], { stage: 'initial', receptor: 'environment', likelihood: 'E', likelihoodWhy: 'Rare <spill>', consequence: 4, consequenceWhy: 'Contained', level: '4E = Low' });
+  assert.deepEqual(row.sfarp, { justification: 'J', conclusion: 'C', conditions: 'V' });
 });

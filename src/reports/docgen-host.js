@@ -38,8 +38,10 @@ function sectionsFor(s) {
       keyColumn: { id: '_key', label: 'ID', w: 3, get: (/** @type {any} */ r) => r.reportId },
       columns: [
         { id: 'title', label: 'Hazard', w: 6, get: (/** @type {any} */ r) => r.title },
-        { id: 'initial', label: 'Initial risk', w: 3, get: (/** @type {any} */ r) => formatRating(r.initial) },
-        { id: 'residual', label: 'Residual risk', w: 3, get: (/** @type {any} */ r) => formatRating(r.residual) },
+        { id: 'initialPersonnel', label: 'Initial risk (personnel)', w: 3, get: (/** @type {any} */ r) => formatRating(r.ratings?.initialPersonnel ?? r.initial) },
+        { id: 'initialEnvironment', label: 'Initial risk (environment)', w: 3, get: (/** @type {any} */ r) => formatRating(r.ratings?.initialEnvironment ?? null) },
+        { id: 'residualPersonnel', label: 'Residual risk (personnel)', w: 3, get: (/** @type {any} */ r) => formatRating(r.ratings?.residualPersonnel ?? r.residual) },
+        { id: 'residualEnvironment', label: 'Residual risk (environment)', w: 3, get: (/** @type {any} */ r) => formatRating(r.ratings?.residualEnvironment ?? null) },
         { id: 'description', label: 'Description', w: 6, optional: true, get: (/** @type {any} */ r) => r.description },
       ],
       rows: rows((x) => x.rows),
@@ -78,6 +80,30 @@ function sectionsFor(s) {
         { id: 'supports', label: 'Supports', w: 4, get: (/** @type {any} */ r) => r.supports },
       ],
       rows: rows((x) => x.references ?? []),
+    },
+    {
+      id: 'assessments', label: 'Risk assessments',
+      keyColumn: hazardKey,
+      columns: [
+        { id: 'stage', label: 'Stage', w: 2, get: (/** @type {any} */ r) => (r.stage === 'initial' ? 'Initial' : 'Residual') },
+        { id: 'receptor', label: 'Receptor', w: 2, get: (/** @type {any} */ r) => (r.receptor === 'personnel' ? 'Personnel' : 'Environment') },
+        { id: 'likelihood', label: 'Likelihood', w: 2, get: (/** @type {any} */ r) => r.likelihood ?? '' },
+        { id: 'likelihoodWhy', label: 'Likelihood justification', w: 5, get: (/** @type {any} */ r) => r.likelihoodWhy },
+        { id: 'consequence', label: 'Consequence', w: 2, get: (/** @type {any} */ r) => (r.consequence == null ? '' : String(r.consequence)) },
+        { id: 'consequenceWhy', label: 'Consequence justification', w: 5, get: (/** @type {any} */ r) => r.consequenceWhy },
+        { id: 'level', label: 'Assessed level', w: 3, get: (/** @type {any} */ r) => r.level },
+      ],
+      rows: rows((x) => x.rows.flatMap((h) => (h.assessments ?? []).map((a) => ({ reportId: h.reportId, ...a })))),
+    },
+    {
+      id: 'sfarp', label: 'SFARP considerations',
+      keyColumn: hazardKey,
+      columns: [
+        { id: 'justification', label: 'Justification', w: 5, get: (/** @type {any} */ r) => r.justification },
+        { id: 'conclusion', label: 'Conclusion', w: 4, get: (/** @type {any} */ r) => r.conclusion },
+        { id: 'conditions', label: 'Conditions of validity', w: 5, get: (/** @type {any} */ r) => r.conditions },
+      ],
+      rows: rows((x) => x.rows.map((h) => ({ reportId: h.reportId, ...(h.sfarp ?? { justification: '', conclusion: '', conditions: '' }) }))),
     },
   ];
 }

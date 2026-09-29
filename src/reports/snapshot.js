@@ -1,6 +1,7 @@
 import { get } from '../core/data.js';
 import { PivotError } from '../core/errors.js';
-import { platformHazards, hazardDetail, lastReviewed, referencesFor } from '../core/queries.js';
+import { platformHazards, hazardDetail, lastReviewed, referencesFor, assessmentOf, sfarpOf } from '../core/queries.js';
+import { formatRating } from '../core/matrix.js';
 import { referenceLabel } from '../core/ids.js';
 import { reviewState, aestDate } from '../core/time.js';
 
@@ -12,7 +13,10 @@ import { reviewState, aestDate } from '../core/time.js';
  *   references: { number: string, title: string, docNumber: string, revision: string, supports: string }[] }} Snapshot
  * @typedef {{ hazardId: string, number: number | null, reportId: string, title: string, description: string,
  *   causalFactors: string[], consequences: string[], controls: { title: string, kind: string, tier: string, state: string, reason: string }[],
- *   initial: any, residual: any }} SnapshotRow
+ *   initial: any, residual: any,
+ *   ratings: { initialPersonnel: any, initialEnvironment: any, residualPersonnel: any, residualEnvironment: any },
+ *   assessments: { stage: string, receptor: string, likelihood: string | null, likelihoodWhy: string, consequence: number | null, consequenceWhy: string, level: string }[],
+ *   sfarp: { justification: string, conclusion: string, conditions: string } }} SnapshotRow
  */
 
 /**
@@ -38,6 +42,19 @@ export function buildSnapshot(data, platformId, o) {
       controls: r.controls.map((c) => ({ title: c.control.title, kind: c.kind, tier: c.control.tier ?? '', state: c.state, reason: c.state === 'excluded' ? c.ruling?.reason ?? '' : '' })),
       initial: r.rating.initial,
       residual: r.rating.residual,
+      ratings: {
+        initialPersonnel: r.ratings.initial.personnel, initialEnvironment: r.ratings.initial.environment,
+        residualPersonnel: r.ratings.residual.personnel, residualEnvironment: r.ratings.residual.environment,
+      },
+      assessments: ['initial', 'residual'].flatMap((stage) => ['personnel', 'environment'].map((receptor) => {
+        const a = assessmentOf(data, r.hazard.id, platformId, stage, receptor);
+        return {
+          stage, receptor, likelihood: a?.likelihood ?? null, likelihoodWhy: a?.likelihoodWhy ?? '',
+          consequence: a?.consequence ?? null, consequenceWhy: a?.consequenceWhy ?? '',
+          level: formatRating(r.ratings[stage][receptor]),
+        };
+      })),
+      sfarp: sfarpOf(data, r.hazard.id, platformId),
     };
   });
   /** @type {Map<string, { ref: any, supports: string[] }>} */

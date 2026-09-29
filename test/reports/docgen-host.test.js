@@ -30,7 +30,7 @@ test('the host is a valid DocGen host about platforms, offering Pivot\'s marking
   assert.equal(docs.host.subject.noun, 'platform');
   assert.deepEqual(docs.host.subject.list().map((p) => p.label), ['Alpha', 'Bravo']);
   assert.deepEqual(docs.host.classifications, ['OFFICIAL', 'OFFICIAL: Sensitive', 'PROTECTED']);
-  assert.deepEqual(docs.host.sections(null).map((s) => s.id), ['hazards', 'controls', 'causes', 'references']);
+  assert.deepEqual(docs.host.sections(null).map((s) => s.id), ['hazards', 'controls', 'causes', 'references', 'assessments', 'sfarp']);
 });
 
 test('design changes made in the designer land in Pivot\'s data', () => {
@@ -75,4 +75,23 @@ test('the References section: ID, title, doc number, revision, what it supports'
   assert.deepEqual([sec.keyColumn.label, ...sec.columns.map((c) => c.label)], ['ID', 'Reference', 'Doc number', 'Revision', 'Supports']);
   const [row] = sec.rows();
   assert.deepEqual([sec.keyColumn.get(row), ...sec.columns.map((c) => c.get(row))], ['R-0001', 'Safety case', 'SC-1', '', 'Platform']);
+});
+
+test('Hazards has four risk columns; Risk assessments and SFARP sections', async () => {
+  const { setAssessment, setSfarp } = await import('../../src/core/ops/assessment.js');
+  let data = assignHazardNumbers(seed());
+  data = setAssessment(data, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'environment', likelihood: 'C', consequence: 2, consequenceWhy: 'Large spill' });
+  data = setSfarp(data, act, { hazardId: 'h1', platformId: 'p1', conclusion: 'SFARP achieved' });
+  const docs = createDocHost({ getData: () => data, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id });
+  const secs = docs.host.sections({ subjectId: 'p1' });
+  const hz = secs.find((s) => s.id === 'hazards');
+  assert.deepEqual(hz.columns.map((c) => c.id), ['title', 'initialPersonnel', 'initialEnvironment', 'residualPersonnel', 'residualEnvironment', 'description']);
+  assert.equal(hz.columns.find((c) => c.id === 'residualEnvironment').get(hz.rows()[0]), '2C = Serious');
+  const ra = secs.find((s) => s.id === 'assessments');
+  assert.equal(ra.label, 'Risk assessments');
+  const envResidual = ra.rows().find((r) => r.stage === 'residual' && r.receptor === 'environment');
+  assert.deepEqual(ra.columns.map((c) => c.get(envResidual)), ['Residual', 'Environment', 'C', '', '2', 'Large spill', '2C = Serious']);
+  const sf = secs.find((s) => s.id === 'sfarp');
+  assert.deepEqual(sf.columns.map((c) => c.label), ['Justification', 'Conclusion', 'Conditions of validity']);
+  assert.equal(sf.columns[1].get(sf.rows()[0]), 'SFARP achieved');
 });
