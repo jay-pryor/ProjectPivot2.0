@@ -1,9 +1,10 @@
 import { html, raw, esc } from '../html.js';
 import { dataTable } from './table.js';
-import { historyOf } from '../../core/history.js';
+import { historyOf, commentsOn } from '../../core/history.js';
 import { hasUnsaved } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
 import { themeOf } from '../prefs.js';
+import { ratingFor } from '../../core/matrix.js';
 
 /** @param {Record<string, unknown>} obj kebab-case keys @returns {import('../html.js').Raw} */
 export function dataAttrs(obj) {
@@ -55,7 +56,7 @@ export function messages(state) {
 const NAV = [['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['reports', 'Reports'], ['backups', 'Backups']];
 
 /** The top-bar section each view belongs to. */
-const SECTION = { hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', assessment: 'platforms', reports: 'reports', backups: 'backups' };
+const SECTION = { hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', reports: 'reports', backups: 'backups' };
 
 /** @param {any} state @param {import('../html.js').Raw} body */
 export function shell(state, body) {
@@ -82,8 +83,16 @@ export function shell(state, body) {
   <main class="view">${body}</main>`;
 }
 
-/** @param {unknown} v */
-const show = (v) => (v == null ? '(none)' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+/** A rating reads as its matrix cell and band, e.g. "2C Serious". @param {any} v */
+function show(v) {
+  if (v == null) return '(none)';
+  if (typeof v !== 'object') return String(v);
+  if ('consequence' in v && 'likelihood' in v) {
+    const r = ratingFor(v.consequence ?? null, v.likelihood ?? null);
+    return r.cell ? `${r.cell} ${r.band}` : '(none)';
+  }
+  return JSON.stringify(v);
+}
 
 /**
  * Details and History as tabs of a record's page.
@@ -100,23 +109,40 @@ export function pageTabs(view, where, tab, changes) {
 
 const CHANGE_WORD = { created: 'Created', deleted: 'Deleted', retired: 'Retired', restored: 'Restored' };
 
-/** A record's history as a table: when, who, what, and each field's before and after. @param {any} state @param {import('../../core/data.js').Data} data @param {string} kind @param {string} id */
-export function historyTable(state, data, kind, id) {
-  const rows = historyOf(data, kind, id).slice().reverse().map((e) => ({ e, item: e.items.find((/** @type {any} */ i) => i.kind === kind && i.id === id) }));
+/**
+ * A record's history as a table: when, who, what, and each field's before and after.
+ * @param {any} state @param {import('../../core/data.js').Data} data @param {string} kind @param {string} id
+ * @param {any[]} [list] the entries to show (default: that record's own)
+ */
+export function historyTable(state, data, kind, id, list = historyOf(data, kind, id)) {
+  const rows = list.slice().reverse().map((e) => ({ e, item: e.items.find((/** @type {any} */ i) => i.kind === kind && i.id === id) ?? (e.items.length === 1 ? e.items[0] : null) }));
   return dataTable(state, {
     id: 'history',
     rowKey: (r) => r.e.id,
     rows,
     empty: 'No changes recorded.',
     columns: [
-      { key: 'when', label: 'When', width: 150, value: (r) => r.e.at, render: (r) => when(r.e.at) },
-      { key: 'who', label: 'Who', width: 130, value: (r) => profileName(state, r.e.by), filter: 'text' },
-      { key: 'what', label: 'What', width: 200, value: (r) => r.e.action, filter: 'text' },
-      { key: 'changes', label: 'Changes', width: 420, sortable: false, render: (r) => (!r.item ? '' : r.item.change === 'edited'
+      { key: 'when', label: 'When', width: 300, minWidth: 150, value: (r) => r.e.at, render: (r) => when(r.e.at) },
+      { key: 'who', label: 'Who', width: 260, minWidth: 100, value: (r) => profileName(state, r.e.by), filter: 'text' },
+      { key: 'what', label: 'What', width: 400, minWidth: 140, value: (r) => r.e.action, filter: 'text' },
+      { key: 'changes', label: 'Changes', width: 720, minWidth: 240, sortable: false, render: (r) => (!r.item ? '' : r.item.change === 'edited'
         ? html`<ul class="plain">${r.item.fields.map((/** @type {any} */ f) => html`<li><strong>${f.field}</strong>: ${show(f.before)} → ${show(f.after)}</li>`)}</ul>`
         : CHANGE_WORD[/** @type {keyof typeof CHANGE_WORD} */ (r.item.change)] ?? r.item.change) },
+      { key: 'comments', label: 'Comments', width: 560, minWidth: 200, sortable: false, render: (r) => {
+        const comments = commentsOn(data, r.e.id);
+        const adding = state.editing?.kind === 'comment' && state.editing.id === r.e.id;
+        return html`<ul class="plain comments">${comments.map((c) => html`<li><span class="muted">${profileName(state, c.by)}, ${when(c.at)}:</span> ${c.text}</li>`)}</ul>
+          ${adding
+            ? html`<form data-action="addComment" ${dataAttrs({ 'entry-id': r.e.id })} class="row inline fill"><input name="text" required placeholder="Add a comment…" aria-label="Comment" class="grow" autofocus><button type="submit">Add</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></form>`
+            : plus({ action: 'startEdit', kind: 'comment', id: r.e.id }, 'Add a comment')}`;
+      } },
     ],
   });
+}
+
+/** A small, quiet + button. @param {Record<string, unknown>} attrs @param {string} label what it does, for its tooltip */
+export function plus(attrs, label) {
+  return html`<button type="button" class="plus" ${dataAttrs(attrs)} title="${label}" aria-label="${label}">+</button>`;
 }
 
 /** @param {any} state @param {import('../../core/data.js').Data} data @param {string} kind @param {string} id */

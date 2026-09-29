@@ -47,6 +47,41 @@ export function wire(el, dispatch, submitting = new Set()) {
     clearTimeout(typing);
     typing = setTimeout(() => void dispatch({ type: t.dataset.input, ...t.dataset, value: t.value }), 250);
   });
+  // Double-click a value to change it in place.
+  el.addEventListener('dblclick', (e) => {
+    const t = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-dblclick]'));
+    if (t) void dispatch({ type: t.dataset.dblclick, ...t.dataset });
+  });
+  // In a box opened in place: Enter applies (or just closes if nothing changed), Escape cancels.
+  el.addEventListener('keydown', (e) => {
+    const t = /** @type {HTMLInputElement} */ (e.target);
+    if (e.key === 'Escape') {
+      if (t.closest?.('.picker-overlay')) { void dispatch({ type: 'closePicker' }); return; }
+      if (t.classList?.contains('cell-edit') || t.closest?.('.new-record, .new-row, .comments + form, form.fill')) void dispatch({ type: 'cancelEdit' });
+      return;
+    }
+    if (e.key === 'Enter' && t.classList?.contains('cell-edit')) {
+      e.preventDefault();
+      if (t.value === t.defaultValue) void dispatch({ type: 'cancelEdit' }); else t.blur();
+    }
+  });
+  el.addEventListener('focusout', (e) => {
+    const t = /** @type {HTMLInputElement} */ (e.target);
+    if (t.classList?.contains('cell-edit') && t.value === t.defaultValue) setTimeout(() => { if (t.isConnected) void dispatch({ type: 'cancelEdit' }); }, 0);
+  });
+  // A picker's search narrows its list on screen only, so nothing ticked is lost.
+  el.addEventListener('input', (e) => {
+    const t = /** @type {HTMLInputElement} */ (e.target);
+    if (!t.matches?.('[data-filter-list]')) return;
+    const q = t.value.trim().toLowerCase();
+    for (const li of /** @type {NodeListOf<HTMLElement>} */ (t.closest('form')?.querySelectorAll('[data-pick-text]') ?? [])) {
+      li.hidden = q !== '' && !String(li.dataset.pickText).includes(q);
+    }
+  });
+  // A click on the dimmed page around a picker closes it.
+  el.addEventListener('click', (e) => {
+    if (/** @type {HTMLElement} */ (e.target).classList?.contains('picker-overlay')) void dispatch({ type: 'closePicker' });
+  });
   el.addEventListener('change', (e) => {
     const t = /** @type {HTMLSelectElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-change]'));
     if (!t) return;
@@ -73,6 +108,12 @@ export function mount(root, controller) {
     const drafts = captureDrafts(appEl, submitting);
     appEl.innerHTML = renderApp(state);
     restoreDrafts(appEl, drafts);
+    // A box just opened in place (edit, add, a picker's search) takes the cursor.
+    const opened = /** @type {HTMLInputElement | null} */ (appEl.querySelector('[autofocus]'));
+    if (opened && !appEl.contains(document.activeElement)) {
+      opened.focus();
+      if (opened.classList.contains('cell-edit')) opened.select();
+    }
     // The designer repaints itself as it is edited; the app repaints it only when asked to open it.
     if (state.designerRevision !== designerRevision) {
       designerRevision = state.designerRevision;

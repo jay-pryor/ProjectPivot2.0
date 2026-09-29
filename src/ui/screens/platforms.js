@@ -1,137 +1,129 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, bandTag, stateTag, go, confirmButton, pageTabs, historyTable, historyCount } from './common.js';
-import { all, get, live } from '../../core/data.js';
-import { hazardLabel, ids } from '../../core/ids.js';
-import { platformHazards, hazardsNotOn, bandOf } from '../../core/queries.js';
-import { CONSEQUENCES, LIKELIHOODS, BANDS, formatRating, ratingFor } from '../../core/matrix.js';
-import { profileName, when } from '../names.js';
-import { notFound, statusColumn } from './hazards.js';
+import { dataAttrs, option, statusTag, stateTag, go, confirmButton, pageTabs, historyTable, plus } from './common.js';
 import { dataTable } from './table.js';
+import { notFound, statusColumn, idColumn, newRecord } from './hazards.js';
+import { all, get, live } from '../../core/data.js';
+import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
+import { platformHazards, bandOf } from '../../core/queries.js';
+import { historyReaching } from '../../core/history.js';
+import { CONSEQUENCES, LIKELIHOODS, BANDS, ratingFor } from '../../core/matrix.js';
+import { profileName, when } from '../names.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
 /** @param {any} state @param {Data} data */
 export function platformsView(state, data) {
   const count = (/** @type {string} */ id) => live(data, 'hazardPlatform').filter((l) => l.platformId === id).length;
-  return html`<div class="head"><h1>Platforms</h1>
-    <form data-action="createPlatform" class="row"><input name="name" required placeholder="New platform name" aria-label="New platform name">
-      <select name="ownerId" aria-label="Owner">${state.profiles.map((/** @type {any} */ p) => option(p.id, p.name, state.profileId))}</select>
-      <button type="submit">Add platform</button></form></div>
+  const owner = html`<select name="ownerId" aria-label="Owner">${state.profiles.map((/** @type {any} */ p) => option(p.id, p.name, state.profileId))}</select>`;
+  return html`<div class="head"><h1>Platforms</h1>${newRecord(state, 'newPlatform', 'createPlatform', 'name', 'New platform name', owner)}</div>
     ${dataTable(state, {
       id: 'platforms',
       rowKey: (p) => p.id,
       rows: all(data, 'platform'),
       empty: 'No platforms yet.',
       columns: [
-        { key: 'name', label: 'Platform', width: 280, value: (p) => p.name, filter: 'text', render: (p) => go(p.name, 'platform', { id: p.id }) },
-        { key: 'owner', label: 'Owner', width: 200, value: (p) => profileName(state, p.ownerId), filter: 'select',
+        idColumn((p) => p, platformLabel, (p) => go(platformLabel(p), 'platform', { id: p.id })),
+        { key: 'name', label: 'Platform', width: 560, minWidth: 180, value: (p) => p.name, filter: 'text', render: (p) => go(p.name, 'platform', { id: p.id }) },
+        { key: 'owner', label: 'Owner', width: 400, minWidth: 140, value: (p) => profileName(state, p.ownerId), filter: 'select',
           options: state.profiles.map((/** @type {any} */ pr) => /** @type {[string, string]} */ ([pr.id, pr.name])), match: (p, v) => p.ownerId === v },
-        { key: 'hazards', label: 'Hazards', width: 110, value: (p) => count(p.id) },
+        { key: 'hazards', label: 'Hazards', width: 220, minWidth: 100, value: (p) => count(p.id) },
         statusColumn((p) => p.status),
       ],
     })}`;
+}
+
+/** Every matrix cell as one dropdown, grouped by consequence, with its band. @param {any} pair */
+function ratingOptions(pair) {
+  const r = ratingFor(pair?.consequence ?? null, pair?.likelihood ?? null);
+  const current = r.cell ?? '';
+  return html`<option value=""${current ? '' : ' selected'}>—</option>
+    ${CONSEQUENCES.map((c) => html`<optgroup label="${c.level} ${c.label}">${LIKELIHOODS.map((l) => {
+      const cell = `${c.level}${l.letter}`;
+      return option(cell, `${cell} ${ratingFor(c.level, l.letter).band}`, current);
+    })}</optgroup>`)}`;
+}
+
+/** @param {any} pair @param {Record<string, string>} attrs */
+function ratingCell(pair, attrs) {
+  const band = bandOf(pair);
+  return html`<select class="quiet rating band-edge band-${band.toLowerCase().replace(/\s+/g, '-')}" name="value" aria-label="${attrs.stage} rating" ${dataAttrs({ change: 'setRatingCell', ...attrs })}>${ratingOptions(pair)}</select>`;
 }
 
 /** @param {any} state @param {Data} data @param {string} id */
 export function platformView(state, data, id) {
   const p = get(data, 'platform', id);
   if (!p) return notFound();
-  const rows = platformHazards(data, id);
-  const addable = hazardsNotOn(data, id);
   const tab = state.view?.tab;
+  const reaching = historyReaching(data, id);
   const head = html`<p>${go('← Platforms', 'platforms')}</p>
-    <h1>${p.name}${statusTag(p.status)}</h1>
-    ${pageTabs('platform', { id }, tab, historyCount(state, data, 'platform', id))}`;
-  if (tab === 'history') return html`${head}${historyTable(state, data, 'platform', id)}`;
+    <div class="doc-head"><span class="doc-id">${platformLabel(p)}</span>${statusTag(p.status)}</div>
+    <input class="doc-title" name="name" value="${p.name}" required aria-label="Platform name" ${dataAttrs({ change: 'updatePlatform', id })}>
+    ${pageTabs('platform', { id }, tab, reaching.length)}`;
+  if (tab === 'history') return html`${head}${historyTable(state, data, 'platform', id, reaching)}`;
+
+  const rows = platformHazards(data, id);
+  const controlRows = rows.flatMap((r) => r.controls.map((c) => ({ ...c, hazard: r.hazard })));
+  const editing = (/** @type {string} */ kind, /** @type {string} */ key) => state.editing?.kind === kind && state.editing.id === key;
   const actions = p.status === 'live'
     ? html`<button type="button" ${dataAttrs({ action: 'retirePlatform', id })}>Retire</button>
        ${rows.length ? '' : confirmButton('Delete…', 'Delete this platform', dataAttrs({ action: 'deletePlatform', id }))}`
     : p.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'platform', id })}>Restore</button>` : '';
   return html`${head}
-    <div class="stack fields">
-      <label>Name <input name="name" value="${p.name}" required ${dataAttrs({ change: 'updatePlatform', id })}></label>
-      <label>Owner <select name="ownerId" ${dataAttrs({ change: 'setOwner', id })}>${state.profiles.map((/** @type {any} */ pr) => option(pr.id, pr.name, p.ownerId))}</select></label>
-    </div>
-    <section>
-      ${dataTable(state, {
-        id: 'platformHazards',
-        rowKey: (r) => r.hazard.id,
-        rows,
-        empty: 'No hazards on this platform yet.',
-        columns: [
-          { key: 'reportId', label: 'Report ID', width: 190, value: (r) => r.reportId,
-            render: (r) => html`<form data-action="setReportId" ${dataAttrs({ 'hazard-id': r.hazard.id, 'platform-id': id })} class="row inline"><input name="reportId" value="${r.link.reportId ?? ''}" placeholder="${hazardLabel(r.hazard)}" size="10" aria-label="Report ID"><button type="submit">Set</button></form>` },
-          { key: 'hazard', label: 'Hazards', width: 300, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`, render: (r) => go(`${hazardLabel(r.hazard)} ${r.hazard.title}`, 'hazard', { id: r.hazard.id }) },
-          { key: 'risk', label: 'Residual risk', width: 150, value: (r) => BANDS.indexOf(bandOf(r.rating.residual)), render: (r) => bandTag(bandOf(r.rating.residual)) },
-          { key: 'controls', label: 'Controls', width: 220, sortable: false, render: (r) => {
-            const counts = { confirmed: 0, excluded: 0, awaiting: 0 };
-            for (const c of r.controls) counts[/** @type {'confirmed'} */ (c.state)] += 1;
-            return Object.entries(counts).filter(([, n]) => n > 0).map(([st, n]) => html`${stateTag(st)} ${n} `);
-          } },
-          { key: 'actions', label: '', width: 190, sortable: false, render: (r) => {
-            const at = { 'hazard-id': r.hazard.id, 'platform-id': id };
-            return html`<div class="actions">${go('Assess', 'assessment', at)} ${confirmButton('Unlink…', 'Unlink, clearing its ratings and control decisions here', dataAttrs({ action: 'unlinkHazard', ...at }))}</div>`;
-          } },
-        ],
-      })}
-      ${p.status === 'live' && addable.length
-        ? html`<form data-action="linkHazard" ${dataAttrs({ 'platform-id': id })} class="row add-row"><select name="hazardId" aria-label="Hazard">${addable.map((h) => option(h.id, `${hazardLabel(h)} ${h.title}`))}</select><button type="submit">Link hazard</button></form>`
-        : ''}
-    </section>
+    <article class="doc">
+      <p class="doc-meta">Owned by <select class="quiet inline-select" name="ownerId" aria-label="Owner" ${dataAttrs({ change: 'setOwner', id })}>${state.profiles.map((/** @type {any} */ pr) => option(pr.id, pr.name, p.ownerId))}</select></p>
+      <section>
+        ${dataTable(state, {
+          id: 'platformHazards',
+          rowKey: (r) => r.hazard.id,
+          rows,
+          empty: 'No hazards on this platform yet.',
+          tools: p.status === 'live' ? plus({ action: 'openPicker', picker: 'linkHazards', 'platform-id': id }, 'Link hazards') : '',
+          columns: [
+            { key: 'reportId', label: 'Report ID', width: 300, minWidth: 150, value: (r) => r.reportId,
+              render: (r) => (editing('reportId', r.hazard.id)
+                ? html`<input class="cell-edit" name="reportId" value="${r.link.reportId ?? ''}" placeholder="${hazardLabel(r.hazard)}" aria-label="Report ID" autofocus ${dataAttrs({ change: 'setReportId', 'hazard-id': r.hazard.id, 'platform-id': id })}>`
+                : html`<span class="cell-text" ${dataAttrs({ dblclick: 'startEdit', kind: 'reportId', id: r.hazard.id })} title="Double-click to change">${r.reportId}</span>`) },
+            { key: 'hazard', label: 'Hazards', width: 600, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`,
+              render: (r) => html`<span class="id">${hazardLabel(r.hazard)}</span> ${go(r.hazard.title, 'hazard', { id: r.hazard.id })}` },
+            { key: 'initial', label: 'Initial risk', width: 300, minWidth: 170, value: (r) => BANDS.indexOf(bandOf(r.rating.initial)),
+              render: (r) => ratingCell(r.rating.initial, { 'hazard-id': r.hazard.id, 'platform-id': id, stage: 'initial' }) },
+            { key: 'residual', label: 'Residual risk', width: 300, minWidth: 170, value: (r) => BANDS.indexOf(bandOf(r.rating.residual)),
+              render: (r) => ratingCell(r.rating.residual, { 'hazard-id': r.hazard.id, 'platform-id': id, stage: 'residual' }) },
+            { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
+              render: (r) => html`<div class="row-actions">${confirmButton('✕', 'Unlink, clearing its ratings and control decisions here', dataAttrs({ action: 'unlinkHazard', 'hazard-id': r.hazard.id, 'platform-id': id }))}</div>` },
+          ],
+        })}
+      </section>
+      <section>
+        ${dataTable(state, {
+          id: 'platformControls',
+          rowKey: (c) => `${c.hazard.id}:${c.control.id}`,
+          rows: controlRows,
+          empty: 'The hazards here have no controls yet. Link controls on a hazard\'s page.',
+          columns: [
+            { key: 'control', label: `Controls on ${p.name}`, width: 520, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`,
+              render: (c) => html`<span class="id">${controlLabel(c.control)}</span> ${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
+            { key: 'hazard', label: 'For hazard', width: 300, minWidth: 140, value: (c) => hazardLabel(c.hazard), filter: 'text',
+              render: (c) => go(hazardLabel(c.hazard), 'hazard', { id: c.hazard.id }) },
+            { key: 'kind', label: 'Kind', width: 240, minWidth: 120, value: (c) => c.kind },
+            { key: 'state', label: 'State', width: 260, minWidth: 150, value: (c) => c.state, filter: 'select',
+              options: [['confirmed', 'confirmed'], ['excluded', 'excluded'], ['awaiting', 'awaiting']],
+              render: (c) => html`<select class="quiet state-select state-${c.state}" name="value" aria-label="State of ${c.control.title}" ${dataAttrs({ change: 'setControlState', 'hazard-id': c.hazard.id, 'control-id': c.control.id, 'platform-id': id })}>
+                ${['awaiting', 'confirmed', 'excluded'].map((s) => option(s, s, c.state))}</select>` },
+            { key: 'reason', label: 'Reason excluded, or who confirmed', width: 640, minWidth: 220, sortable: false, render: (c) => {
+              const key = `${c.hazard.id}|${c.control.id}|${id}`;
+              if (editing('exclusion', key)) {
+                return html`<input class="cell-edit" name="reason" value="${c.ruling?.state === 'excluded' ? c.ruling.reason : ''}" required placeholder="Why this control is left off ${p.name}…" aria-label="Reason for excluding ${c.control.title}" autofocus ${dataAttrs({ change: 'excludeControl', 'hazard-id': c.hazard.id, 'control-id': c.control.id, 'platform-id': id })}>`;
+              }
+              if (c.state === 'excluded') return html`<span class="cell-text reason" ${dataAttrs({ dblclick: 'startEdit', kind: 'exclusion', id: key })} title="Double-click to change">${c.ruling.reason}</span>`;
+              if (c.state === 'confirmed') return html`<span class="muted">${profileName(state, c.ruling.updatedBy)}, ${when(c.ruling.updatedAt)}</span>`;
+              return '';
+            } },
+          ],
+        })}
+      </section>
+    </article>
     <div class="actions page-actions">${actions}</div>`;
 }
 
-/** @param {string} hazardId @param {string} platformId @param {'initial' | 'residual'} stage @param {any} pair */
-function ratingForm(hazardId, platformId, stage, pair) {
-  const c = pair?.consequence == null ? '' : String(pair.consequence);
-  const l = pair?.likelihood ?? '';
-  return html`<form data-action="setRating" ${dataAttrs({ 'hazard-id': hazardId, 'platform-id': platformId, stage })} class="row">
-    <strong class="stage">${stage === 'initial' ? 'Initial' : 'Residual'}</strong>
-    <label>Consequence <select name="consequence"><option value="">Not entered</option>${CONSEQUENCES.map((x) => option(String(x.level), `${x.level} ${x.label}`, c))}</select></label>
-    <label>Likelihood <select name="likelihood"><option value="">Not entered</option>${LIKELIHOODS.map((x) => option(x.letter, `${x.letter} ${x.label}`, l))}</select></label>
-    <button type="submit">Apply</button> ${bandTag(bandOf(pair))}${ratingFor(pair?.consequence ?? null, pair?.likelihood ?? null).cell ? html` <span class="cell">${formatRating(pair)}</span>` : ''}</form>`;
-}
-
-/** @param {any} state @param {Data} data @param {string} hazardId @param {string} platformId */
-export function assessmentView(state, data, hazardId, platformId) {
-  const row = platformHazards(data, platformId).find((r) => r.hazard.id === hazardId);
-  const p = get(data, 'platform', platformId);
-  if (!row || !p) return html`<p class="muted">That hazard is not on this platform.</p><p>${go('← Platforms', 'platforms')}</p>`;
-  const h = row.hazard;
-  const tab = state.view?.tab;
-  const where = { 'hazard-id': h.id, 'platform-id': platformId };
-  const ratingRef = ids.rating(h.id, platformId);
-  const head = html`<p>${go(`← ${p.name}`, 'platform', { id: platformId })}</p>
-    <h1>${hazardLabel(h)} ${h.title} <span class="muted">on ${p.name}</span></h1>
-    ${pageTabs('assessment', where, tab, historyCount(state, data, 'rating', ratingRef))}`;
-  if (tab === 'history') return html`${head}${historyTable(state, data, 'rating', ratingRef)}`;
-  return html`${head}
-    <section><h2>Risk</h2>
-      ${ratingForm(h.id, platformId, 'initial', row.rating.initial)}
-      ${ratingForm(h.id, platformId, 'residual', row.rating.residual)}
-    </section>
-    <section>
-      ${dataTable(state, {
-        id: 'assessment',
-        rowKey: (c) => c.control.id,
-        rows: row.controls,
-        empty: 'This hazard has no controls. Link them on the hazard\'s page.',
-        columns: [
-          { key: 'control', label: `Controls on ${p.name}`, width: 230, value: (c) => c.control.title, render: (c) => html`${c.control.title}${statusTag(c.control.status)}` },
-          { key: 'kind', label: 'Kind', width: 120, value: (c) => c.kind },
-          { key: 'state', label: 'State', width: 260, value: (c) => c.state, render: (c) => html`${stateTag(c.state)}
-            ${c.state === 'confirmed' ? html` <span class="muted">by ${profileName(state, c.ruling.updatedBy)}, ${when(c.ruling.updatedAt)}</span>` : ''}
-            ${c.state === 'excluded' ? html` <span class="reason">${c.ruling.reason}</span>` : ''}` },
-          { key: 'actions', label: '', width: 380, sortable: false, render: (c) => {
-            const t = { 'hazard-id': h.id, 'control-id': c.control.id, 'platform-id': platformId };
-            return html`<div class="actions">
-              ${c.state !== 'confirmed' ? html`<button type="button" ${dataAttrs({ action: 'confirmControl', ...t })}>Confirm</button>` : ''}
-              <form data-action="excludeControl" ${dataAttrs(t)} class="row inline"><input name="reason" required placeholder="Reason for excluding" aria-label="Reason for excluding ${c.control.title}"><button type="submit">Exclude</button></form>
-              ${c.state !== 'awaiting' ? html`<button type="button" ${dataAttrs({ action: 'resetControl', ...t })}>Reset</button>` : ''}
-            </div>`;
-          } },
-        ],
-      })}
-    </section>
-`;
-}
+export { stateTag };

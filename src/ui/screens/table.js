@@ -42,9 +42,10 @@ const valueOf = (c, row) => (c.value ? c.value(row) : undefined);
 
 /**
  * @param {any} state
- * @param {{ id: string, columns: Column[], rows: any[], rowKey: (row: any) => string, empty?: string }} spec
+ * @param {{ id: string, columns: Column[], rows: any[], rowKey: (row: any) => string, empty?: string, tools?: any }} spec
+ *   tools: something small (a + button) shown beside the first column's title
  */
-export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing here yet.' }) {
+export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing here yet.', tools = '' }) {
   const minOf = (/** @type {Column} */ c) => c.minWidth ?? DEFAULT_MIN_WIDTH;
   const t = state.tables?.[id] ?? {};
   /** @type {Record<string, string>} */
@@ -66,7 +67,7 @@ export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing h
   }
 
   const filtering = columns.some((c) => c.filter && filters[c.key] && filters[c.key] !== c.defaultFilter);
-  const head = columns.map((c) => {
+  const head = columns.map((c, i) => {
     const sorted = t.sort?.key === c.key ? t.sort.dir : null;
     const ariaSort = sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none';
     const control = c.filter === 'text'
@@ -79,7 +80,7 @@ export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing h
     const label = c.sortable === false
       ? html`<span class="th-label">${c.label}</span>`
       : html`<button type="button" class="sort" ${dataAttrs({ action: 'sortTable', table: id, key: c.key })} aria-sort="${ariaSort}">${c.label}<span class="arrow" aria-hidden="true">${sorted === 'asc' ? '▲' : sorted === 'desc' ? '▼' : '↕'}</span></button>`;
-    return html`<th data-col="${c.key}"><div class="th">${label}${control}</div><span class="col-resize" data-resize ${dataAttrs({ table: id, key: c.key, min: minOf(c) })} title="Drag to resize"></span></th>`;
+    return html`<th data-col="${c.key}"><div class="th"><div class="th-title">${label}${i === 0 ? tools : ''}</div>${control}</div><span class="col-resize" data-resize ${dataAttrs({ table: id, key: c.key, min: minOf(c) })} title="Drag to resize"></span></th>`;
   });
   // Every column has a width and the table is exactly their sum, so dragging one column moves
   // only that column: nothing is stretched to fill the window or squeezed to make room.

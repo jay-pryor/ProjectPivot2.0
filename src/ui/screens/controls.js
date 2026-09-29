@@ -1,9 +1,9 @@
 import { html } from '../html.js';
 import { dataAttrs, statusTag, bandTag, stateTag, go, confirmButton, pageTabs, historyTable, historyCount } from './common.js';
 import { dataTable } from './table.js';
-import { statusColumn, notFound } from './hazards.js';
+import { statusColumn, idColumn, newRecord, notFound } from './hazards.js';
 import { get, live } from '../../core/data.js';
-import { hazardLabel } from '../../core/ids.js';
+import { hazardLabel, controlLabel } from '../../core/ids.js';
 import { BANDS } from '../../core/matrix.js';
 import { filterControls, controlUsage, platformsReached } from '../../core/queries.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
@@ -14,8 +14,7 @@ const STATES = /** @type {[string, string][]} */ ([['confirmed', 'confirmed'], [
 
 /** @param {any} state @param {Data} data */
 export function controlsView(state, data) {
-  return html`<div class="head"><h1>Controls</h1>
-    <form data-action="createControl" class="row"><input name="title" required placeholder="New control title" aria-label="New control title"><button type="submit">Add control</button></form></div>
+  return html`<div class="head"><h1>Controls</h1>${newRecord(state, 'newControl', 'createControl', 'title', 'New control title')}</div>
     <p class="muted">One row per control on each hazard and platform it serves, so its state there can be seen and filtered.</p>
     ${dataTable(state, {
       id: 'controls',
@@ -23,18 +22,19 @@ export function controlsView(state, data) {
       rows: filterControls(data, { status: 'any' }),
       empty: 'No controls yet.',
       columns: [
-        { key: 'control', label: 'Control', width: 220, value: (r) => r.control.title, filter: 'text',
+        idColumn((r) => r.control, controlLabel, (r) => go(controlLabel(r.control), 'control', { id: r.control.id })),
+        { key: 'control', label: 'Control', width: 440, minWidth: 180, value: (r) => r.control.title, filter: 'text',
           render: (r) => go(r.control.title, 'control', { id: r.control.id }) },
-        { key: 'hazard', label: 'Hazard', width: 220, value: (r) => (r.hazard ? `${hazardLabel(r.hazard)} ${r.hazard.title}` : ''), filter: 'text',
+        { key: 'hazard', label: 'Hazard', width: 440, minWidth: 180, value: (r) => (r.hazard ? `${hazardLabel(r.hazard)} ${r.hazard.title}` : ''), filter: 'text',
           render: (r) => (r.hazard ? go(`${hazardLabel(r.hazard)} ${r.hazard.title}`, 'hazard', { id: r.hazard.id }) : '—') },
-        { key: 'platform', label: 'Platform', width: 140, value: (r) => r.platform?.name ?? '', filter: 'select',
+        { key: 'platform', label: 'Platform', width: 280, minWidth: 130, value: (r) => r.platform?.name ?? '', filter: 'select',
           options: live(data, 'platform').map((p) => /** @type {[string, string]} */ ([p.id, p.name])),
           match: (r, v) => r.platform?.id === v, render: (r) => r.platform?.name ?? '—' },
-        { key: 'kind', label: 'Kind', width: 120, value: (r) => r.kind ?? '', filter: 'select',
+        { key: 'kind', label: 'Kind', width: 240, minWidth: 130, value: (r) => r.kind ?? '', filter: 'select',
           options: CONTROL_KINDS.map((k) => /** @type {[string, string]} */ ([k, k])), render: (r) => r.kind ?? '—' },
-        { key: 'state', label: 'State', width: 120, value: (r) => r.state ?? '', filter: 'select', options: STATES,
+        { key: 'state', label: 'State', width: 240, minWidth: 120, value: (r) => r.state ?? '', filter: 'select', options: STATES,
           render: (r) => (r.state ? stateTag(r.state) : '—') },
-        { key: 'risk', label: 'Residual risk', width: 130, value: (r) => (r.band ? BANDS.indexOf(r.band) : null), filter: 'select',
+        { key: 'risk', label: 'Residual risk', width: 260, minWidth: 140, value: (r) => (r.band ? BANDS.indexOf(r.band) : null), filter: 'select',
           options: BANDS.map((b) => /** @type {[string, string]} */ ([b, b])), match: (r, v) => r.band === v,
           render: (r) => (r.band ? bandTag(r.band) : '—') },
         statusColumn((r) => r.control.status),
@@ -48,7 +48,8 @@ export function controlView(state, data, id) {
   if (!c) return notFound();
   const tab = state.view?.tab;
   const head = html`<p>${go('← Controls', 'controls')}</p>
-    <h1>${c.title}${statusTag(c.status)}</h1>
+    <div class="doc-head"><span class="doc-id">${controlLabel(c)}</span>${statusTag(c.status)}</div>
+    <input class="doc-title" name="title" value="${c.title}" required aria-label="Control title" ${dataAttrs({ change: 'updateControl', id })}>
     ${pageTabs('control', { id }, tab, historyCount(state, data, 'control', id))}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'control', id)}`;
   const usage = controlUsage(data, id);
@@ -58,25 +59,24 @@ export function controlView(state, data, id) {
        ${usage.length ? '' : confirmButton('Delete…', 'Delete this control', dataAttrs({ action: 'deleteControl', id }))}`
     : c.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'control', id })}>Restore</button>` : '';
   return html`${head}
-    ${reach.length > 1 ? html`<p class="note">Changes to this control reach ${reach.length} platforms: ${reach.join(', ')}.</p>` : ''}
-    <div class="stack fields">
-      <label>Title <input name="title" value="${c.title}" required ${dataAttrs({ change: 'updateControl', id })}></label>
-      <label>Description <textarea name="description" rows="3" ${dataAttrs({ change: 'updateControl', id })}>${c.description}</textarea></label>
-    </div>
-    <section>
-      ${dataTable(state, {
-        id: 'controlUsage',
-        rowKey: (u) => u.hazard.id,
-        rows: usage,
-        empty: 'Not linked to any hazard.',
-        columns: [
-          { key: 'hazard', label: 'Used by hazards', width: 300, value: (u) => `${hazardLabel(u.hazard)} ${u.hazard.title}`,
-            render: (u) => go(`${hazardLabel(u.hazard)} ${u.hazard.title}`, 'hazard', { id: u.hazard.id }) },
-          { key: 'kind', label: 'Kind', width: 130, value: (u) => u.kind },
-          { key: 'platforms', label: 'Platforms', width: 360, value: (u) => u.platforms.map((p) => p.platform.name).join(', '),
-            render: (u) => (u.platforms.length ? u.platforms.map((p) => html`<span class="onplat">${p.platform.name} ${stateTag(p.state)}</span> `) : '—') },
-        ],
-      })}
-    </section>
+    <article class="doc">
+      <p class="doc-meta">${reach.length ? html`Used on ${reach.join(', ')}${reach.length > 1 ? '. Changes here reach all of them.' : '.'}` : 'Not used on any platform yet.'}</p>
+      <textarea class="doc-text" name="description" rows="3" placeholder="Add a description…" aria-label="Description" ${dataAttrs({ change: 'updateControl', id })}>${c.description}</textarea>
+      <section>
+        ${dataTable(state, {
+          id: 'controlUsage',
+          rowKey: (u) => u.hazard.id,
+          rows: usage,
+          empty: 'Not linked to any hazard. Link it from a hazard\'s page.',
+          columns: [
+            { key: 'hazard', label: 'Used by hazards', width: 600, minWidth: 200, value: (u) => `${hazardLabel(u.hazard)} ${u.hazard.title}`,
+              render: (u) => html`<span class="id">${hazardLabel(u.hazard)}</span> ${go(u.hazard.title, 'hazard', { id: u.hazard.id })}` },
+            { key: 'kind', label: 'Kind', width: 260, minWidth: 130, value: (u) => u.kind },
+            { key: 'platforms', label: 'Platforms', width: 720, minWidth: 200, value: (u) => u.platforms.map((p) => p.platform.name).join(', '),
+              render: (u) => (u.platforms.length ? u.platforms.map((p) => html`<span class="onplat">${p.platform.name} ${stateTag(p.state)}</span> `) : '—') },
+          ],
+        })}
+      </section>
+    </article>
     <div class="actions page-actions">${actions}</div>`;
 }

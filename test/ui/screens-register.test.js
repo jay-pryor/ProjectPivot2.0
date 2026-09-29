@@ -12,7 +12,7 @@ const data = () => confirmControl(assignHazardNumbers(seed()), act, { hazardId: 
 
 test('the hazard list: one row per hazard, its platforms with their risk, filters in the header, and an add form', () => {
   const out = hazardsView(state, data()).toString();
-  assert.match(out, /<form data-action="createHazard"/);
+  assert.match(out, /data-action="startEdit" data-kind="newHazard"/);
   assert.equal((out.match(/<tr data-row="h1"/g) || []).length, 1, 'h1 appears once though it is on two platforms');
   assert.match(out, /Alpha[^<]*<span class="band band-uncategorised">/);
   assert.match(out, /data-change="filterTable" data-table="hazards" data-key="platforms"/);
@@ -30,30 +30,11 @@ test('the hazard list filters: status (live by default), platform, and risk on t
   assert.doesNotMatch(withFilters({ risk: 'Serious' }), /data-row="h1"/, 'no rating entered yet');
 });
 
-test('a hazard\'s page: fields, causal factors and consequences as table rows, controls, platforms, history, and the shared note', () => {
-  const out = hazardView(state, data(), 'h1').toString();
-  assert.match(out, /data-change="updateHazard" data-id="h1"/);
-  assert.match(out, /<tr data-row="cf1"><td>Hot works<\/td>/);
-  assert.match(out, /data-action="startEdit" data-kind="causalFactor" data-id="cf1"/);
-  assert.doesNotMatch(out, /value="Hot works"/, 'not an input box until edited');
-  assert.match(out, /data-action="addConsequence" data-hazard-id="h1"/);
-  assert.match(out, /Sprinklers/);
-  assert.match(out, /data-change="setControlKind"/);
-  assert.match(out, /data-view="assessment" data-hazard-id="h1" data-platform-id="p1"/);
-  assert.match(out, /Changes to this hazard reach 2 platforms: Alpha, Bravo/);
-  assert.match(out, /History \(\d+\)/);
-  assert.match(out, /data-action="deleteHazard"/);
-});
 
-test('a row being edited becomes a form in place, with save and cancel', () => {
-  const out = hazardView({ ...state, editing: { kind: 'causalFactor', id: 'cf1' } }, data(), 'h1').toString();
-  assert.match(out, /<form data-action="updateCausalFactor" data-id="cf1"[^>]*>[\s\S]*?value="Hot works"/);
-  assert.match(out, /data-action="cancelEdit"/);
-});
 
 test('the control library and a control\'s page show where it is used and its state on each platform', () => {
   const list = controlsView({ ...state, tables: { controls: { filters: { state: 'confirmed' } } } }, data()).toString();
-  assert.match(list, /<form data-action="createControl"/);
+  assert.match(list, /data-action="startEdit" data-kind="newControl"/);
   assert.match(list, /Sprinklers/);
   assert.doesNotMatch(list, /Fire drills/, 'filtered to confirmed');
   const page = controlView(state, data(), 'c1').toString();
@@ -69,14 +50,14 @@ test('an unknown id shows a not-found note, not a crash', () => {
 });
 
 test('a control used on several platforms says which ones its changes reach', () => {
-  assert.match(controlView(state, data(), 'c1').toString(), /Changes to this control reach 2 platforms: Alpha, Bravo/);
+  assert.match(controlView(state, data(), 'c1').toString(), /Used on Alpha, Bravo\. Changes here reach all of them\./);
 });
 
 test('a hazard page: fields apply when left (no Apply), retire and delete at the bottom, no heading repeating a table\'s title', () => {
   const out = hazardView(state, data(), 'h1').toString();
   assert.doesNotMatch(out, />Apply</);
-  assert.match(out, /<input name="title" value="Fire" required data-change="updateHazard" data-id="h1"/);
-  assert.match(out, /<textarea name="description"[^>]*data-change="updateHazard" data-id="h1"/);
+  assert.match(out, /<input class="doc-title" name="title" value="Fire" required[^>]*data-change="updateHazard" data-id="h1"/);
+  assert.match(out, /<textarea class="doc-text" name="description"[^>]*data-change="updateHazard" data-id="h1"/);
   assert.doesNotMatch(out, /<h2>(Causal factors|Consequences|Controls|Platforms)<\/h2>/);
   assert.match(out, /data-action="sortTable" data-table="causalFactor" data-key="text"[^>]*>Causal factors/);
   assert.ok(out.lastIndexOf('data-action="retireHazard"') > out.lastIndexOf('</table>'), 'retire comes after the tables');
@@ -91,5 +72,5 @@ test('a hazard page has a History tab: a table of when, who, what and the fields
   assert.match(hist, /data-table="history"/);
   assert.match(hist, /Create hazard/);
   assert.match(hist, /Ada/);
-  assert.doesNotMatch(hist, /data-change="updateHazard"/, 'the history tab shows history only');
+  assert.doesNotMatch(hist, /doc-text/, 'the history tab shows history, not the report');
 });

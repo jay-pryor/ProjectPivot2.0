@@ -150,3 +150,51 @@ section { margin: 0 0 22px; }
 
 /* The DocGen designer, in Pivot's colours and font; it follows the theme via html[data-theme]. */
 .docgen { --c-accent: var(--p-accent); --c-accent-text: var(--p-accent-fg); --font: var(--p-font); }
+
+/* Record pages read like a document you can edit in place. */
+.doc-head { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.doc-id, .id { font-variant-numeric: tabular-nums; color: var(--p-muted); }
+.doc-id { font-weight: 700; letter-spacing: .03em; }
+.id { font-size: 13px; margin-right: 4px; }
+.doc-title { display: block; width: 100%; max-width: 1100px; font-size: 26px; font-weight: 700; border: 1px solid transparent; background: transparent; padding: 2px 6px; margin: 2px 0 12px -7px; border-radius: 6px; }
+.doc-title:hover { border-color: var(--p-line); }
+.doc-title:focus { background: var(--p-surface); }
+.doc { max-width: 1400px; }
+.doc-meta { color: var(--p-muted); margin: 0 0 8px; }
+.doc-text { display: block; width: 100%; max-width: 1100px; border: 1px solid transparent; background: transparent; padding: 4px 6px; margin: 0 0 22px -7px; resize: vertical; line-height: 1.6; border-radius: 6px; }
+.doc-text:hover { border-color: var(--p-line); }
+.doc-text:focus { background: var(--p-surface); }
+.doc .grid { background: transparent; }
+.doc .grid th { background: transparent; border-width: 0 0 2px; border-color: var(--p-line); }
+.doc .grid td { border-width: 0 0 1px; }
+.doc .grid tbody tr:hover td { background: var(--p-surface); }
+.cell-text { display: block; cursor: text; min-height: 1.5em; }
+.cell-edit { width: 100%; }
+select.quiet { border-color: transparent; background: transparent; padding-left: 2px; }
+select.quiet:hover, select.quiet:focus { border-color: var(--p-line); background: var(--p-surface); }
+select.inline-select { font: inherit; color: var(--p-fg); }
+select.rating { border-left: 4px solid var(--p-line); padding-left: 6px; color: var(--p-fg); }
+select.rating.band-high { border-left-color: #c2352b; }
+select.rating.band-serious { border-left-color: #e8710a; }
+select.rating.band-medium { border-left-color: #f2cc3f; }
+select.rating.band-low { border-left-color: #2e8b57; }
+select.state-select.state-confirmed, select.state-select.state-excluded, select.state-select.state-awaiting { font-weight: 700; }
+.th-title { display: flex; align-items: center; gap: 8px; }
+.plus { border: 1px solid var(--p-line); background: transparent; color: var(--p-muted); width: 24px; height: 24px; padding: 0; border-radius: 50%; font-size: 16px; line-height: 1; text-align: center; font-weight: 700; }
+.plus:hover { color: var(--p-accent); border-color: var(--p-accent); }
+.head .plus { width: 28px; height: 28px; font-size: 18px; }
+.row-actions { visibility: hidden; display: flex; gap: 4px; }
+tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
+.row-actions details.confirm > summary { padding: 0 8px; }
+.new-row { max-width: 1240px; margin-top: 6px; }
+.comments { font-size: 14px; margin-bottom: 4px; }
+.picker-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .5); display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh; }
+.picker { width: min(640px, calc(100vw - 32px)); max-height: 76vh; display: flex; flex-direction: column; background: var(--p-bg); border: 1px solid var(--p-line); border-radius: 10px; padding: 16px 18px; box-shadow: 0 12px 40px rgba(0, 0, 0, .45); }
+.picker h2 { margin: 0 0 10px; }
+.picker-form { display: flex; flex-direction: column; min-height: 0; gap: 10px; }
+.pick-search { width: 100%; }
+.pick-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; border: 1px solid var(--p-line); border-radius: 6px; }
+.pick-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--p-line); }
+.pick-list li:last-child { border-bottom: 0; }
+.pick-list li[hidden] { display: none; }
+.pick-list label { display: flex; gap: 8px; align-items: center; cursor: pointer; flex: 1; }

@@ -2,7 +2,8 @@ import * as start from './screens/start.js';
 import { shell } from './screens/common.js';
 import { hazardsView, hazardView } from './screens/hazards.js';
 import { controlsView, controlView } from './screens/controls.js';
-import { platformsView, platformView, assessmentView } from './screens/platforms.js';
+import { platformsView, platformView } from './screens/platforms.js';
+import { pickerView } from './screens/picker.js';
 import { reportsView, backupsView } from './screens/reports.js';
 
 /** @param {any} state */
@@ -16,7 +17,6 @@ function mainView(state) {
     case 'control': return controlView(state, data, v.id);
     case 'platforms': return platformsView(state, data);
     case 'platform': return platformView(state, data, v.id);
-    case 'assessment': return assessmentView(state, data, v.hazardId, v.platformId);
     case 'reports': return reportsView(state, data);
     default: return hazardsView(state, data);
   }
@@ -30,6 +30,6 @@ export function renderApp(state) {
     case 'profile': return start.profileScreen(state).toString();
     case 'recover': return start.recoverScreen(state).toString();
     case 'notices': return start.noticesScreen(state).toString();
-    default: return shell(state, mainView(state)).toString();
+    default: return shell(state, mainView(state)).toString() + (state.session ? pickerView(state, state.session.working).toString() : '');
   }
 }
