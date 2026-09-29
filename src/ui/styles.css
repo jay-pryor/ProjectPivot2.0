@@ -66,8 +66,8 @@ a { color: var(--p-link); }
 .topbar .nav.on { border-color: var(--p-bar-fg); }
 .topbar .spacer { flex: 1; }
 .topbar .profile { font-weight: 700; font-size: 17px; }
-.topbar .theme { background: transparent; color: var(--p-bar-fg); border-color: transparent; font-size: 17px; line-height: 1; padding: 4px 8px; }
-.save { min-width: 96px; font-weight: 700; }
+.topbar .theme { background: transparent; color: var(--p-bar-fg); border-color: transparent; font-size: 17px; line-height: 1; padding: 4px 8px; text-align: center; }
+.save { min-width: 96px; font-weight: 700; text-align: center; }
 .save.unsaved { background: var(--p-warn); border-color: var(--p-warn); color: var(--p-warn-fg); }
 .save.saved { background: transparent; color: var(--p-bar-fg); border-color: rgba(255, 255, 255, .25); }
 .save.saved::before { content: "✓ "; }
@@ -103,8 +103,9 @@ td .actions { margin: 0; }
 ul.plain { list-style: none; margin: 0; padding: 0; }
 
 /* Tables: sorting, filtering and resizing live in the header row */
+/* The table is exactly as wide as its columns (set inline); it scrolls only if you make it wider than the window. */
 .table-wrap { overflow-x: auto; max-width: 100%; }
-.grid { border-collapse: collapse; table-layout: fixed; width: 100%; background: var(--p-surface); }
+.grid { border-collapse: collapse; table-layout: fixed; background: var(--p-surface); }
 .grid th, .grid td { border: 1px solid var(--p-line); padding: 6px 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
 .grid th { position: relative; background: var(--p-surface-2); font-weight: 700; vertical-align: bottom; }
 .grid tbody tr:hover td { background: var(--p-surface-2); }
@@ -113,8 +114,8 @@ ul.plain { list-style: none; margin: 0; padding: 0; }
 .th .sort .arrow { color: var(--p-muted); font-size: 11px; }
 .th .sort[aria-sort="ascending"] .arrow, .th .sort[aria-sort="descending"] .arrow { color: var(--p-accent); }
 .col-filter { width: 100%; font-weight: 400; font-size: 13px; padding: 2px 6px; }
-.col-resize { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 1; }
-.col-resize:hover, body.resizing .col-resize { background: linear-gradient(to right, transparent 3px, var(--p-accent) 3px, var(--p-accent) 5px, transparent 5px); }
+.col-resize { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; z-index: 1; touch-action: none; }
+.col-resize:hover { background: linear-gradient(to right, transparent 4px, var(--p-accent) 4px); }
 
 /* Tags */
 .tag { display: inline-block; padding: 0 7px; border-radius: 4px; font-size: 12px; font-weight: 700; background: var(--p-surface-2); }
@@ -139,7 +140,13 @@ details.confirm { display: inline-block; }
 details.confirm > summary { display: inline-block; cursor: pointer; border: 1px solid var(--p-line); border-radius: 6px; padding: 4px 11px; background: var(--p-surface-2); list-style: none; }
 details.confirm > summary::-webkit-details-marker { display: none; }
 details.confirm[open] > summary { margin-bottom: 4px; }
-details.history { margin-top: 24px; }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--p-line); margin: 0 0 16px; }
+.tab { border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--p-muted); padding: 6px 14px; margin-bottom: -1px; }
+.tab.on { border-color: var(--p-line); background: var(--p-bg); color: var(--p-fg); font-weight: 700; }
+section { margin: 0 0 22px; }
+.fields { margin-bottom: 22px; }
+.add-row { max-width: 740px; }
+.page-actions { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--p-line); }
 
 /* The DocGen designer, in Pivot's colours and font; it follows the theme via html[data-theme]. */
 .docgen { --c-accent: var(--p-accent); --c-accent-text: var(--p-accent-fg); --font: var(--p-font); }

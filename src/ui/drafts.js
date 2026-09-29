@@ -4,7 +4,7 @@
  * finishing), so without this a half-typed description vanishes under the user's fingers.
  */
 
-const FIELDS = 'form[data-action] input, form[data-action] textarea, form[data-action] select, [data-input]';
+const FIELDS = 'form[data-action] input, form[data-action] textarea, form[data-action] select, [data-input], input[data-change], textarea[data-change]';
 
 /**
  * The same field before and after a redraw: its form's action and data, and its own name.
@@ -24,6 +24,11 @@ export function formIdentity(formData) {
 function keyOf(el) {
   // A header filter is not in a form; it is identified by its own data.
   if (/** @type {HTMLElement} */ (el).dataset?.input) return draftKey({ ...(/** @type {HTMLElement} */ (el)).dataset }, 'input');
+  // A field that applies when left (a title, a name) is identified by its own data and name.
+  const own = /** @type {HTMLInputElement} */ (el);
+  if (own.dataset?.change && (own.tagName === 'INPUT' || own.tagName === 'TEXTAREA') && !own.closest('form[data-action]')) {
+    return draftKey({ ...own.dataset }, own.name);
+  }
   const form = /** @type {HTMLFormElement | null} */ (el.closest('form[data-action]'));
   const name = /** @type {HTMLInputElement} */ (el).name;
   return form && name ? draftKey({ ...form.dataset }, name) : null;

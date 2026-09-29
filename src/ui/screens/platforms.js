@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, bandTag, stateTag, go, confirmButton, historyBlock } from './common.js';
+import { dataAttrs, option, statusTag, bandTag, stateTag, go, confirmButton, pageTabs, historyTable, historyCount } from './common.js';
 import { all, get, live } from '../../core/data.js';
 import { hazardLabel, ids } from '../../core/ids.js';
 import { platformHazards, hazardsNotOn, bandOf } from '../../core/queries.js';
@@ -38,18 +38,21 @@ export function platformView(state, data, id) {
   if (!p) return notFound();
   const rows = platformHazards(data, id);
   const addable = hazardsNotOn(data, id);
+  const tab = state.view?.tab;
+  const head = html`<p>${go('← Platforms', 'platforms')}</p>
+    <h1>${p.name}${statusTag(p.status)}</h1>
+    ${pageTabs('platform', { id }, tab, historyCount(state, data, 'platform', id))}`;
+  if (tab === 'history') return html`${head}${historyTable(state, data, 'platform', id)}`;
   const actions = p.status === 'live'
     ? html`<button type="button" ${dataAttrs({ action: 'retirePlatform', id })}>Retire</button>
        ${rows.length ? '' : confirmButton('Delete…', 'Delete this platform', dataAttrs({ action: 'deletePlatform', id }))}`
     : p.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'platform', id })}>Restore</button>` : '';
-  return html`<p>${go('← Platforms', 'platforms')}</p>
-    <h1>${p.name}${statusTag(p.status)}</h1>
-    <div class="row">
-      <form data-action="updatePlatform" ${dataAttrs({ id })} class="row"><input name="name" value="${p.name}" required aria-label="Platform name"><button type="submit">Rename</button></form>
+  return html`${head}
+    <div class="stack fields">
+      <label>Name <input name="name" value="${p.name}" required ${dataAttrs({ change: 'updatePlatform', id })}></label>
       <label>Owner <select name="ownerId" ${dataAttrs({ change: 'setOwner', id })}>${state.profiles.map((/** @type {any} */ pr) => option(pr.id, pr.name, p.ownerId))}</select></label>
-      <div class="actions">${actions}</div>
     </div>
-    <section><h2>Hazards on ${p.name}</h2>
+    <section>
       ${dataTable(state, {
         id: 'platformHazards',
         rowKey: (r) => r.hazard.id,
@@ -58,7 +61,7 @@ export function platformView(state, data, id) {
         columns: [
           { key: 'reportId', label: 'Report ID', width: 190, value: (r) => r.reportId,
             render: (r) => html`<form data-action="setReportId" ${dataAttrs({ 'hazard-id': r.hazard.id, 'platform-id': id })} class="row inline"><input name="reportId" value="${r.link.reportId ?? ''}" placeholder="${hazardLabel(r.hazard)}" size="10" aria-label="Report ID"><button type="submit">Set</button></form>` },
-          { key: 'hazard', label: 'Hazard', width: 280, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`, render: (r) => go(`${hazardLabel(r.hazard)} ${r.hazard.title}`, 'hazard', { id: r.hazard.id }) },
+          { key: 'hazard', label: 'Hazards', width: 300, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`, render: (r) => go(`${hazardLabel(r.hazard)} ${r.hazard.title}`, 'hazard', { id: r.hazard.id }) },
           { key: 'risk', label: 'Residual risk', width: 150, value: (r) => BANDS.indexOf(bandOf(r.rating.residual)), render: (r) => bandTag(bandOf(r.rating.residual)) },
           { key: 'controls', label: 'Controls', width: 220, sortable: false, render: (r) => {
             const counts = { confirmed: 0, excluded: 0, awaiting: 0 };
@@ -72,10 +75,10 @@ export function platformView(state, data, id) {
         ],
       })}
       ${p.status === 'live' && addable.length
-        ? html`<form data-action="linkHazard" ${dataAttrs({ 'platform-id': id })} class="row"><select name="hazardId" aria-label="Hazard">${addable.map((h) => option(h.id, `${hazardLabel(h)} ${h.title}`))}</select><button type="submit">Link hazard</button></form>`
+        ? html`<form data-action="linkHazard" ${dataAttrs({ 'platform-id': id })} class="row add-row"><select name="hazardId" aria-label="Hazard">${addable.map((h) => option(h.id, `${hazardLabel(h)} ${h.title}`))}</select><button type="submit">Link hazard</button></form>`
         : ''}
     </section>
-    ${historyBlock(state, data, 'platform', id)}`;
+    <div class="actions page-actions">${actions}</div>`;
 }
 
 /** @param {string} hazardId @param {string} platformId @param {'initial' | 'residual'} stage @param {any} pair */
@@ -95,20 +98,26 @@ export function assessmentView(state, data, hazardId, platformId) {
   const p = get(data, 'platform', platformId);
   if (!row || !p) return html`<p class="muted">That hazard is not on this platform.</p><p>${go('← Platforms', 'platforms')}</p>`;
   const h = row.hazard;
-  return html`<p>${go(`← ${p.name}`, 'platform', { id: platformId })}</p>
+  const tab = state.view?.tab;
+  const where = { 'hazard-id': h.id, 'platform-id': platformId };
+  const ratingRef = ids.rating(h.id, platformId);
+  const head = html`<p>${go(`← ${p.name}`, 'platform', { id: platformId })}</p>
     <h1>${hazardLabel(h)} ${h.title} <span class="muted">on ${p.name}</span></h1>
+    ${pageTabs('assessment', where, tab, historyCount(state, data, 'rating', ratingRef))}`;
+  if (tab === 'history') return html`${head}${historyTable(state, data, 'rating', ratingRef)}`;
+  return html`${head}
     <section><h2>Risk</h2>
       ${ratingForm(h.id, platformId, 'initial', row.rating.initial)}
       ${ratingForm(h.id, platformId, 'residual', row.rating.residual)}
     </section>
-    <section><h2>Controls on ${p.name}</h2>
+    <section>
       ${dataTable(state, {
         id: 'assessment',
         rowKey: (c) => c.control.id,
         rows: row.controls,
         empty: 'This hazard has no controls. Link them on the hazard\'s page.',
         columns: [
-          { key: 'control', label: 'Control', width: 230, value: (c) => c.control.title, render: (c) => html`${c.control.title}${statusTag(c.control.status)}` },
+          { key: 'control', label: `Controls on ${p.name}`, width: 230, value: (c) => c.control.title, render: (c) => html`${c.control.title}${statusTag(c.control.status)}` },
           { key: 'kind', label: 'Kind', width: 120, value: (c) => c.kind },
           { key: 'state', label: 'State', width: 260, value: (c) => c.state, render: (c) => html`${stateTag(c.state)}
             ${c.state === 'confirmed' ? html` <span class="muted">by ${profileName(state, c.ruling.updatedBy)}, ${when(c.ruling.updatedAt)}</span>` : ''}
@@ -124,5 +133,5 @@ export function assessmentView(state, data, hazardId, platformId) {
         ],
       })}
     </section>
-    ${historyBlock(state, data, 'rating', ids.rating(h.id, platformId))}`;
+`;
 }

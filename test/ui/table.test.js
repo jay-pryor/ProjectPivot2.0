@@ -51,6 +51,13 @@ test('columns can be resized: a drag handle per column, and widths from the prof
   assert.match(out, /<span class="col-resize" data-resize data-table="t" data-key="n"/);
 });
 
+test('every column has a width, and the table is exactly as wide as its columns (no stretching)', () => {
+  const out = render(state({}, { columnWidths: { 't.name': 250 } }));
+  const widths = [...out.matchAll(/<col data-col="[^"]+" style="width:(\d+)px">/g)].map((m) => Number(m[1]));
+  assert.equal(widths.length, columns.length, 'a column with no width given gets the default');
+  assert.match(out, new RegExp(`<table class="grid" data-table="t" style="width:${widths.reduce((a, b) => a + b, 0)}px">`));
+});
+
 test('nothing matching says so, and the filters stay so they can be cleared', () => {
   const out = render(state({ t: { filters: { name: 'zzz' } } }));
   assert.deepEqual(shown(out), []);

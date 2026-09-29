@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { html, raw, esc } from '../../src/ui/html.js';
-import { shell, messages, dataAttrs, historyBlock } from '../../src/ui/screens/common.js';
+import { shell, messages, dataAttrs, historyTable } from '../../src/ui/screens/common.js';
 import { openScreen, checkScreen, profileScreen, recoverScreen, noticesScreen } from '../../src/ui/screens/start.js';
 import { initialState } from '../../src/ui/controller.js';
 import { emptyData } from '../../src/core/data.js';
@@ -68,13 +68,15 @@ test('messages show kind, text and items, escaped', () => {
   assert.match(out, />w</);
 });
 
-test('historyBlock lists a record\'s changes with who made them', () => {
+test('historyTable lists a record\'s changes: when, who, what, and each field before and after', () => {
   const d = updateHazard(seed(), act, { id: 'h1', title: 'Big fire' });
   const state = { ...initialState(), profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }] };
-  const hist = historyBlock(state, d, 'hazard', 'h1').toString();
+  const hist = historyTable(state, d, 'hazard', 'h1').toString();
+  assert.match(hist, /data-table="history"/);
   assert.match(hist, /Edit hazard/);
-  assert.match(hist, /title: Fire → Big fire/);
+  assert.match(hist, /<strong>title<\/strong>: Fire → Big fire/);
   assert.match(hist, /Ada/);
+  assert.match(hist, /Created/);
 });
 
 test('the top bar highlights the section a view belongs to', () => {

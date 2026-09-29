@@ -204,8 +204,8 @@ export function createController(env) {
     async dismissMessage() {
       set({ message: null });
     },
-    async go({ view, id, hazardId, platformId }) {
-      set({ view: { name: view, id, hazardId, platformId }, message: null });
+    async go({ view, id, hazardId, platformId, tab }) {
+      set({ view: { name: view, id, hazardId, platformId, tab }, message: null, editing: null });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
     },
     async save() {
@@ -259,9 +259,11 @@ export function createController(env) {
       await savePrefs({ columnWidths: widths });
     },
     async sortTable({ table, key }) {
+      // Ascending, then descending, then off.
       const t = state.tables[table] ?? {};
-      const dir = t.sort?.key === key && t.sort.dir === 'asc' ? 'desc' : 'asc';
-      set({ tables: { ...state.tables, [table]: { ...t, sort: { key, dir } } } });
+      const same = t.sort?.key === key;
+      const sort = !same ? { key, dir: 'asc' } : t.sort.dir === 'asc' ? { key, dir: 'desc' } : null;
+      set({ tables: { ...state.tables, [table]: { ...t, sort } } });
     },
     async filterTable({ table, key, value }) {
       const t = state.tables[table] ?? {};

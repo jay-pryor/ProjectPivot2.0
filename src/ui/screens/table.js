@@ -19,6 +19,9 @@ import { columnWidth } from '../prefs.js';
  * @property {boolean} [sortable] default true
  */
 
+/** A column's width when neither the table nor the profile gives one. */
+export const DEFAULT_WIDTH = 160;
+
 /** @param {unknown} v */
 const text = (v) => (v == null ? '' : String(v));
 
@@ -74,11 +77,12 @@ export function dataTable(state, { id, columns, rows, rowKey, empty = 'Nothing h
       : html`<button type="button" class="sort" ${dataAttrs({ action: 'sortTable', table: id, key: c.key })} aria-sort="${ariaSort}">${c.label}<span class="arrow" aria-hidden="true">${sorted === 'asc' ? '▲' : sorted === 'desc' ? '▼' : '↕'}</span></button>`;
     return html`<th data-col="${c.key}"><div class="th">${label}${control}</div><span class="col-resize" data-resize ${dataAttrs({ table: id, key: c.key })} title="Drag to resize"></span></th>`;
   });
-  const cols = columns.map((c) => {
-    const w = columnWidth(state, id, c.key) ?? c.width;
-    return w ? html`<col data-col="${c.key}" style="width:${raw(String(w))}px">` : html`<col data-col="${c.key}">`;
-  });
-  return html`<div class="table-wrap"><table class="grid" data-table="${id}">
+  // Every column has a width and the table is exactly their sum, so dragging one column moves
+  // only that column: nothing is stretched to fill the window or squeezed to make room.
+  const widths = columns.map((c) => columnWidth(state, id, c.key) ?? c.width ?? DEFAULT_WIDTH);
+  const cols = columns.map((c, i) => html`<col data-col="${c.key}" style="width:${raw(String(widths[i]))}px">`);
+  const total = widths.reduce((a, b) => a + b, 0);
+  return html`<div class="table-wrap"><table class="grid" data-table="${id}" style="width:${raw(String(total))}px">
     <colgroup>${cols}</colgroup>
     <thead><tr>${head}</tr></thead>
     <tbody>${shown.map((row) => html`<tr data-row="${rowKey(row)}">${columns.map((c) => html`<td>${c.render ? c.render(row) : text(valueOf(c, row))}</td>`)}</tr>`)}</tbody>

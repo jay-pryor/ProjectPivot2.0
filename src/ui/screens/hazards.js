@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, bandTag, go, confirmButton, historyBlock } from './common.js';
+import { dataAttrs, option, statusTag, bandTag, go, confirmButton, pageTabs, historyTable, historyCount } from './common.js';
 import { dataTable } from './table.js';
 import { live } from '../../core/data.js';
 import { hazardLabel } from '../../core/ids.js';
@@ -54,7 +54,8 @@ export function hazardsView(state, data) {
 }
 
 /**
- * Causal factors or consequences as a table: text and actions; the row being edited becomes a form.
+ * Causal factors or consequences as a table titled by its header; the row being edited becomes a
+ * text box that applies when you leave it or press Enter.
  * @param {any} state @param {'CausalFactor' | 'Consequence'} name @param {any[]} items @param {string} hazardId
  */
 function textTable(state, name, items, hazardId) {
@@ -67,16 +68,16 @@ function textTable(state, name, items, hazardId) {
       rows: items,
       empty: `No ${what}s yet.`,
       columns: [
-        { key: 'text', label: name === 'CausalFactor' ? 'Causal factor' : 'Consequence', width: 520, value: (r) => r.text,
+        { key: 'text', label: name === 'CausalFactor' ? 'Causal factors' : 'Consequences', width: 560, value: (r) => r.text,
           render: (r) => (editing(r)
-            ? html`<form data-action="update${name}" ${dataAttrs({ id: r.id })} class="row inline fill"><input name="text" value="${r.text}" required aria-label="${what}" class="grow"><button type="submit">Save</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></form>`
+            ? html`<form data-action="update${name}" ${dataAttrs({ id: r.id })} class="row inline fill"><input name="text" value="${r.text}" required aria-label="${what}" class="grow" autofocus ${dataAttrs({ change: `update${name}`, id: r.id })}><button type="submit">Done</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></form>`
             : r.text) },
-        { key: 'actions', label: '', width: 170, sortable: false,
+        { key: 'actions', label: '', width: 180, sortable: false,
           render: (r) => (editing(r) ? '' : html`<div class="actions"><button type="button" ${dataAttrs({ action: 'startEdit', kind, id: r.id })}>Edit</button>
             ${confirmButton('Delete…', `Delete this ${what}`, dataAttrs({ action: `delete${name}`, id: r.id }))}</div>`) },
       ],
     })}
-    <form data-action="add${name}" ${dataAttrs({ 'hazard-id': hazardId })} class="row"><input name="text" required placeholder="Add a ${what}…" aria-label="Add a ${what}" class="grow"><button type="submit">Add</button></form>`;
+    <form data-action="add${name}" ${dataAttrs({ 'hazard-id': hazardId })} class="row add-row"><input name="text" required placeholder="Add a ${what}…" aria-label="Add a ${what}" class="grow"><button type="submit">Add</button></form>`;
 }
 
 /** @param {any} state @param {Data} data @param {string} id */
@@ -84,29 +85,32 @@ export function hazardView(state, data, id) {
   const d = hazardDetail(data, id);
   if (!d) return notFound();
   const h = d.hazard;
+  const tab = state.view?.tab;
+  const head = html`<p>${go('← Hazards', 'hazards')}</p>
+    <h1>${hazardLabel(h)} ${h.title}${statusTag(h.status)}</h1>
+    ${pageTabs('hazard', { id: h.id }, tab, historyCount(state, data, 'hazard', h.id))}`;
+  if (tab === 'history') return html`${head}${historyTable(state, data, 'hazard', h.id)}`;
   const linkable = live(data, 'control').filter((c) => !d.controls.some((x) => x.control.id === c.id));
   const actions = h.status === 'live'
     ? html`<button type="button" ${dataAttrs({ action: 'retireHazard', id: h.id })}>Retire</button>
        ${confirmButton('Delete…', 'Delete this hazard, its causal factors, consequences and control links', dataAttrs({ action: 'deleteHazard', id: h.id }))}`
     : h.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'hazard', id: h.id })}>Restore</button>` : '';
-  return html`<p>${go('← Hazards', 'hazards')}</p>
-    <h1>${hazardLabel(h)} ${h.title}${statusTag(h.status)}</h1>
+  return html`${head}
     ${d.platforms.length > 1 ? html`<p class="note">Changes to this hazard reach ${d.platforms.length} platforms: ${d.platforms.map((p) => p.platform.name).join(', ')}.</p>` : ''}
-    <form data-action="updateHazard" ${dataAttrs({ id: h.id })} class="stack">
-      <label>Title <input name="title" value="${h.title}" required></label>
-      <label>Description <textarea name="description" rows="3">${h.description}</textarea></label>
-      <div><button type="submit">Apply</button></div></form>
-    <div class="actions">${actions}</div>
-    <section><h2>Causal factors</h2>${textTable(state, 'CausalFactor', d.causalFactors, h.id)}</section>
-    <section><h2>Consequences</h2>${textTable(state, 'Consequence', d.consequences, h.id)}</section>
-    <section><h2>Controls</h2>
+    <div class="stack fields">
+      <label>Title <input name="title" value="${h.title}" required ${dataAttrs({ change: 'updateHazard', id: h.id })}></label>
+      <label>Description <textarea name="description" rows="3" ${dataAttrs({ change: 'updateHazard', id: h.id })}>${h.description}</textarea></label>
+    </div>
+    <section>${textTable(state, 'CausalFactor', d.causalFactors, h.id)}</section>
+    <section>${textTable(state, 'Consequence', d.consequences, h.id)}</section>
+    <section>
       ${dataTable(state, {
         id: 'hazardControls',
         rowKey: (c) => c.control.id,
         rows: d.controls,
         empty: 'No controls linked yet.',
         columns: [
-          { key: 'control', label: 'Control', width: 320, value: (c) => c.control.title, render: (c) => html`${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
+          { key: 'control', label: 'Controls', width: 360, value: (c) => c.control.title, render: (c) => html`${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
           { key: 'kind', label: 'Kind', width: 170, value: (c) => c.link.kind,
             render: (c) => html`<select name="kind" aria-label="Kind of ${c.control.title}" ${dataAttrs({ change: 'setControlKind', 'hazard-id': h.id, 'control-id': c.control.id })}>${CONTROL_KINDS.map((k) => option(k, k, c.link.kind))}</select>` },
           { key: 'actions', label: '', width: 150, sortable: false,
@@ -114,23 +118,23 @@ export function hazardView(state, data, id) {
         ],
       })}
       ${linkable.length
-        ? html`<form data-action="linkControl" ${dataAttrs({ 'hazard-id': h.id })} class="row">
+        ? html`<form data-action="linkControl" ${dataAttrs({ 'hazard-id': h.id })} class="row add-row">
             <select name="controlId" aria-label="Control">${linkable.map((c) => option(c.id, c.title))}</select>
             <select name="kind" aria-label="Kind">${CONTROL_KINDS.map((k) => option(k, k))}</select>
             <button type="submit">Link control</button></form>`
         : html`<p class="muted">${live(data, 'control').length ? 'Every control in the library is linked.' : 'The control library is empty.'} Add controls on the Controls page.</p>`}
     </section>
-    <section><h2>Platforms</h2>
+    <section>
       ${dataTable(state, {
         id: 'hazardPlatforms',
         rowKey: (p) => p.platform.id,
         rows: d.platforms,
         empty: 'On no platform. Link it from a platform\'s page.',
         columns: [
-          { key: 'platform', label: 'Platform', width: 260, value: (p) => p.platform.name, render: (p) => go(p.platform.name, 'assessment', { 'hazard-id': h.id, 'platform-id': p.platform.id }) },
+          { key: 'platform', label: 'Platforms', width: 260, value: (p) => p.platform.name, render: (p) => go(p.platform.name, 'assessment', { 'hazard-id': h.id, 'platform-id': p.platform.id }) },
           { key: 'reportId', label: 'Report ID', width: 160, value: (p) => p.reportId },
         ],
       })}
     </section>
-    ${historyBlock(state, data, 'hazard', h.id)}`;
+    <div class="actions page-actions">${actions}</div>`;
 }

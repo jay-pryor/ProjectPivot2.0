@@ -55,7 +55,7 @@ test('column widths dragged are kept on the profile', async () => {
   assert.equal(columnWidth(c.getState(), 'hazards', 'id'), 40, 'a column is never narrower than 40px');
 });
 
-test('sorting cycles ascending, descending; filters set and clear; neither is kept on the profile', async () => {
+test('sorting cycles ascending, descending, off; filters set and clear; neither is kept on the profile', async () => {
   const f = new MemoryFolder();
   const c = createController(env(f));
   await openAs(c, 'Ada');
@@ -63,6 +63,8 @@ test('sorting cycles ascending, descending; filters set and clear; neither is ke
   assert.deepEqual(c.getState().tables.hazards.sort, { key: 'title', dir: 'asc' });
   await c.dispatch({ type: 'sortTable', table: 'hazards', key: 'title' });
   assert.deepEqual(c.getState().tables.hazards.sort, { key: 'title', dir: 'desc' });
+  await c.dispatch({ type: 'sortTable', table: 'hazards', key: 'title' });
+  assert.equal(c.getState().tables.hazards.sort, null, 'a third click turns sorting off');
   await c.dispatch({ type: 'sortTable', table: 'hazards', key: 'id' });
   assert.deepEqual(c.getState().tables.hazards.sort, { key: 'id', dir: 'asc' });
   await c.dispatch({ type: 'filterTable', table: 'hazards', key: 'title', value: 'fire' });

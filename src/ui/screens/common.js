@@ -1,4 +1,5 @@
 import { html, raw, esc } from '../html.js';
+import { dataTable } from './table.js';
 import { historyOf } from '../../core/history.js';
 import { hasUnsaved } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
@@ -84,16 +85,41 @@ export function shell(state, body) {
 /** @param {unknown} v */
 const show = (v) => (v == null ? '(none)' : typeof v === 'object' ? JSON.stringify(v) : String(v));
 
+/**
+ * Details and History as tabs of a record's page.
+ * @param {string} view @param {Record<string, string>} where e.g. { id } or { 'hazard-id', 'platform-id' }
+ * @param {string | undefined} tab @param {number} changes
+ */
+export function pageTabs(view, where, tab, changes) {
+  const on = (/** @type {boolean} */ b) => (b ? ' on' : '');
+  return html`<nav class="tabs">
+    <button type="button" class="tab${on(tab !== 'history')}" ${dataAttrs({ action: 'go', view, ...where })}>Details</button>
+    <button type="button" class="tab${on(tab === 'history')}" ${dataAttrs({ action: 'go', view, ...where, tab: 'history' })}>History (${changes})</button>
+  </nav>`;
+}
+
+const CHANGE_WORD = { created: 'Created', deleted: 'Deleted', retired: 'Retired', restored: 'Restored' };
+
+/** A record's history as a table: when, who, what, and each field's before and after. @param {any} state @param {import('../../core/data.js').Data} data @param {string} kind @param {string} id */
+export function historyTable(state, data, kind, id) {
+  const rows = historyOf(data, kind, id).slice().reverse().map((e) => ({ e, item: e.items.find((/** @type {any} */ i) => i.kind === kind && i.id === id) }));
+  return dataTable(state, {
+    id: 'history',
+    rowKey: (r) => r.e.id,
+    rows,
+    empty: 'No changes recorded.',
+    columns: [
+      { key: 'when', label: 'When', width: 150, value: (r) => r.e.at, render: (r) => when(r.e.at) },
+      { key: 'who', label: 'Who', width: 130, value: (r) => profileName(state, r.e.by), filter: 'text' },
+      { key: 'what', label: 'What', width: 200, value: (r) => r.e.action, filter: 'text' },
+      { key: 'changes', label: 'Changes', width: 420, sortable: false, render: (r) => (!r.item ? '' : r.item.change === 'edited'
+        ? html`<ul class="plain">${r.item.fields.map((/** @type {any} */ f) => html`<li><strong>${f.field}</strong>: ${show(f.before)} → ${show(f.after)}</li>`)}</ul>`
+        : CHANGE_WORD[/** @type {keyof typeof CHANGE_WORD} */ (r.item.change)] ?? r.item.change) },
+    ],
+  });
+}
+
 /** @param {any} state @param {import('../../core/data.js').Data} data @param {string} kind @param {string} id */
-export function historyBlock(state, data, kind, id) {
-  const list = historyOf(data, kind, id).slice().reverse();
-  return html`<details class="history"><summary>History (${list.length})</summary>
-    ${list.length ? html`<ol>${list.map((e) => {
-      const item = e.items.find((/** @type {any} */ i) => i.kind === kind && i.id === id);
-      const fields = item && item.change === 'edited'
-        ? html`<ul>${item.fields.map((/** @type {any} */ f) => html`<li>${f.field}: ${show(f.before)} → ${show(f.after)}</li>`)}</ul>`
-        : '';
-      return html`<li><span class="when">${when(e.at)}</span> ${profileName(state, e.by)}: ${e.action}${fields}</li>`;
-    })}</ol>` : html`<p class="muted">No changes recorded.</p>`}
-  </details>`;
+export function historyCount(state, data, kind, id) {
+  return historyOf(data, kind, id).length;
 }

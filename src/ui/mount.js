@@ -9,6 +9,21 @@ import { App as DocGen } from '../../DocGen/doc-designer.js';
  * @param {Set<string>} [submitting] forms being submitted, whose fields are meant to clear
  */
 export function wire(el, dispatch, submitting = new Set()) {
+  // Leaving a field applies its edit, and that redraws the screen between pressing a button and
+  // letting go, so the button under the pointer is replaced and its click never arrives (click
+  // Save straight after typing a title). The button pressed is remembered; if it was replaced by
+  // the time the pointer comes up, its action is dispatched as the click would have been.
+  /** @type {HTMLElement | null} */
+  let pressed = null;
+  el.addEventListener('pointerdown', (e) => {
+    const t = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-action]'));
+    pressed = t && t.tagName !== 'FORM' && e.button === 0 ? t : null;
+  }, true);
+  document.addEventListener('pointerup', () => {
+    const t = pressed;
+    pressed = null;
+    if (t && !t.isConnected && !/** @type {HTMLButtonElement} */ (t).disabled) void dispatch({ type: t.dataset.action, ...t.dataset });
+  });
   el.addEventListener('click', (e) => {
     const t = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-action]'));
     if (!t || t.tagName === 'FORM' || !el.contains(t)) return;
@@ -77,34 +92,46 @@ export function mount(root, controller) {
 }
 
 /**
- * Drag a header's right edge to resize its column. The width is applied as you drag and kept on
+ * Drag a header's right edge to resize its column. Only that column and the table's total width
+ * change (the table is exactly as wide as its columns), once per frame, and the width is kept on
  * the profile when you let go.
  * @param {HTMLElement} el @param {(action: any) => Promise<void>} dispatch
  */
 function resizableColumns(el, dispatch) {
   el.addEventListener('pointerdown', (e) => {
     const grip = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-resize]'));
-    if (!grip) return;
+    if (!grip || e.button !== 0) return;
     e.preventDefault();
-    const { table, key } = grip.dataset;
-    const th = /** @type {HTMLElement} */ (grip.closest('th'));
-    const col = /** @type {HTMLElement | null} */ (th.closest('table')?.querySelector(`col[data-col="${CSS.escape(String(key))}"]`) ?? null);
+    e.stopPropagation();
+    const { table: tableId, key } = grip.dataset;
+    const table = /** @type {HTMLTableElement} */ (grip.closest('table'));
+    const col = /** @type {HTMLElement} */ (table.querySelector(`col[data-col="${CSS.escape(String(key))}"]`));
     const startX = e.clientX;
-    const startWidth = th.getBoundingClientRect().width;
+    const startWidth = parseFloat(col.style.width) || col.getBoundingClientRect().width;
+    const startTotal = parseFloat(table.style.width) || table.getBoundingClientRect().width;
     let width = startWidth;
+    let frame = 0;
     grip.setPointerCapture(e.pointerId);
     document.body.classList.add('resizing');
     /** @param {PointerEvent} m */
     const move = (m) => {
-      width = Math.max(40, startWidth + m.clientX - startX);
-      if (col) col.style.width = `${width}px`;
+      width = Math.max(40, Math.round(startWidth + m.clientX - startX));
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        col.style.width = `${width}px`;
+        table.style.width = `${startTotal + width - startWidth}px`;
+      });
     };
     const up = () => {
       grip.removeEventListener('pointermove', move);
       grip.removeEventListener('pointerup', up);
       grip.removeEventListener('pointercancel', up);
+      if (frame) cancelAnimationFrame(frame);
+      col.style.width = `${width}px`;
+      table.style.width = `${startTotal + width - startWidth}px`;
       document.body.classList.remove('resizing');
-      if (Math.round(width) !== Math.round(startWidth)) void dispatch({ type: 'setColumnWidth', table, column: key, width });
+      if (width !== Math.round(startWidth)) void dispatch({ type: 'setColumnWidth', table: tableId, column: key, width });
     };
     grip.addEventListener('pointermove', move);
     grip.addEventListener('pointerup', up);

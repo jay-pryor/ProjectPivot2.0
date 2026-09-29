@@ -59,3 +59,11 @@ test('the platform list filters by owner and status in its header', () => {
   assert.doesNotMatch(out, /data-row="p1"/);
   assert.match(out, /data-change="filterTable" data-table="platforms" data-key="owner"/);
 });
+
+test('a platform page: the name applies when left (no Rename), retire and delete at the bottom, History as a tab', () => {
+  const out = platformView(state, data(), 'p1').toString();
+  assert.doesNotMatch(out, />Rename</);
+  assert.match(out, /<input name="name" value="Alpha" required[^>]*data-change="updatePlatform" data-id="p1"/);
+  assert.ok(out.lastIndexOf('data-action="retirePlatform"') > out.lastIndexOf('</table>'));
+  assert.match(out, /data-tab="history"/);
+});

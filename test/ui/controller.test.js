@@ -188,7 +188,7 @@ test('filters and navigation', async () => {
   await c.dispatch({ type: 'setFilter', list: 'hazards', field: 'status', value: '' });
   assert.deepEqual(c.getState().filters.hazards, {});
   await c.dispatch({ type: 'go', view: 'assessment', hazardId: 'h', platformId: 'p' });
-  assert.deepEqual(c.getState().view, { name: 'assessment', id: undefined, hazardId: 'h', platformId: 'p' });
+  assert.deepEqual(c.getState().view, { name: 'assessment', id: undefined, hazardId: 'h', platformId: 'p', tab: undefined });
 });
 
 test('Final review C1: the saver is told when records were missing from the file on disk and have been kept', async () => {
