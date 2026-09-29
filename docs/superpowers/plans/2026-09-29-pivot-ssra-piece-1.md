@@ -850,7 +850,6 @@ export function platformTab(state, data, h, platformId) {
 }
 ```
 
-(Replace each ``` with a plain backtick when writing the file; they are escaped here only because this plan is Markdown.)
 
 `src/ui/controller.js`: add to `EDITS` `setAssessment: assessment.setAssessment, setSfarp: assessment.setSfarp,`.
 
