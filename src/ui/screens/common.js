@@ -59,7 +59,7 @@ export function messages(state) {
 const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['references', 'References'], ['reports', 'Reports'], ['backups', 'Backups']];
 
 /** The top-bar section each view belongs to. */
-const SECTION = { home: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', references: 'references', reference: 'references', reports: 'reports', backups: 'backups' };
+const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', references: 'references', reference: 'references', reports: 'reports', backups: 'backups' };
 
 /** @param {any} state @param {import('../html.js').Raw} body */
 export function shell(state, body) {

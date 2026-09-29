@@ -1,7 +1,7 @@
 import { get, all, live, byCreated } from './data.js';
 import { ids, hazardLabel, referenceLabel } from './ids.js';
 import { ratingFor, BANDS } from './matrix.js';
-import { reviewState } from './time.js';
+import { reviewState, addDays } from './time.js';
 import { waitingChanges } from './acks.js';
 
 /** @typedef {import('./data.js').Data} Data */
@@ -355,4 +355,56 @@ export function referenceTargets(data, referenceId) {
     const hazard = target && (link.targetKind === 'causalFactor' || link.targetKind === 'consequence') ? get(data, 'hazard', target.hazardId) ?? null : null;
     return { link, target, hazard };
   }).filter((x) => x.target && x.target.status !== 'deleted');
+}
+
+/** @param {Rec} p @param {string | null} ownerId */
+const ownedBy = (p, ownerId) => ownerId == null || p.ownerId === ownerId;
+
+/**
+ * Reviews coming due within `days` (not yet overdue), soonest first, and any review in progress.
+ * @param {Data} data @param {string} today @param {string | null} ownerId @param {number} [days]
+ */
+export function upcomingReviews(data, today, ownerId, days = 90) {
+  const until = addDays(today, days);
+  return live(data, 'platform').filter((p) => ownedBy(p, ownerId))
+    .map((platform) => ({ platform, due: platform.reviewDue ?? null, state: reviewState(platform, today), open: Boolean(openReview(data, platform.id)) }))
+    .filter((r) => r.open || (r.due && r.state !== 'overdue' && r.due <= until))
+    .sort((a, b) => ((a.due ?? '9999') < (b.due ?? '9999') ? -1 : (a.due ?? '9999') > (b.due ?? '9999') ? 1 : 0));
+}
+
+/**
+ * One summary per live platform of an owner (every owner when null): its review, the residual
+ * risk of its hazards counted by band, and what is open on it.
+ * @param {Data} data @param {string} today @param {string | null} ownerId
+ */
+export function platformCards(data, today, ownerId) {
+  return live(data, 'platform').filter((p) => ownedBy(p, ownerId)).map((platform) => {
+    const hazards = platformHazards(data, platform.id);
+    /** @type {Record<string, number>} */
+    const bands = {};
+    for (const h of hazards) {
+      const b = bandOf(h.rating.residual);
+      bands[b] = (bands[b] ?? 0) + 1;
+    }
+    return {
+      platform, state: reviewState(platform, today), due: platform.reviewDue ?? null, lastReviewed: lastReviewed(data, platform.id),
+      open: Boolean(openReview(data, platform.id)), hazards: hazards.length,
+      awaiting: hazards.reduce((n, h) => n + h.controls.filter((c) => c.state === 'awaiting').length, 0),
+      acks: waitingChanges(data, platform.id).length, bands,
+    };
+  });
+}
+
+/**
+ * The open items in order of urgency: overdue reviews (longest overdue first), changes to
+ * acknowledge (newest first), controls awaiting a decision, then hazards missing a rating.
+ * @param {ReturnType<typeof openItems>} items
+ */
+export function attentionItems(items) {
+  return [
+    ...items.reviews.filter((r) => r.state === 'overdue').sort((a, b) => ((a.due ?? '') < (b.due ?? '') ? -1 : 1)).map((r) => ({ type: 'review', ...r })),
+    ...items.acks.map((a) => ({ type: 'change', ...a })),
+    ...items.awaiting.map((x) => ({ type: 'control', ...x })),
+    ...items.unrated.map((x) => ({ type: 'rating', ...x })),
+  ];
 }
