@@ -89,3 +89,13 @@ test('filterControls: by platform, band, status and control state', () => {
   assert.deepEqual(filterControls(d, { platformId: 'p1', controlState: 'excluded' }).map((r) => r.control.id), ['c2']);
   assert.deepEqual(filterControls(d, { band: 'Low' }).map((r) => r.control.id), ['c1', 'c2']);
 });
+
+test('hazardRows: one row per hazard, of any status, with each platform it is on and its residual band there', async () => {
+  const { hazardRows } = await import('../../src/core/queries.js');
+  const rows = hazardRows(assessed());
+  assert.deepEqual(rows.map((r) => r.hazard.id), ['h1', 'h2']);
+  assert.deepEqual(rows[0].platforms.map((p) => `${p.platform.name}:${p.band}`), ['Alpha:Serious', 'Bravo:Low']);
+  assert.equal(rows[0].worst, 'Serious');
+  assert.deepEqual(rows[1].platforms, []);
+  assert.equal(rows[1].worst, null);
+});

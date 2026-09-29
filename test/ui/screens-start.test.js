@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { html, raw, esc } from '../../src/ui/html.js';
-import { shell, messages, dataAttrs, historyBlock, filterBar } from '../../src/ui/screens/common.js';
+import { shell, messages, dataAttrs, historyBlock } from '../../src/ui/screens/common.js';
 import { openScreen, checkScreen, profileScreen, recoverScreen, noticesScreen } from '../../src/ui/screens/start.js';
 import { initialState } from '../../src/ui/controller.js';
 import { emptyData } from '../../src/core/data.js';
@@ -55,10 +55,10 @@ test('the shell shows the active profile prominently, an unsaved marker, and Sav
   const base = { ...initialState(), screen: 'main', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }], profileId: 'u1' };
   const clean = shell({ ...base, session: { base: data, working: data, loadedStamp: null } }, html`<p>body</p>`).toString();
   assert.match(clean, /class="profile"[^>]*>Ada</);
-  assert.doesNotMatch(clean, /Unsaved changes/);
+  assert.match(clean, /class="save saved"/);
   assert.match(clean, /data-action="save"/);
   const dirty = shell({ ...base, session: { base: data, working: seed(), loadedStamp: null } }, html``).toString();
-  assert.match(dirty, /Unsaved changes/);
+  assert.match(dirty, /class="save unsaved"/);
 });
 
 test('messages show kind, text and items, escaped', () => {
@@ -68,13 +68,9 @@ test('messages show kind, text and items, escaped', () => {
   assert.match(out, />w</);
 });
 
-test('filterBar and historyBlock', () => {
+test('historyBlock lists a record\'s changes with who made them', () => {
   const d = updateHazard(seed(), act, { id: 'h1', title: 'Big fire' });
   const state = { ...initialState(), profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }] };
-  const bar = filterBar(state, d, 'controls', true).toString();
-  assert.match(bar, /data-change="setFilter" data-list="controls" data-field="platformId"/);
-  assert.match(bar, /data-field="controlState"/);
-  assert.match(bar, /<option value="p1">Alpha<\/option>/);
   const hist = historyBlock(state, d, 'hazard', 'h1').toString();
   assert.match(hist, /Edit hazard/);
   assert.match(hist, /title: Fire → Big fire/);
@@ -89,4 +85,21 @@ test('the top bar highlights the section a view belongs to', () => {
   assert.equal(on({ name: 'hazard', id: 'h' }), 'Hazards');
   assert.equal(on({ name: 'control', id: 'c' }), 'Controls');
   assert.equal(on({ name: 'backups' }), 'Backups');
+});
+
+test('the top bar: the folder is labelled, one save button says Unsaved or Saved, and there is a theme switch', () => {
+  const data = emptyData();
+  const base = { ...initialState(), screen: 'main', folderName: 'Pivot', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }], profileId: 'u1' };
+  const saved = shell({ ...base, session: { base: data, working: data, loadedStamp: null } }, html``).toString();
+  assert.match(saved, /Folder: Pivot/);
+  assert.match(saved, /<button[^>]*class="save saved"[^>]*data-action="save"[^>]*>Saved</);
+  assert.doesNotMatch(saved, /Unsaved changes/);
+  const dirty = shell({ ...base, session: { base: data, working: seed(), loadedStamp: null } }, html``).toString();
+  assert.match(dirty, /<button[^>]*class="save unsaved"[^>]*data-action="save"[^>]*>Unsaved</);
+  const saving = shell({ ...base, saving: true, session: { base: data, working: seed(), loadedStamp: null } }, html``).toString();
+  assert.match(saving, /class="save saving"[^>]*disabled[^>]*>Saving…/);
+  assert.match(saving, /<div class="save-progress"/);
+  assert.match(saved, /data-action="setTheme" data-theme="light"/, 'dark by default, offering light');
+  const light = shell({ ...base, profiles: [{ ...base.profiles[0], prefs: { theme: 'light' } }], session: { base: data, working: data, loadedStamp: null } }, html``).toString();
+  assert.match(light, /data-action="setTheme" data-theme="dark"/);
 });

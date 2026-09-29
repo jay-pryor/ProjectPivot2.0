@@ -1,9 +1,8 @@
 import { html, raw, esc } from '../html.js';
-import { live } from '../../core/data.js';
-import { BANDS } from '../../core/matrix.js';
 import { historyOf } from '../../core/history.js';
 import { hasUnsaved } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
+import { themeOf } from '../prefs.js';
 
 /** @param {Record<string, unknown>} obj kebab-case keys @returns {import('../html.js').Raw} */
 export function dataAttrs(obj) {
@@ -61,28 +60,25 @@ const SECTION = { hazards: 'hazards', hazard: 'hazards', controls: 'controls', c
 export function shell(state, body) {
   const unsaved = state.session ? hasUnsaved(state.session) : false;
   const current = SECTION[/** @type {keyof typeof SECTION} */ (state.view?.name)] ?? '';
+  const theme = themeOf(state);
+  const other = theme === 'dark' ? 'light' : 'dark';
+  // One button says where things stand: Unsaved (click to save), Saving… with a bar, or Saved.
+  const save = state.saving
+    ? html`<button type="button" class="save saving" ${dataAttrs({ action: 'save' })} disabled>Saving…</button>`
+    : unsaved
+      ? html`<button type="button" class="save unsaved" ${dataAttrs({ action: 'save' })} title="You have unsaved changes: click to save">Unsaved</button>`
+      : html`<button type="button" class="save saved" ${dataAttrs({ action: 'save' })} title="Everything is saved">Saved</button>`;
   return html`<header class="topbar">
-    <span class="brand">Pivot</span><span class="folder">${state.folderName}</span>
+    <span class="brand">Pivot</span><span class="folder" title="The data folder">Folder: ${state.folderName}</span>
     <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${label}</button>`)}</nav>
     <span class="spacer"></span>
-    ${unsaved ? html`<span class="unsaved">Unsaved changes</span>` : ''}
-    <button type="button" class="primary" ${dataAttrs({ action: 'save' })}${state.busy ? raw(' disabled') : ''}>Save</button>
+    ${save}
+    <button type="button" class="theme" ${dataAttrs({ action: 'setTheme', theme: other })} title="Switch to ${other} mode" aria-label="Switch to ${other} mode">${theme === 'dark' ? '☀' : '☾'}</button>
     <span class="profile" title="Active profile">${profileName(state, state.profileId)}</span>
+    ${state.saving ? html`<div class="save-progress" role="progressbar" aria-label="Saving"><span></span></div>` : ''}
   </header>
   <div class="messages">${messages(state)}</div>
   <main class="view">${body}</main>`;
-}
-
-/** @param {any} state @param {import('../../core/data.js').Data} data @param {'hazards' | 'controls'} list @param {boolean} withControlState */
-export function filterBar(state, data, list, withControlState) {
-  const f = state.filters[list] ?? {};
-  const attrs = (/** @type {string} */ field) => dataAttrs({ change: 'setFilter', list, field });
-  return html`<div class="filters">
-    <label>Platform <select ${attrs('platformId')}><option value="">Any</option>${live(data, 'platform').map((p) => option(p.id, p.name, f.platformId))}</select></label>
-    <label>Residual risk <select ${attrs('band')}><option value="">Any</option>${BANDS.map((b) => option(b, b, f.band))}</select></label>
-    <label>Status <select ${attrs('status')}>${[['live', 'Live'], ['retired', 'Retired'], ['deleted', 'Deleted'], ['any', 'Any']].map(([v, l]) => option(v, l, f.status || 'live'))}</select></label>
-    ${withControlState ? html`<label>Control state <select ${attrs('controlState')}><option value="">Any</option>${['confirmed', 'excluded', 'awaiting'].map((s) => option(s, s, f.controlState))}</select></label>` : ''}
-  </div>`;
 }
 
 /** @param {unknown} v */

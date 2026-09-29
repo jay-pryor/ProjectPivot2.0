@@ -52,3 +52,10 @@ test('the assessment: both ratings with their bands, and each control with confi
 test('an assessment of a hazard not on the platform shows a not-found note', () => {
   assert.match(assessmentView(state, data(), 'h2', 'p1').toString(), /not on this platform/);
 });
+
+test('the platform list filters by owner and status in its header', () => {
+  const out = platformsView({ ...state, tables: { platforms: { filters: { owner: 'u2' } } } }, data()).toString();
+  assert.match(out, /data-row="p2"/);
+  assert.doesNotMatch(out, /data-row="p1"/);
+  assert.match(out, /data-change="filterTable" data-table="platforms" data-key="owner"/);
+});

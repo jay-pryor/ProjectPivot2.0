@@ -1,5 +1,6 @@
 import { html, raw } from '../html.js';
 import { dataAttrs, option } from './common.js';
+import { dataTable } from './table.js';
 import { all, live } from '../../core/data.js';
 import { hasUnsavedRecords } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
@@ -21,12 +22,22 @@ export function reportsView(state, data) {
       <p class="muted">Sections, wording, layout and the classification marking are set in the report designer, and are shared by everyone using this folder.</p>
     </section>
     <section><h2>Produced reports</h2>
-      ${reports.length ? html`<table class="grid"><thead><tr><th>Produced</th><th>Platform</th><th>Title</th><th>Marking</th><th>By</th><th>Download</th></tr></thead><tbody>
-        ${reports.map((r) => html`<tr><td>${when(r.producedAt)}</td><td>${r.platformName}</td><td>${r.title}</td><td>${r.classification || '—'}</td>
-          <td>${profileName(state, r.producedBy)}</td>
-          <td><button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'md' })}>.md</button>
-              <button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'html' })}>.html</button></td></tr>`)}
-      </tbody></table>` : html`<p class="muted">No reports yet.</p>`}
+      ${dataTable(state, {
+        id: 'reports',
+        rowKey: (r) => r.id,
+        rows: reports,
+        empty: 'No reports yet.',
+        columns: [
+          { key: 'produced', label: 'Produced', width: 160, value: (r) => r.producedAt, render: (r) => when(r.producedAt) },
+          { key: 'platform', label: 'Platform', width: 180, value: (r) => r.platformName },
+          { key: 'title', label: 'Title', width: 280, value: (r) => r.title },
+          { key: 'marking', label: 'Marking', width: 170, value: (r) => r.classification || '—' },
+          { key: 'by', label: 'By', width: 140, value: (r) => profileName(state, r.producedBy) },
+          { key: 'download', label: 'Download', width: 150, sortable: false, render: (r) => html`<div class="actions">
+            <button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'md' })}>.md</button>
+            <button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'html' })}>.html</button></div>` },
+        ],
+      })}
     </section>`;
 }
 
@@ -41,7 +52,14 @@ export function backupsView(state) {
         <button type="button" ${dataAttrs({ action: 'cancelRestore' })}>Cancel</button></div>` : ''}
     <p class="muted">A backup is taken when something changes and the newest backup is more than an hour old. The newest 72 are kept.</p>
     <p><button type="button" ${dataAttrs({ action: 'prepareRestoreFromFile' })}>Restore from a file…</button></p>
-    ${state.backups.length ? html`<table class="grid"><thead><tr><th>Taken</th><th></th></tr></thead><tbody>
-      ${state.backups.map((/** @type {any} */ b) => html`<tr><td>${when(b.at)}</td><td><button type="button" ${dataAttrs({ action: 'prepareRestore', name: b.name })}>Restore…</button></td></tr>`)}
-    </tbody></table>` : html`<p class="muted">No backups yet.</p>`}`;
+    ${dataTable(state, {
+      id: 'backups',
+      rowKey: (b) => b.name,
+      rows: state.backups,
+      empty: 'No backups yet.',
+      columns: [
+        { key: 'taken', label: 'Taken', width: 200, value: (b) => b.at, render: (b) => when(b.at) },
+        { key: 'restore', label: '', width: 140, sortable: false, render: (b) => html`<button type="button" ${dataAttrs({ action: 'prepareRestore', name: b.name })}>Restore…</button>` },
+      ],
+    })}`;
 }

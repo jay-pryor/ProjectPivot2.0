@@ -1,6 +1,6 @@
 import { get, all, live, byCreated } from './data.js';
 import { ids, hazardLabel } from './ids.js';
-import { ratingFor } from './matrix.js';
+import { ratingFor, BANDS } from './matrix.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Rec} Rec */
@@ -179,4 +179,20 @@ export function filterControls(data, f = {}) {
     if (!used && !narrowed) rows.push({ control, hazard: null, platform: null, kind: null, state: null, band: null });
   }
   return rows;
+}
+
+/**
+ * One row per hazard, whatever its status, with every platform it is on and its residual band
+ * there, and the worst of those bands. Risk belongs to a hazard on a platform, never to the hazard.
+ * @param {Data} data
+ */
+export function hazardRows(data) {
+  return listHazards(data, 'any').map((hazard) => {
+    const platforms = live(data, 'hazardPlatform').filter((l) => l.hazardId === hazard.id).map((l) => ({
+      platform: /** @type {Rec} */ (get(data, 'platform', l.platformId)),
+      band: bandOf(ratingOf(data, hazard.id, l.platformId).residual),
+    }));
+    const worst = platforms.length ? BANDS[Math.min(...platforms.map((p) => BANDS.indexOf(p.band)))] : null;
+    return { hazard, platforms, worst };
+  });
 }
