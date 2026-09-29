@@ -4,6 +4,7 @@ import { get, live, created, changed, need, needText } from '../data.js';
 import { commit } from '../apply.js';
 import { openReview } from '../queries.js';
 import { abandonRecs } from './reviews.js';
+import { linksTo } from './references.js';
 
 /** @typedef {import('../data.js').Data} Data */
 /** @typedef {import('../data.js').Act} Act */
@@ -42,7 +43,7 @@ export function deletePlatform(data, act, { id }) {
     throw new PivotError('platform.has-hazards', `${p.name} still has ${on.length === 1 ? 'a hazard' : `${on.length} hazards`} on it. Unlink them first.`, { hazardIds: on.map((l) => l.hazardId) });
   }
   const open = openReview(data, id);
-  return commit(data, act, 'Delete platform', [{ kind: 'platform', rec: changed(p, act, { status: 'deleted' }) }, ...(open ? abandonRecs(data, act, open) : [])]);
+  return commit(data, act, 'Delete platform', [{ kind: 'platform', rec: changed(p, act, { status: 'deleted' }) }, ...(open ? abandonRecs(data, act, open) : []), ...linksTo(data, act, [{ kind: 'platform', id }])]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string }} args */

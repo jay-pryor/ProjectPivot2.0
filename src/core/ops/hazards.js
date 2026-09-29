@@ -2,6 +2,7 @@ import { PivotError } from '../errors.js';
 import { newId, hazardLabel } from '../ids.js';
 import { get, put, all, live, created, changed, need, needText, NUMBERED } from '../data.js';
 import { commit } from '../apply.js';
+import { linksTo } from './references.js';
 import { platformsOfHazard } from '../queries.js';
 
 /** @typedef {import('../data.js').Data} Data */
@@ -52,10 +53,12 @@ export function deleteHazard(data, act, { id }) {
     for (const r of live(data, kind)) if (r.hazardId === id) recs.push({ kind, rec: changed(r, act, { status: 'deleted' }) });
   }
   for (const l of live(data, 'hazardControl')) if (l.hazardId === id) recs.push({ kind: 'hazardControl', rec: changed(l, act, { status: 'deleted' }) });
+  const gone = [{ kind: 'hazard', id }, ...recs.filter((r) => r.kind === 'causalFactor' || r.kind === 'consequence').map((r) => ({ kind: r.kind, id: r.rec.id }))];
+  recs.push(...linksTo(data, act, gone));
   return commit(data, act, 'Delete hazard', recs);
 }
 
-const RESTORABLE = { hazard: 'hazard', control: 'control', platform: 'platform' };
+const RESTORABLE = { hazard: 'hazard', control: 'control', platform: 'platform', reference: 'reference' };
 
 /** @param {Data} data @param {Act} act @param {{ kind: string, id: string }} args */
 export function restoreRecord(data, act, { kind, id }) {
@@ -86,7 +89,7 @@ function childOps(kind, label) {
     /** @param {Data} data @param {Act} act @param {{ id: string }} args */
     remove(data, act, { id }) {
       const r = need(data, kind, id);
-      return commit(data, act, `Delete ${lower}`, [{ kind, rec: changed(r, act, { status: 'deleted' }) }]);
+      return commit(data, act, `Delete ${lower}`, [{ kind, rec: changed(r, act, { status: 'deleted' }) }, ...linksTo(data, act, [{ kind, id }])]);
     },
   };
 }

@@ -2,6 +2,7 @@ import { PivotError } from '../errors.js';
 import { newId, ids } from '../ids.js';
 import { get, live, created, changed, need, needText } from '../data.js';
 import { commit } from '../apply.js';
+import { linksTo } from './references.js';
 
 /** @typedef {import('../data.js').Data} Data */
 /** @typedef {import('../data.js').Act} Act */
@@ -46,7 +47,7 @@ export function deleteControl(data, act, { id }) {
   if (uses.length) {
     throw new PivotError('control.in-use', `${c.title} is still linked to ${uses.length === 1 ? 'a hazard' : `${uses.length} hazards`}. Unlink it first.`, { hazardIds: uses.map((u) => u.hazardId) });
   }
-  return commit(data, act, 'Delete control', [{ kind: 'control', rec: changed(c, act, { status: 'deleted' }) }]);
+  return commit(data, act, 'Delete control', [{ kind: 'control', rec: changed(c, act, { status: 'deleted' }) }, ...linksTo(data, act, [{ kind: 'control', id }])]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ hazardId: string, controlId: string, kind: string }} args */

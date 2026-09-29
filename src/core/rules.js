@@ -79,5 +79,17 @@ export function checkRules(data) {
       out.push({ rule: 'completed-review-changed', message: 'A completed review was changed after it was completed.', records: [{ kind: 'reviewRow', id: row.id }] });
     }
   }
+  // A reference link needs its reference and its record; a live reference points at something.
+  for (const l of live(data, 'referenceLink')) {
+    if (gone(get(data, 'reference', l.referenceId))) {
+      out.push({ rule: 'reference-link-orphaned', message: 'A reference link belongs to a deleted reference.', records: [{ kind: 'reference', id: l.referenceId }, { kind: 'referenceLink', id: l.id }] });
+    }
+    if (gone(get(data, l.targetKind, l.targetId))) {
+      out.push({ rule: 'reference-link-target-deleted', message: 'A reference is linked to a deleted record.', records: [{ kind: l.targetKind, id: l.targetId }, { kind: 'referenceLink', id: l.id }] });
+    }
+  }
+  for (const r of live(data, 'reference')) {
+    if (!r.url && !r.path && !r.file) out.push({ rule: 'reference-empty', message: 'A reference points at nothing.', records: [{ kind: 'reference', id: r.id }] });
+  }
   return out;
 }
