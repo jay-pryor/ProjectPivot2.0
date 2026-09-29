@@ -2,6 +2,7 @@ import { html } from '../html.js';
 import { dataAttrs, option, statusTag, stateTag, go, confirmButton, pageTabs, historyTable, plus, idTag, reviewTag } from './common.js';
 import { reviewLine, reviewsTab } from './reviews.js';
 import { REVIEW_DETAIL_ACTIONS } from '../../core/ops/reviews.js';
+import { waitingChanges } from '../../core/acks.js';
 import { reviewState } from '../../core/time.js';
 import { dataTable } from './table.js';
 import { notFound, statusColumn, idColumn, newRecord } from './hazards.js';
@@ -81,6 +82,10 @@ export function platformView(state, data, id) {
     <article class="doc">
       <p class="doc-meta">Owned by <select class="quiet inline-select" name="ownerId" aria-label="Owner" ${dataAttrs({ change: 'setOwner', id })}>${state.profiles.map((/** @type {any} */ pr) => option(pr.id, pr.name, p.ownerId))}</select></p>
       ${reviewLine(state, data, p)}
+      ${(() => {
+        const n = waitingChanges(data, id).length;
+        return n ? html`<p class="doc-meta"><button type="button" class="link" ${dataAttrs({ action: 'setHomeOwner', 'owner-id': p.ownerId, show: 'home' })}>${n} ${n === 1 ? 'change' : 'changes'} to acknowledge</button></p>` : '';
+      })()}
       <section class="block">
         ${dataTable(state, {
           id: 'platformHazards',

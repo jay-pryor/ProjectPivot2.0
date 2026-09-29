@@ -5,6 +5,8 @@ import { hasUnsaved } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
 import { themeOf } from '../prefs.js';
 import { ratingFor } from '../../core/matrix.js';
+import { waitingChanges } from '../../core/acks.js';
+import { live } from '../../core/data.js';
 import { UNNUMBERED } from '../../core/ids.js';
 
 /** @param {Record<string, unknown>} obj kebab-case keys @returns {import('../html.js').Raw} */
@@ -54,10 +56,10 @@ export function messages(state) {
       <button type="button" class="link" ${dataAttrs({ action: 'dismissMessage' })}>Dismiss</button></div>` : ''}${warnings.map((/** @type {string} */ w) => html`<div class="msg msg-warning" role="status">${w}</div>`)}`;
 }
 
-const NAV = [['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['reports', 'Reports'], ['backups', 'Backups']];
+const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['reports', 'Reports'], ['backups', 'Backups']];
 
 /** The top-bar section each view belongs to. */
-const SECTION = { hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', reports: 'reports', backups: 'backups' };
+const SECTION = { home: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', reports: 'reports', backups: 'backups' };
 
 /** @param {any} state @param {import('../html.js').Raw} body */
 export function shell(state, body) {
@@ -71,9 +73,14 @@ export function shell(state, body) {
     : unsaved
       ? html`<button type="button" class="save unsaved" ${dataAttrs({ action: 'save' })} title="You have unsaved changes: click to save">Unsaved</button>`
       : html`<button type="button" class="save saved" ${dataAttrs({ action: 'save' })} title="Everything is saved">Saved</button>`;
+  // Home counts the changes waiting on the active profile's platforms.
+  const data = state.session?.working;
+  const waiting = data && state.profileId
+    ? live(data, 'platform').filter((p) => p.ownerId === state.profileId).reduce((n, p) => n + waitingChanges(data, p.id).length, 0)
+    : 0;
   return html`<header class="topbar">
     <span class="brand">Pivot</span><span class="folder" title="The data folder">Folder: ${state.folderName}</span>
-    <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${label}</button>`)}</nav>
+    <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${view === 'home' && waiting ? `${label} (${waiting})` : label}</button>`)}</nav>
     <span class="spacer"></span>
     ${save}
     <button type="button" class="theme" ${dataAttrs({ action: 'setTheme', theme: other })} title="Switch to ${other} mode" aria-label="Switch to ${other} mode">${theme === 'dark' ? '☀' : '☾'}</button>

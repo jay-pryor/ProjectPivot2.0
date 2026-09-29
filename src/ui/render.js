@@ -4,6 +4,7 @@ import { hazardsView, hazardView } from './screens/hazards.js';
 import { controlsView, controlView } from './screens/controls.js';
 import { platformsView, platformView } from './screens/platforms.js';
 import { pickerView } from './screens/picker.js';
+import { homeView } from './screens/home.js';
 import { reportsView, backupsView } from './screens/reports.js';
 
 /** @param {any} state */
@@ -12,6 +13,7 @@ function mainView(state) {
   const v = state.view;
   if (!data || v.name === 'backups' || state.pendingRestore) return backupsView(state);
   switch (v.name) {
+    case 'home': return homeView(state, data);
     case 'hazard': return hazardView(state, data, v.id);
     case 'controls': return controlsView(state, data);
     case 'control': return controlView(state, data, v.id);

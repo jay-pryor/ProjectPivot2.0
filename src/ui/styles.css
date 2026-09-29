@@ -229,3 +229,8 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 .outcome textarea { font-weight: 400; }
 .outcome-text { max-width: 1100px; white-space: pre-wrap; }
 .review-warning { background: var(--p-warn-bg); border: 1px solid var(--p-warn); }
+/* Home */
+.owner-pick select { margin-left: 6px; }
+.home-summary { margin: 0 0 6px; }
+.home-h { display: flex; align-items: center; gap: 14px; margin: 26px 0 8px; }
+.home-h h2 { margin: 0; }
