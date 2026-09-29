@@ -14,6 +14,7 @@ import * as platforms from '../core/ops/platforms.js';
 import * as assessment from '../core/ops/assessment.js';
 import * as reviews from '../core/ops/reviews.js';
 import * as acks from '../core/acks.js';
+import * as references from '../core/ops/references.js';
 import { setReportDesign } from '../core/ops/reports.js';
 import { createDocHost } from '../reports/docgen-host.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
@@ -38,11 +39,14 @@ const EDITS = {
   setSchedule: reviews.setSchedule, startReview: reviews.startReview, markRow: reviews.markRow,
   setReviewOutcome: reviews.setReviewOutcome, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
+  createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
+  retireReference: references.retireReference, deleteReference: references.deleteReference,
+  linkReference: references.linkReference, unlinkReference: references.unlinkReference,
   addComment,
 };
 
 /** After creating one of these, show it. */
-const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', createPlatform: 'platform' };
+const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', createPlatform: 'platform', createReference: 'reference' };
 
 const BACKUP_CHECK_MS = 60_000;
 
@@ -56,7 +60,7 @@ export function initialState() {
     filters: { hazards: {}, controls: {} }, backups: [], pendingRestore: null,
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
     tables: {}, editing: null, saving: false, picker: null,
-    today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me',
+    today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
   };
 }
 
@@ -64,7 +68,8 @@ export function initialState() {
  * @param {{ clock: import('../core/time.js').Clock, storage: Storage,
  *   pickFolder: () => Promise<FileSystemDirectoryHandle>,
  *   pickSaveFile: (name: string) => Promise<FileSystemFileHandle>,
- *   pickOpenFile: () => Promise<string>, minSaveMs?: number }} env  minSaveMs: shortest time a save shows as saving (default 900)
+ *   pickOpenFile: () => Promise<string>, minSaveMs?: number,
+ *   openFile?: (file: File) => void, copyText?: (text: string) => Promise<void> }} env  minSaveMs: shortest time a save shows as saving (default 900)
  */
 export function createController(env) {
   let state = initialState();
@@ -170,6 +175,17 @@ export function createController(env) {
     set({ profiles: state.profiles.map((p) => (p.id === updated.id ? updated : p)) });
   }
 
+  /** A chosen file from a form, or null when none was chosen (an empty file input sends a nameless, empty file). @param {unknown} v */
+  const chosenFile = (v) => (v && typeof v === 'object' && typeof (/** @type {any} */ (v).arrayBuffer) === 'function' && /** @type {any} */ (v).name && /** @type {any} */ (v).size > 0
+    ? /** @type {File} */ (v) : null);
+
+  /** Copy a chosen file into the folder and describe it for its reference. @param {string} referenceId @param {number} n @param {File} file */
+  async function storeFile(referenceId, n, file) {
+    if (!handle) throw new PivotError('no-data', 'Open the data folder first.');
+    const stored = await store.storeReferenceFile(handle, referenceId, n, file);
+    return { name: file.name, stored, size: file.size, type: file.type || '', addedBy: /** @type {string} */ (state.profileId), addedAt: env.clock.now() };
+  }
+
   /** @type {Record<string, (args: any) => Promise<void>>} */
   const handlers = {
     async chooseFolder() {
@@ -231,6 +247,7 @@ export function createController(env) {
     async go({ view, id, hazardId, platformId, tab, reviewId }) {
       set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
+      if (view === 'references' || view === 'reference') await handlers.checkReferenceFiles();
     },
     async save() {
       if (!state.session) throw new PivotError('no-data', 'There is nothing to save yet.');
@@ -300,8 +317,50 @@ export function createController(env) {
       if (value) filters[key] = value; else delete filters[key];
       set({ tables: { ...state.tables, [table]: { ...t, filters } } });
     },
-    async openPicker({ picker, hazardId, platformId }) {
-      set({ picker: { picker, ...(hazardId ? { hazardId } : {}), ...(platformId ? { platformId } : {}) } });
+    async openPicker({ picker, hazardId, platformId, referenceId, targetKind, targetId }) {
+      const extra = { hazardId, platformId, referenceId, targetKind, targetId };
+      set({ picker: { picker, ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v)) } });
+    },
+    async addReference({ title, url, path, file }) {
+      const id = newId();
+      const f = chosenFile(file);
+      const stored = f ? await storeFile(id, 1, f) : null;
+      await applyEdit('createReference', { id, title, url, path, file: stored });
+      await handlers.checkReferenceFiles();
+    },
+    async uploadReferenceFile({ id, file }) {
+      const r = state.session?.working.records.reference[id];
+      if (!r) throw new PivotError('not-found', 'That reference no longer exists.');
+      const f = chosenFile(file);
+      if (!f) throw new PivotError('reference.file', 'Choose a file to upload.');
+      await applyEdit('attachFile', { id, file: await storeFile(id, 1 + (r.file ? 1 : 0) + r.pastFiles.length, f) });
+      await handlers.checkReferenceFiles();
+    },
+    async openReferenceFile({ stored }) {
+      if (!handle) throw new PivotError('no-data', 'Open the data folder first.');
+      const file = await store.openReferenceFile(handle, stored);
+      env.openFile?.(file);
+    },
+    async copyPath({ path }) {
+      await env.copyText?.(path);
+      set({ message: { kind: 'info', text: 'Copied the path.' } });
+    },
+    async checkReferenceFiles() {
+      if (!handle || !state.session) return;
+      const paths = Object.values(state.session.working.records.reference).filter((r) => r.status !== 'deleted')
+        .flatMap((r) => [r.file, ...r.pastFiles]).filter(Boolean).map((f) => f.stored);
+      set({ missingFiles: await store.missingFiles(handle, [...new Set(paths)]) });
+    },
+    async linkReferences(args) {
+      for (const referenceId of list(args.referenceId)) await applyEdit('linkReference', { referenceId, targetKind: args.targetKind, targetId: args.targetId });
+      set({ picker: null });
+    },
+    async linkTargets(args) {
+      for (const t of list(args.target)) {
+        const [targetKind, targetId] = t.split('|');
+        await applyEdit('linkReference', { referenceId: args.referenceId, targetKind, targetId });
+      }
+      set({ picker: null });
     },
     async closePicker() {
       set({ picker: null });

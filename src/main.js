@@ -25,5 +25,17 @@ const controller = createController({
     const [h] = await w.showOpenFilePicker({ types: [{ description: 'Pivot data file', accept: { 'application/json': ['.json'] } }] });
     return (await h.getFile()).text();
   },
+  openFile: (file) => {
+    const url = URL.createObjectURL(file);
+    // A new tab shows PDFs and images; where the browser blocks it, the file downloads instead.
+    if (!window.open(url, '_blank')) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.name;
+      a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  },
+  copyText: (text) => navigator.clipboard.writeText(text),
 });
 mount(/** @type {HTMLElement} */ (document.getElementById('pivot')), controller);
