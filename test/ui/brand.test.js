@@ -56,3 +56,9 @@ test('the splash names Pivot under the HIGHCOM wordmark, right-aligned, with a r
   assert.match(SPLASH_SVG, /<line id="hc-rule"[^>]*x1="231\.6"[^>]*x2="864"/, 'the rule spans the wordmark');
   assert.match(SPLASH_SVG, /<text id="hc-product" class="product" x="864"[^>]*text-anchor="end"[^>]*>PIVOT<\/text>/);
 });
+
+test('the fulcrum\'s triangle is the HIGHCOM orange, in the app and the tab icon', () => {
+  assert.match(FULCRUM_SVG, /<polygon[^>]*fill="var\(--p-accent, #fa9a26\)"/);
+  assert.match(FULCRUM_ICON, /<polygon[^>]*fill="#fa9a26"/);
+  for (const svg of [FULCRUM_SVG, FULCRUM_ICON]) assert.doesNotMatch(svg, /3f7fa6/i);
+});

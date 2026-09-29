@@ -8,7 +8,7 @@ const SHAPES = (/** @type {string} */ ink, /** @type {string} */ accent) => `<po
   <rect x="8" y="57" width="48" height="4" fill="${ink}"/>`;
 
 /** The logo inline, beside the name: cropped to the drawing, so its height is the drawing's and it can match the letters. */
-export const FULCRUM_SVG = `<svg class="brand-logo" viewBox="2 15 60 47" aria-hidden="true" focusable="false">${SHAPES('currentColor', 'var(--logo-accent, #3f7fa6)')}</svg>`;
+export const FULCRUM_SVG = `<svg class="brand-logo" viewBox="2 15 60 47" aria-hidden="true" focusable="false">${SHAPES('currentColor', 'var(--p-accent, #fa9a26)')}</svg>`;
 
 /** The logo as a standalone file for the tab icon: dark ink, pale on a dark browser. */
-export const FULCRUM_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><style>.ink{fill:#1f2933}@media (prefers-color-scheme: dark){.ink{fill:#e6e8ec}}</style>${SHAPES('#1f2933', '#3f7fa6').replaceAll('fill="#1f2933"', 'class="ink"')}</svg>`;
+export const FULCRUM_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><style>.ink{fill:#1f2933}@media (prefers-color-scheme: dark){.ink{fill:#e6e8ec}}</style>${SHAPES('#1f2933', '#fa9a26').replaceAll('fill="#1f2933"', 'class="ink"')}</svg>`;
