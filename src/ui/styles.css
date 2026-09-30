@@ -52,13 +52,13 @@
 * { box-sizing: border-box; }
 body { margin: 0; font: 15px/1.5 var(--p-font); color: var(--p-fg); background: var(--p-bg); text-align: left; }
 body.resizing { cursor: col-resize; user-select: none; }
-button { font: inherit; cursor: pointer; border: 1px solid var(--p-line); background: var(--p-surface-2); color: var(--p-fg); border-radius: 6px; padding: 4px 11px; text-align: left; }
+button { font: inherit; cursor: pointer; border: 1px solid var(--p-line); background: var(--p-surface-2); color: var(--p-fg); border-radius: 0; padding: 4px 11px; text-align: left; }
 button:hover:not(:disabled) { border-color: var(--p-muted); }
 button:disabled { opacity: .6; cursor: default; }
 button.primary { background: var(--p-accent); border-color: var(--p-accent); color: var(--p-accent-fg); }
 button.danger { border-color: var(--p-danger); color: var(--p-danger); background: transparent; }
 button.link { border: 0; background: none; color: var(--p-link); padding: 0; text-decoration: underline; text-underline-offset: 2px; text-align: left; }
-input, select, textarea { font: inherit; padding: 4px 8px; border: 1px solid var(--p-line); border-radius: 6px; background: var(--p-surface); color: var(--p-fg); }
+input, select, textarea { font: inherit; padding: 4px 8px; border: 1px solid var(--p-line); border-radius: 0; background: var(--p-surface); color: var(--p-fg); }
 input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--p-accent); outline-offset: 1px; }
 textarea { width: 100%; }
 h1 { font-size: 22px; margin: 10px 0 14px; }
@@ -97,11 +97,11 @@ a { color: var(--p-link); }
 .messages { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 1100; width: min(720px, calc(100vw - 32px)); }
 .messages:empty { display: none; }
 .messages .msg { box-shadow: 0 4px 16px rgba(0, 0, 0, .35); }
-.msg { margin: 10px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--p-line); background: var(--p-surface); }
+.msg { margin: 10px 0; padding: 8px 12px; border-radius: 0; border: 1px solid var(--p-line); background: var(--p-surface); }
 .msg-info { background: var(--p-info-bg); }
 .msg-warning { background: var(--p-warn-bg); }
 .msg-error { background: var(--p-error-bg); border-color: var(--p-danger); }
-.note { background: var(--p-info-bg); padding: 6px 10px; border-radius: 6px; display: inline-block; }
+.note { background: var(--p-info-bg); padding: 6px 10px; border-radius: 0; display: inline-block; }
 .muted { color: var(--p-muted); }
 .head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
@@ -133,7 +133,7 @@ ul.plain { list-style: none; margin: 0; padding: 0; }
 .col-resize:hover { background: linear-gradient(to right, transparent 4px, var(--p-accent) 4px); }
 
 /* Tags */
-.tag { display: inline-block; padding: 0 7px; border-radius: 4px; font-size: 12px; font-weight: 700; background: var(--p-surface-2); }
+.tag { display: inline-block; padding: 0 7px; border-radius: 0; font-size: 12px; font-weight: 700; background: var(--p-surface-2); }
 .tag-retired { color: var(--p-muted); }
 .tag-deleted { background: var(--p-error-bg); color: var(--p-danger); }
 .tag-tbc { background: var(--p-warn-bg); color: var(--p-warn); border: 1px dashed var(--p-warn); letter-spacing: .04em; font-variant-numeric: normal; }
@@ -145,7 +145,7 @@ ul.plain { list-style: none; margin: 0; padding: 0; }
 :root[data-theme="light"] .state-planned { background: #fff4d6; color: #7a5200; }
 :root[data-theme="light"] .state-implemented { background: #e7f5ec; color: #1d7a46; }
 :root[data-theme="light"] .state-rejected { background: #f1eafa; color: #6b3fa0; }
-.band { display: inline-block; padding: 0 7px; border-radius: 4px; font-size: 12px; font-weight: 700; }
+.band { display: inline-block; padding: 0 7px; border-radius: 0; font-size: 12px; font-weight: 700; }
 .band-high { background: #c2352b; color: #fff; }
 .band-serious { background: #e8710a; color: #fff; }
 .band-medium { background: #f2cc3f; color: #2b2200; }
@@ -155,11 +155,11 @@ ul.plain { list-style: none; margin: 0; padding: 0; }
 .onplat { white-space: nowrap; margin-right: 8px; }
 
 details.confirm { display: inline-block; }
-details.confirm > summary { display: inline-block; cursor: pointer; border: 1px solid var(--p-line); border-radius: 6px; padding: 4px 11px; background: var(--p-surface-2); list-style: none; }
+details.confirm > summary { display: inline-block; cursor: pointer; border: 1px solid var(--p-line); border-radius: 0; padding: 4px 11px; background: var(--p-surface-2); list-style: none; }
 details.confirm > summary::-webkit-details-marker { display: none; }
 details.confirm[open] > summary { margin-bottom: 4px; }
 .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--p-line); margin: 0 0 16px; }
-.tab { border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--p-muted); padding: 6px 14px; margin-bottom: -1px; }
+.tab { border: 1px solid transparent; border-bottom: 0; border-radius: 0; background: transparent; color: var(--p-muted); padding: 6px 14px; margin-bottom: -1px; }
 .tab.on { border-color: var(--p-line); background: var(--p-bg); color: var(--p-fg); font-weight: 700; }
 section { margin: 0 0 22px; }
 .fields { margin-bottom: 22px; }
@@ -167,6 +167,7 @@ section { margin: 0 0 22px; }
 .page-actions { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--p-line); }
 
 /* The DocGen designer, in Pivot's colours and font; it follows the theme via html[data-theme]. */
+.docgen, .docgen * { border-radius: 0 !important; }
 .docgen { --c-accent: var(--p-accent); --c-accent-text: var(--p-accent-fg); --font: var(--p-font); }
 
 /* Record pages read like a document you can edit in place. */
@@ -174,17 +175,17 @@ section { margin: 0 0 22px; }
 .doc-id, .id { font-variant-numeric: tabular-nums; color: var(--p-muted); }
 .doc-id { font-weight: 700; letter-spacing: .03em; }
 .id { font-size: 13px; margin-right: 4px; }
-.doc-title { display: block; width: 100%; max-width: 1100px; font-size: 26px; font-weight: 700; border: 1px solid transparent; background: transparent; padding: 2px 6px; margin: 2px 0 12px -7px; border-radius: 6px; }
+.doc-title { display: block; width: 100%; max-width: 1100px; font-size: 26px; font-weight: 700; border: 1px solid transparent; background: transparent; padding: 2px 6px; margin: 2px 0 12px -7px; border-radius: 0; }
 .doc-title:hover { border-color: var(--p-line); }
 .doc-title:focus { background: var(--p-surface); }
 .doc { max-width: none; }
 .doc-meta { color: var(--p-muted); margin: 0 0 8px; }
-.doc-text { display: block; width: 100%; max-width: 1100px; border: 1px solid transparent; background: transparent; padding: 4px 6px; margin: 0 0 22px -7px; resize: vertical; line-height: 1.6; border-radius: 6px; }
+.doc-text { display: block; width: 100%; max-width: 1100px; border: 1px solid transparent; background: transparent; padding: 4px 6px; margin: 0 0 22px -7px; resize: vertical; line-height: 1.6; border-radius: 0; }
 .doc-text:hover { border-color: var(--p-line); }
 .doc-text:focus { background: var(--p-surface); }
 /* Each list on a record page is its own card, holding the same grid as the list pages. The grid's
    own outer edge is hidden so it does not double the card's border. */
-.doc section.block { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 8px; padding: 0; overflow: hidden; }
+.doc section.block { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; padding: 0; overflow: hidden; }
 /* A table made narrower than the page takes its card with it. */
 .doc section.block:has(table.grid[data-fit]) { width: fit-content; max-width: 100%; }
 .doc .block .grid th:first-child .th .sort, .doc .block .grid th:first-child .th-label { font-size: 16px; }
@@ -199,7 +200,7 @@ section { margin: 0 0 22px; }
 select.quiet { border-color: transparent; background: transparent; padding-left: 2px; }
 select.quiet:hover, select.quiet:focus { border-color: var(--p-line); background: var(--p-surface); }
 /* A dropdown inside a table cell looks like one: a border and a raised background, the accent on hover. */
-.grid td select, .grid td select.quiet { border: 1px solid var(--p-muted); background: var(--p-surface-2); color: var(--p-fg); padding: 3px 6px; border-radius: 6px; max-width: 100%; }
+.grid td select, .grid td select.quiet { border: 1px solid var(--p-muted); background: var(--p-surface-2); color: var(--p-fg); padding: 3px 6px; border-radius: 0; max-width: 100%; }
 .grid td select:hover, .grid td select:focus { border-color: var(--p-accent); background: var(--p-surface-2); }
 select.inline-select { font: inherit; color: var(--p-fg); }
 select.state-select { font-weight: 700; }
@@ -215,11 +216,11 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 .new-row { max-width: 1240px; margin-top: 6px; }
 .comments { font-size: 14px; margin-bottom: 4px; }
 .picker-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .5); display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh; }
-.picker { width: min(640px, calc(100vw - 32px)); max-height: 76vh; display: flex; flex-direction: column; background: var(--p-bg); border: 1px solid var(--p-line); border-radius: 10px; padding: 16px 18px; box-shadow: 0 12px 40px rgba(0, 0, 0, .45); }
+.picker { width: min(640px, calc(100vw - 32px)); max-height: 76vh; display: flex; flex-direction: column; background: var(--p-bg); border: 1px solid var(--p-line); border-radius: 0; padding: 16px 18px; box-shadow: 0 12px 40px rgba(0, 0, 0, .45); }
 .picker h2 { margin: 0 0 10px; }
 .picker-form { display: flex; flex-direction: column; min-height: 0; gap: 10px; }
 .pick-search { width: 100%; }
-.pick-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; border: 1px solid var(--p-line); border-radius: 6px; }
+.pick-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; border: 1px solid var(--p-line); border-radius: 0; }
 .pick-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--p-line); }
 .pick-list li:last-child { border-bottom: 0; }
 .pick-list li[hidden] { display: none; }
@@ -253,20 +254,20 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 .ref-row .grow { max-width: 900px; }
 .ref-fields input.quiet, .ref-where input.quiet { border-color: transparent; background: transparent; color: var(--p-fg); }
 .ref-fields input.quiet:hover, .ref-fields input.quiet:focus, .ref-where input.quiet:hover, .ref-where input.quiet:focus { border-color: var(--p-line); background: var(--p-surface); }
-.chip { display: inline-block; padding: 0 7px; margin-right: 4px; border-radius: 4px; font-size: 12px; font-weight: 700; background: var(--p-surface-2); color: var(--p-muted); }
+.chip { display: inline-block; padding: 0 7px; margin-right: 4px; border-radius: 0; font-size: 12px; font-weight: 700; background: var(--p-surface-2); color: var(--p-muted); }
 .tag-missing { background: var(--p-error-bg); color: var(--p-danger); }
 .pick-list .indent { padding-left: 18px; }
 
 /* Home dashboard */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 4px 0 16px; }
-.tile { display: grid; gap: 2px; padding: 12px 14px; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 10px; color: var(--p-muted); text-align: left; }
+.tile { display: grid; gap: 2px; padding: 12px 14px; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; color: var(--p-muted); text-align: left; }
 .tile b { font-size: 28px; line-height: 1.1; color: var(--p-fg); font-variant-numeric: tabular-nums; }
 .tile.bad b { color: var(--p-danger); }
 .tile.warn b { color: var(--p-warn); }
 .tile:hover:not(:disabled), .pcard:hover:not(:disabled) { border-color: var(--p-accent); }
 .dash-cols { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 900px) { .dash-cols { grid-template-columns: 1fr; } }
-.panel { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 10px; padding: 12px 14px; margin: 0; }
+.panel { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; padding: 12px 14px; margin: 0; }
 .panel h2 { margin: 0 0 6px; font-size: 15px; }
 .panel > .muted { margin: 4px 0; }
 .attn, .upcoming { list-style: none; margin: 0; padding: 0; }
@@ -284,9 +285,9 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 button.small { padding: 2px 9px; font-size: 13px; }
 .dash-h { margin: 24px 0 10px; }
 .pcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.pcard { display: grid; gap: 6px; padding: 12px 14px; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 10px; text-align: left; }
+.pcard { display: grid; gap: 6px; padding: 12px 14px; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; text-align: left; }
 .pcard-h { display: flex; align-items: center; gap: 6px; font-size: 15px; }
-.riskbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--p-surface-2); }
+.riskbar { display: flex; height: 10px; border-radius: 0; overflow: hidden; background: var(--p-surface-2); }
 .riskbar > span { display: block; border: 0; }
 .riskbar .band-eliminated, .riskbar .band-not-credible, .riskbar .band-uncategorised { background: var(--p-line); }
 .small-text { font-size: 12px; }
@@ -294,9 +295,9 @@ button.small { padding: 2px 9px; font-size: 13px; }
 /* The SSRA on a platform tab */
 .ssra-sec { margin: 0 0 26px; }
 .ssra-sec > h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
-.shared-mark { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 4px; background: var(--p-info-bg); color: var(--p-info-fg); }
+.shared-mark { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 0; background: var(--p-info-bg); color: var(--p-info-fg); }
 .risk-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
-.risk-panel { display: grid; gap: 8px; align-content: start; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 10px; padding: 12px 14px; }
+.risk-panel { display: grid; gap: 8px; align-content: start; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; padding: 12px 14px; }
 .risk-panel h3 { margin: 0; font-size: 15px; }
 .risk-field { display: flex; align-items: center; gap: 8px; font-weight: 700; }
 .risk-field select { font-weight: 400; border: 1px solid var(--p-muted); background: var(--p-surface-2); }
@@ -308,23 +309,23 @@ button.small { padding: 2px 9px; font-size: 13px; }
 .rx { font-size: 11px; font-weight: 700; color: var(--p-muted); margin-right: 2px; }
 
 /* Text areas inside table cells */
-.cell-area { width: 100%; min-height: 2.6em; resize: vertical; border: 1px solid transparent; background: transparent; color: inherit; font: inherit; padding: 3px 6px; border-radius: 6px; }
+.cell-area { width: 100%; min-height: 2.6em; resize: vertical; border: 1px solid transparent; background: transparent; color: inherit; font: inherit; padding: 3px 6px; border-radius: 0; }
 .cell-area:hover, .cell-area:focus { border-color: var(--p-muted); background: var(--p-surface-2); }
 
 /* Lifecycle phases as chips */
 .phases { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 14px; }
 .phases-label { font-weight: 700; margin-right: 4px; }
-.chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border-radius: 999px; background: var(--p-surface-2); border: 1px solid var(--p-line); }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border-radius: 0; background: var(--p-surface-2); border: 1px solid var(--p-line); }
 .chip-x { border: 0; background: transparent; color: var(--p-muted); padding: 0 4px; line-height: 1; cursor: pointer; }
 .chip-x:hover { color: var(--p-danger); }
 
 /* The safety report form */
-.report-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 14px; margin: 12px 0; padding: 12px 14px; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 10px; max-width: 1100px; }
+.report-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 14px; margin: 12px 0; padding: 12px 14px; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; max-width: 1100px; }
 .report-form label { display: grid; gap: 4px; font-weight: 700; }
 .report-form input, .report-form select, .report-form textarea { font-weight: 400; }
 .report-form .wide { grid-column: 1 / -1; }
 
-.delete-panel { border: 1px solid var(--p-danger); border-radius: 10px; padding: 12px 14px; margin: 12px 0; background: var(--p-error-bg); }
+.delete-panel { border: 1px solid var(--p-danger); border-radius: 0; padding: 12px 14px; margin: 12px 0; background: var(--p-error-bg); }
 .delete-panel p { margin: 0 0 10px; }
 
 /* The HIGHCOM splash as Pivot opens (src/ui/splash.js). It follows the app's theme, which is dark until a profile says otherwise. */
