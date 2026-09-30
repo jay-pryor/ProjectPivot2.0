@@ -2,6 +2,7 @@ import { get } from '../core/data.js';
 import { PivotError } from '../core/errors.js';
 import { platformHazards, hazardDetail, lastReviewed, referencesFor, assessmentOf, sfarpOf, existingControlsOn, phasesOf, safetyReportsOn } from '../core/queries.js';
 import { formatRating } from '../core/matrix.js';
+import { RECEPTORS, stageKey } from '../core/receptors.js';
 import { referenceLabel, controlLabel } from '../core/ids.js';
 import { reviewState, aestDate } from '../core/time.js';
 
@@ -17,7 +18,7 @@ import { reviewState, aestDate } from '../core/time.js';
  *   phases: string[],
  *   safetyReports: { number: string, date: string | null, type: string, summary: string, description: string, location: string, parties: string }[],
  *   initial: any, residual: any,
- *   ratings: { initialPersonnel: any, initialEnvironment: any, residualPersonnel: any, residualEnvironment: any },
+ *   ratings: Record<string, any>,
  *   assessments: { stage: string, receptor: string, likelihood: string | null, likelihoodWhy: string, consequence: number | null, consequenceWhy: string, level: string }[],
  *   sfarp: { justification: string, conclusion: string, conditions: string } }} SnapshotRow
  */
@@ -56,16 +57,13 @@ export function buildSnapshot(data, platformId, o) {
       })),
       initial: r.rating.initial,
       residual: r.rating.residual,
-      ratings: {
-        initialPersonnel: r.ratings.initial.personnel, initialEnvironment: r.ratings.initial.environment,
-        residualPersonnel: r.ratings.residual.personnel, residualEnvironment: r.ratings.residual.environment,
-      },
-      assessments: ['initial', 'residual'].flatMap((stage) => ['personnel', 'environment'].map((receptor) => {
+      ratings: /** @type {any} */ (Object.fromEntries(['initial', 'residual'].flatMap((stage) => RECEPTORS.map((receptor) => [stageKey(stage, receptor), r.ratings[/** @type {'initial'} */ (stage)][/** @type {'personnel'} */ (receptor)]])))),
+      assessments: ['initial', 'residual'].flatMap((stage) => RECEPTORS.map((receptor) => {
         const a = assessmentOf(data, r.hazard.id, platformId, stage, receptor);
         return {
           stage, receptor, likelihood: a?.likelihood ?? null, likelihoodWhy: a?.likelihoodWhy ?? '',
           consequence: a?.consequence ?? null, consequenceWhy: a?.consequenceWhy ?? '',
-          level: formatRating(r.ratings[stage][receptor]),
+          level: formatRating(r.ratings[/** @type {'initial'} */ (stage)][/** @type {'personnel'} */ (receptor)]),
         };
       })),
       sfarp: sfarpOf(data, r.hazard.id, platformId),

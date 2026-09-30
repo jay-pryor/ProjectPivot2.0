@@ -3,6 +3,7 @@ import { CLASSIFICATIONS } from './classifications.js';
 import { buildSnapshot } from './snapshot.js';
 import { live } from '../core/data.js';
 import { formatRating } from '../core/matrix.js';
+import { RECEPTORS, RECEPTOR_WORD, stageKey } from '../core/receptors.js';
 import { toIsoUtc, aestDate } from '../core/time.js';
 
 /** @typedef {import('./snapshot.js').Snapshot} Snapshot */
@@ -39,10 +40,11 @@ function sectionsFor(s) {
       keyColumn: { id: '_key', label: 'ID', w: 3, get: (/** @type {any} */ r) => r.reportId },
       columns: [
         { id: 'title', label: 'Hazard', w: 6, get: (/** @type {any} */ r) => r.title },
-        { id: 'initialPersonnel', label: 'Initial risk (personnel)', w: 3, get: (/** @type {any} */ r) => formatRating(r.ratings?.initialPersonnel ?? r.initial) },
-        { id: 'initialEnvironment', label: 'Initial risk (environment)', w: 3, get: (/** @type {any} */ r) => formatRating(r.ratings?.initialEnvironment ?? null) },
-        { id: 'residualPersonnel', label: 'Residual risk (personnel)', w: 3, get: (/** @type {any} */ r) => formatRating(r.ratings?.residualPersonnel ?? r.residual) },
-        { id: 'residualEnvironment', label: 'Residual risk (environment)', w: 3, get: (/** @type {any} */ r) => formatRating(r.ratings?.residualEnvironment ?? null) },
+        // A risk column per stage and receptor; the personnel ones fall back to reports produced before assessments.
+        ...['initial', 'residual'].flatMap((stage) => RECEPTORS.map((receptor) => ({
+          id: stageKey(stage, receptor), label: `${stage === 'initial' ? 'Initial' : 'Residual'} risk (${receptor})`, w: 3,
+          get: (/** @type {any} */ r) => formatRating(r.ratings?.[stageKey(stage, receptor)] ?? (receptor === 'personnel' ? r[stage] : null) ?? null),
+        }))),
         { id: 'phases', label: 'Lifecycle phases', w: 4, optional: true, get: (/** @type {any} */ r) => (r.phases ?? []).join(', ') },
         { id: 'description', label: 'Description', w: 6, optional: true, get: (/** @type {any} */ r) => r.description },
       ],
@@ -104,7 +106,7 @@ function sectionsFor(s) {
       keyColumn: hazardKey,
       columns: [
         { id: 'stage', label: 'Stage', w: 2, get: (/** @type {any} */ r) => (r.stage === 'initial' ? 'Initial' : 'Residual') },
-        { id: 'receptor', label: 'Receptor', w: 2, get: (/** @type {any} */ r) => (r.receptor === 'personnel' ? 'Personnel' : 'Environment') },
+        { id: 'receptor', label: 'Receptor', w: 2, get: (/** @type {any} */ r) => RECEPTOR_WORD[/** @type {'personnel'} */ (r.receptor)] ?? r.receptor },
         { id: 'likelihood', label: 'Likelihood', w: 2, get: (/** @type {any} */ r) => r.likelihood ?? '' },
         { id: 'likelihoodWhy', label: 'Likelihood justification', w: 5, get: (/** @type {any} */ r) => r.likelihoodWhy },
         { id: 'consequence', label: 'Consequence', w: 2, get: (/** @type {any} */ r) => (r.consequence == null ? '' : String(r.consequence)) },

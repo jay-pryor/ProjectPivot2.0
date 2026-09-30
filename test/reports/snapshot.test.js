@@ -107,7 +107,7 @@ test('a snapshot carries the four assessments with their justifications, and SFA
   d = setSfarp(d, act, { hazardId: 'h1', platformId: 'p1', justification: 'J', conclusion: 'C', conditions: 'V' });
   const row = buildSnapshot(d, 'p1', opts).rows[0];
   assert.deepEqual(row.ratings.initialEnvironment, { consequence: 4, likelihood: 'E' });
-  assert.deepEqual(row.assessments.map((a) => [a.stage, a.receptor]), [['initial', 'personnel'], ['initial', 'environment'], ['residual', 'personnel'], ['residual', 'environment']]);
+  assert.deepEqual(row.assessments.map((a) => [a.stage, a.receptor]), [['initial', 'personnel'], ['initial', 'environment'], ['initial', 'capability'], ['residual', 'personnel'], ['residual', 'environment'], ['residual', 'capability']]);
   assert.deepEqual(row.assessments[1], { stage: 'initial', receptor: 'environment', likelihood: 'E', likelihoodWhy: 'Rare <spill>', consequence: 4, consequenceWhy: 'Contained', level: '4E = Low' });
   assert.deepEqual(row.sfarp, { justification: 'J', conclusion: 'C', conditions: 'V' });
 });
@@ -133,4 +133,12 @@ test('a snapshot carries the hazard\'s lifecycle phases and its safety reports o
   const row = buildSnapshot(d, 'p1', opts).rows[0];
   assert.deepEqual(row.phases, ['Operation']);
   assert.deepEqual(row.safetyReports, [{ number: 'SR-1', date: '2026-03-04', type: 'Near miss', summary: 'Rotor <strike>', description: '', location: 'Hangar', parties: 'Crew' }]);
+});
+
+test('a snapshot carries capability like the other receptors', () => {
+  const d = setAssessment(assessed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'capability', likelihood: 'D', consequence: 2, consequenceWhy: 'Mission <lost>' });
+  const row = buildSnapshot(d, 'p1', opts).rows[0];
+  assert.deepEqual(row.ratings.initialCapability, { consequence: 2, likelihood: 'D' });
+  assert.equal(row.assessments.length, 6);
+  assert.deepEqual(row.assessments[2], { stage: 'initial', receptor: 'capability', likelihood: 'D', likelihoodWhy: '', consequence: 2, consequenceWhy: 'Mission <lost>', level: '2D = Medium' });
 });

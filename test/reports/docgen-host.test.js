@@ -85,7 +85,7 @@ test('Hazards has four risk columns; Risk assessments and SFARP sections', async
   const docs = createDocHost({ getData: () => data, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id });
   const secs = docs.host.sections({ subjectId: 'p1' });
   const hz = secs.find((s) => s.id === 'hazards');
-  assert.deepEqual(hz.columns.map((c) => c.id), ['title', 'initialPersonnel', 'initialEnvironment', 'residualPersonnel', 'residualEnvironment', 'phases', 'description']);
+  assert.deepEqual(hz.columns.map((c) => c.id), ['title', 'initialPersonnel', 'initialEnvironment', 'initialCapability', 'residualPersonnel', 'residualEnvironment', 'residualCapability', 'phases', 'description']);
   assert.equal(hz.columns.find((c) => c.id === 'residualEnvironment').get(hz.rows()[0]), '2C = Serious');
   const ra = secs.find((s) => s.id === 'assessments');
   assert.equal(ra.label, 'Risk assessments');
@@ -146,4 +146,19 @@ test('markup in a safety report or a justification is shown literally in the pro
   for (const raw of ['<b>big</b>', '<i>twice</i>']) assert.equal(report.html.includes(raw), false, `${raw} ran as markup`);
   assert.ok(report.html.includes('&lt;b&gt;big&lt;/b&gt;'));
   assert.ok(report.markdown.includes('\\<b\\>big\\</b\\>'));
+});
+
+test('capability in Hazards and Risk assessments, and its justifications stay literal in the output', async () => {
+  const { setAssessment } = await import('../../src/core/ops/assessment.js');
+  const { docs } = setup((d) => setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'capability', likelihood: 'C', consequence: 2, consequenceWhy: 'Mission <lost>' }));
+  const secs = docs.host.sections({ subjectId: 'p1' });
+  const hz = secs.find((s) => s.id === 'hazards');
+  assert.equal(hz.columns.find((c) => c.id === 'residualCapability').label, 'Residual risk (capability)');
+  assert.equal(hz.columns.find((c) => c.id === 'residualCapability').get(hz.rows()[0]), '2C = Serious');
+  const ra = secs.find((s) => s.id === 'assessments');
+  const cap = ra.rows().find((r) => r.receptor === 'capability' && r.stage === 'residual');
+  assert.equal(ra.columns.find((c) => c.id === 'receptor').get(cap), 'Capability');
+  const { report } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'T' });
+  assert.ok(report.html.includes('Mission &lt;lost&gt;'));
+  assert.equal(report.html.includes('Mission <lost>'), false);
 });
