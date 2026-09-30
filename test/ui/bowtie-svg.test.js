@@ -79,5 +79,15 @@ test('stored text is drawn as text, whole, never as markup; a long word widens i
   assert.match(svg, /<title>&lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt; &amp; fire<\/title>/);
   assert.match(svg, />Supercalifragilisticexpialidociousnessness-of-wiring<\/tspan>/);
   const long = boxes(svg).find((x) => x.attrs.includes('data-record-id="cf2"'));
-  assert.ok(long && long.w >= 52 * 7, 'the box is as wide as the word');
+  assert.ok(long && long.w >= 52 * 5, 'the box is as wide as the word');
+});
+
+test('capitals and bold text fit their box: an all-caps hazard title stays inside the hazard border', () => {
+  const d = updateHazard(seed(), act, { id: 'h1', title: 'LOSS OF WATERTIGHT INTEGRITY' });
+  const hazard = boxes(drawn(assignNumbers(d))).find((x) => x.kind === 'hazard');
+  // 28 bold capitals measure about 223 units at 12px; a flat 7 per character gave 28 × 7 + 16 = 212.
+  assert.ok(hazard && hazard.w >= 8 * 28 + 16, `the hazard box is ${hazard?.w} wide`);
+  const ws = addCausalFactor(seed(), act, { id: 'cf9', hazardId: 'h1', text: 'W'.repeat(28) });
+  const wide = boxes(drawn(assignNumbers(ws))).find((x) => x.attrs.includes('data-record-id="cf9"'));
+  assert.ok(wide && wide.w >= 332, `a line of Ws is ${wide?.w} wide`);
 });

@@ -8,10 +8,9 @@ import { hazardLabel, controlLabel } from '../core/ids.js';
  *   item: Item | null, x: number, y: number, width: number, height: number }} Box
  */
 
-// The grid, in user units. A box is sized from its text's length, never measured, so the same
-// data always draws the same picture.
+// The grid, in user units. A box is sized from an estimate of its text's width, never measured,
+// so the same data always draws the same picture.
 const CHARS_PER_LINE = 28;
-const CHAR_WIDTH = 7;
 const LINE_HEIGHT = 16;
 const PAD = 8;
 const COLUMN_GAP = 48;
@@ -47,6 +46,23 @@ export function wrap(text) {
   }
   if (line !== '') lines.push(line);
   return lines;
+}
+
+/**
+ * A line's width at FONT_SIZE, estimated generously by kind of character so capitals and wide
+ * letters stay inside their box in any of the fallback fonts; bold is a tenth wider.
+ * @param {string} line @param {boolean} bold
+ */
+function textWidth(line, bold) {
+  let w = 0;
+  for (const ch of line) {
+    if (/[WM@%&]/.test(ch)) w += 12;
+    else if (/[A-Z]/.test(ch)) w += 8.5;
+    else if (/[ijlft.,:;'|!() ]/.test(ch)) w += 3.5;
+    else if (/[mw]/.test(ch)) w += 10;
+    else w += 7;
+  }
+  return bold ? w * 1.1 : w;
 }
 
 /** @param {string} kind @param {string | null} id @param {string} title @param {string[]} lines @param {Box['style']} style @param {Item | null} [item] @returns {Box} */
@@ -102,7 +118,7 @@ export function bowtieSvg(w) {
   const top = MARGIN + CAPTION_HEIGHT;
   let x = MARGIN;
   columns.forEach((col, n) => {
-    const width = Math.max(1, ...col.flatMap((b) => b.lines.map((l) => l.length))) * CHAR_WIDTH + 2 * PAD;
+    const width = Math.ceil(Math.max(7, ...col.flatMap((b) => b.lines.map((l) => textWidth(l, b.style === 'hazard'))))) + 2 * PAD;
     let y = top + Math.floor((contentHeight - heights[n]) / 2);
     for (const b of col) {
       b.x = x;
