@@ -4,7 +4,7 @@ import { hazardView } from '../../src/ui/screens/hazards.js';
 import { initialState } from '../../src/ui/controller.js';
 import { assignNumbers } from '../../src/core/ops/hazards.js';
 import { setAssessment, setSfarp, setControlStatus } from '../../src/core/ops/assessment.js';
-import { setControlAnalysis, linkExistingControl, updateControl, retireControl } from '../../src/core/ops/controls.js';
+import { setControlAnalysis, linkExistingControl, updateControl, retireControl, createControl } from '../../src/core/ops/controls.js';
 import { pickerView } from '../../src/ui/screens/picker.js';
 import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
 import { seed, act } from '../helpers.js';
@@ -134,15 +134,13 @@ test('the existing-controls picker offers live controls not already listed there
   assert.doesNotMatch(out, /value="c1"/, 'retired');
 });
 
-test('the Controls list shows existing uses as their own rows, and a control page lists them', async () => {
+test('the Controls list counts existing uses among a control\'s hazards and platforms, and a control page lists them', async () => {
   const { controlsView, controlView } = await import('../../src/ui/screens/controls.js');
   const d = controlled();
-  const list = controlsView(state, d).toString();
-  assert.match(list, /<th data-col="role"/);
-  assert.match(list, /data-row="c2:h1:p1:existing"/);
-  const only = controlsView({ ...state, tables: { controls: { filters: { role: 'existing' } } } }, d).toString();
-  assert.match(only, /data-row="c2:h1:p1:existing"/);
-  assert.doesNotMatch(only, /data-row="c1:/);
+  const c3 = createControl(d, act, { id: 'c3', title: 'Hot work permit' });
+  const withExisting = linkExistingControl(c3, act, { hazardId: 'h1', platformId: 'p2', controlId: 'c3', kind: 'preventative' });
+  const list = controlsView(state, withExisting).toString();
+  assert.match(list, /<tr data-row="c3">[\s\S]*?H-0001 Fire[\s\S]*?Bravo/, 'an existing-control use counts as a hazard and platform it serves');
   const page = controlView(state, d, 'c2').toString();
   assert.match(page, /data-table="controlExisting"[\s\S]*?Fire[\s\S]*?Alpha[\s\S]*?mitigating/);
   assert.doesNotMatch(page, /Delete this control/);

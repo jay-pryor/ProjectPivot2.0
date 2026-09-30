@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   controlState, ratingOf, bandOf, hazardDetail, platformHazards, controlUsage, hazardsNotOn, listHazards,
-  filterHazards, filterControls,
+  filterHazards,
 } from '../../src/core/queries.js';
 import { assignHazardNumbers, retireHazard, createHazard } from '../../src/core/ops/hazards.js';
 import { confirmControl, excludeControl, setRating } from '../../src/core/ops/assessment.js';
@@ -79,15 +79,6 @@ test('filterHazards: by platform, band and status, singly and together; a subset
   assert.deepEqual(filterHazards(d, { band: 'Serious', platformId: 'p2' }), []);
   d = retireHazard(d, act, { id: 'h3' });
   assert.deepEqual(filterHazards(d, { status: 'retired' }).map((r) => r.hazard.id), ['h3']);
-});
-
-test('filterControls: by platform, band, status and control state', () => {
-  const d = assessed();
-  const rows = filterControls(d, {});
-  assert.deepEqual(rows.map((r) => `${r.control.id}@${r.platform.id}:${r.state}`), ['c1@p1:implemented', 'c1@p2:recommended', 'c2@p1:rejected', 'c2@p2:recommended']);
-  assert.deepEqual(filterControls(d, { controlState: 'recommended' }).map((r) => r.platform.id), ['p2', 'p2']);
-  assert.deepEqual(filterControls(d, { platformId: 'p1', controlState: 'rejected' }).map((r) => r.control.id), ['c2']);
-  assert.deepEqual(filterControls(d, { band: 'Low' }).map((r) => r.control.id), ['c1', 'c2']);
 });
 
 test('hazardRows: one row per hazard, of any status, with each platform it is on and its residual band there', async () => {

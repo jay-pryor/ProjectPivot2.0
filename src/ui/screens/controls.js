@@ -1,14 +1,12 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, bandTag, stateTag, go, confirmButton, pageTabs, historyTable, historyCount, idTag } from './common.js';
+import { dataAttrs, option, statusTag, stateTag, go, confirmButton, pageTabs, historyTable, historyCount, idTag } from './common.js';
 import { dataTable } from './table.js';
 import { referencesCard } from './references.js';
 import { statusColumn, idColumn, newRecord, notFound } from './hazards.js';
 import { get, live } from '../../core/data.js';
 import { hazardLabel, controlLabel } from '../../core/ids.js';
-import { BANDS } from '../../core/matrix.js';
-import { filterControls, controlUsage, existingUsage, platformsReached } from '../../core/queries.js';
-import { CONTROL_KINDS, CONTROL_TIERS, tierRank } from '../../core/ops/controls.js';
-import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
+import { controlRows, controlUsage, existingUsage, platformsReached } from '../../core/queries.js';
+import { CONTROL_TIERS, tierRank } from '../../core/ops/controls.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -23,37 +21,32 @@ export const tierColumn = (controlOf, filter = true) => ({
   } : {}),
 });
 
-const STATES = /** @type {[string, string][]} */ (CONTROL_STATUSES.map((s) => [s, s]));
 
 /** @param {any} state @param {Data} data */
 export function controlsView(state, data) {
   return html`<div class="head"><h1>Controls</h1>${newRecord(state, 'newControl', 'createControl', 'title', 'New control title')}</div>
-    <p class="muted">One row per control on each hazard and platform it serves, so its state there can be seen and filtered.</p>
+    <p class="muted">Each control once, with the hazards and platforms it serves. Open a control for its detail on each platform.</p>
     ${dataTable(state, {
       id: 'controls',
-      rowKey: (r) => `${r.control.id}:${r.hazard?.id ?? ''}:${r.platform?.id ?? ''}${r.role === 'existing' ? ':existing' : ''}`,
-      rows: filterControls(data, { status: 'any' }),
+      rowKey: (r) => r.control.id,
+      rows: controlRows(data),
       empty: 'No controls yet.',
       columns: [
         idColumn((r) => r.control, controlLabel, (r) => go(idTag(controlLabel(r.control)), 'control', { id: r.control.id })),
         { key: 'control', label: 'Control', width: 440, minWidth: 180, value: (r) => r.control.title, filter: 'text',
           render: (r) => go(r.control.title, 'control', { id: r.control.id }) },
-        { key: 'hazard', label: 'Hazard', width: 440, minWidth: 180, value: (r) => (r.hazard ? `${hazardLabel(r.hazard)} ${r.hazard.title}` : ''), filter: 'text',
-          render: (r) => (r.hazard ? go(html`${idTag(hazardLabel(r.hazard))} ${r.hazard.title}`, 'hazard', { id: r.hazard.id }) : '—') },
-        { key: 'platform', label: 'Platform', width: 280, minWidth: 130, value: (r) => r.platform?.name ?? '', filter: 'select',
-          options: live(data, 'platform').map((p) => /** @type {[string, string]} */ ([p.id, p.name])),
-          match: (r, v) => r.platform?.id === v, render: (r) => r.platform?.name ?? '—' },
-        { key: 'role', label: 'Role', width: 220, minWidth: 110, value: (r) => r.role ?? '', filter: 'select',
-          options: /** @type {[string, string][]} */ ([['additional', 'Additional'], ['existing', 'Existing']]),
-          render: (r) => (r.role === 'existing' ? 'Existing' : r.role === 'additional' ? 'Additional' : '—') },
         tierColumn((r) => r.control),
-        { key: 'kind', label: 'Kind', width: 240, minWidth: 130, value: (r) => r.kind ?? '', filter: 'select',
-          options: CONTROL_KINDS.map((k) => /** @type {[string, string]} */ ([k, k])), render: (r) => r.kind ?? '—' },
-        { key: 'state', label: 'State', width: 240, minWidth: 120, value: (r) => r.state ?? '', filter: 'select', options: STATES,
-          render: (r) => (r.state ? stateTag(r.state) : '—') },
-        { key: 'risk', label: 'Residual risk', width: 260, minWidth: 140, value: (r) => (r.band ? BANDS.indexOf(r.band) : null), filter: 'select',
-          options: BANDS.map((b) => /** @type {[string, string]} */ ([b, b])), match: (r, v) => r.band === v,
-          render: (r) => (r.band ? bandTag(r.band) : '—') },
+        { key: 'hazards', label: 'Hazards', width: 520, minWidth: 200, sortable: false, filter: 'text',
+          value: (r) => r.hazards.map((/** @type {any} */ h) => `${hazardLabel(h)} ${h.title}`).join(' '),
+          render: (r) => (r.hazards.length
+            ? html`<ul class="plain">${r.hazards.map((/** @type {any} */ h) => html`<li>${go(`${hazardLabel(h)} ${h.title}`, 'hazard', { id: h.id })}</li>`)}</ul>`
+            : html`<span class="muted">None</span>`) },
+        { key: 'platforms', label: 'Platforms', width: 360, minWidth: 160, sortable: false, filter: 'select',
+          options: live(data, 'platform').map((p) => /** @type {[string, string]} */ ([p.id, p.name])),
+          match: (r, v) => r.platforms.some((/** @type {any} */ p) => p.id === v),
+          render: (r) => (r.platforms.length
+            ? html`<ul class="plain">${r.platforms.map((/** @type {any} */ p) => html`<li>${go(p.name, 'platform', { id: p.id })}</li>`)}</ul>`
+            : html`<span class="muted">None</span>`) },
         statusColumn((r) => r.control.status),
       ],
     })}`;

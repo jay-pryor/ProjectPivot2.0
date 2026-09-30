@@ -32,11 +32,17 @@ test('the hazard list filters: status (live by default), platform, and risk on t
 
 
 
-test('the control library and a control\'s page show where it is used and its state on each platform', () => {
-  const list = controlsView({ ...state, tables: { controls: { filters: { state: 'implemented' } } } }, data()).toString();
+test('the control library lists each control once, with its hazards and platforms; a control\'s page has the per-platform detail', () => {
+  const list = controlsView(state, data()).toString();
   assert.match(list, /data-action="startEdit" data-kind="newControl"/);
-  assert.match(list, /Sprinklers/);
-  assert.doesNotMatch(list, /Fire drills/, 'filtered to confirmed');
+  assert.equal((list.match(/<tr data-row="c1"/g) ?? []).length, 1, 'one row per control, whatever it serves');
+  const heads = [...list.split('</thead>')[0].matchAll(/<th data-col="(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(heads, ['id', 'control', 'tier', 'hazards', 'platforms', 'status']);
+  assert.match(list, /<tr data-row="c1">[\s\S]*?data-view="hazard" data-id="h1">H-0001 Fire<\/button>[\s\S]*?data-view="platform" data-id="p1">Alpha<\/button>[\s\S]*?data-view="platform" data-id="p2">Bravo<\/button>/);
+  const onBravo = controlsView({ ...state, tables: { controls: { filters: { platforms: 'p2' } } } }, data()).toString();
+  assert.match(onBravo, /data-row="c1"/);
+  const byHazard = controlsView({ ...state, tables: { controls: { filters: { hazards: 'flood' } } } }, data()).toString();
+  assert.doesNotMatch(byHazard, /data-row="c1"/, 'c1 serves Fire, not Flood');
   const page = controlView(state, data(), 'c1').toString();
   assert.match(page, /data-change="updateControl" data-id="c1"/);
   assert.match(page, /state-implemented/);

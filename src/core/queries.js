@@ -234,39 +234,21 @@ export function filterHazards(data, f = {}) {
 }
 
 /**
- * One row per control per hazard-on-platform it serves; a control used nowhere is one row with
- * none. A control's band is the residual band of the hazard row it appears on.
- * @param {Data} data @param {Filter} f
+ * The control library: each control once, whatever its status, with the hazards it serves (as an
+ * additional control, or as an existing control on a platform) and the platforms those reach.
+ * @param {Data} data
  */
-export function filterControls(data, f = {}) {
-  const rows = [];
-  const narrowed = Boolean(f.platformId || f.band || f.controlState);
-  for (const control of all(data, 'control').filter((c) => statusMatches(c, f.status))) {
-    let used = false;
-    for (const hc of live(data, 'hazardControl').filter((l) => l.controlId === control.id)) {
-      const hazard = /** @type {Rec} */ (get(data, 'hazard', hc.hazardId));
-      for (const hp of live(data, 'hazardPlatform').filter((l) => l.hazardId === hazard.id)) {
-        used = true;
-        if (f.platformId && hp.platformId !== f.platformId) continue;
-        const { state } = controlState(data, hazard.id, control.id, hp.platformId);
-        const band = worseResidual(data, hazard.id, hp.platformId);
-        if (f.band && band !== f.band) continue;
-        if (f.controlState && state !== f.controlState) continue;
-        rows.push({ control, hazard, platform: /** @type {Rec} */ (get(data, 'platform', hp.platformId)), kind: hc.kind, state, band, role: 'additional' });
-      }
-    }
-    for (const ec of live(data, 'existingControl').filter((l) => l.controlId === control.id)) {
-      used = true;
-      if (f.platformId && ec.platformId !== f.platformId) continue;
-      if (f.controlState) continue;
-      const hazard = /** @type {Rec} */ (get(data, 'hazard', ec.hazardId));
-      const band = worseResidual(data, hazard.id, ec.platformId);
-      if (f.band && band !== f.band) continue;
-      rows.push({ control, hazard, platform: /** @type {Rec} */ (get(data, 'platform', ec.platformId)), kind: ec.kind, state: null, band, role: 'existing' });
-    }
-    if (!used && !narrowed) rows.push({ control, hazard: null, platform: null, kind: null, state: null, band: null, role: null });
-  }
-  return rows;
+export function controlRows(data) {
+  return all(data, 'control').map((control) => {
+    const hazardIds = new Set([
+      ...live(data, 'hazardControl').filter((l) => l.controlId === control.id).map((l) => l.hazardId),
+      ...live(data, 'existingControl').filter((l) => l.controlId === control.id).map((l) => l.hazardId),
+    ]);
+    const hazards = [...hazardIds].map((id) => /** @type {Rec} */ (get(data, 'hazard', id))).filter(Boolean).sort(byNumber);
+    const platforms = platformsReached(data, 'control', control).map((id) => /** @type {Rec} */ (get(data, 'platform', id))).filter(Boolean)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    return { control, hazards, platforms };
+  });
 }
 
 /**
