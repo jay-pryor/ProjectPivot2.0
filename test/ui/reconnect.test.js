@@ -37,7 +37,7 @@ test('on opening, a remembered folder is offered to reconnect to, beside choosin
   await c.dispatch({ type: 'recallFolder' });
   assert.equal(c.getState().lastFolder, 'Safety');
   const out = openScreen(c.getState()).toString();
-  assert.match(out, /<button type="button" class="primary" data-action="reconnectFolder">Reconnect to Safety<\/button>/);
+  assert.match(out, /<button type="button" class="primary beckon" data-action="reconnectFolder">Reconnect to Safety<\/button>/);
   assert.match(out, /<button type="button" data-action="chooseFolder">Choose a different folder…<\/button>/);
   const none = createController(env(f).env);
   await none.dispatch({ type: 'recallFolder' });
@@ -118,12 +118,12 @@ test('cancelling the folder picker leaves everything as it was', async () => {
   assert.equal(c.getState().message, null);
 });
 
-test('the profile screen names the folder but leaves choosing another to the screen before it', async () => {
+test('the profile screen leaves the folder, and choosing another, to the screen before it', async () => {
   const { profileScreen } = await import('../../src/ui/screens/start.js');
   const f = new MemoryFolder('Wrong');
   const c = createController(env(f).env);
   await c.dispatch({ type: 'chooseFolder' });
   const out = profileScreen(c.getState()).toString();
-  assert.match(out, /Wrong/);
+  assert.doesNotMatch(out, /Wrong/);
   assert.doesNotMatch(out, /Choose a different folder/);
 });

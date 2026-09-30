@@ -5,6 +5,8 @@
  * Adapted from MediaAssets/highcom-splash.html without its preview controls or web fonts.
  */
 
+import { SHAPES } from './logo.js';
+
 const DUR = 2720;
 /** Played a little quicker than the original's 2.72 s. */
 const SPEED = 1.3;
@@ -74,7 +76,10 @@ export const SPLASH_SVG = `<svg class="splash-logo" viewBox="-70 -95 1004 396" r
     </g>
   </g>
   <line id="hc-rule" class="rule" x1="231.6" y1="166" x2="864" y2="166" opacity="0"/>
-  <text id="hc-product" class="product" x="864" dx="14" y="216" text-anchor="end" opacity="0">PIVOT</text>
+  <g id="hc-product-g" opacity="0">
+    <svg id="hc-product-logo" class="product-logo" x="760" y="183.8" width="41.1" height="32.2" viewBox="2 15 60 47" overflow="visible">${SHAPES('var(--hc-fg)', 'var(--hc-accent)')}</svg>
+    <text id="hc-product" class="product" x="864" dx="14" y="216" text-anchor="end">PIVOT</text>
+  </g>
 </svg>`;
 
 /**
@@ -109,7 +114,7 @@ export function playSplash(doc) {
   const op = (/** @type {Element} */ el, /** @type {number} */ v) => el.setAttribute('opacity', v.toFixed(3));
 
   const shield = $('shield'), core = $('core'), frame = $('frame'), column = $('column'), leg = $('leg'), bar = $('crossbar'), sheen = $('sheen');
-  const clipRect = $('word-clip-rect'), rule = $('rule'), product = $('product');
+  const clipRect = $('word-clip-rect'), rule = $('rule'), product = $('product'), productGroup = $('product-g'), productLogo = $('product-logo');
   const flash = /** @type {HTMLElement} */ (overlay.querySelector('.splash-flash'));
   const traces = [$('trace-l'), $('trace-r')];
   const sparks = [$('spark-l'), $('spark-r')];
@@ -178,11 +183,13 @@ export function playSplash(doc) {
         l.style.fill = m >= 1 ? 'var(--hc-accent)' : mix(m);
       }
     });
-    // Pivot, by HIGHCOM: a hairline draws out under the wordmark, then the product name rises into place.
+    // Pivot, by HIGHCOM: a hairline draws out under the wordmark, then the product name, with the
+    // fulcrum to its left as in the top bar, rises into place.
     const pr = ease.outCubic(P(t, 1950, 380));
     tf(rule, `translate(231.6 0) scale(${Math.max(pr, 0.0001)} 1) translate(-231.6 0)`); op(rule, P(t, 1950, 60));
     const pp = ease.outExpo(P(t, 2120, 520));
-    tf(product, `translate(0 ${12 * (1 - pp)})`); op(product, P(t, 2120, 300));
+    if (t >= 2120) productLogo.setAttribute('x', (product.getBBox().x - 24 - 41.1).toFixed(2));
+    tf(productGroup, `translate(0 ${12 * (1 - pp)})`); op(productGroup, P(t, 2120, 300));
   }
 
   return new Promise((resolve) => {

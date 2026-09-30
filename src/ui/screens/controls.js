@@ -27,7 +27,6 @@ export const tierColumn = (controlOf, filter = true) => ({
 /** @param {any} state @param {Data} data */
 export function controlsView(state, data) {
   return html`<div class="head"><h1>Controls</h1>${newRecord(state, 'newControl', 'createControl', 'title', 'New control title')}</div>
-    <p class="muted">Each control once, with the hazards and platforms it serves. Open a control for its detail on each platform.</p>
     ${dataTable(state, {
       id: 'controls',
       rowKey: (r) => r.control.id,
@@ -61,22 +60,23 @@ export function controlView(state, data, id) {
   const tab = state.view?.tab;
   const head = html`<p>${go('← Controls', 'controls')}</p>
     <div class="doc-head"><span class="doc-id">${idTag(controlLabel(c))}</span>${statusTag(c.status)}</div>
-    <input class="doc-title" name="title" value="${c.title}" required aria-label="Control title" ${dataAttrs({ change: 'updateControl', id })}>
+    <textarea class="doc-title" name="title" rows="1" required aria-label="Control title" ${dataAttrs({ change: 'updateControl', id })}>${c.title}</textarea>
     ${pageTabs('control', { id }, tab, historyCount(state, data, 'control', id), reachedPlatforms(data, c).map((p) => /** @type {[string, unknown]} */ ([`p:${p.id}`, p.name])), 'Overview')}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'control', id)}`;
   if (tab && tab.startsWith('p:')) return html`${head}${controlPlatformTab(state, data, c, tab.slice(2))}`;
   const usage = controlUsage(data, id);
   const existing = existingUsage(data, id);
-  const reach = platformsReached(data, 'control', c).map((pid) => get(data, 'platform', pid)?.name ?? pid);
   const actions = c.status === 'live'
     ? html`<button type="button" ${dataAttrs({ action: 'retireControl', id })}>Retire</button>
        ${usage.length || existing.length ? '' : confirmButton('Delete…', 'Delete this control', dataAttrs({ action: 'deleteControl', id }))}`
     : c.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'control', id })}>Restore</button>` : '';
   return html`${head}
     <article class="doc">
-      <p class="doc-meta">${reach.length ? html`Used on ${reach.join(', ')}${reach.length > 1 ? '. Changes here reach all of them.' : '.'}` : 'Not used on any platform yet.'}</p>
-      <p class="doc-meta">Tier <select class="quiet inline-select" name="tier" aria-label="Tier" ${dataAttrs({ change: 'updateControl', id })}>${option('', 'Not set', c.tier ?? '')}${CONTROL_TIERS.map((t) => option(t, t, c.tier ?? ''))}</select></p>
-      <textarea class="doc-text" name="description" rows="3" placeholder="Add a description…" aria-label="Description" ${dataAttrs({ change: 'updateControl', id })}>${c.description}</textarea>
+      <div class="field-row"><span class="field-label" id="tier-label">Tier</span>
+        <div class="tier-pick" role="radiogroup" aria-labelledby="tier-label">${CONTROL_TIERS.map((t) => html`<button type="button" role="radio" aria-checked="${c.tier === t ? 'true' : 'false'}" ${c.tier === t ? html`class="on" title="Click again to clear the tier"` : ''} ${dataAttrs({ action: 'updateControl', id, tier: c.tier === t ? '' : t })}>${t}</button>`)}</div>
+        ${c.tier ? '' : html`<span class="muted">Not set</span>`}</div>
+      <label class="field-block"><span class="field-label">Description</span>
+        <textarea class="doc-text boxed" name="description" rows="4" placeholder="Add a description…" ${dataAttrs({ change: 'updateControl', id })}>${c.description}</textarea></label>
       <section class="block">
         ${dataTable(state, {
           id: 'controlUsage',

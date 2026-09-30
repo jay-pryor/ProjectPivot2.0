@@ -120,10 +120,29 @@ export function mount(root, controller) {
     const i = all.indexOf(/** @type {HTMLElement} */ (e.target));
     moving = i < 0 ? null : all[i + (e.shiftKey ? -1 : 1)] ?? null;
   }, true);
+  // The first drawing of a new screen plays its short arrival (the profile tiles rising in, the app
+  // after choosing a profile); any redraw after that shows the screen as it is, without replaying it.
+  let screen = '';
+  let theme = '';
+  // A title that wraps (a textarea) is still one line: Enter finishes it and a pasted line break is a space.
+  appEl.addEventListener('keydown', (e) => {
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (e.key === 'Enter' && t.tagName === 'TEXTAREA' && t.classList.contains('doc-title')) { e.preventDefault(); t.blur(); }
+  });
+  appEl.addEventListener('input', (e) => {
+    const t = /** @type {HTMLTextAreaElement} */ (e.target);
+    if (t.tagName === 'TEXTAREA' && t.classList.contains('doc-title') && /[\r\n]/.test(t.value)) t.value = t.value.replace(/\s*[\r\n]+\s*/g, ' ');
+  });
   /** @param {any} state */
   const paint = (state) => {
     document.documentElement.dataset.theme = themeOf(state);
     const drafts = captureDrafts(appEl, submitting, moving);
+    appEl.classList.toggle('arrive', state.screen !== screen);
+    screen = state.screen;
+    // Likewise the theme switch's knob slides across only on the drawing that changes the theme.
+    const t = themeOf(state);
+    appEl.classList.toggle('theme-flipped', theme !== '' && t !== theme);
+    theme = t;
     appEl.innerHTML = renderApp(state);
     restoreDrafts(appEl, drafts);
     // A box just opened in place (edit, add, a picker's search) takes the cursor.

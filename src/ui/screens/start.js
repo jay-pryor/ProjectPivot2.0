@@ -3,15 +3,18 @@ import { FULCRUM_SVG } from '../logo.js';
 import { dataAttrs, messages } from './common.js';
 import { profileName, recordName, when, KIND_LABEL } from '../names.js';
 
+/** The logo, large and at the top middle, in the same place on the folder and profile screens. */
+const frontBrand = () => html`<div class="front-brand"><h1 class="brand-title">${raw(FULCRUM_SVG)}PIVOT</h1></div>`;
+
 /** @param {any} state */
 export function openScreen(state) {
-  return html`<div class="start"><h1 class="brand-title">${raw(FULCRUM_SVG)}PIVOT</h1>
+  return html`<div class="start front">${frontBrand()}<div class="front-body">
     <p>Choose the shared data folder. A new, empty folder starts an empty register.</p>
     ${state.lastFolder
-      ? html`<div class="row"><button type="button" class="primary" ${dataAttrs({ action: 'reconnectFolder' })}>Reconnect to ${state.lastFolder}</button>
+      ? html`<div class="row"><button type="button" class="primary beckon" ${dataAttrs({ action: 'reconnectFolder' })}>Reconnect to ${state.lastFolder}</button>
         <button type="button" ${dataAttrs({ action: 'chooseFolder' })}>Choose a different folder…</button></div>`
       : html`<button type="button" class="primary" ${dataAttrs({ action: 'chooseFolder' })}>Choose data folder…</button>`}
-    ${messages(state)}</div>`;
+    ${messages(state)}</div></div>`;
 }
 
 /** @param {any} state */
@@ -28,13 +31,13 @@ export function checkScreen(state) {
 
 /** @param {any} state */
 export function profileScreen(state) {
-  return html`<div class="start"><h1>Who are you?</h1><p class="muted">${state.folderName}</p>
+  return html`<div class="start front">${frontBrand()}<div class="front-body">
+    <h2 class="front-title">Log In</h2>
     ${messages(state)}
-    ${state.profiles.length
-      ? html`<ul class="profiles">${state.profiles.map((/** @type {any} */ p) => html`<li><button type="button" ${dataAttrs({ action: 'selectProfile', id: p.id })}>${p.name}</button></li>`)}</ul>`
-      : html`<p>No profiles yet. Create yours.</p>`}
-    <form data-action="createProfile" class="row"><label>New profile <input name="name" required autocomplete="off"></label><button type="submit">Create</button></form>
-  </div>`;
+    <ul class="profiles">${state.profiles.map((/** @type {any} */ p, /** @type {number} */ i) => html`<li style="--i: ${i}"><button type="button" class="profile-tile" ${dataAttrs({ action: 'selectProfile', id: p.id })}><span class="initial" aria-hidden="true">${[...p.name.trim()][0]?.toUpperCase() ?? '?'}</span><span class="name">${p.name}</span></button></li>`)}
+      <li style="--i: ${state.profiles.length}"><form data-action="createProfile" class="profile-tile new"><span class="initial" aria-hidden="true">+</span><label>New profile <input name="name" required autocomplete="off"></label><button type="submit" class="primary">Create</button></form></li></ul>
+    ${state.profiles.length ? null : html`<p>No profiles yet. Create yours.</p>`}
+  </div></div>`;
 }
 
 /** @param {any} state */

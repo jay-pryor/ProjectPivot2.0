@@ -104,4 +104,6 @@ test('the top bar: the folder is labelled, one save button says Unsaved or Saved
   assert.match(saved, /data-action="setTheme" data-theme="light"/, 'dark by default, offering light');
   const light = shell({ ...base, profiles: [{ ...base.profiles[0], prefs: { theme: 'light' } }], session: { base: data, working: data, loadedStamp: null } }, html``).toString();
   assert.match(light, /data-action="setTheme" data-theme="dark"/);
+  assert.match(saved, /class="theme" role="switch" aria-checked="true"/, 'the theme switch is on for dark');
+  assert.match(light, /class="theme" role="switch" aria-checked="false"/);
 });

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { changeDetail } from '../../src/ui/screens/common.js';
-import { homeView, openItemsView, homeOwnerId } from '../../src/ui/screens/home.js';
+import { homeView, openItemsView, homeOwnerId, changeSummary } from '../../src/ui/screens/home.js';
 import { createControl, linkControl } from '../../src/core/ops/controls.js';
 import { platformView } from '../../src/ui/screens/platforms.js';
 import { renderApp } from '../../src/ui/render.js';
@@ -101,7 +101,8 @@ test('needs attention: most urgent first; changes acknowledged in place; the res
   const [e] = waitingChanges(d, 'p1');
   assert.match(out, new RegExp(`data-action="acknowledge" data-entry-id="${e.id}" data-platform-id="p1">Acknowledge<`));
   assert.match(out, /data-action="go" data-view="platform" data-id="p1" data-tab="reviews">Review →/);
-  assert.match(out, /Sprinklers on Alpha/);
+  assert.match(out, /<td class="what">Sprinklers <span class="muted">[^<]*<\/span><\/td>\s*<td class="by"><\/td><td class="where"><button[^>]*data-id="p1"[^>]*>Alpha</, 'each part in its own column');
+  assert.match(out, /<th>Type<\/th><th>Description<\/th><th>By<\/th><th>Platform<\/th>/);
   assert.match(out, /data-action="go" data-view="openItems">Open items →/);
 });
 
@@ -112,8 +113,8 @@ test('needs attention shows the eight most urgent and a See all link', () => {
     d = linkControl(d, at('10:50', 'u1'), { hazardId: 'h1', controlId: `c${n}`, kind: 'preventative' });
   }
   const out = homeView(state, d).toString();
-  const list = out.slice(out.indexOf('<ul class="attn">'), out.indexOf('</ul>', out.indexOf('<ul class="attn">')));
-  assert.equal((list.match(/<li>/g) ?? []).length, 8);
+  const list = out.slice(out.indexOf('<table class="attn">'), out.indexOf('</table>', out.indexOf('<table class="attn">')));
+  assert.equal((list.match(/<tr>/g) ?? []).length, 9, 'a header row and eight items');
   assert.match(out, />See all 11 →</);
 });
 
@@ -138,4 +139,12 @@ test('my platforms: a card per platform with its review, risk bar and what is op
   assert.match(everyone, /<h2 class="dash-h">Platforms<\/h2>/);
   assert.match(everyone, /data-id="p2">[\s\S]*?Grace/);
   assert.match(homeView({ ...state, homeOwner: 'u2' }, data()).toString(), /<h2 class="dash-h">Grace’s platforms<\/h2>/);
+});
+
+test('a change in Needs attention says its action once: a name that repeats the action runs on from it', () => {
+  assert.equal(changeSummary('Set residual environment risk', 'Residual environment risk of H-0004 on Alpha'), 'Set residual environment risk of H-0004 on Alpha');
+  assert.equal(changeSummary('Edit hazard', 'H-0001 Fire'), 'Edit hazard: H-0001 Fire');
+  assert.equal(changeSummary('Set review notes', 'Review notes'), 'Set review notes');
+  assert.equal(changeSummary('Set risk', 'Riskiest thing'), 'Set risk: Riskiest thing', 'whole words only');
+  assert.equal(changeSummary('Delete hazard', ''), 'Delete hazard');
 });

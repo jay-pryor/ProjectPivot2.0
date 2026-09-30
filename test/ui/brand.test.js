@@ -55,6 +55,7 @@ test('the top-bar logo is cropped to its drawing, so it can be sized to the lett
 test('the splash names Pivot under the HIGHCOM wordmark, right-aligned, with a rule between', () => {
   assert.match(SPLASH_SVG, /<line id="hc-rule"[^>]*x1="231\.6"[^>]*x2="864"/, 'the rule spans the wordmark');
   assert.match(SPLASH_SVG, /<text id="hc-product" class="product" x="864"[^>]*text-anchor="end"[^>]*>PIVOT<\/text>/);
+  assert.match(SPLASH_SVG, /<g id="hc-product-g"[^>]*>\s*<svg id="hc-product-logo"[^>]*viewBox="2 15 60 47"[\s\S]*?<\/svg>\s*<text id="hc-product"/, 'the fulcrum sits before the name, as in the top bar');
 });
 
 test('the fulcrum\'s triangle is the HIGHCOM orange, in the app and the tab icon', () => {

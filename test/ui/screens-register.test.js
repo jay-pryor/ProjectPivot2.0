@@ -57,8 +57,11 @@ test('an unknown id shows a not-found note, not a crash', () => {
   assert.match(controlView(state, data(), 'nope').toString(), /no longer exists/);
 });
 
-test('a control used on several platforms says which ones its changes reach', () => {
-  assert.match(controlView(state, data(), 'c1').toString(), /Used on Alpha, Bravo\. Changes here reach all of them\./);
+test('a control page leaves where it is used to its platform tabs, without a line saying so', () => {
+  const out = controlView(state, data(), 'c1').toString();
+  assert.doesNotMatch(out, /Used on|Changes here reach/);
+  assert.match(out, /<textarea class="doc-title" name="title" rows="1" required aria-label="Control title" data-change="updateControl" data-id="c1">Sprinklers<\/textarea>/, 'a long title wraps');
+  assert.match(out, /<label class="field-block"><span class="field-label">Description<\/span>\s*<textarea class="doc-text boxed" name="description"/);
 });
 
 test('a hazard page: fields apply when left (no Apply), retire and delete at the bottom, no heading repeating a table\'s title', () => {

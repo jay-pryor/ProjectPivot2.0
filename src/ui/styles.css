@@ -1,6 +1,7 @@
 /* Pivot. Dark by default; light when the profile chooses it (html[data-theme="light"]). */
 :root {
   --p-font: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --p-display: "Barlow", var(--p-font); /* the name, the tabs and the page titles */
   --p-bg: #121418;
   --p-surface: #1a1d23;
   --p-surface-2: #22262e;
@@ -63,32 +64,50 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 textarea { width: 100%; }
 h1 { font-size: 22px; margin: 10px 0 14px; }
 /* Page titles in capitals, like the navigation; record titles, which people type, are left as typed. */
-.view h1 { text-transform: uppercase; letter-spacing: .1em; font-weight: 800; font-size: 24px; }
+.view h1 { font-family: var(--p-display); text-transform: uppercase; letter-spacing: .12em; font-weight: 600; font-size: 26px; }
 h2 { font-size: 16px; margin: 22px 0 8px; }
 a { color: var(--p-link); }
 
 /* Top bar */
 .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 8px 20px; background: var(--p-bar); color: var(--p-bar-fg); flex-wrap: wrap; border-bottom: 1px solid var(--p-line); }
 /* The logo is as tall as the capitals and sits on their baseline, so the two line up. */
-.topbar .brand { display: inline-flex; align-items: baseline; gap: .35em; font-size: 22px; font-weight: 700; letter-spacing: .08em; line-height: 1; }
+.topbar .brand { display: inline-flex; align-items: baseline; gap: .35em; font-family: var(--p-display); font-size: 24px; font-weight: 600; letter-spacing: .1em; line-height: 1; }
 .brand-logo { height: .7em; width: auto; flex: none; overflow: visible; }
-.brand-title { display: flex; align-items: baseline; gap: .35em; letter-spacing: .08em; }
+.brand-title { display: flex; align-items: baseline; gap: .35em; font-family: var(--p-display); letter-spacing: .1em; }
 .topbar .folder { opacity: .7; background: transparent; border-color: transparent; color: var(--p-bar-fg); }
 .topbar .folder:hover { opacity: 1; border-color: var(--p-bar-fg); }
-.topbar nav { display: flex; gap: 4px; }
-.topbar .nav { position: relative; background: transparent; color: var(--p-bar-fg); border: 0; border-radius: 0; padding: 8px 12px 9px; text-transform: uppercase; letter-spacing: .1em; font-weight: 600; opacity: .72; transition: opacity .15s, background-color .15s; }
+.topbar nav { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+/* Short of room for one row, the name and the folder-to-profile group share the top row and the tabs
+   take the whole row beneath, closing up and then wrapping rather than pushing the page sideways. */
+@media (max-width: 1500px) {
+  .topbar nav { order: 3; flex-basis: 100%; margin: 0 -12px; }
+  .topbar .spacer { display: none; }
+}
+.topbar .nav { position: relative; background: transparent; color: var(--p-bar-fg); border: 0; border-radius: 0; padding: 8px 12px 9px; font-family: var(--p-display); font-size: 16px; text-transform: uppercase; letter-spacing: .12em; font-weight: 500; opacity: .72; transition: opacity .15s, background-color .15s; }
 /* A square orange bar under each tab: it grows in on hover and stays full under the current one. */
 .topbar .nav::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: var(--p-accent); transform: scaleX(0); transform-origin: left; transition: transform .18s ease-out; }
 .topbar .nav:hover, .topbar .nav:focus-visible { opacity: 1; }
 .topbar .nav:hover::after { transform: scaleX(.55); }
 .topbar .nav.on { opacity: 1; background: color-mix(in srgb, var(--p-accent) 14%, transparent); }
 .topbar .nav.on::after { transform: scaleX(1); }
+@media (max-width: 1100px) { .topbar .nav { padding: 8px 8px 9px; letter-spacing: .07em; font-size: 15px; } .topbar nav { margin: 0 -8px; } }
 .topbar .spacer { flex: 1; }
 /* Folder, save, theme and profile stay together, wrapping as one when the bar is narrow. */
 .topbar-end { display: flex; align-items: center; gap: 12px; margin-left: auto; }
-.topbar .profile { font-weight: 700; font-size: 17px; }
-.topbar .theme { background: transparent; color: var(--p-bar-fg); border-color: transparent; font-size: 17px; line-height: 1; padding: 4px 8px; text-align: center; }
-.save { min-width: 96px; font-weight: 700; text-align: center; }
+.topbar .profile { font-family: var(--p-display); font-weight: 500; font-size: 19px; letter-spacing: .03em; }
+/* The theme switch: a square track with an orange knob, right (with a moon) for dark, left (with a sun) for light. */
+.topbar .theme { background: transparent; border: 0; padding: 4px 2px; line-height: 1; }
+.theme-track { position: relative; display: block; width: 52px; height: 26px; border: 1px solid rgba(255, 255, 255, .28); background: rgba(255, 255, 255, .06); transition: border-color .15s, background-color .15s; }
+.theme[aria-checked="true"] .theme-track { border-color: var(--p-accent); background: color-mix(in srgb, var(--p-accent) 18%, transparent); }
+.topbar .theme:hover .theme-track { border-color: var(--p-accent); }
+.theme-knob { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; display: grid; place-items: center; background: var(--p-accent); color: var(--p-accent-fg); font-size: 14px; line-height: 1; }
+.theme[aria-checked="true"] .theme-knob { left: 28px; }
+.theme-knob .moon { width: 13px; height: 13px; display: block; }
+.theme-flipped .theme[aria-checked="true"] .theme-knob { animation: knob-right .18s ease-out; }
+.theme-flipped .theme[aria-checked="false"] .theme-knob { animation: knob-left .18s ease-out; }
+@keyframes knob-right { from { transform: translateX(-26px); } }
+@keyframes knob-left { from { transform: translateX(26px); } }
+.save { min-width: 100px; font-family: var(--p-display); font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .12em; text-align: center; }
 .save.unsaved { background: var(--p-warn); border-color: var(--p-warn); color: var(--p-warn-fg); }
 .save.saved { background: transparent; color: var(--p-bar-fg); border-color: rgba(255, 255, 255, .25); }
 .save.saving { background: var(--p-accent); border-color: var(--p-accent); color: var(--p-accent-fg); opacity: 1; }
@@ -118,8 +137,48 @@ a { color: var(--p-link); }
 .stack label { display: grid; gap: 2px; }
 .actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 td .actions { margin: 0; }
-.profiles { list-style: none; padding: 0; display: grid; gap: 6px; }
-.profiles button { width: 100%; padding: 8px 12px; }
+/* The folder and profile screens: the logo large at the top middle, the content in the centre of the screen. */
+.start.front { position: relative; max-width: none; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 140px 20px; }
+.front-brand { position: absolute; top: 48px; left: 0; right: 0; display: flex; justify-content: center; }
+.front-brand .brand-title { font-size: 50px; font-weight: 600; margin: 0; }
+.front-body { width: min(900px, 100%); display: grid; justify-items: center; text-align: center; }
+.front-body .row { justify-content: center; }
+.front-title { font-family: var(--p-display); font-size: 26px; margin: 0; text-transform: uppercase; letter-spacing: .12em; font-weight: 600; }
+/* Reconnect glows and swells gently, so it is the obvious next step; still for those who ask for less motion. */
+.beckon { animation: beckon 1.8s ease-in-out infinite; }
+.beckon:hover, .beckon:focus-visible { animation-play-state: paused; }
+@keyframes beckon {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--p-accent) 0%, transparent); filter: brightness(1); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--p-accent) 35%, transparent), 0 0 22px 4px color-mix(in srgb, var(--p-accent) 45%, transparent); filter: brightness(1.12); }
+}
+@media (prefers-reduced-motion: reduce) { .beckon { animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-accent) 40%, transparent); } }
+.front-title { margin-bottom: 4px; }
+/* Profiles as large tiles, with the new-profile form as the last one. */
+.profiles { list-style: none; padding: 0; margin: 24px 0 8px; width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 200px)); justify-content: center; gap: 16px; }
+.profiles li { display: grid; }
+.profile-tile { position: relative; display: grid; justify-items: center; align-content: center; gap: 12px; min-height: 180px; padding: 20px 14px; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; text-align: center; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); transition: border-color .15s, transform .15s, box-shadow .15s; }
+/* A square orange bar grows along the bottom on hover, like the top-bar tabs. */
+.profile-tile::after { content: ""; position: absolute; left: -1px; right: -1px; bottom: -1px; height: 3px; background: var(--p-accent); transform: scaleX(0); transform-origin: left; transition: transform .18s ease-out; }
+button.profile-tile:hover:not(:disabled), button.profile-tile:focus-visible, .profile-tile.new:focus-within { border-color: var(--p-accent); transform: translateY(-3px); box-shadow: 0 10px 26px rgba(0, 0, 0, .28), 0 0 0 1px color-mix(in srgb, var(--p-accent) 30%, transparent); }
+button.profile-tile:hover::after, button.profile-tile:focus-visible::after, .profile-tile.new:focus-within::after { transform: scaleX(1); }
+button.profile-tile:active { transform: translateY(-1px) scale(.98); }
+.profile-tile .initial { width: 68px; height: 68px; display: grid; place-items: center; border: 2px solid var(--p-accent); color: var(--p-link); font-family: var(--p-display); font-size: 34px; font-weight: 600; line-height: 1; transition: background-color .15s, color .15s; }
+button.profile-tile:hover .initial, button.profile-tile:focus-visible .initial { background: var(--p-accent); color: var(--p-accent-fg); }
+.profile-tile .name { font-family: var(--p-display); font-size: 19px; font-weight: 500; letter-spacing: .02em; overflow-wrap: anywhere; }
+.profile-tile.new { border-style: dashed; background: transparent; box-shadow: none; }
+.profile-tile.new .initial { border: 2px dashed var(--p-muted); color: var(--p-muted); }
+.profile-tile.new:focus-within .initial { border-color: var(--p-accent); color: var(--p-accent); }
+.profile-tile.new label { display: grid; gap: 4px; font-size: 13px; color: var(--p-muted); width: 100%; }
+.profile-tile.new input { width: 100%; }
+.profile-tile.new button { justify-self: stretch; text-align: center; }
+/* Arrivals, played once per screen: the log-in page and its tiles rise in one after another, and the app rises in after a profile is chosen. */
+.arrive .front-title { animation: rise .3s ease-out both; }
+.arrive .profiles li { animation: rise .32s ease-out both; animation-delay: calc(60ms + var(--i, 0) * 45ms); }
+.arrive > .topbar { animation: drop .28s ease-out both; }
+.arrive > .topbar ~ * { animation: rise .32s ease-out .06s both; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes drop { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .arrive *, .arrive > *, .theme-knob { animation: none !important; } .profile-tile, .profile-tile::after { transition: none; } }
 ul.plain { list-style: none; margin: 0; padding: 0; }
 
 /* Tables: sorting, filtering and resizing live in the header row */
@@ -183,11 +242,28 @@ section { margin: 0 0 22px; }
 .doc-title { display: block; width: 100%; max-width: 1100px; font-size: 26px; font-weight: 700; border: 1px solid transparent; background: transparent; padding: 2px 6px; margin: 2px 0 12px -7px; border-radius: 0; }
 .doc-title:hover { border-color: var(--p-line); }
 .doc-title:focus { background: var(--p-surface); }
+/* A long title wraps and the box grows to fit it, rather than cutting it off. */
+textarea.doc-title { resize: none; overflow: hidden; field-sizing: content; line-height: 1.3; font-family: inherit; color: var(--p-fg); }
 .doc { max-width: none; }
 .doc-meta { color: var(--p-muted); margin: 0 0 8px; }
 .doc-text { display: block; width: 100%; max-width: 1100px; border: 1px solid transparent; background: transparent; padding: 4px 6px; margin: 0 0 22px -7px; resize: vertical; line-height: 1.6; border-radius: 0; }
 .doc-text:hover { border-color: var(--p-line); }
 .doc-text:focus { background: var(--p-surface); }
+/* A labelled field on a record page: the label small and in capitals above or beside what it sets. */
+.field-label { font-family: var(--p-display); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--p-muted); }
+.field-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 16px; }
+.field-row .field-label { min-width: 90px; }
+.field-block { display: grid; gap: 6px; max-width: 1100px; margin: 0 0 22px; }
+/* The tier: the five tiers side by side, the chosen one in orange. */
+.tier-pick { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--p-line); background: var(--p-surface); }
+.tier-pick button { border: 0; border-right: 1px solid var(--p-line); background: transparent; color: var(--p-muted); padding: 6px 14px; font-weight: 700; text-align: center; transition: background-color .12s, color .12s; }
+.tier-pick button:last-child { border-right: 0; }
+.tier-pick button:hover:not(.on) { color: var(--p-fg); background: var(--p-surface-2); }
+.tier-pick button.on { background: var(--p-accent); color: var(--p-accent-fg); }
+/* The description as a proper box: bordered, on the surface colour, with an orange edge while typing. */
+.doc-text.boxed { margin: 0; border: 1px solid var(--p-line); border-left: 3px solid var(--p-line); background: var(--p-surface); padding: 10px 12px; }
+.doc-text.boxed:hover { border-color: var(--p-muted); }
+.doc-text.boxed:focus { outline: 0; border-color: var(--p-line); border-left-color: var(--p-accent); }
 /* Each list on a record page is its own card, holding the same grid as the list pages. The grid's
    own outer edge is hidden so it does not double the card's border. */
 .doc section.block { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; padding: 0; overflow: hidden; }
@@ -275,12 +351,21 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 .panel { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; padding: 12px 14px; margin: 0; }
 .panel h2 { margin: 0 0 6px; font-size: 15px; }
 .panel > .muted { margin: 4px 0; }
-.attn, .upcoming { list-style: none; margin: 0; padding: 0; }
-.attn li, .upcoming li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--p-line); }
-.attn li:first-child, .upcoming li:first-child { border-top: 0; }
-.attn .what, .upcoming .what { flex: 1; min-width: 0; }
-.attn .chip { flex: none; width: 68px; text-align: center; margin: 0; }
-.attn .link { flex: none; }
+.upcoming { list-style: none; margin: 0; padding: 0; }
+.upcoming li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--p-line); }
+.upcoming li:first-child { border-top: 0; }
+.upcoming .what { flex: 1; min-width: 0; }
+/* Needs attention: a column each for the kind, the description, who made the change, the platform and what to do. */
+.attn { width: 100%; border-collapse: collapse; }
+.attn th { text-align: left; font-size: 12px; font-weight: 600; color: var(--p-muted); text-transform: uppercase; letter-spacing: .08em; padding: 2px 8px 6px; border-bottom: 1px solid var(--p-line); }
+.attn td { padding: 7px 8px; border-top: 1px solid var(--p-line); vertical-align: middle; }
+.attn th:first-child, .attn td:first-child { padding-left: 0; }
+.attn th:last-child, .attn td:last-child { padding-right: 0; }
+.attn tbody tr:first-child td { border-top: 0; }
+.attn .chip { width: 68px; text-align: center; margin: 0; }
+.attn .kind, .attn .act { width: 1%; white-space: nowrap; }
+.attn .by, .attn .where { white-space: nowrap; }
+.attn .act { text-align: right; }
 .chip-review { background: var(--p-error-bg); color: var(--p-danger); }
 .chip-change { background: var(--p-info-bg); color: var(--p-info-fg); }
 .chip-control { background: #2e2342; color: #c9a8ff; }
@@ -347,7 +432,7 @@ button.small { padding: 2px 9px; font-size: 13px; }
 .splash-logo .trace { fill: none; stroke: var(--hc-accent); stroke-width: 1.8; stroke-linejoin: miter; stroke-linecap: square; }
 .splash-logo .spark, .splash-logo .hot { fill: var(--hc-accent); }
 .splash-logo .rule { stroke: var(--hc-accent); stroke-width: 2.4; }
-.splash-logo .product { fill: var(--hc-fg); font-family: "Atkinson Hyperlegible", system-ui, sans-serif; font-weight: 700; font-size: 46px; letter-spacing: 14px; }
+.splash-logo .product { fill: var(--hc-fg); font-family: var(--p-display); font-weight: 600; font-size: 46px; letter-spacing: 14px; }
 
 /* Checkboxes and radio buttons in the accent. */
 input[type="checkbox"], input[type="radio"] { accent-color: var(--p-accent); }

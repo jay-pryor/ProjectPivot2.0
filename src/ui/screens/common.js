@@ -89,6 +89,9 @@ const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'],
 /** The top-bar section each view belongs to. */
 const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', references: 'references', reference: 'references', phases: 'phases', reports: 'reports', backups: 'backups' };
 
+/** The moon on the theme switch: a solid crescent (the text moon draws only an outline in some fonts). */
+const MOON_SVG = '<svg class="moon" viewBox="0 0 16 16" focusable="false"><path d="M10.6 1.2A7 7 0 1 0 14.8 10.4 5.6 5.6 0 0 1 10.6 1.2Z" fill="currentColor"/></svg>';
+
 /** @param {any} state @param {import('../html.js').Raw} body */
 export function shell(state, body) {
   const unsaved = state.session ? hasUnsaved(state.session) : false;
@@ -113,7 +116,7 @@ export function shell(state, body) {
     <span class="topbar-end">
       <button type="button" class="folder" ${dataAttrs({ action: 'changeFolder' })} title="Choose a different data folder">Folder: ${state.folderName}</button>
       ${save}
-      <button type="button" class="theme" ${dataAttrs({ action: 'setTheme', theme: other })} title="Switch to ${other} mode" aria-label="Switch to ${other} mode">${theme === 'dark' ? '☀' : '☾'}</button>
+      <button type="button" class="theme" role="switch" aria-checked="${theme === 'dark' ? 'true' : 'false'}" aria-label="Dark mode" ${dataAttrs({ action: 'setTheme', theme: other })} title="Switch to ${other} mode"><span class="theme-track"><span class="theme-knob" aria-hidden="true">${theme === 'dark' ? raw(MOON_SVG) : '☀'}</span></span></button>
       <span class="profile" title="Active profile">${profileName(state, state.profileId)}</span>
     </span>
     ${state.saving ? html`<div class="save-progress" role="progressbar" aria-label="Saving"><span></span></div>` : ''}

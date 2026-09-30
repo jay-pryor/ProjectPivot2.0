@@ -12,11 +12,14 @@ const state = { ...initialState(), screen: 'main', today: '2026-09-28', profileI
 /** c1 Sprinklers is Engineering; c2 Fire drills has no tier. */
 const data = () => assignNumbers(updateControl(seed(), act, { id: 'c1', tier: 'Engineering' }));
 
-test('a control page chooses its tier in place', () => {
+test('a control page chooses its tier in place: a button per tier, the chosen one on, clicked again to clear', () => {
   const out = controlView(state, data(), 'c1').toString();
-  assert.match(out, /<select class="quiet inline-select" name="tier" aria-label="Tier" data-change="updateControl" data-id="c1">/);
-  assert.match(out, /<option value="">Not set<\/option>[\s\S]*?<option value="Engineering" selected>Engineering<\/option>/);
-  assert.match(controlView(state, data(), 'c2').toString(), /<option value="" selected>Not set<\/option>/);
+  assert.match(out, /<div class="tier-pick" role="radiogroup" aria-labelledby="tier-label">/);
+  assert.match(out, /role="radio" aria-checked="true" class="on"[^>]*data-action="updateControl" data-id="c1" data-tier="">Engineering</);
+  assert.match(out, /role="radio" aria-checked="false"\s+data-action="updateControl" data-id="c1" data-tier="PPE">PPE</);
+  const none = controlView(state, data(), 'c2').toString();
+  assert.doesNotMatch(none, /aria-checked="true"/);
+  assert.match(none, /<span class="muted">Not set<\/span>/);
 });
 
 test('the Controls list has a Tier column that filters, including not set', () => {

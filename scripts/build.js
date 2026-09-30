@@ -16,19 +16,22 @@ export const ROOT = path.resolve(HERE, '..');
 const ENTRY = 'src/main.js';
 const EXTRA_SOURCES = ['DocGen/doc-designer.js'];
 const STYLES = ['DocGen/doc-designer.css', 'src/ui/styles.css'];
-/** Embedded so the page needs no network: [file, weight, style]. Licence: assets/fonts/OFL.txt. */
+/** Embedded so the page needs no network: [family, file, weight, style]. Licences: assets/fonts/OFL.txt (Atkinson Hyperlegible), OFL-Barlow.txt (Barlow). */
 const FONTS = [
-  ['atkinson-hyperlegible-latin-400-normal.woff2', 400, 'normal'],
-  ['atkinson-hyperlegible-latin-400-italic.woff2', 400, 'italic'],
-  ['atkinson-hyperlegible-latin-700-normal.woff2', 700, 'normal'],
-  ['atkinson-hyperlegible-latin-700-italic.woff2', 700, 'italic'],
+  ['Atkinson Hyperlegible', 'atkinson-hyperlegible-latin-400-normal.woff2', 400, 'normal'],
+  ['Atkinson Hyperlegible', 'atkinson-hyperlegible-latin-400-italic.woff2', 400, 'italic'],
+  ['Atkinson Hyperlegible', 'atkinson-hyperlegible-latin-700-normal.woff2', 700, 'normal'],
+  ['Atkinson Hyperlegible', 'atkinson-hyperlegible-latin-700-italic.woff2', 700, 'italic'],
+  // For the name, the tabs and the page titles.
+  ['Barlow', 'barlow-latin-500-normal.woff2', 500, 'normal'],
+  ['Barlow', 'barlow-latin-600-normal.woff2', 600, 'normal'],
 ];
 
 /** @param {string} root */
-function fontFaces(root) {
-  return FONTS.map(([file, weight, style]) => {
+export function fontFaces(root) {
+  return FONTS.map(([family, file, weight, style]) => {
     const data = fs.readFileSync(path.join(root, 'assets', 'fonts', String(file))).toString('base64');
-    return `@font-face { font-family: "Atkinson Hyperlegible"; font-weight: ${weight}; font-style: ${style}; font-display: swap; src: url(data:font/woff2;base64,${data}) format("woff2"); }`;
+    return `@font-face { font-family: "${family}"; font-weight: ${weight}; font-style: ${style}; font-display: swap; src: url(data:font/woff2;base64,${data}) format("woff2"); }`;
   }).join('\n');
 }
 const IMPORT_RE = /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])([^'"\n]+)\2/g;

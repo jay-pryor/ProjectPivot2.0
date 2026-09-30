@@ -113,24 +113,40 @@ export const ATTENTION_LIMIT = 8;
 
 const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'] };
 
-/** @param {any} state @param {Data} data @param {any} item from attentionItems */
+/**
+ * A change in words: its action, then what it changed. Where the name repeats the end of the action,
+ * the two run together: "Set residual environment risk" and "Residual environment risk of H-0004 on
+ * Alpha" read "Set residual environment risk of H-0004 on Alpha".
+ * @param {string} action @param {string} subject
+ */
+export function changeSummary(action, subject) {
+  const words = action.split(' ');
+  for (let i = 1; i < words.length; i++) {
+    const tail = words.slice(i).join(' ').toLowerCase();
+    const head = subject.slice(0, tail.length).toLowerCase();
+    if (head === tail && (subject.length === tail.length || subject[tail.length] === ' ')) return `${action}${subject.slice(tail.length)}`;
+  }
+  return subject ? `${action}: ${subject}` : action;
+}
+
+/** A row of Needs attention: what kind, what it is, who made the change (for a change), the platform and what to do. @param {any} state @param {Data} data @param {any} item from attentionItems */
 function attentionRow(state, data, item) {
   const [word, cls] = CHIP[/** @type {keyof typeof CHIP} */ (item.type)];
-  const chip = html`<span class="chip ${cls}">${word}</span>`;
-  if (item.type === 'review') {
-    return html`<li>${chip}<span class="what">${item.platform.name} review overdue since ${day(item.due)}</span>${go('Review →', 'platform', { id: item.platform.id, tab: 'reviews' })}</li>`;
-  }
+  /** @param {any} what @param {any} action @param {any} [by] */
+  const row = (what, action, by = '') => html`<tr><td class="kind"><span class="chip ${cls}">${word}</span></td><td class="what">${what}</td>
+    <td class="by">${by}</td><td class="where">${platformLink(item.platform)}</td><td class="act">${action}</td></tr>`;
+  if (item.type === 'review') return row(`Review overdue since ${day(item.due)}`, go('Review →', 'platform', { id: item.platform.id, tab: 'reviews' }));
   if (item.type === 'change') {
     const first = item.entry.items[0];
     const subject = first ? recordName(first.kind, get(data, first.kind, first.id), data) : '';
-    return html`<li>${chip}<span class="what">${item.entry.action}: ${subject} <span class="muted">· ${profileName(state, item.entry.by)} on ${item.platform.name}</span></span>
-      <button type="button" class="small" ${dataAttrs({ action: 'acknowledge', 'entry-id': item.entry.id, 'platform-id': item.platform.id })}>Acknowledge</button></li>`;
+    return row(changeSummary(item.entry.action, subject),
+      html`<button type="button" class="small" ${dataAttrs({ action: 'acknowledge', 'entry-id': item.entry.id, 'platform-id': item.platform.id })}>Acknowledge</button>`,
+      profileName(state, item.entry.by));
   }
   if (item.type === 'control') {
-    return html`<li>${chip}<span class="what">${item.control.title} on ${item.platform.name} <span class="muted">· ${hazardLabel(item.hazard)} ${item.hazard.title}</span></span>${go('Decide →', 'platform', { id: item.platform.id })}</li>`;
+    return row(html`${item.control.title} <span class="muted">· ${hazardLabel(item.hazard)} ${item.hazard.title}</span>`, go('Decide →', 'platform', { id: item.platform.id }));
   }
-  const missing = `no ${item.missing.join(', ')} rating`;
-  return html`<li>${chip}<span class="what">${hazardLabel(item.hazard)} ${item.hazard.title} on ${item.platform.name} <span class="muted">· ${missing}</span></span>${go('Rate →', 'platform', { id: item.platform.id })}</li>`;
+  return row(html`${hazardLabel(item.hazard)} ${item.hazard.title} <span class="muted">· no ${item.missing.join(', ')} rating</span>`, go('Rate →', 'platform', { id: item.platform.id }));
 }
 
 /** A bar of a platform's hazards by residual band, highest first. @param {Record<string, number>} bands */
@@ -168,7 +184,8 @@ export function homeView(state, data) {
     <div class="dash-cols">
       <section class="panel"><h2>Needs attention</h2>
         ${attention.length
-          ? html`<ul class="attn">${attention.slice(0, ATTENTION_LIMIT).map((i) => attentionRow(state, data, i))}</ul><div class="panel-more">${more}</div>`
+          ? html`<table class="attn"><thead><tr><th>Type</th><th>Description</th><th>By</th><th>Platform</th><th></th></tr></thead>
+            <tbody>${attention.slice(0, ATTENTION_LIMIT).map((i) => attentionRow(state, data, i))}</tbody></table><div class="panel-more">${more}</div>`
           : html`<p class="muted">Nothing needs attention.</p>`}
       </section>
       <section class="panel"><h2>Coming up</h2>
