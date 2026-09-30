@@ -63,10 +63,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 textarea { width: 100%; }
 h1 { font-size: 22px; margin: 10px 0 14px; }
 /* Page titles in capitals, like the navigation; record titles, which people type, are left as typed. */
-.view h1 { text-transform: uppercase; letter-spacing: .1em; font-weight: 800; font-size: 24px; display: inline-flex; align-items: center; gap: 12px; position: relative; padding-bottom: 6px; }
-/* A solid orange block before each page title, and a hairline fading out under it, as under HIGHCOM on the splash. */
-.view h1::before { content: ""; width: 8px; height: 1.05em; background: var(--p-accent); flex: none; }
-.view h1::after { content: ""; position: absolute; left: 20px; right: -48px; bottom: 0; height: 2px; background: linear-gradient(to right, var(--p-accent), transparent); }
+.view h1 { text-transform: uppercase; letter-spacing: .1em; font-weight: 800; font-size: 24px; }
 h2 { font-size: 16px; margin: 22px 0 8px; }
 a { color: var(--p-link); }
 

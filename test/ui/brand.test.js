@@ -90,11 +90,11 @@ test('the Saved button is just the word, no tick', async () => {
   assert.doesNotMatch(css, /\.save\.saved::before/);
 });
 
-test('the top-bar tabs and page titles carry the orange, square-edged', async () => {
+test('the top-bar tabs carry the orange, square-edged; page titles stay plain', async () => {
   const fs = await import('node:fs');
   const css = fs.readFileSync(new URL('../../src/ui/styles.css', import.meta.url), 'utf8');
   assert.match(css, /\.topbar \.nav::after \{[^}]*background: var\(--p-accent\)/, 'an orange bar under each tab');
   assert.match(css, /\.topbar \.nav\.on::after \{[^}]*transform: scaleX\(1\)/, 'full under the current one');
-  assert.match(css, /\.view h1::before \{[^}]*background: var\(--p-accent\)/, 'an orange block before each page title');
+  assert.doesNotMatch(css, /\.view h1::(before|after)/, 'page titles carry no accent marks');
   assert.doesNotMatch(css.match(/\.topbar \.nav[^{]*\{[^}]*\}/g).join(''), /border-radius: (?!0)/);
 });
