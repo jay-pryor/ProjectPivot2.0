@@ -105,3 +105,21 @@ export function bowtieOf(data, hazardId, platformId, filters) {
     mitigating: items.filter((i) => i.kind === 'mitigating'),
   };
 }
+
+/** A live view its owner, or a profile it is shared with, may open. @param {Rec} view @param {string | null} profileId */
+export function canSee(view, profileId) {
+  return view.status === 'live' && profileId !== null && (view.ownerId === profileId || (view.sharedWith ?? []).includes(profileId));
+}
+
+/** @param {Rec} a @param {Rec} b */
+const byName = (a, b) => String(a.name).localeCompare(String(b.name)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/** The profile's own views, by name. @param {Data} data @param {string} profileId */
+export function myViews(data, profileId) {
+  return live(data, 'bowtieView').filter((v) => v.ownerId === profileId).sort(byName);
+}
+
+/** Other people's views shared with the profile, by name. @param {Data} data @param {string} profileId */
+export function sharedWithMe(data, profileId) {
+  return live(data, 'bowtieView').filter((v) => v.ownerId !== profileId && (v.sharedWith ?? []).includes(profileId)).sort(byName);
+}
