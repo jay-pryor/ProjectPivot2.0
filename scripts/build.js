@@ -106,7 +106,7 @@ export function build({ root = ROOT, builtAt = new Date().toISOString() } = {}) 
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<meta name="pivot-build" content="${builtAt}">`,
-    '<title>Pivot</title>',
+    '<title>PIVOT</title>',
     `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${encodeURIComponent(FULCRUM_ICON)}">`,
     `<style>\n${css}</style>`,
     `<script type="importmap">${importMap}</script>`,

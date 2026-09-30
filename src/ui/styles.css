@@ -17,7 +17,8 @@
   --p-info-bg: #16233a;
   --p-warn-bg: #3a2e16;
   --p-error-bg: #3a1f1d;
-  --p-link: #8cbcff;
+  --p-link: #fa9a26;
+  --p-info-fg: #8cbcff;
   --p-head: #243049;
   --p-stripe: #22262e;
   --p-row-hover: #262d3a;
@@ -40,7 +41,8 @@
   --p-info-bg: #e7eefa;
   --p-warn-bg: #fff5e0;
   --p-error-bg: #fdecea;
-  --p-link: #1f5fb0;
+  --p-link: #a85c00; /* the accent's hue, deep enough to read on white */
+  --p-info-fg: #1f5fb0;
   --p-head: #e3ebf7;
   --p-stripe: #f2f5f9;
   --p-row-hover: #eaf0f9;
@@ -84,7 +86,6 @@ a { color: var(--p-link); }
 .save { min-width: 96px; font-weight: 700; text-align: center; }
 .save.unsaved { background: var(--p-warn); border-color: var(--p-warn); color: var(--p-warn-fg); }
 .save.saved { background: transparent; color: var(--p-bar-fg); border-color: rgba(255, 255, 255, .25); }
-.save.saved::before { content: "✓ "; }
 .save.saving { background: var(--p-accent); border-color: var(--p-accent); color: var(--p-accent-fg); opacity: 1; }
 .save-progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: rgba(255, 255, 255, .08); overflow: hidden; }
 .save-progress span { display: block; height: 100%; width: 0; background: var(--p-accent); animation: save-fill .9s cubic-bezier(.3, .7, .4, 1) forwards; }
@@ -285,7 +286,7 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 .attn .chip { flex: none; width: 68px; text-align: center; margin: 0; }
 .attn .link { flex: none; }
 .chip-review { background: var(--p-error-bg); color: var(--p-danger); }
-.chip-change { background: var(--p-info-bg); color: var(--p-link); }
+.chip-change { background: var(--p-info-bg); color: var(--p-info-fg); }
 .chip-control { background: #2e2342; color: #c9a8ff; }
 :root[data-theme="light"] .chip-control { background: #f1eafa; color: #6b3fa0; }
 .upcoming .date { flex: none; width: 104px; color: var(--p-muted); font-variant-numeric: tabular-nums; }
@@ -303,7 +304,7 @@ button.small { padding: 2px 9px; font-size: 13px; }
 /* The SSRA on a platform tab */
 .ssra-sec { margin: 0 0 26px; }
 .ssra-sec > h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
-.shared-mark { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 4px; background: var(--p-info-bg); color: var(--p-link); }
+.shared-mark { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 4px; background: var(--p-info-bg); color: var(--p-info-fg); }
 .risk-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px; }
 .risk-panel { display: grid; gap: 8px; align-content: start; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 10px; padding: 12px 14px; }
 .risk-panel h3 { margin: 0; font-size: 15px; }

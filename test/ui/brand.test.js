@@ -70,3 +70,22 @@ test('the navigation and page titles read in capitals; what people type stays as
   assert.match(css, /\.view h1 \{[^}]*text-transform: uppercase;/);
   assert.doesNotMatch(css, /\.doc-title \{[^}]*text-transform/, 'a record\'s own title is not changed');
 });
+
+test('links are the accent orange (a deeper orange on light, so they stay readable); info tags keep their blue', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../../src/ui/styles.css', import.meta.url), 'utf8');
+  const links = [...css.matchAll(/--p-link:\s*([^;]+);/g)].map((m) => m[1].trim());
+  assert.deepEqual(links, ['#fa9a26', '#a85c00']);
+  assert.match(css, /\.shared-mark \{[^}]*color: var\(--p-info-fg\)/);
+  assert.match(css, /\.chip-change \{[^}]*color: var\(--p-info-fg\)/);
+});
+
+test('the browser tab reads PIVOT', () => {
+  assert.match(build(), /<title>PIVOT<\/title>/);
+});
+
+test('the Saved button is just the word, no tick', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../../src/ui/styles.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(css, /\.save\.saved::before/);
+});
