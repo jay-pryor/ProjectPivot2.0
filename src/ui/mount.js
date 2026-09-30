@@ -69,12 +69,13 @@ export function wire(el, dispatch, submitting = new Set()) {
     const t = /** @type {HTMLInputElement} */ (e.target);
     if (t.classList?.contains('cell-edit') && t.value === t.defaultValue) setTimeout(() => { if (t.isConnected) void dispatch({ type: 'cancelEdit' }); }, 0);
   });
-  // A picker's search narrows its list on screen only, so nothing ticked is lost.
+  // A picker's search narrows its list on screen only, so nothing ticked is lost. The Bow-ties side
+  // list works the same way, scoped to its aside.
   el.addEventListener('input', (e) => {
     const t = /** @type {HTMLInputElement} */ (e.target);
     if (!t.matches?.('[data-filter-list]')) return;
     const q = t.value.trim().toLowerCase();
-    for (const li of /** @type {NodeListOf<HTMLElement>} */ (t.closest('form')?.querySelectorAll('[data-pick-text]') ?? [])) {
+    for (const li of /** @type {NodeListOf<HTMLElement>} */ (t.closest('form, [data-filter-scope]')?.querySelectorAll('[data-pick-text]') ?? [])) {
       li.hidden = q !== '' && !String(li.dataset.pickText).includes(q);
     }
   });
@@ -159,6 +160,7 @@ export function mount(root, controller) {
   };
   wire(appEl, controller.dispatch, submitting);
   resizableColumns(appEl, controller.dispatch);
+  bowtieDrag(appEl, controller.dispatch);
   RD.wire({ root: designerEl, refreshMain: paintDesigner, quietEdit: (/** @type {() => void} */ fn) => fn() });
   designerEl.addEventListener('click', (e) => {
     const b = /** @type {HTMLButtonElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-generate-action]'));
@@ -236,4 +238,47 @@ function resizableColumns(el, dispatch) {
     e.stopPropagation();
     void dispatch({ type: 'resetColumnWidth', table: grip.dataset.table, column: grip.dataset.key });
   });
+}
+
+/**
+ * Drag a saved view, or a window by its title bar, onto the left or right half of the Bow-ties
+ * stage. Nothing is dispatched until the drop, so nothing redraws mid-drag.
+ * @param {HTMLElement} el @param {(action: any) => Promise<void>} dispatch
+ */
+function bowtieDrag(el, dispatch) {
+  /** @type {{ viewId?: string, pane?: string } | null} */
+  let dragging = null;
+  const stage = () => el.querySelector('.bt-stage');
+  const end = () => {
+    stage()?.classList.remove('dragging');
+    for (const o of el.querySelectorAll('.bt-drop.over')) o.classList.remove('over');
+  };
+  el.addEventListener('dragstart', (e) => {
+    const t = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest?.('[data-drag-view], [data-drag-pane]'));
+    if (!t) return;
+    dragging = t.dataset.dragView ? { viewId: t.dataset.dragView } : { pane: t.dataset.dragPane };
+    if (e.dataTransfer) {
+      e.dataTransfer.setData('text/plain', t.dataset.dragView ?? `window ${t.dataset.dragPane}`);
+      e.dataTransfer.effectAllowed = 'move';
+    }
+    // A frame later, so the browser takes the drag image before the targets cover the stage.
+    requestAnimationFrame(() => { if (dragging) stage()?.classList.add('dragging'); });
+  });
+  el.addEventListener('dragover', (e) => {
+    const z = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest?.('[data-drop-side]'));
+    if (!z || !dragging) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    for (const o of el.querySelectorAll('[data-drop-side]')) o.classList.toggle('over', o === z);
+  });
+  el.addEventListener('drop', (e) => {
+    const z = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest?.('[data-drop-side]'));
+    if (!z || !dragging) return;
+    e.preventDefault();
+    const d = dragging;
+    dragging = null;
+    end();
+    void dispatch({ type: 'dropBowtie', side: z.dataset.dropSide, ...d });
+  });
+  el.addEventListener('dragend', () => { dragging = null; end(); });
 }

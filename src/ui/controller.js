@@ -18,6 +18,10 @@ import * as acks from '../core/acks.js';
 import * as references from '../core/ops/references.js';
 import * as phases from '../core/ops/phases.js';
 import * as safetyReports from '../core/ops/safety-reports.js';
+import * as bowtieViews from '../core/ops/bowtie-views.js';
+import { bowtieOf, canSee, normalizeFilters, DEFAULT_FILTERS, hazardName } from '../core/bowtie.js';
+import { bowtieSvg } from './bowtie-svg.js';
+import { emptyWorkspace, placePane, movePane, swapPanes, closePane, updatePane, replacedBy, paneDirty, workspaceKey, readWorkspace, writeWorkspace } from './workspace.js';
 import { setReportDesign } from '../core/ops/reports.js';
 import { createDocHost } from '../reports/docgen-host.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
@@ -49,6 +53,8 @@ const EDITS = {
   linkPhase: phases.linkPhase, unlinkPhase: phases.unlinkPhase,
   createSafetyReport: safetyReports.createSafetyReport, updateSafetyReport: safetyReports.updateSafetyReport, deleteSafetyReport: safetyReports.deleteSafetyReport,
   linkReference: references.linkReference, unlinkReference: references.unlinkReference,
+  createBowtieView: bowtieViews.createBowtieView, updateBowtieView: bowtieViews.updateBowtieView,
+  setBowtieSharing: bowtieViews.setBowtieSharing, deleteBowtieView: bowtieViews.deleteBowtieView,
   addComment,
 };
 
@@ -58,7 +64,9 @@ const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', createP
 const BACKUP_CHECK_MS = 60_000;
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
-const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder']);
+const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
+  'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneSet', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace',
+]);
 
 export function initialState() {
   return {
@@ -68,6 +76,7 @@ export function initialState() {
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
+    workspace: emptyWorkspace(), bowtieReplace: null,
   };
 }
 
@@ -135,8 +144,10 @@ export function createController(env) {
     openedAt = env.clock.now();
     DocGen.docHost.set(docs.host);
     const notices = unseenOverrides(state.session.working, /** @type {string} */ (state.profileId));
-    set({ notices, screen: notices.length ? 'notices' : 'main', view: { name: 'home' } });
+    const workspace = readWorkspace(env.storage, workspaceKey(state.folderName, /** @type {string} */ (state.profileId)));
+    set({ notices, screen: notices.length ? 'notices' : 'main', view: { name: 'home' }, workspace, bowtieReplace: null });
   }
+
 
   /** The actions made since the last save, for the restore warning. */
   function unsavedActions() {
@@ -194,6 +205,47 @@ export function createController(env) {
     if (!handle) throw new PivotError('no-data', 'Open the data folder first.');
     const stored = await store.storeReferenceFile(handle, referenceId, n, file);
     return { name: file.name, stored, size: file.size, type: file.type || '', addedBy: /** @type {string} */ (state.profileId), addedAt: env.clock.now() };
+  }
+
+  /** Show and remember the bow-tie windows. @param {import('./workspace.js').Workspace} ws */
+  function setWorkspace(ws) {
+    set({ workspace: ws });
+    writeWorkspace(env.storage, workspaceKey(state.folderName, /** @type {string} */ (state.profileId)), ws);
+  }
+
+  /** A side from a data attribute: '0' or '1', or the last-used window when absent. @param {unknown} s @returns {0 | 1 | 'last'} */
+  const sideOf = (s) => (s === '0' || s === 0 ? 0 : s === '1' || s === 1 ? 1 : 'last');
+
+  /** @param {unknown} s @returns {0 | 1} */
+  const paneIndex = (s) => (s === '1' || s === 1 ? 1 : 0);
+
+  /** The window at a side, or an error when there is none. @param {unknown} s */
+  function paneAt(s) {
+    const p = state.workspace.panes[paneIndex(s)];
+    if (!p) throw new PivotError('not-found', 'That window is closed.');
+    return p;
+  }
+
+  /**
+   * Put a window on the Bow-ties stage; if it would replace a window with unsaved choices, ask first.
+   * @param {0 | 1 | 'last'} side @param {import('./workspace.js').Pane} pane
+   */
+  function place(side, pane) {
+    const index = replacedBy(state.workspace, side);
+    const existing = index === null ? null : state.workspace.panes[index];
+    if (existing && state.session && paneDirty(existing, state.session.working)) {
+      set({ bowtieReplace: { side, pane, index }, view: { name: 'bowties' } });
+      return;
+    }
+    setWorkspace(placePane(state.workspace, side, pane));
+    set({ view: { name: 'bowties' }, bowtieReplace: null, message: null });
+  }
+
+  /** A window for a view the active profile may open. @param {string} id */
+  function paneForView(id) {
+    const v = state.session?.working.records.bowtieView?.[id];
+    if (!v || !canSee(v, state.profileId)) throw new PivotError('not-found', 'That view no longer exists or is not shared with you.');
+    return { viewId: v.id, hazardId: v.hazardId, platformId: v.platformId, filters: normalizeFilters(v.filters) };
   }
 
   /** @type {Record<string, (args: any) => Promise<void>>} */
@@ -430,7 +482,7 @@ export function createController(env) {
       set({ picker: null });
     },
     async closePicker() {
-      set({ picker: null });
+      set({ picker: null, bowtieReplace: null });
     },
     async linkControls(args) {
       for (const controlId of list(args.controlId)) {
@@ -565,6 +617,90 @@ export function createController(env) {
     },
     async cancelRestore() {
       set({ pendingRestore: null });
+    },
+    async openBowtie({ hazardId, platformId }) {
+      place('last', { viewId: null, hazardId, platformId, filters: normalizeFilters(DEFAULT_FILTERS) });
+    },
+    async newBowtie({ pair }) {
+      const [hazardId, platformId] = String(pair ?? '').split('|');
+      const d = state.session?.working;
+      if (!d || !hazardId || !platformId || !bowtieOf(d, hazardId, platformId, DEFAULT_FILTERS).ok) {
+        throw new PivotError('not-found', 'Choose a hazard and a platform it is on.');
+      }
+      place('last', { viewId: null, hazardId, platformId, filters: normalizeFilters(DEFAULT_FILTERS) });
+    },
+    async openBowtieView({ id, side }) {
+      place(sideOf(side), paneForView(id));
+    },
+    async dropBowtie({ side, viewId, pane }) {
+      const to = paneIndex(side);
+      if (pane !== undefined) { setWorkspace(movePane(state.workspace, paneIndex(pane), to)); return; }
+      if (viewId) { place(to, paneForView(viewId)); return; }
+    },
+    async swapBowtiePanes() {
+      setWorkspace(swapPanes(state.workspace));
+    },
+    async closeBowtiePane({ side }) {
+      setWorkspace(closePane(state.workspace, paneIndex(side)));
+    },
+    async setPaneSet({ side, value }) {
+      const p = paneAt(side);
+      setWorkspace(updatePane(state.workspace, paneIndex(side), { filters: normalizeFilters({ ...p.filters, set: value }) }));
+    },
+    async setPaneStatus({ side, status, on }) {
+      const p = paneAt(side);
+      const rest = p.filters.statuses.filter((s) => s !== status);
+      const statuses = on === 'true' ? [...rest, status] : rest;
+      setWorkspace(updatePane(state.workspace, paneIndex(side), { filters: normalizeFilters({ ...p.filters, statuses }) }));
+    },
+    async confirmBowtieReplace() {
+      const r = state.bowtieReplace;
+      if (!r) return;
+      setWorkspace(placePane(state.workspace, r.side, r.pane));
+      set({ bowtieReplace: null });
+    },
+    async cancelBowtieReplace() {
+      set({ bowtieReplace: null });
+    },
+    async saveBowtiePane({ side }) {
+      const p = paneAt(side);
+      const v = p.viewId ? state.session?.working.records.bowtieView?.[p.viewId] : null;
+      if (v && v.status === 'live' && v.ownerId === state.profileId) {
+        await applyEdit('updateBowtieView', { id: v.id, filters: p.filters });
+        return;
+      }
+      set({ editing: { kind: 'bowtieName', id: String(paneIndex(side)) } });
+    },
+    async saveBowtiePaneAs({ side, name }) {
+      const p = paneAt(side);
+      const id = newId();
+      await applyEdit('createBowtieView', { id, name, hazardId: p.hazardId, platformId: p.platformId, filters: p.filters });
+      setWorkspace(updatePane(state.workspace, paneIndex(side), { viewId: id }));
+    },
+    async shareBowtieView({ id, profileId }) {
+      const known = new Set(state.profiles.map((p) => p.id));
+      await applyEdit('setBowtieSharing', { id, sharedWith: list(profileId).filter((p) => known.has(p)) });
+    },
+    async renameBowtieView({ id, name }) {
+      await applyEdit('updateBowtieView', { id, name });
+    },
+    async removeBowtieView({ id }) {
+      const before = state.session?.working;
+      const v = before?.records.bowtieView?.[id];
+      if (!before || !v) throw new PivotError('not-found', 'That view no longer exists.');
+      await applyEdit('deleteBowtieView', { id });
+      set({ undo: { text: `Deleted ${v.name}.`, before, after: state.session?.working, base: state.session?.base } });
+    },
+    async exportBowtie({ side }) {
+      const p = paneAt(side);
+      const d = state.session?.working;
+      const b = d ? bowtieOf(d, p.hazardId, p.platformId, p.filters) : null;
+      if (!b) throw new PivotError('no-data', 'There is no data to draw.');
+      if (!b.ok) throw new PivotError('bowtie.cannot-draw', /** @type {import('../core/bowtie.js').Cannot} */ (b).message);
+      const base = `${hazardName(b.hazard)} ${b.platform.name} bow-tie`.replace(/[^A-Za-z0-9._-]+/g, '-');
+      const file = await env.pickSaveFile(`${base}.svg`);
+      await store.writeExport(file, bowtieSvg(b));
+      set({ message: { kind: 'info', text: `Saved ${file.name}.` } });
     },
   };
 

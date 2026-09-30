@@ -5,8 +5,7 @@ import { hasUnsaved } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
 import { themeOf } from '../prefs.js';
 import { ratingFor, LIKELIHOODS, CONSEQUENCES } from '../../core/matrix.js';
-import { waitingChanges } from '../../core/acks.js';
-import { live } from '../../core/data.js';
+import { openItems, attentionItems } from '../../core/queries.js';
 import { UNNUMBERED, hazardLabel } from '../../core/ids.js';
 import { FULCRUM_SVG } from '../logo.js';
 
@@ -84,10 +83,10 @@ export function messages(state) {
       <button type="button" class="link" ${dataAttrs({ action: 'dismissMessage' })}>Dismiss</button></div>` : ''}${u ? html`<div class="msg msg-info" role="status"><strong>${u.text}</strong> <button type="button" ${dataAttrs({ action: 'undoDelete' })}>Undo</button></div>` : ''}${warnings.map((/** @type {string} */ w) => html`<div class="msg msg-warning" role="status">${w}</div>`)}`;
 }
 
-const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['references', 'References'], ['phases', 'Phases'], ['reports', 'Reports'], ['backups', 'Backups']];
+const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['bowties', 'Bow-ties'], ['references', 'References'], ['phases', 'Phases'], ['reports', 'Reports'], ['backups', 'Backups']];
 
 /** The top-bar section each view belongs to. */
-const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', references: 'references', reference: 'references', phases: 'phases', reports: 'reports', backups: 'backups' };
+const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', bowties: 'bowties', references: 'references', reference: 'references', phases: 'phases', reports: 'reports', backups: 'backups' };
 
 /** The moon on the theme switch: a solid crescent (the text moon draws only an outline in some fonts). */
 const MOON_SVG = '<svg class="moon" viewBox="0 0 16 16" focusable="false"><path d="M10.6 1.2A7 7 0 1 0 14.8 10.4 5.6 5.6 0 0 1 10.6 1.2Z" fill="currentColor"/></svg>';
@@ -104,14 +103,14 @@ export function shell(state, body) {
     : unsaved
       ? html`<button type="button" class="save unsaved" ${dataAttrs({ action: 'save' })} title="You have unsaved changes: click to save">Unsaved</button>`
       : html`<button type="button" class="save saved" ${dataAttrs({ action: 'save' })} title="Everything is saved">Saved</button>`;
-  // Home counts the changes waiting on the active profile's platforms.
+  // Home carries a dot while the active profile's platforms need attention: changes to
+  // acknowledge, overdue reviews, controls awaiting a decision, unrated hazards (Home's own list).
   const data = state.session?.working;
-  const waiting = data && state.profileId
-    ? live(data, 'platform').filter((p) => p.ownerId === state.profileId).reduce((n, p) => n + waitingChanges(data, p.id).length, 0)
-    : 0;
+  const attention = Boolean(data && state.profileId && attentionItems(openItems(data, state.today, state.profileId)).length);
+  const dot = html`<span class="nav-dot" role="img" aria-label="Things need your attention" title="Things need your attention"></span>`;
   return html`<header class="topbar">
     <span class="brand">${raw(FULCRUM_SVG)}PIVOT</span>
-    <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${view === 'home' && waiting ? `${label} (${waiting})` : label}</button>`)}</nav>
+    <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${label}${view === 'home' && attention ? dot : ''}</button>`)}</nav>
     <span class="spacer"></span>
     <span class="topbar-end">
       <button type="button" class="folder" ${dataAttrs({ action: 'changeFolder' })} title="Choose a different data folder">Folder: ${state.folderName}</button>

@@ -164,6 +164,7 @@ export function platformTab(state, data, h, platformId) {
   const sf = sfarpOf(data, h.id, platformId);
   const sfAt = { change: 'setSfarp', 'hazard-id': h.id, 'platform-id': platformId };
   return html`<article class="doc ssra">
+    <div class="actions ssra-tools"><button type="button" ${dataAttrs({ action: 'openBowtie', 'hazard-id': h.id, 'platform-id': platformId })}>Open bow-tie</button></div>
     <section class="ssra-sec"><h2>Overview ${SHARED}</h2>
       <textarea class="doc-text" name="description" rows="3" placeholder="Add a description…" aria-label="Description" ${dataAttrs({ change: 'updateHazard', id: h.id })}>${h.description}</textarea>
       ${phaseChips(data, h)}

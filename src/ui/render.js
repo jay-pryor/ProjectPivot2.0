@@ -8,6 +8,7 @@ import { homeView, openItemsView } from './screens/home.js';
 import { referencesView, referenceView } from './screens/references.js';
 import { reportsView, backupsView } from './screens/reports.js';
 import { phasesView } from './screens/phases.js';
+import { bowtiesView } from './screens/bowties.js';
 
 /** @param {any} state */
 function mainView(state) {
@@ -26,6 +27,7 @@ function mainView(state) {
     case 'reference': return referenceView(state, data, v.id);
     case 'phases': return phasesView(state, data);
     case 'reports': return reportsView(state, data);
+    case 'bowties': return bowtiesView(state, data);
     default: return hazardsView(state, data);
   }
 }

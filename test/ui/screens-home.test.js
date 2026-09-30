@@ -71,10 +71,10 @@ test('before and after values are shown literally', () => {
   assert.doesNotMatch(dash, /<b>x<\/b>/);
 });
 
-test('the nav leads with Home and counts my waiting changes; Home is routed', () => {
+test('the nav leads with Home, dotted while my platforms need attention; Home is routed', () => {
   const d = data();
   const out = renderApp({ ...state, session: { base: d, working: d, loadedStamp: null }, view: { name: 'home' } });
-  assert.match(out, /<nav><button type="button" class="nav on" data-action="go" data-view="home">Home \(1\)<\/button>/);
+  assert.match(out, /<nav><button type="button" class="nav on" data-action="go" data-view="home">Home<span class="nav-dot"[^>]*><\/span><\/button>/);
   assert.match(out, /<h1>Home<\/h1>/);
 });
 

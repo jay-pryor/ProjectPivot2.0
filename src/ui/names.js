@@ -10,6 +10,7 @@ export const KIND_LABEL = Object.freeze({
   review: 'Review', reviewRow: 'Review row', reference: 'Reference', referenceLink: 'Reference link',
   assessment: 'Risk assessment', sfarp: 'SFARP considerations', existingControl: 'Existing control',
   phase: 'Lifecycle phase', hazardPhase: 'Lifecycle phase link', safetyReport: 'Safety report', controlPlatform: 'Control owner',
+  bowtieView: 'Bow-tie view',
 });
 
 /**
@@ -43,7 +44,8 @@ export function recordName(kind, rec, data) {
     case 'reference':
     case 'report': return rec.title;
     case 'platform':
-    case 'phase': return rec.name;
+    case 'phase':
+    case 'bowtieView': return rec.name;
     case 'safetyReport': return rec.number || rec.summary;
     case 'causalFactor':
     case 'consequence': return rec.text;
