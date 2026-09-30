@@ -118,10 +118,12 @@ test('cancelling the folder picker leaves everything as it was', async () => {
   assert.equal(c.getState().message, null);
 });
 
-test('the profile screen offers a different folder too', async () => {
+test('the profile screen names the folder but leaves choosing another to the screen before it', async () => {
   const { profileScreen } = await import('../../src/ui/screens/start.js');
   const f = new MemoryFolder('Wrong');
   const c = createController(env(f).env);
   await c.dispatch({ type: 'chooseFolder' });
-  assert.match(profileScreen(c.getState()).toString(), /data-action="chooseFolder">Choose a different folder…<\/button>/);
+  const out = profileScreen(c.getState()).toString();
+  assert.match(out, /Wrong/);
+  assert.doesNotMatch(out, /Choose a different folder/);
 });
