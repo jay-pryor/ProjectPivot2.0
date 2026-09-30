@@ -43,7 +43,7 @@ export function deletePlatform(data, act, { id }) {
     throw new PivotError('platform.has-hazards', `${p.name} still has ${on.length === 1 ? 'a hazard' : `${on.length} hazards`} on it. Unlink them first.`, { hazardIds: on.map((l) => l.hazardId) });
   }
   const open = openReview(data, id);
-  const reports = live(data, 'safetyReport').filter((r) => r.platformId === id).map((r) => ({ kind: 'safetyReport', rec: changed(r, act, { status: 'deleted' }) }));
+  const reports = ['safetyReport', 'controlPlatform'].flatMap((kind) => live(data, kind).filter((r) => r.platformId === id).map((r) => ({ kind, rec: changed(r, act, { status: 'deleted' }) })));
   return commit(data, act, 'Delete platform', [{ kind: 'platform', rec: changed(p, act, { status: 'deleted' }) }, ...reports, ...(open ? abandonRecs(data, act, open) : []), ...linksTo(data, act, [{ kind: 'platform', id }])]);
 }
 

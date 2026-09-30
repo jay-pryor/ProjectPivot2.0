@@ -55,6 +55,8 @@ export const ids = Object.freeze({
   existingControl: (h, p, c) => `ec:${h}:${p}:${c}`,
   /** @param {string} h @param {string} ph a phase id */
   hazardPhase: (h, ph) => `hph:${h}:${ph}`,
+  /** @param {string} c a control id @param {string} p */
+  controlPlatform: (c, p) => `cp:${c}:${p}`,
   /** @param {string} r a review id @param {string} h */
   reviewRow: (r, h) => `rr:${r}:${h}`,
   /** @param {string} r a reference id @param {string} k the target's kind @param {string} t the target's id */

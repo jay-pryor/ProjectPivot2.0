@@ -1,6 +1,6 @@
 import { PivotError } from '../../src/core/errors.js';
 import { createHazard, updateHazard, retireHazard, deleteHazard, restoreRecord, addCausalFactor, deleteCausalFactor } from '../../src/core/ops/hazards.js';
-import { createControl, updateControl, retireControl, deleteControl, linkControl, unlinkControl, linkExistingControl, unlinkExistingControl } from '../../src/core/ops/controls.js';
+import { createControl, updateControl, retireControl, deleteControl, linkControl, unlinkControl, linkExistingControl, unlinkExistingControl, setControlOwner } from '../../src/core/ops/controls.js';
 import { createPlatform, linkHazard, unlinkHazard, setReportId, retirePlatform } from '../../src/core/ops/platforms.js';
 import { confirmControl, excludeControl, resetControl, setControlStatus, setRating, setAssessment, setSfarp } from '../../src/core/ops/assessment.js';
 import { createPhase, linkPhase, unlinkPhase, deletePhase } from '../../src/core/ops/phases.js';
@@ -59,6 +59,7 @@ export function randomEdit(d, rand, act) {
     () => setControlStatus(d, act, { ...triple(), status: pick(rand, ['recommended', 'planned', 'implemented', 'rejected']), reason: `R ${n()}` }),
     () => linkExistingControl(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), controlId: pick(rand, ct), kind: pick(rand, ['preventative', 'mitigating']) }),
     () => unlinkExistingControl(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), controlId: pick(rand, ct) }),
+    () => setControlOwner(d, act, { controlId: pick(rand, ct), platformId: pick(rand, pl), owner: pick(rand, ['', 'us', 'customer', 'other']), ownerName: `Org ${n()}` }),
     () => createPhase(d, act, { id: pick(rand, ['ph1', 'ph2']), name: `Phase ${n()}` }),
     () => linkPhase(d, act, { hazardId: pick(rand, hz), phaseId: pick(rand, ['ph1', 'ph2']) }),
     () => unlinkPhase(d, act, { hazardId: pick(rand, hz), phaseId: pick(rand, ['ph1', 'ph2']) }),

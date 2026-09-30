@@ -76,7 +76,7 @@ export function entries(data) {
 
 /** @param {Data} data @param {string} kind @param {string} id */
 export function historyOf(data, kind, id) {
-  return entries(data).filter((e) => e.type === 'change' && e.items.some((/** @type {any} */ i) => (i.kind === kind && i.id === id) || (kind === 'hazard' && hazardOfItem(data, i) === id)));
+  return entries(data).filter((e) => e.type === 'change' && e.items.some((/** @type {any} */ i) => (i.kind === kind && i.id === id) || (kind === 'hazard' && hazardOfItem(data, i) === id) || (kind === 'control' && i.kind === 'controlPlatform' && String(i.id).split(':')[1] === id)));
 }
 
 /**

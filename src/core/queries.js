@@ -59,6 +59,7 @@ export function platformsReached(data, kind, rec) {
     case 'sfarp':
     case 'existingControl':
     case 'safetyReport':
+    case 'controlPlatform':
     case 'report': return [rec.platformId];
     case 'review': return [rec.platformId];
     case 'hazardPhase': return platformsOfHazard(data, rec.hazardId);
@@ -522,4 +523,32 @@ export function safetyReportsOn(data, hazardId, platformId) {
     if (a.date !== b.date) return a.date == null ? 1 : b.date == null ? -1 : a.date < b.date ? 1 : -1;
     return String(a.number).localeCompare(String(b.number));
   });
+}
+
+/** A control's owner on a platform, or null when not set. @param {Data} data @param {string} controlId @param {string} platformId */
+export function controlOwner(data, controlId, platformId) {
+  const r = get(data, 'controlPlatform', ids.controlPlatform(controlId, platformId));
+  return r && r.status === 'live' && r.owner ? { owner: /** @type {string} */ (r.owner), ownerName: /** @type {string} */ (r.ownerName ?? '') } : null;
+}
+
+/** An owner as a person reads it: Us, Customer, or the other party's name. @param {{ owner: string, ownerName: string } | null} o */
+export function ownerText(o) {
+  if (!o) return '';
+  return o.owner === 'us' ? 'Us' : o.owner === 'customer' ? 'Customer' : o.ownerName || 'Other';
+}
+
+/**
+ * Every hazard on a platform that uses a control: as an additional control (with its kind and
+ * status there) or as an existing control (with its kind), by hazard number.
+ * @param {Data} data @param {string} controlId @param {string} platformId
+ */
+export function controlOnPlatform(data, controlId, platformId) {
+  const onPlatform = new Set(live(data, 'hazardPlatform').filter((l) => l.platformId === platformId).map((l) => l.hazardId));
+  const additional = live(data, 'hazardControl').filter((l) => l.controlId === controlId && onPlatform.has(l.hazardId)).map((l) => ({
+    hazard: /** @type {Rec} */ (get(data, 'hazard', l.hazardId)), role: 'additional', kind: /** @type {string} */ (l.kind), ...controlState(data, l.hazardId, controlId, platformId),
+  }));
+  const existing = live(data, 'existingControl').filter((l) => l.controlId === controlId && l.platformId === platformId).map((l) => ({
+    hazard: /** @type {Rec} */ (get(data, 'hazard', l.hazardId)), role: 'existing', kind: /** @type {string} */ (l.kind), state: null, ruling: null,
+  }));
+  return [...additional, ...existing].sort((a, b) => byNumber(a.hazard, b.hazard) || (a.role < b.role ? -1 : 1));
 }

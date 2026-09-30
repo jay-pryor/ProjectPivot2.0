@@ -9,7 +9,7 @@ export const KIND_LABEL = Object.freeze({
   ruling: 'Control decision', rating: 'Rating', report: 'Report', reportDesign: 'Report design',
   review: 'Review', reviewRow: 'Review row', reference: 'Reference', referenceLink: 'Reference link',
   assessment: 'Risk assessment', sfarp: 'SFARP considerations', existingControl: 'Existing control',
-  phase: 'Lifecycle phase', hazardPhase: 'Lifecycle phase link', safetyReport: 'Safety report',
+  phase: 'Lifecycle phase', hazardPhase: 'Lifecycle phase link', safetyReport: 'Safety report', controlPlatform: 'Control owner',
 });
 
 /**
@@ -31,6 +31,7 @@ export function recordName(kind, rec, data) {
       case 'existingControl': return `${control} for ${hazard} on ${platform}`;
       case 'assessment': return `${cap(rec.stage)} ${rec.receptor} risk of ${hazard} on ${platform}`;
       case 'sfarp': return `SFARP of ${hazard} on ${platform}`;
+      case 'controlPlatform': return `${control} on ${platform}`;
       case 'hazardPhase': return `${data.records.phase?.[rec.phaseId]?.name ?? ''} for ${hazard}`;
       case 'safetyReport': return `${rec.number || rec.summary} for ${hazard} on ${platform}`;
       default: break;

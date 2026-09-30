@@ -9,6 +9,9 @@ import { linksTo } from './references.js';
 
 export const CONTROL_KINDS = Object.freeze(['preventative', 'mitigating']);
 
+/** Who owns a control on a platform: us, the platform's customer, or another named party. */
+export const OWNERS = Object.freeze(['us', 'customer', 'other']);
+
 /** The hierarchy of controls, most effective first. */
 export const CONTROL_TIERS = Object.freeze(['Elimination', 'Substitution', 'Engineering', 'Administrative', 'PPE']);
 
@@ -70,7 +73,8 @@ export function deleteControl(data, act, { id }) {
   if (existingUses.length) {
     throw new PivotError('control.in-use', `${c.title} is an existing control on ${existingUses.length === 1 ? 'a hazard' : `${existingUses.length} hazards`}. Remove it there first.`, { hazardIds: existingUses.map((u) => u.hazardId) });
   }
-  return commit(data, act, 'Delete control', [{ kind: 'control', rec: changed(c, act, { status: 'deleted' }) }, ...linksTo(data, act, [{ kind: 'control', id }])]);
+  const owners = live(data, 'controlPlatform').filter((r) => r.controlId === id).map((r) => ({ kind: 'controlPlatform', rec: changed(r, act, { status: 'deleted' }) }));
+  return commit(data, act, 'Delete control', [{ kind: 'control', rec: changed(c, act, { status: 'deleted' }) }, ...owners, ...linksTo(data, act, [{ kind: 'control', id }])]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ hazardId: string, controlId: string, kind: string }} args */
@@ -138,4 +142,27 @@ export function unlinkExistingControl(data, act, { hazardId, platformId, control
 export function setExistingControlKind(data, act, { hazardId, platformId, controlId, kind }) {
   const l = need(data, 'existingControl', ids.existingControl(hazardId, platformId, controlId));
   return commit(data, act, 'Change existing control kind', [{ kind: 'existingControl', rec: changed(l, act, { kind: needKind(kind) }) }]);
+}
+
+/**
+ * Who owns a control on a platform. Fields left out keep their value; an empty owner clears it.
+ * A name is kept only for another party.
+ * @param {Data} data @param {Act} act @param {{ controlId: string, platformId: string, owner?: string, ownerName?: string }} args
+ */
+export function setControlOwner(data, act, { controlId, platformId, owner, ownerName }) {
+  need(data, 'control', controlId);
+  need(data, 'platform', platformId);
+  const id = ids.controlPlatform(controlId, platformId);
+  const existing = get(data, 'controlPlatform', id);
+  const cur = existing && existing.status === 'live' ? existing : { owner: null, ownerName: '' };
+  const o = owner === undefined ? cur.owner : owner === '' || owner === null ? null : String(owner);
+  if (o !== null && !OWNERS.includes(o)) throw new PivotError('control.owner', `A control's owner is ${OWNERS.join(', ')}, or not set.`);
+  const name = o === 'other' ? String(ownerName === undefined ? cur.ownerName : ownerName ?? '').trim() : '';
+  if (o === null) {
+    if (!existing || existing.status !== 'live') return data;
+    return commit(data, act, 'Set control owner', [{ kind: 'controlPlatform', rec: changed(existing, act, { status: 'deleted' }) }]);
+  }
+  const fields = { owner: o, ownerName: name };
+  const rec = existing ? changed(existing, act, { ...fields, status: 'live' }) : created(act, id, { controlId, platformId, ...fields });
+  return commit(data, act, 'Set control owner', [{ kind: 'controlPlatform', rec }]);
 }

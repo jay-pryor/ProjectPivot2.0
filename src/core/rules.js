@@ -76,6 +76,12 @@ export function checkRules(data) {
     const p = get(data, 'platform', r.platformId);
     if (!p || p.status === 'deleted') out.push({ rule: 'safetyReport-platform-deleted', message: 'A safety report belongs to a platform that has been deleted.', records: [{ kind: 'safetyReport', id: r.id }, { kind: 'platform', id: r.platformId }] });
   }
+  for (const r of live(data, 'controlPlatform')) {
+    const c = get(data, 'control', r.controlId);
+    if (!c || c.status === 'deleted') out.push({ rule: 'controlPlatform-control-deleted', message: 'A control owner is recorded for a control that has been deleted.', records: [{ kind: 'controlPlatform', id: r.id }, { kind: 'control', id: r.controlId }] });
+    const p = get(data, 'platform', r.platformId);
+    if (!p || p.status === 'deleted') out.push({ rule: 'controlPlatform-platform-deleted', message: 'A control owner is recorded for a platform that has been deleted.', records: [{ kind: 'controlPlatform', id: r.id }, { kind: 'platform', id: r.platformId }] });
+  }
   // Reviews: an open review needs a live platform, and there is one at a time per platform.
   /** @type {Map<string, any>} */
   const openOn = new Map();
