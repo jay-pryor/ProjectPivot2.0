@@ -5,8 +5,7 @@ import { hasUnsaved } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
 import { themeOf } from '../prefs.js';
 import { ratingFor, LIKELIHOODS, CONSEQUENCES } from '../../core/matrix.js';
-import { waitingChanges } from '../../core/acks.js';
-import { live } from '../../core/data.js';
+import { openItems, attentionItems } from '../../core/queries.js';
 import { UNNUMBERED, hazardLabel } from '../../core/ids.js';
 import { FULCRUM_SVG } from '../logo.js';
 
@@ -101,14 +100,14 @@ export function shell(state, body) {
     : unsaved
       ? html`<button type="button" class="save unsaved" ${dataAttrs({ action: 'save' })} title="You have unsaved changes: click to save">Unsaved</button>`
       : html`<button type="button" class="save saved" ${dataAttrs({ action: 'save' })} title="Everything is saved">Saved</button>`;
-  // Home counts the changes waiting on the active profile's platforms.
+  // Home carries a dot while the active profile's platforms need attention: changes to
+  // acknowledge, overdue reviews, controls awaiting a decision, unrated hazards (Home's own list).
   const data = state.session?.working;
-  const waiting = data && state.profileId
-    ? live(data, 'platform').filter((p) => p.ownerId === state.profileId).reduce((n, p) => n + waitingChanges(data, p.id).length, 0)
-    : 0;
+  const attention = Boolean(data && state.profileId && attentionItems(openItems(data, state.today, state.profileId)).length);
+  const dot = html`<span class="nav-dot" role="img" aria-label="Things need your attention" title="Things need your attention"></span>`;
   return html`<header class="topbar">
     <span class="brand">${raw(FULCRUM_SVG)}PIVOT</span>
-    <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${view === 'home' && waiting ? `${label} (${waiting})` : label}</button>`)}</nav>
+    <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${label}${view === 'home' && attention ? dot : ''}</button>`)}</nav>
     <span class="spacer"></span>
     <span class="topbar-end">
       <button type="button" class="folder" ${dataAttrs({ action: 'changeFolder' })} title="Choose a different data folder">Folder: ${state.folderName}</button>

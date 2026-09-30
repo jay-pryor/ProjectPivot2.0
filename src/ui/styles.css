@@ -423,3 +423,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--p-accent); }
   .bowties { grid-template-columns: minmax(0, 1fr); }
   .bt-stage.split { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Home's dot: things on your own platforms need attention. */
+.nav-dot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; vertical-align: 0.15em; border-radius: 50%; background: var(--p-accent); }
