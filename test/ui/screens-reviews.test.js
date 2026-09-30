@@ -34,8 +34,10 @@ test('the platforms list shows the next review with a due-soon or overdue badge,
   assert.doesNotMatch(overdueOnly, /data-row="p2"/);
 });
 
-test('a platform page states its schedule, changed in place, with a Start review button', () => {
-  const out = platformView(state, data(), 'p1').toString();
+test('the Reviews tab states the schedule, changed in place, with a Start review button; Details no longer does', () => {
+  const details = platformView(state, data(), 'p1').toString();
+  assert.doesNotMatch(details, /setScheduleField|data-kind="schedule"/);
+  const out = platformView(onTab(), data(), 'p1').toString();
   assert.match(out, /<input type="number"[^>]*name="months"[^>]*value="6"[^>]*data-change="setScheduleField" data-platform-id="p1"/);
   assert.match(out, /<input type="date"[^>]*name="due"[^>]*value="2026-09-01"[^>]*data-change="setScheduleField"/);
   assert.match(out, /review-overdue/);
@@ -45,18 +47,18 @@ test('a platform page states its schedule, changed in place, with a Start review
 });
 
 test('without a schedule: a Set schedule link, which opens a small form', () => {
-  const out = platformView(state, seed(), 'p1').toString();
+  const out = platformView(onTab(), seed(), 'p1').toString();
   assert.match(out, /No review schedule/);
   assert.match(out, /data-action="startEdit" data-kind="schedule" data-id="p1"/);
-  const editing = platformView({ ...state, editing: { kind: 'schedule', id: 'p1' } }, seed(), 'p1').toString();
+  const editing = platformView({ ...onTab(), editing: { kind: 'schedule', id: 'p1' } }, seed(), 'p1').toString();
   assert.match(editing, /<form data-action="setSchedule" data-platform-id="p1"[\s\S]*?name="months"[\s\S]*?name="due"/);
 });
 
-test('with a review open, the button says Continue review', () => {
+test('with a review open, the Reviews tab shows the schedule and the review, and no Start button', () => {
   const d = startReview(data(), act, { id: 'r1', platformId: 'p1' });
-  const out = platformView(state, d, 'p1').toString();
-  assert.match(out, /data-action="go" data-view="platform" data-id="p1" data-tab="reviews">Continue review/);
-  assert.doesNotMatch(out, /data-action="beginReview"/);
+  const out = platformView(onTab(), d, 'p1').toString();
+  assert.match(out, /data-change="setScheduleField"[\s\S]*?data-table="reviewRows"/, 'the schedule above the review');
+  assert.doesNotMatch(out, /data-action="beginReview"|Continue review/);
 });
 
 test('a hazard page shows when it was last reviewed on each platform', () => {
@@ -85,7 +87,8 @@ test('an open review: a checklist with a tickbox and a note per hazard, the outc
   assert.match(out, /data-table="reviewRows"/);
   assert.match(out, /<input type="checkbox" name="reviewed"[^>]*data-change="tickReviewRow" data-review-id="r1" data-hazard-id="h1"/);
   assert.doesNotMatch(out, /name="reviewed"[^>]* checked/, 'not yet ticked');
-  assert.match(out, /data-dblclick="startEdit" data-kind="reviewNote" data-id="h1"[^>]*>Crew briefed</);
+  assert.match(out, /<button type="button" class="cell-text cell-button" data-action="startEdit" data-kind="reviewNote" data-id="h1"[^>]*>Crew briefed</, 'one click edits the note');
+  assert.doesNotMatch(out, /data-dblclick="startEdit" data-kind="reviewNote"/);
   assert.match(out, /<textarea name="outcome"[^>]*data-change="setReviewOutcome" data-review-id="r1"/);
   assert.match(out, /data-action="completeReview" data-review-id="r1"[^>]*>Complete — 1 not ticked</);
   assert.match(out, /data-action="abandonReview" data-review-id="r1"/);
@@ -157,4 +160,15 @@ test('a report produced while overdue carries a badge in the list', () => {
   assert.match(reportsView(state, d).toString(), /Alpha hazards <span class="tag review-overdue"[^>]*>Overdue<\/span>/);
   const fine = createReport(data(), act, { id: 'rep2', report: { ...report, review: { state: 'ok', due: '2027-01-01', months: 6, lastReviewed: null } } });
   assert.doesNotMatch(reportsView(state, fine).toString(), /review-overdue/);
+});
+
+test('an empty note invites one', () => {
+  const d = startReview(data(), act, { id: 'r1', platformId: 'p1' });
+  assert.match(platformView(onTab(), d, 'p1').toString(), /data-kind="reviewNote" data-id="h1"[^>]*><span class="muted">Add a note…<\/span></);
+});
+
+test('checkboxes are the accent orange', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../../src/ui/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /input\[type="checkbox"\], input\[type="radio"\] \{ accent-color: var\(--p-accent\); \}/);
 });

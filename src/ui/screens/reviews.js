@@ -11,18 +11,16 @@ import { day, when, profileName } from '../names.js';
 /** @typedef {import('../../core/data.js').Data} Data */
 
 /**
- * The platform's review schedule as a line of the document, changed in place, with the button
- * that starts or continues a review.
+ * The platform's review schedule as a line at the top of its Reviews tab, changed in place, with
+ * the button that starts a review when none is open.
  * @param {any} state @param {Data} data @param {any} p the platform
  */
 export function reviewLine(state, data, p) {
   const s = reviewState(p, state.today);
   const last = lastReviewed(data, p.id);
   const lastText = last ? html`<span class="muted">· last reviewed ${day(last)}</span>` : html`<span class="muted">· never reviewed</span>`;
-  const start = p.status !== 'live' ? ''
-    : openReview(data, p.id)
-      ? html`<button type="button" ${dataAttrs({ action: 'go', view: 'platform', id: p.id, tab: 'reviews' })}>Continue review</button>`
-      : html`<button type="button" ${dataAttrs({ action: 'beginReview', 'platform-id': p.id })}>Start review</button>`;
+  const start = p.status !== 'live' || openReview(data, p.id) ? ''
+    : html`<button type="button" ${dataAttrs({ action: 'beginReview', 'platform-id': p.id })}>Start review</button>`;
   if (s === 'none') {
     if (state.editing?.kind === 'schedule' && state.editing.id === p.id) {
       return html`<form data-action="setSchedule" ${dataAttrs({ 'platform-id': p.id })} class="doc-meta review-line fill">
@@ -48,7 +46,7 @@ function controlSummary(c) {
   return parts.length ? parts.map(([s, n]) => `${n} ${s}`).join(' · ') : html`<span class="muted">No controls</span>`;
 }
 
-const needsSchedule = html`<p class="muted">Completing a review needs a review schedule: set one on the Details tab.</p>`;
+const needsSchedule = html`<p class="muted">Completing a review needs a review schedule: set one above.</p>`;
 
 /** @param {any} state @param {Data} data @param {any} p @param {any} review */
 function openReviewBlock(state, data, p, review) {
@@ -77,7 +75,7 @@ function openReviewBlock(state, data, p, review) {
           render: (i) => (noting(i)
             ? html`<input class="cell-edit" name="note" value="${i.note}" placeholder="What was checked or found…" aria-label="Note on ${i.hazard.title}" autofocus ${dataAttrs({ change: 'markRow', 'review-id': review.id, 'hazard-id': i.hazard.id })}>`
             : i.onPlatform
-              ? html`<span class="cell-text" ${dataAttrs({ dblclick: 'startEdit', kind: 'reviewNote', id: i.hazard.id })} title="Double-click to change">${i.note}</span>`
+              ? html`<button type="button" class="cell-text cell-button" ${dataAttrs({ action: 'startEdit', kind: 'reviewNote', id: i.hazard.id })} title="Click to change">${i.note || html`<span class="muted">Add a note…</span>`}</button>`
               : html`<span class="cell-text">${i.note}</span>`) },
       ],
     })}</section>
@@ -139,6 +137,6 @@ export function reviewsTab(state, data, p) {
   const open = openReview(data, p.id);
   const top = open ? openReviewBlock(state, data, p, open)
     : p.status !== 'live' ? html`<p class="muted">${p.name} is retired, so it cannot be reviewed.</p>`
-      : html`<p>No review in progress. <button type="button" ${dataAttrs({ action: 'beginReview', 'platform-id': p.id })}>Start review</button></p>${p.reviewMonths ? '' : needsSchedule}`;
-  return html`${top}<h2>Past reviews</h2><section class="block">${pastReviews(state, data, p)}</section>`;
+      : html`<p>No review in progress.</p>${p.reviewMonths ? '' : needsSchedule}`;
+  return html`${reviewLine(state, data, p)}${top}<h2>Past reviews</h2><section class="block">${pastReviews(state, data, p)}</section>`;
 }

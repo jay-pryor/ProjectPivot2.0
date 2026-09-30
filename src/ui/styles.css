@@ -352,3 +352,9 @@ button.small { padding: 2px 9px; font-size: 13px; }
 .splash-logo .spark, .splash-logo .hot { fill: var(--hc-accent); }
 .splash-logo .rule { stroke: var(--hc-accent); stroke-width: 2.4; }
 .splash-logo .product { fill: var(--hc-fg); font-family: "Atkinson Hyperlegible", system-ui, sans-serif; font-weight: 700; font-size: 46px; letter-spacing: 14px; }
+
+/* Checkboxes and radio buttons in the accent. */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--p-accent); }
+/* A cell that edits on one click: looks like its text, left-aligned, full width. */
+.cell-button { display: block; width: 100%; min-height: 1.6em; text-align: left; background: transparent; border: 1px solid transparent; padding: 2px 4px; color: inherit; font: inherit; }
+.cell-button:hover { border-color: var(--p-line); }
