@@ -104,6 +104,13 @@ export function textTable(state, name, items, hazardId) {
     ${adding ? html`<form data-action="add${name}" ${dataAttrs({ 'hazard-id': hazardId })} class="row inline fill new-row"><input name="text" required placeholder="New ${what}…" aria-label="New ${what}" class="grow" autofocus><button type="submit">Add</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></form>` : ''}`;
 }
 
+/** What deleting a hazard still on (retired) platforms also takes. @param {string[]} names */
+function retiredNote(names) {
+  if (!names.length) return '';
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  return `It is on retired platform${names.length === 1 ? '' : 's'} ${list}; its risk assessments, controls and safety reports there go too.`;
+}
+
 /** @param {any} state @param {Data} data @param {string} id */
 export function hazardView(state, data, id) {
   const d = hazardDetail(data, id);
@@ -175,5 +182,5 @@ export function hazardView(state, data, id) {
       </section>
       <section class="block">${referencesCard(state, data, { kind: 'hazard', id: h.id })}</section>
     </article>
-    ${state.confirmDelete?.kind === 'hazard' && state.confirmDelete.id === h.id ? deletePanel('hazard', h.id, deleteName('hazard', h)) : html`<div class="actions page-actions">${actions}</div>`}`;
+    ${state.confirmDelete?.kind === 'hazard' && state.confirmDelete.id === h.id ? deletePanel('hazard', h.id, deleteName('hazard', h), retiredNote(d.platforms.map((p) => p.platform.name))) : html`<div class="actions page-actions">${actions}</div>`}`;
 }

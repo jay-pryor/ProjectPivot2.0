@@ -69,16 +69,23 @@ export function linkHazard(data, act, { hazardId, platformId }) {
  */
 export function unlinkHazard(data, act, { hazardId, platformId }) {
   const l = need(data, 'hazardPlatform', ids.hazardPlatform(hazardId, platformId));
-  const recs = [{ kind: 'hazardPlatform', rec: changed(l, act, { status: 'deleted' }) }];
-  for (const r of live(data, 'ruling')) {
-    if (r.hazardId === hazardId && r.platformId === platformId) recs.push({ kind: 'ruling', rec: changed(r, act, { status: 'deleted' }) });
-  }
-  for (const kind of ['assessment', 'sfarp', 'rating', 'existingControl']) {
+  return commit(data, act, 'Unlink hazard from platform', unlinkRecs(data, act, l));
+}
+
+/**
+ * What taking a hazard off a platform deletes: the link, and its control statuses, risk
+ * assessments, SFARP and existing controls there (safety reports stay; they record events).
+ * @param {Data} data @param {Act} act @param {any} link a live hazardPlatform link
+ */
+export function unlinkRecs(data, act, link) {
+  const { hazardId, platformId } = link;
+  const recs = [{ kind: 'hazardPlatform', rec: changed(link, act, { status: 'deleted' }) }];
+  for (const kind of ['ruling', 'assessment', 'sfarp', 'rating', 'existingControl']) {
     for (const r of live(data, kind)) {
       if (r.hazardId === hazardId && r.platformId === platformId) recs.push({ kind, rec: changed(r, act, { status: 'deleted' }) });
     }
   }
-  return commit(data, act, 'Unlink hazard from platform', recs);
+  return recs;
 }
 
 /** @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string, reportId: string | null }} args */

@@ -90,3 +90,13 @@ test('Undo clicked while a save is running does nothing', async () => {
   assert.equal(W(c).records.hazard.h1.status, 'deleted');
   assert.doesNotMatch(messages(c.getState()).toString(), /undoDelete/);
 });
+
+test('deleting a hazard left on retired platforms names them in the final panel', async () => {
+  const { retirePlatform } = await import('../../src/core/ops/platforms.js');
+  let d = retirePlatform(seed(), { by: 'u1', at: '2026-09-28T10:00:00+10:00' }, { id: 'p1' });
+  d = retirePlatform(d, { by: 'u1', at: '2026-09-28T10:00:00+10:00' }, { id: 'p2' });
+  const out = hazardView({ ...state, view: { name: 'hazard', id: 'h1' }, confirmDelete: { kind: 'hazard', id: 'h1' } }, d, 'h1').toString();
+  assert.match(out, /class="delete-panel"[\s\S]*?It is on retired platforms Alpha and Bravo; its risk assessments, controls and safety reports there go too\./);
+  const none = hazardView({ ...state, view: { name: 'hazard', id: 'h2' }, confirmDelete: { kind: 'hazard', id: 'h2' } }, seed(), 'h2').toString();
+  assert.doesNotMatch(none, /retired platform/);
+});

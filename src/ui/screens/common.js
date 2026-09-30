@@ -65,10 +65,11 @@ export function deleteName(kind, rec) {
  * The last step before deleting a hazard or platform: it replaces the page's actions, so the
  * delete takes three deliberate clicks.
  * @param {'hazard' | 'platform'} kind @param {string} id @param {string} what e.g. "H-0001 Fire"
+ * @param {string} [note] what else goes with it
  */
-export function deletePanel(kind, id, what) {
+export function deletePanel(kind, id, what, note = '') {
   return html`<div class="delete-panel" role="alertdialog" aria-label="Confirm delete">
-    <p><strong>Delete ${what}?</strong> You can undo it straight after, until you make another change or save.</p>
+    <p><strong>Delete ${what}?</strong>${note ? ` ${note}` : ''} You can undo it straight after, until you make another change or save.</p>
     <div class="actions"><button type="button" class="danger" ${dataAttrs({ action: 'confirmDelete', kind, id })}>Yes, delete ${what}</button>
       <button type="button" ${dataAttrs({ action: 'cancelDelete' })}>Keep it</button></div></div>`;
 }

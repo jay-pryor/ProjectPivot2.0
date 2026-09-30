@@ -4,6 +4,7 @@ import { get, put, all, live, created, changed, need, needText, NUMBERED } from 
 import { commit } from '../apply.js';
 import { linksTo } from './references.js';
 import { platformsOfHazard } from '../queries.js';
+import { unlinkRecs } from './platforms.js';
 
 /** @typedef {import('../data.js').Data} Data */
 /** @typedef {import('../data.js').Act} Act */
@@ -24,14 +25,16 @@ export function updateHazard(data, act, { id, title, description }) {
   return commit(data, act, 'Edit hazard', [{ kind: 'hazard', rec: changed(h, act, fields) }]);
 }
 
-/** @param {Data} data @param {import('../data.js').Rec} hazard @param {string} verb */
-function refuseOnPlatforms(data, hazard, verb) {
-  const on = platformsOfHazard(data, hazard.id);
+/** @param {Data} data @param {import('../data.js').Rec} hazard @param {string} verb @param {boolean} [liveOnly] only live platforms stand in the way */
+function refuseOnPlatforms(data, hazard, verb, liveOnly = false) {
+  const on = platformsOfHazard(data, hazard.id).filter((p) => !liveOnly || get(data, 'platform', p)?.status === 'live');
   if (on.length === 0) return;
   const names = on.map((p) => get(data, 'platform', p)?.name ?? p).join(', ');
   throw new PivotError(
     'hazard.on-platforms',
-    `${hazardLabel(hazard)} is still on ${names}. Unlink it from ${on.length === 1 ? 'that platform' : 'those platforms'} before you ${verb} it.`,
+    liveOnly
+      ? `${hazardLabel(hazard)} is still on ${names}. Unlink it from ${on.length === 1 ? 'that platform or retire it' : 'those platforms or retire them'} before you ${verb} it.`
+      : `${hazardLabel(hazard)} is still on ${names}. Unlink it from ${on.length === 1 ? 'that platform' : 'those platforms'} before you ${verb} it.`,
     { platformIds: on },
   );
 }
@@ -47,8 +50,10 @@ export function retireHazard(data, act, { id }) {
 /** @param {Data} data @param {Act} act @param {{ id: string }} args */
 export function deleteHazard(data, act, { id }) {
   const h = need(data, 'hazard', id);
-  refuseOnPlatforms(data, h, 'delete');
+  // A hazard left only on retired platforms can go: it leaves them as unlinking would.
+  refuseOnPlatforms(data, h, 'delete', true);
   const recs = [{ kind: 'hazard', rec: changed(h, act, { status: 'deleted' }) }];
+  for (const l of live(data, 'hazardPlatform')) if (l.hazardId === id) recs.push(...unlinkRecs(data, act, l));
   for (const kind of ['causalFactor', 'consequence']) {
     for (const r of live(data, kind)) if (r.hazardId === id) recs.push({ kind, rec: changed(r, act, { status: 'deleted' }) });
   }
