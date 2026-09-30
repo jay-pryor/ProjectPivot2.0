@@ -33,14 +33,14 @@ test('lists open with an ID column: hazards H-, controls C-, platforms P-; new r
   assert.match(adding, /<form data-action="createPlatform"[\s\S]*?name="name"[^>]*autofocus/);
 });
 
-test('a platform page: report IDs as text, changed by double-click; ratings and control states as dropdowns in the tables', () => {
+test('a platform page: report IDs as text, changed by double-click; calculated risk levels; control states as dropdowns', () => {
   const out = platformView(state, data(), 'p1').toString();
   assert.match(out, /P-0001/);
   assert.doesNotMatch(out, />Set</);
   assert.doesNotMatch(out, /Assess/);
   assert.match(out, /data-dblclick="startEdit" data-kind="reportId" data-id="h1"[^>]*>H-0001</);
-  assert.match(out, /<select[^>]*data-change="setRatingCell" data-hazard-id="h1" data-platform-id="p1" data-stage="residual"[\s\S]*?<option value="2C" selected>/);
-  assert.match(out, /data-change="setRatingCell"[^>]*data-stage="initial"/);
+  assert.match(out, /<th data-col="residualPersonnel"[\s\S]*?<span class="band band-serious">2C Serious<\/span>/, 'levels are shown, calculated, not picked');
+  assert.doesNotMatch(out, /setRatingCell/);
   assert.match(out, /data-table="platformControls"/);
   assert.match(out, /data-change="setControlState" data-hazard-id="h1" data-control-id="c2" data-platform-id="p1"[\s\S]*?<option value="rejected" selected>/);
   assert.match(out, /No crew/);

@@ -60,13 +60,6 @@ test('a tab for a platform the hazard is not on shows a note, not a crash', () =
   assert.match(hazardView(on('p:nope'), data(), 'h1').toString(), /not on that platform/);
 });
 
-test('the platform page sets all four ratings from the table, and each hazard opens its SSRA tab', async () => {
-  const { platformView } = await import('../../src/ui/screens/platforms.js');
-  const out = platformView(state, data(), 'p1').toString();
-  for (const k of ['initialPersonnel', 'initialEnvironment', 'residualPersonnel', 'residualEnvironment']) assert.match(out, new RegExp(`<th data-col="${k}"`));
-  assert.match(out, /data-change="setRatingCell" data-hazard-id="h1" data-platform-id="p1" data-stage="residual" data-receptor="environment"[\s\S]*?<option value="2C" selected>/);
-  assert.match(out, /data-action="go" data-view="hazard" data-id="h1" data-tab="p:p1"/);
-});
 
 test('the hazards list shows residual personnel and environment separately, each with a filter', async () => {
   const { hazardsView } = await import('../../src/ui/screens/hazards.js');
@@ -217,4 +210,48 @@ test('deleting a hazard or a platform warns that its safety reports go too', asy
   const { createPlatform } = await import('../../src/core/ops/platforms.js');
   d = createPlatform(d, act, { id: 'p3', name: 'Charlie', ownerId: 'u1' });
   assert.match(platformView(state, d, 'p3').toString(), /Delete this platform and its safety reports/);
+});
+
+// Capability: a third receptor on every screen.
+const capability = (d, stage, likelihood, consequence, extra = {}) => setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage, receptor: 'capability', likelihood, consequence, ...extra });
+
+test('the platform tab has a Capability panel beside Personnel and Environment, for initial and residual risk', () => {
+  const out = hazardView(on('p:p1'), capability(data(), 'initial', 'B', null, { likelihoodWhy: '<b>x</b>' }), 'h1').toString();
+  assert.equal((out.match(/class="risk-panel"/g) ?? []).length, 6, 'three panels per stage');
+  assert.match(out, /<select name="likelihood" aria-label="Initial capability likelihood"[^>]*>[\s\S]*?<option value="B" selected>/);
+  assert.match(out, /aria-label="Residual capability consequence"/);
+  assert.match(out, /<h3>Capability<\/h3>/);
+  assert.match(out, /&lt;b&gt;x&lt;\/b&gt;<\/textarea>/);
+  assert.doesNotMatch(out, /<b>x<\/b>/);
+});
+
+test('the worst residual counts capability, on the tab and in the hazards list, with a column and filter of its own', async () => {
+  const { hazardsView } = await import('../../src/ui/screens/hazards.js');
+  const d = capability(data(), 'residual', 'A', 1);
+  assert.match(hazardView(state, d, 'h1').toString(), /data-tab="p:p1">Alpha <span class="band band-high">High<\/span>/);
+  assert.match(hazardView(state, d, 'h1').toString(), /data-table="hazardPlatforms"[\s\S]*?<th data-col="capability"/);
+  const list = hazardsView(state, d).toString();
+  assert.match(list, /<span class="rx">C<\/span> <span class="band band-high">High<\/span>/);
+  assert.match(list, /<th data-col="riskCapability"/);
+  assert.match(hazardsView({ ...state, tables: { hazards: { filters: { riskCapability: 'High' } } } }, d).toString(), /data-row="h1"/);
+});
+
+test('the platform page shows six calculated levels, picks no cells, and links each hazard to its tab', async () => {
+  const { platformView } = await import('../../src/ui/screens/platforms.js');
+  const out = platformView(state, capability(data(), 'residual', 'C', 2), 'p1').toString();
+  for (const k of ['initialPersonnel', 'initialEnvironment', 'initialCapability', 'residualPersonnel', 'residualEnvironment', 'residualCapability']) assert.match(out, new RegExp(`<th data-col="${k}"`));
+  assert.match(out, /<span class="band band-serious">2C Serious<\/span>/);
+  assert.match(out, /Not yet assessed/);
+  assert.doesNotMatch(out, /setRatingCell|<option value="2C"/);
+  assert.match(out, /data-action="go" data-view="hazard" data-id="h1" data-tab="p:p1"/);
+});
+
+test('Home has a capability bar; the review checklist a residual capability column', async () => {
+  const { homeView } = await import('../../src/ui/screens/home.js');
+  const { platformView } = await import('../../src/ui/screens/platforms.js');
+  const { startReview } = await import('../../src/core/ops/reviews.js');
+  const d = capability(data(), 'residual', 'C', 2);
+  assert.match(homeView(state, d).toString(), /<span class="rx">Capability<\/span><span class="riskbar">[\s\S]*?band-serious/);
+  const r = startReview(d, act, { id: 'r1', platformId: 'p1' });
+  assert.match(platformView({ ...state, view: { name: 'platform', id: 'p1', tab: 'reviews' } }, r, 'p1').toString(), /<th data-col="residualCapability"/);
 });

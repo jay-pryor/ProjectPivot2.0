@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, stateTag, go, confirmButton, deletePanel, deleteName, pageTabs, historyTable, plus, idTag, reviewTag } from './common.js';
+import { dataAttrs, option, statusTag, stateTag, go, confirmButton, deletePanel, deleteName, levelTag, pageTabs, historyTable, plus, idTag, reviewTag } from './common.js';
 import { reviewsTab } from './reviews.js';
 import { REVIEW_DETAIL_ACTIONS } from '../../core/ops/reviews.js';
 import { waitingChanges } from '../../core/acks.js';
@@ -12,9 +12,10 @@ import { all, get, live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
 import { platformHazards, bandOf, openReview } from '../../core/queries.js';
 import { historyReaching } from '../../core/history.js';
-import { CONSEQUENCES, LIKELIHOODS, BANDS, ratingFor } from '../../core/matrix.js';
+import { BANDS } from '../../core/matrix.js';
 import { profileName, when, day } from '../names.js';
 import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
+import { RECEPTORS, stageKey } from '../../core/receptors.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -41,23 +42,6 @@ export function platformsView(state, data) {
         statusColumn((p) => p.status),
       ],
     })}`;
-}
-
-/** Every matrix cell as one dropdown, grouped by consequence, with its band. @param {any} pair */
-function ratingOptions(pair) {
-  const r = ratingFor(pair?.consequence ?? null, pair?.likelihood ?? null);
-  const current = r.cell ?? '';
-  return html`<option value=""${current ? '' : ' selected'}>—</option>
-    ${CONSEQUENCES.map((c) => html`<optgroup label="${c.level} ${c.label}">${LIKELIHOODS.map((l) => {
-      const cell = `${c.level}${l.letter}`;
-      return option(cell, `${cell} ${ratingFor(c.level, l.letter).band}`, current);
-    })}</optgroup>`)}`;
-}
-
-/** @param {any} pair @param {Record<string, string>} attrs */
-function ratingCell(pair, attrs) {
-  const band = bandOf(pair);
-  return html`<select class="quiet rating band-edge band-${band.toLowerCase().replace(/\s+/g, '-')}" name="value" aria-label="${attrs.stage} ${attrs.receptor} rating" ${dataAttrs({ change: 'setRatingCell', ...attrs })}>${ratingOptions(pair)}</select>`;
 }
 
 /**
@@ -116,12 +100,12 @@ export function platformView(state, data, id) {
                 : html`<span class="cell-text" ${dataAttrs({ dblclick: 'startEdit', kind: 'reportId', id: r.hazard.id })} title="Double-click to change">${idTag(r.reportId)}</span>`) },
             { key: 'hazard', label: 'Hazards', width: 600, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`,
               render: (r) => html`<span class="id">${idTag(hazardLabel(r.hazard))}</span> ${go(r.hazard.title, 'hazard', { id: r.hazard.id, tab: `p:${id}` })}` },
-            ...['initial', 'residual'].flatMap((stage) => ['personnel', 'environment'].map((receptor) => {
-              const key = `${stage}${receptor === 'personnel' ? 'Personnel' : 'Environment'}`;
-              return { key, label: `${stage === 'initial' ? 'Initial' : 'Residual'} (${receptor})`, width: 250, minWidth: 170,
-                value: (/** @type {any} */ r) => BANDS.indexOf(bandOf(r.ratings[stage][receptor])),
-                render: (/** @type {any} */ r) => ratingCell(r.ratings[stage][receptor], { 'hazard-id': r.hazard.id, 'platform-id': id, stage, receptor }) };
-            })),
+            // Calculated levels only: likelihood and consequence are set on the hazard's platform tab.
+            ...['initial', 'residual'].flatMap((stage) => RECEPTORS.map((receptor) => ({
+              key: stageKey(stage, receptor), label: `${stage === 'initial' ? 'Initial' : 'Residual'} (${receptor})`, width: 210, minWidth: 150,
+              value: (/** @type {any} */ r) => BANDS.indexOf(bandOf(r.ratings[stage][receptor])),
+              render: (/** @type {any} */ r) => levelTag(r.ratings[stage][receptor]),
+            }))),
             { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
               render: (r) => html`<div class="row-actions">${confirmButton('✕', 'Unlink, clearing its risk assessments, justifications, SFARP considerations and control decisions here', dataAttrs({ action: 'unlinkHazard', 'hazard-id': r.hazard.id, 'platform-id': id }))}</div>` },
           ],

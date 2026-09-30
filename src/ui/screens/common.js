@@ -25,6 +25,12 @@ export function statusTag(status) {
   return status === 'live' ? '' : html` <span class="tag tag-${status}">${status}</span>`;
 }
 
+/** A calculated level as a band tag, e.g. "2C Serious"; half an assessment says so. @param {any} pair */
+export function levelTag(pair) {
+  const r = ratingFor(pair?.consequence ?? null, pair?.likelihood ?? null);
+  return r.cell ? html`<span class="band band-${r.band.toLowerCase().replace(/\s+/g, '-')}">${r.cell} ${r.band}</span>` : html`<span class="band band-uncategorised">Not yet assessed</span>`;
+}
+
 /** @param {string} band */
 export function bandTag(band) {
   return html`<span class="band band-${band.toLowerCase().replace(/\s+/g, '-')}">${band}</span>`;

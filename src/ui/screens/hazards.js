@@ -7,6 +7,7 @@ import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
 import { hazardRows, hazardDetail, ratingOf, ratingsOf, bandOf, worseBand, hazardLastReviewed, byNumber } from '../../core/queries.js';
 import { platformTab } from './ssra.js';
+import { RECEPTORS, RECEPTOR_WORD, RECEPTOR_LETTER } from '../../core/receptors.js';
 import { day } from '../names.js';
 import { BANDS } from '../../core/matrix.js';
 import { CONTROL_KINDS, tierRank } from '../../core/ops/controls.js';
@@ -61,10 +62,10 @@ export function hazardsView(state, data) {
         { key: 'platforms', label: 'Platforms (residual risk)', width: 640, minWidth: 200, value: (r) => r.platforms.map((p) => p.platform.name).join(', '),
           filter: 'select', options: platformOptions, match: (r, v) => r.platforms.some((p) => p.platform.id === v),
           render: (r) => (r.platforms.length
-            ? html`<ul class="plain">${r.platforms.map((p) => html`<li>${p.platform.name} <span class="rx">P</span> ${bandTag(p.personnel)} <span class="rx">E</span> ${bandTag(p.environment)}</li>`)}</ul>`
+            ? html`<ul class="plain">${r.platforms.map((p) => html`<li>${p.platform.name}${RECEPTORS.map((x) => html` <span class="rx">${RECEPTOR_LETTER[/** @type {'personnel'} */ (x)]}</span> ${bandTag(/** @type {any} */ (p)[x])}`)}</li>`)}</ul>`
             : html`<span class="muted">On no platform</span>`) },
         // On the platform filtered to, if one is; otherwise on any of its platforms.
-        ...[['riskPersonnel', 'personnel', 'worstPersonnel', 'Worst residual (personnel)'], ['riskEnvironment', 'environment', 'worstEnvironment', 'Worst residual (environment)']].map(([key, field, worst, label]) => ({
+        ...RECEPTORS.map((field) => [`risk${RECEPTOR_WORD[/** @type {'personnel'} */ (field)]}`, field, `worst${RECEPTOR_WORD[/** @type {'personnel'} */ (field)]}`, `Worst residual (${field})`]).map(([key, field, worst, label]) => ({
           key, label, width: 300, minWidth: 150, value: (/** @type {any} */ r) => (r[worst] ? BANDS.indexOf(r[worst]) : null),
           filter: /** @type {const} */ ('select'), options: BANDS.map((b) => /** @type {[string, string]} */ ([b, b])),
           match: (/** @type {any} */ r, /** @type {string} */ v, /** @type {any} */ f) => r.platforms.some((/** @type {any} */ p) => p[field] === v && (!f.platforms || p.platform.id === f.platforms)),
@@ -111,7 +112,7 @@ export function hazardView(state, data, id) {
   const tab = state.view?.tab;
   const platformTabs = d.platforms.map((p) => {
     const r = ratingsOf(data, h.id, p.platform.id).residual;
-    return /** @type {[string, unknown]} */ ([`p:${p.platform.id}`, html`${p.platform.name} ${bandTag(worseBand(bandOf(r.personnel), bandOf(r.environment)))}`]);
+    return /** @type {[string, unknown]} */ ([`p:${p.platform.id}`, html`${p.platform.name} ${bandTag(RECEPTORS.map((x) => bandOf(r[/** @type {'personnel'} */ (x)])).reduce(worseBand))}`]);
   });
   const head = html`<p>${go('← Hazards', 'hazards')}</p>
     <div class="doc-head"><span class="doc-id">${idTag(hazardLabel(h))}</span>${statusTag(h.status)}</div>
@@ -160,10 +161,9 @@ export function hazardView(state, data, id) {
             { key: 'platform', label: 'Platforms', width: 520, minWidth: 200, value: (p) => p.platform.name,
               render: (p) => html`<span class="id">${idTag(platformLabel(p.platform))}</span> ${go(p.platform.name, 'platform', { id: p.platform.id })}` },
             { key: 'reportId', label: 'Report ID', width: 320, minWidth: 150, value: (p) => p.reportId, render: (p) => idTag(p.reportId) },
-            { key: 'personnel', label: 'Residual (personnel)', width: 260, minWidth: 150, value: (p) => BANDS.indexOf(bandOf(ratingsOf(data, h.id, p.platform.id).residual.personnel)),
-              render: (p) => bandTag(bandOf(ratingsOf(data, h.id, p.platform.id).residual.personnel)) },
-            { key: 'environment', label: 'Residual (environment)', width: 260, minWidth: 150, value: (p) => BANDS.indexOf(bandOf(ratingsOf(data, h.id, p.platform.id).residual.environment)),
-              render: (p) => bandTag(bandOf(ratingsOf(data, h.id, p.platform.id).residual.environment)) },
+            ...RECEPTORS.map((x) => ({ key: x, label: `Residual (${x})`, width: 240, minWidth: 150,
+              value: (/** @type {any} */ p) => BANDS.indexOf(bandOf(ratingsOf(data, h.id, p.platform.id).residual[/** @type {'personnel'} */ (x)])),
+              render: (/** @type {any} */ p) => bandTag(bandOf(ratingsOf(data, h.id, p.platform.id).residual[/** @type {'personnel'} */ (x)])) })),
             { key: 'ssra', label: '', width: 170, minWidth: 120, sortable: false, render: (p) => go('Open SSRA →', 'hazard', { id: h.id, tab: `p:${p.platform.id}` }) },
             { key: 'lastReviewed', label: 'Last reviewed', width: 280, minWidth: 140, value: (p) => hazardLastReviewed(data, h.id, p.platform.id),
               render: (p) => {

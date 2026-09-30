@@ -1,5 +1,6 @@
 import { html } from '../html.js';
-import { dataAttrs, option, go, bandTag, plus, confirmButton, statusTag, idTag } from './common.js';
+import { dataAttrs, option, go, bandTag, plus, confirmButton, statusTag, idTag, levelTag } from './common.js';
+import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
 import { dataTable } from './table.js';
 import { tierColumn } from './controls.js';
 import { rejectionCell } from './platforms.js';
@@ -13,7 +14,7 @@ import { SAFETY_REPORT_TYPES } from '../../core/ops/safety-reports.js';
 import { day } from '../names.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
 import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
-import { CONSEQUENCES, LIKELIHOODS, ratingFor } from '../../core/matrix.js';
+import { CONSEQUENCES, LIKELIHOODS } from '../../core/matrix.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -110,22 +111,16 @@ function safetyReportsSection(state, data, h, platformId) {
   ${editing === `new:${platformId}` ? safetyReportForm(h, platformId, null) : edited ? safetyReportForm(h, platformId, edited) : ''}`;
 }
 
-const WORD = { initial: 'Initial', residual: 'Residual', personnel: 'Personnel', environment: 'Environment' };
-
-/** The assessed level of a pair, as a band tag; a half-entered one says so. @param {any} pair */
-function level(pair) {
-  const r = ratingFor(pair?.consequence ?? null, pair?.likelihood ?? null);
-  return r.cell ? html`<span class="band band-${r.band.toLowerCase().replace(/\s+/g, '-')}">${r.cell} ${r.band}</span>` : html`<span class="band band-uncategorised">Not yet assessed</span>`;
-}
+const WORD = { initial: 'Initial', residual: 'Residual', ...RECEPTOR_WORD };
 
 /**
- * Initial or residual risk: personnel and environment side by side, each with likelihood and
+ * Initial or residual risk: a panel per receptor side by side, each with likelihood and
  * consequence dropdowns, their justifications, and the assessed level.
  * @param {any} state @param {Data} data @param {any} h the hazard @param {string} platformId @param {'initial' | 'residual'} stage
  */
 export function riskPanels(state, data, h, platformId, stage) {
   const ratings = ratingsOf(data, h.id, platformId);
-  const panel = (/** @type {'personnel' | 'environment'} */ receptor) => {
+  const panel = (/** @type {'personnel' | 'environment' | 'capability'} */ receptor) => {
     const a = assessmentOf(data, h.id, platformId, stage, receptor);
     const at = { change: 'setAssessment', 'hazard-id': h.id, 'platform-id': platformId, stage, receptor };
     const label = `${WORD[stage]} ${receptor}`;
@@ -134,10 +129,10 @@ export function riskPanels(state, data, h, platformId, stage) {
       <textarea name="likelihoodWhy" rows="3" placeholder="Why this likelihood…" aria-label="${label} likelihood justification" ${dataAttrs(at)}>${a?.likelihoodWhy ?? ''}</textarea>
       <label class="risk-field">Consequence <select name="consequence" aria-label="${label} consequence" ${dataAttrs(at)}>${option('', '—', a?.consequence == null ? '' : String(a.consequence))}${CONSEQUENCES.map((c) => option(String(c.level), `${c.level} · ${c.label}`, a?.consequence == null ? '' : String(a.consequence)))}</select></label>
       <textarea name="consequenceWhy" rows="3" placeholder="Why this consequence…" aria-label="${label} consequence justification" ${dataAttrs(at)}>${a?.consequenceWhy ?? ''}</textarea>
-      <div class="risk-level">Assessed level ${level(ratings[stage][receptor])}</div>
+      <div class="risk-level">Assessed level ${levelTag(ratings[stage][receptor])}</div>
     </div>`;
   };
-  return html`<div class="risk-panels">${panel('personnel')}${panel('environment')}</div>`;
+  return html`<div class="risk-panels">${RECEPTORS.map((r) => panel(/** @type {'personnel'} */ (r)))}</div>`;
 }
 
 const SHARED = html`<span class="shared-mark">Shared across platforms</span>`;

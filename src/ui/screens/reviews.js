@@ -1,3 +1,4 @@
+import { RECEPTORS, RECEPTOR_LETTER, stageKey } from '../../core/receptors.js';
 import { html, raw } from '../html.js';
 import { dataAttrs, confirmButton, reviewTag, go, bandTag, idTag } from './common.js';
 import { dataTable } from './table.js';
@@ -64,10 +65,9 @@ function openReviewBlock(state, data, p, review) {
         { key: 'reportId', label: 'ID', width: 140, minWidth: 100, value: (i) => i.reportId, render: (i) => idTag(i.reportId) },
         { key: 'hazard', label: 'Hazard', width: 340, minWidth: 200, value: (i) => i.hazard.title, filter: 'text',
           render: (i) => html`${go(i.hazard.title, 'hazard', { id: i.hazard.id })}${i.onPlatform ? '' : html` <span class="muted">(no longer on this platform)</span>`}` },
-        { key: 'residualPersonnel', label: 'Residual (P)', width: 150, minWidth: 120, value: (i) => (i.ratings ? BANDS.indexOf(band(i.ratings.residual.personnel)) : null),
-          render: (i) => (i.ratings ? bandTag(band(i.ratings.residual.personnel)) : '—') },
-        { key: 'residualEnvironment', label: 'Residual (E)', width: 150, minWidth: 120, value: (i) => (i.ratings ? BANDS.indexOf(band(i.ratings.residual.environment)) : null),
-          render: (i) => (i.ratings ? bandTag(band(i.ratings.residual.environment)) : '—') },
+        ...RECEPTORS.map((x) => ({ key: stageKey('residual', x), label: `Residual (${RECEPTOR_LETTER[/** @type {'personnel'} */ (x)]})`, width: 150, minWidth: 120,
+          value: (/** @type {any} */ i) => (i.ratings ? BANDS.indexOf(band(i.ratings.residual[x])) : null),
+          render: (/** @type {any} */ i) => (i.ratings ? bandTag(band(i.ratings.residual[x])) : '—') })),
         { key: 'controls', label: 'Controls', width: 260, minWidth: 180, sortable: false, render: (i) => (i.counts ? controlSummary(i.counts) : '—') },
         { key: 'reviewed', label: 'Reviewed', width: 130, minWidth: 110, value: (i) => (i.reviewed ? 'yes' : 'no'), filter: 'select', options: [['yes', 'Yes'], ['no', 'No']],
           render: (i) => html`<input type="checkbox" name="reviewed" aria-label="Reviewed: ${i.hazard.title}"${i.reviewed ? raw(' checked') : ''}${i.onPlatform ? '' : raw(' disabled')} ${dataAttrs({ change: 'tickReviewRow', 'review-id': review.id, 'hazard-id': i.hazard.id })}>` },

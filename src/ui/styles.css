@@ -201,17 +201,7 @@ select.quiet:hover, select.quiet:focus { border-color: var(--p-line); background
 /* A dropdown inside a table cell looks like one: a border and a raised background, the accent on hover. */
 .grid td select, .grid td select.quiet { border: 1px solid var(--p-muted); background: var(--p-surface-2); color: var(--p-fg); padding: 3px 6px; border-radius: 6px; max-width: 100%; }
 .grid td select:hover, .grid td select:focus { border-color: var(--p-accent); background: var(--p-surface-2); }
-.grid td select.rating { border-left-width: 4px; }
-.grid td select.rating.band-high { border-left-color: #c2352b; }
-.grid td select.rating.band-serious { border-left-color: #e8710a; }
-.grid td select.rating.band-medium { border-left-color: #f2cc3f; }
-.grid td select.rating.band-low { border-left-color: #2e8b57; }
 select.inline-select { font: inherit; color: var(--p-fg); }
-select.rating { border-left: 4px solid var(--p-line); padding-left: 6px; color: var(--p-fg); }
-select.rating.band-high { border-left-color: #c2352b; }
-select.rating.band-serious { border-left-color: #e8710a; }
-select.rating.band-medium { border-left-color: #f2cc3f; }
-select.rating.band-low { border-left-color: #2e8b57; }
 select.state-select { font-weight: 700; }
 .th-title { display: flex; align-items: center; gap: 8px; }
 .plus { display: inline-flex; align-items: center; justify-content: center; flex: none; border: 1px solid var(--p-line); background: transparent; color: var(--p-muted); width: 24px; height: 24px; padding: 0; border-radius: 50%; }
@@ -305,7 +295,7 @@ button.small { padding: 2px 9px; font-size: 13px; }
 .ssra-sec { margin: 0 0 26px; }
 .ssra-sec > h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
 .shared-mark { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 4px; background: var(--p-info-bg); color: var(--p-info-fg); }
-.risk-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px; }
+.risk-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 .risk-panel { display: grid; gap: 8px; align-content: start; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 10px; padding: 12px 14px; }
 .risk-panel h3 { margin: 0; font-size: 15px; }
 .risk-field { display: flex; align-items: center; gap: 8px; font-weight: 700; }
