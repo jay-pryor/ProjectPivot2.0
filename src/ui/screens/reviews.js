@@ -71,7 +71,7 @@ function openReviewBlock(state, data, p, review) {
         { key: 'controls', label: 'Controls', width: 260, minWidth: 180, sortable: false, render: (i) => (i.counts ? controlSummary(i.counts) : '—') },
         { key: 'reviewed', label: 'Reviewed', width: 130, minWidth: 110, value: (i) => (i.reviewed ? 'yes' : 'no'), filter: 'select', options: [['yes', 'Yes'], ['no', 'No']],
           render: (i) => html`<input type="checkbox" name="reviewed" aria-label="Reviewed: ${i.hazard.title}"${i.reviewed ? raw(' checked') : ''}${i.onPlatform ? '' : raw(' disabled')} ${dataAttrs({ change: 'tickReviewRow', 'review-id': review.id, 'hazard-id': i.hazard.id })}>` },
-        { key: 'note', label: 'Note', width: 420, minWidth: 220, value: (i) => i.note, filter: 'text',
+        { key: 'note', label: 'Review note', width: 420, minWidth: 220, value: (i) => i.note, filter: 'text',
           render: (i) => (noting(i)
             ? html`<input class="cell-edit" name="note" value="${i.note}" placeholder="What was checked or found…" aria-label="Note on ${i.hazard.title}" autofocus ${dataAttrs({ change: 'markRow', 'review-id': review.id, 'hazard-id': i.hazard.id })}>`
             : i.onPlatform
@@ -105,7 +105,7 @@ function completedReview(state, data, p, review) {
         { key: 'reportId', label: 'ID', width: 140, minWidth: 100, value: (i) => i.reportId, render: (i) => idTag(i.reportId) },
         { key: 'hazard', label: 'Hazard', width: 440, minWidth: 200, value: (i) => i.hazard.title, render: (i) => go(i.hazard.title, 'hazard', { id: i.hazard.id }) },
         { key: 'reviewed', label: 'Reviewed', width: 150, minWidth: 110, value: (i) => (i.reviewed ? 'Yes' : 'No'), filter: 'select', options: [['Yes', 'Yes'], ['No', 'No']] },
-        { key: 'note', label: 'Note', width: 600, minWidth: 220, value: (i) => i.note },
+        { key: 'note', label: 'Review note', width: 600, minWidth: 220, value: (i) => i.note },
       ],
     })}</section>`;
 }
@@ -123,6 +123,7 @@ function pastReviews(state, data, p) {
       { key: 'by', label: 'By', width: 170, minWidth: 100, value: (c) => profileName(state, c.review.completedBy) },
       { key: 'cleared', label: 'Review due', width: 180, minWidth: 130, value: (c) => c.review.dueBefore, render: (c) => day(c.review.dueBefore) },
       { key: 'outcome', label: 'Outcome', width: 460, minWidth: 200, value: (c) => c.review.outcome },
+      { key: 'notes', label: 'Additional notes', width: 460, minWidth: 200, value: (c) => c.review.notes ?? '' },
       { key: 'ticked', label: 'Reviewed', width: 140, minWidth: 100, value: (c) => c.ticked },
       { key: 'notTicked', label: 'Not reviewed', width: 160, minWidth: 110, value: (c) => c.notTicked },
     ],

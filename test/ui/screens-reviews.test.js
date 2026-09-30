@@ -188,3 +188,17 @@ test('a review has additional notes beside its outcome, kept once completed', as
   const done = platformView(onTab({ reviewId: 'r1' }), d, 'p1').toString();
   assert.match(done, /All good[\s\S]*?<h3>Additional notes<\/h3><p class="outcome-text">Spares list &lt;b&gt;out of date&lt;\/b&gt;<\/p>/);
 });
+
+test('past reviews list their additional notes; the per-hazard column reads Review note', async () => {
+  const { setReviewNotes } = await import('../../src/core/ops/reviews.js');
+  let d = startReview(data(), act, { id: 'r1', platformId: 'p1' });
+  const open = platformView(onTab(), d, 'p1').toString();
+  assert.match(open, /data-table="reviewRows"[\s\S]*?<th data-col="note"[\s\S]*?>Review note</);
+  assert.doesNotMatch(open, />Note<(?:span|\/)/);
+  d = setReviewNotes(d, act, { reviewId: 'r1', notes: 'Spares list out of date' });
+  d = completeReview(d, act, { reviewId: 'r1' });
+  const past = platformView(onTab(), d, 'p1').toString();
+  assert.match(past, /data-table="pastReviews"[\s\S]*?<th data-col="notes"[\s\S]*?Additional notes[\s\S]*?Spares list out of date/);
+  const done = platformView(onTab({ reviewId: 'r1' }), d, 'p1').toString();
+  assert.match(done, /data-table="reviewRecord"[\s\S]*?>Review note</);
+});
