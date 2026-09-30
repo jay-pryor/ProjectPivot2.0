@@ -255,3 +255,8 @@ test('Home has a capability bar; the review checklist a residual capability colu
   const r = startReview(d, act, { id: 'r1', platformId: 'p1' });
   assert.match(platformView({ ...state, view: { name: 'platform', id: 'p1', tab: 'reviews' } }, r, 'p1').toString(), /<th data-col="residualCapability"/);
 });
+
+test('the safety reports table shows each report\'s description', () => {
+  const out = hazardView(on('p:p1'), reported(), 'h1').toString();
+  assert.match(out, /data-table="safetyReports"[\s\S]*?<th data-col="description"[\s\S]*?Blade tip hit a stand/);
+});

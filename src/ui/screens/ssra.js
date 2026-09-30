@@ -104,6 +104,7 @@ function safetyReportsSection(state, data, h, platformId) {
       { key: 'summary', label: 'Summary', width: 560, minWidth: 200, value: (r) => r.summary, render: (r) => cell(r, r.summary) },
       { key: 'location', label: 'Location', width: 260, minWidth: 120, value: (r) => r.location, render: (r) => cell(r, r.location) },
       { key: 'parties', label: 'Parties involved', width: 300, minWidth: 140, value: (r) => r.parties, render: (r) => cell(r, r.parties) },
+      { key: 'description', label: 'Description', width: 560, minWidth: 200, value: (r) => r.description, render: (r) => cell(r, r.description) },
       { key: 'actions', label: '', width: 110, minWidth: 80, sortable: false,
         render: (r) => html`<div class="row-actions">${confirmButton('✕', 'Delete this safety report', dataAttrs({ action: 'deleteSafetyReport', id: r.id }))}</div>` },
     ],
