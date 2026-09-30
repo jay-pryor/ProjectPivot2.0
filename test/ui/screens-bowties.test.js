@@ -69,7 +69,8 @@ test('one window fills the stage; two split it; each has its filters, diagram, a
   assert.match(split, /data-action="swapBowtiePanes"/);
   assert.match(split, /data-drag-pane="1"/);
   const natural = Number(/<svg [^>]*? width="(\d+)"/.exec(split)[1]);
-  assert.match(split, new RegExp(`<div class="bt-canvas" style="min-width: ${Math.round(natural * 0.7)}px"><svg`), 'never shrunk below 70%, so the text stays readable');
+  const tall = Number(/<svg [^>]*? height="(\d+)"/.exec(split)[1]);
+  assert.match(split, new RegExp(`<div class="bt-canvas" style="min-width: ${Math.round(natural * 0.7)}px; min-height: ${Math.round(tall * 0.7)}px"><svg`), 'fits its window but never below 70%, so the text stays readable');
 });
 
 test('saving a copy of a shared view, naming a view, and sharing it with ticks', () => {

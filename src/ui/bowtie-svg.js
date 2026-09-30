@@ -19,14 +19,19 @@ const MARGIN = 24;
 const CAPTION_HEIGHT = 32;
 const FONT_SIZE = 12;
 const FONT = 'Atkinson Hyperlegible, Segoe UI, system-ui, sans-serif';
-// Its own light palette, so an exported file reads the same in any viewer.
-const PAPER = '#ffffff';
-const INK = '#1b1f24';
-const MUTED = '#5d6673';
-const EDGE = '#8a93a0';
-const ACCENT = '#fa9a26';
+const LANE_HEAD = 30;
+const HEAD_SIZE = 11;
+// Each colour is a variable the page sets to follow its theme; on its own (an exported file) the
+// light fallback is used, so an export reads and prints the same in any viewer.
+const LIGHT = Object.freeze({
+  paper: '#ffffff', box: '#ffffff', lane: '#f3f5f8', 'hazard-lane': '#fff4e6', rule: '#d5d9e0',
+  ink: '#1b1f24', muted: '#5d6673', edge: '#8a93a0', accent: '#fa9a26',
+});
+/** @param {keyof typeof LIGHT} name */
+const c = (name) => `var(--bt-${name}, ${LIGHT[name]})`;
 
 const COLUMNS = ['causal-factor', 'preventative-control', 'hazard', 'mitigating-control', 'consequence'];
+const HEADINGS = ['Causal factors', 'Preventative controls', 'Hazard', 'Mitigating controls', 'Consequences'];
 const EMPTY = ['No causal factors recorded', 'No preventative controls in this view', '', 'No mitigating controls in this view', 'No consequences recorded'];
 
 /**
@@ -79,18 +84,18 @@ function controlBox(i, kind) {
 /** @param {Box} b @returns {string} */
 function drawBox(b) {
   if (b.style === 'empty') {
-    return `<g data-bowtie-empty="${b.kind}"><title>${esc(b.title)}</title><rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" fill="none" stroke="none"/>`
-      + `<text font-family="${FONT}" font-size="${FONT_SIZE}" font-style="italic" fill="${MUTED}">${tspans(b)}</text></g>`;
+    return `<g data-bowtie-empty="${b.kind}"><title>${esc(b.title)}</title><rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" style="fill:none;stroke:none"/>`
+      + `<text font-family="${FONT}" font-size="${FONT_SIZE}" font-style="italic" style="fill:${c('muted')}">${tspans(b)}</text></g>`;
   }
   const i = b.item;
   const attrs = i ? ` data-source="${i.source}"${i.state ? ` data-state="${esc(i.state)}"` : ''}` : '';
-  const stroke = b.style === 'hazard' ? `stroke="${ACCENT}" stroke-width="3"` : `stroke="${INK}" stroke-width="1.5"`;
+  const stroke = b.style === 'hazard' ? `stroke:${c('accent')}" stroke-width="3` : `stroke:${c('ink')}" stroke-width="1.5`;
   const dash = b.style === 'additional' ? ' stroke-dasharray="6 4"' : '';
-  const ink = i?.state === 'rejected' ? MUTED : INK;
+  const ink = i?.state === 'rejected' ? c('muted') : c('ink');
   const weight = b.style === 'hazard' ? ' font-weight="700"' : '';
   return `<g data-bowtie-node="${b.kind}" data-record-id="${esc(b.id)}"${attrs}><title>${esc(b.title)}</title>`
-    + `<rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" fill="${PAPER}" ${stroke}${dash}/>`
-    + `<text font-family="${FONT}" font-size="${FONT_SIZE}" fill="${ink}"${weight}>${tspans(b)}</text></g>`;
+    + `<rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" style="fill:${c('box')};${stroke}"${dash}/>`
+    + `<text font-family="${FONT}" font-size="${FONT_SIZE}" style="fill:${ink}"${weight}>${tspans(b)}</text></g>`;
 }
 
 /** @param {Box} b */
@@ -115,10 +120,16 @@ export function bowtieSvg(w) {
 
   const heights = columns.map((col) => col.reduce((sum, b) => sum + b.height, 0) + (col.length - 1) * ROW_GAP);
   const contentHeight = Math.max(...heights);
-  const top = MARGIN + CAPTION_HEIGHT;
-  let x = MARGIN;
+  const lanesTop = MARGIN + CAPTION_HEIGHT;
+  const top = lanesTop + LANE_HEAD;
+  /** @type {{ x: number, width: number }[]} */
+  const lanes = [];
+  let x = MARGIN + COLUMN_GAP / 2;
   columns.forEach((col, n) => {
-    const width = Math.ceil(Math.max(7, ...col.flatMap((b) => b.lines.map((l) => textWidth(l, b.style === 'hazard'))))) + 2 * PAD;
+    // A column is at least as wide as its lane's heading, less the lane's own margins.
+    const heading = textWidth(HEADINGS[n].toUpperCase(), true) * (HEAD_SIZE / FONT_SIZE) + 8 - COLUMN_GAP;
+    const width = Math.ceil(Math.max(7, heading - 2 * PAD, ...col.flatMap((b) => b.lines.map((l) => textWidth(l, b.style === 'hazard'))))) + 2 * PAD;
+    lanes.push({ x: x - COLUMN_GAP / 2, width: width + COLUMN_GAP });
     let y = top + Math.floor((contentHeight - heights[n]) / 2);
     for (const b of col) {
       b.x = x;
@@ -128,21 +139,27 @@ export function bowtieSvg(w) {
     }
     x += width + COLUMN_GAP;
   });
-  const width = x - COLUMN_GAP + MARGIN;
+  const width = x - COLUMN_GAP / 2 + MARGIN;
   const height = top + contentHeight + MARGIN;
+  const laneHeight = height - MARGIN / 2 - lanesTop;
+  // Vertical swimlanes, alternately shaded, the hazard's tinted; each headed with what it holds.
+  const laneFill = (/** @type {number} */ n) => (n === 2 ? c('hazard-lane') : n % 2 ? c('lane') : c('paper'));
+  const laneMarks = lanes.map((l, n) => `<g data-bowtie-lane="${COLUMNS[n]}"><rect x="${l.x}" y="${lanesTop}" width="${l.width}" height="${laneHeight}" style="fill:${laneFill(n)};stroke:${c('rule')}" stroke-width="1"/>`
+    + `<text x="${l.x + l.width / 2}" y="${lanesTop + 19}" text-anchor="middle" font-family="${FONT}" font-size="${HEAD_SIZE}" font-weight="700" letter-spacing="0.6" style="fill:${c('muted')}">${esc(HEADINGS[n])}</text></g>`);
 
   // One line from each causal factor into the hazard, one from the hazard to each consequence;
   // controls sit on those lines as barriers.
   const midY = hazard.y + Math.floor(hazard.height / 2);
   const edges = [
-    ...columns[0].filter((b) => b.style !== 'empty').map((b) => `<line data-bowtie-edge="${esc(b.id)}" x1="${b.x + b.width}" y1="${b.y + Math.floor(b.height / 2)}" x2="${hazard.x}" y2="${midY}" stroke="${EDGE}" stroke-width="1.5"/>`),
-    ...columns[4].filter((b) => b.style !== 'empty').map((b) => `<line data-bowtie-edge="${esc(b.id)}" x1="${hazard.x + hazard.width}" y1="${midY}" x2="${b.x}" y2="${b.y + Math.floor(b.height / 2)}" stroke="${EDGE}" stroke-width="1.5"/>`),
+    ...columns[0].filter((b) => b.style !== 'empty').map((b) => `<line data-bowtie-edge="${esc(b.id)}" x1="${b.x + b.width}" y1="${b.y + Math.floor(b.height / 2)}" x2="${hazard.x}" y2="${midY}" style="stroke:${c('edge')}" stroke-width="1.5"/>`),
+    ...columns[4].filter((b) => b.style !== 'empty').map((b) => `<line data-bowtie-edge="${esc(b.id)}" x1="${hazard.x + hazard.width}" y1="${midY}" x2="${b.x}" y2="${b.y + Math.floor(b.height / 2)}" style="stroke:${c('edge')}" stroke-width="1.5"/>`),
   ];
-  const caption = `<text data-bowtie-caption="true" x="${MARGIN}" y="${MARGIN + FONT_SIZE + 2}" font-family="${FONT}" font-size="${FONT_SIZE + 2}" font-weight="700" fill="${INK}">${esc(w.caption)}</text>`;
+  const caption = `<text data-bowtie-caption="true" x="${MARGIN}" y="${MARGIN + FONT_SIZE + 2}" font-family="${FONT}" font-size="${FONT_SIZE + 2}" font-weight="700" style="fill:${c('ink')}">${esc(w.caption)}</text>`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="${esc(`Bow-tie: ${w.hazard.title}, ${w.caption}`)}">`
-    + `<rect width="${width}" height="${height}" fill="${PAPER}"/>`
+    + `<rect width="${width}" height="${height}" style="fill:${c('paper')}"/>`
     + caption
+    + laneMarks.join('')
     + edges.join('')
     + columns.flat().map(drawBox).join('')
     + '</svg>';

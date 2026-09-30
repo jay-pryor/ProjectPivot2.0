@@ -135,13 +135,14 @@ function paneView(state, data, pane, side, split) {
 }
 
 /**
- * The drawing, shrunk to fit its window but never below 70% of its own size, so the text stays
- * readable when two windows share the stage; past that the window scrolls sideways.
+ * The drawing, scaled to fit its window both ways but never below 70% of its own size, so the
+ * text stays readable when two windows share the stage; past that the window scrolls.
  * @param {string} svg
  */
 function diagram(svg) {
   const width = Number(/ width="(\d+)"/.exec(svg)?.[1] ?? 0);
-  return html`<div class="bt-canvas" style="min-width: ${Math.round(width * 0.7)}px">${raw(svg)}</div>`;
+  const height = Number(/ height="(\d+)"/.exec(svg)?.[1] ?? 0);
+  return html`<div class="bt-canvas" style="min-width: ${Math.round(width * 0.7)}px; min-height: ${Math.round(height * 0.7)}px">${raw(svg)}</div>`;
 }
 
 /** @param {0 | 1} index the window that would be replaced */

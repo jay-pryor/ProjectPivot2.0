@@ -91,3 +91,29 @@ test('capitals and bold text fit their box: an all-caps hazard title stays insid
   const wide = boxes(drawn(assignNumbers(ws))).find((x) => x.attrs.includes('data-record-id="cf9"'));
   assert.ok(wide && wide.w >= 332, `a line of Ws is ${wide?.w} wide`);
 });
+
+test('five labelled swimlanes, full height, side by side, each holding its own column', () => {
+  const svg = drawn(assignNumbers(linkExistingControl(seed(), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c1', kind: 'preventative' })));
+  const lanes = [...svg.matchAll(/<g data-bowtie-lane="([^"]+)"><rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)"[^>]*\/><text[^>]*>([^<]+)<\/text>/g)]
+    .map((m) => ({ kind: m[1], x: +m[2], y: +m[3], w: +m[4], h: +m[5], heading: m[6] }));
+  assert.deepEqual(lanes.map((l) => l.heading), ['Causal factors', 'Preventative controls', 'Hazard', 'Mitigating controls', 'Consequences']);
+  assert.deepEqual(lanes.map((l) => l.kind), ORDER);
+  assert.ok(lanes.every((l) => l.y === lanes[0].y && l.h === lanes[0].h), 'every lane runs the same full height');
+  lanes.slice(1).forEach((l, n) => assert.equal(l.x, lanes[n].x + lanes[n].w, 'lanes meet edge to edge'));
+  for (const b of boxes(svg)) {
+    const lane = lanes.find((l) => l.kind === b.kind);
+    assert.ok(lane && b.x >= lane.x && b.x + b.w <= lane.x + lane.w && b.y >= lane.y && b.y + b.h <= lane.y + lane.h, `${b.kind} sits inside its lane`);
+  }
+  // A lane is at least as wide as its heading, even over a short column.
+  assert.ok(lanes[4].w >= 'CONSEQUENCES'.length * 8, `the Consequences lane is ${lanes[4].w} wide`);
+});
+
+test('colours come from the page when it sets them, and fall back to a light palette on their own', () => {
+  const svg = drawn(assignNumbers(seed()));
+  assert.doesNotMatch(svg, /(fill|stroke)="#/, 'no fixed colour attributes');
+  assert.match(svg, /style="fill:var\(--bt-box, #ffffff\);stroke:var\(--bt-ink, #1b1f24\)/);
+  assert.match(svg, /stroke:var\(--bt-accent, #fa9a26\)/);
+  assert.match(svg, /<rect width="\d+" height="\d+" style="fill:var\(--bt-paper, #ffffff\)"\/>/);
+  const colours = [...svg.matchAll(/(?:fill|stroke):([^;"]+)/g)].map((m) => m[1]).filter((c) => c !== 'none');
+  assert.ok(colours.length > 0 && colours.every((c) => /^var\(--bt-[a-z-]+, #[0-9a-f]{6}\)$/.test(c)), `every colour is a variable with a light fallback: ${colours.find((c) => !/^var\(--bt-[a-z-]+, #[0-9a-f]{6}\)$/.test(c))}`);
+});

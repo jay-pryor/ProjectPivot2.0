@@ -494,9 +494,27 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--p-accent); }
 .bt-filters fieldset[disabled] { opacity: .5; }
 .bt-filters legend { float: left; margin-right: 4px; color: var(--p-muted); }
 .bt-filters label { display: inline-flex; gap: 6px; align-items: center; }
-.bt-diagram { overflow: auto; padding: 10px; background: #ffffff; border-block: 1px solid var(--p-line); }
+.bt-diagram { overflow: auto; padding: 10px; background: var(--p-surface); border-block: 1px solid var(--p-line);
+  /* The drawing's colours follow the theme; an exported file falls back to its own light palette. */
+  --bt-paper: var(--p-surface); --bt-box: var(--p-bg); --bt-lane: var(--p-surface-2); --bt-rule: var(--p-line);
+  --bt-hazard-lane: color-mix(in srgb, var(--p-accent) 9%, var(--p-surface)); --bt-ink: var(--p-fg); --bt-muted: var(--p-muted);
+  --bt-edge: var(--p-muted); --bt-accent: var(--p-accent); }
 .bt-diagram svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
-.bt-cannot { margin: 0; padding: 32px 16px; text-align: center; color: #5d6673; }
+.bt-cannot { margin: 0; padding: 32px 16px; text-align: center; color: var(--p-muted); }
+/* On a wide screen the page fills the window's height, and each diagram window with it: the
+   drawing scales to fit its window both ways (never below the 70% floor set on its canvas). */
+@media (min-width: 1101px) {
+  .pivot-app:has(.bowties) { min-height: 100dvh; display: flex; flex-direction: column; }
+  .pivot-app:has(.bowties) > .view { flex: 1; display: flex; flex-direction: column; min-height: 0; padding-bottom: 16px; }
+  .bowties { flex: 1; min-height: 0; align-items: stretch; }
+  .bt-side { align-content: start; }
+  .bt-stage { min-height: 0; margin: 0; align-content: stretch; grid-template-rows: minmax(0, 1fr); }
+  .bt-empty { min-height: 0; }
+  .bt-window { min-height: 0; }
+  .bt-diagram { flex: 1; min-height: 0; display: grid; }
+  .bt-canvas { width: 100%; height: 100%; }
+  .bt-canvas svg { width: 100%; height: 100%; max-width: none; }
+}
 .bt-actions, .bt-name { padding: 0 10px; }
 .bt-drop { position: absolute; top: 0; bottom: 0; width: calc(50% - 8px); z-index: 30; display: none; place-items: center; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; color: var(--p-accent); background: color-mix(in srgb, var(--p-accent) 10%, transparent); border: 2px dashed var(--p-accent); }
 .bt-drop[data-drop-side="0"] { left: 0; }
