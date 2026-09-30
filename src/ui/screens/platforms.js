@@ -10,7 +10,7 @@ import { tierColumn } from './controls.js';
 import { notFound, statusColumn, idColumn, newRecord } from './hazards.js';
 import { all, get, live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
-import { platformHazards, bandOf, openReview } from '../../core/queries.js';
+import { platformHazards, bandOf, openReview, controlOwner, ownerText } from '../../core/queries.js';
 import { historyReaching } from '../../core/history.js';
 import { BANDS } from '../../core/matrix.js';
 import { profileName, when, day } from '../names.js';
@@ -125,6 +125,7 @@ export function platformView(state, data, id) {
               render: (c) => go(idTag(hazardLabel(c.hazard)), 'hazard', { id: c.hazard.id }) },
             tierColumn((c) => c.control),
             { key: 'kind', label: 'Kind', width: 240, minWidth: 120, value: (c) => c.kind },
+            { key: 'owner', label: 'Owner', width: 220, minWidth: 110, value: (c) => ownerText(controlOwner(data, c.control.id, id)) },
             { key: 'state', label: 'Status', width: 260, minWidth: 150, value: (c) => CONTROL_STATUSES.indexOf(c.state), filter: 'select',
               options: CONTROL_STATUSES.map((s) => /** @type {[string, string]} */ ([s, s])), match: (c, v) => c.state === v,
               render: (c) => html`<select class="quiet state-select state-${c.state}" name="value" aria-label="Status of ${c.control.title}" ${dataAttrs({ change: 'setControlState', 'hazard-id': c.hazard.id, 'control-id': c.control.id, 'platform-id': id })}>

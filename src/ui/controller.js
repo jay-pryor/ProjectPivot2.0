@@ -33,7 +33,7 @@ const EDITS = {
   addConsequence: hazards.addConsequence, updateConsequence: hazards.updateConsequence, deleteConsequence: hazards.deleteConsequence,
   createControl: controls.createControl, updateControl: controls.updateControl, retireControl: controls.retireControl,
   deleteControl: controls.deleteControl, linkControl: controls.linkControl, setControlKind: controls.setControlKind,
-  unlinkControl: controls.unlinkControl, setControlAnalysis: controls.setControlAnalysis,
+  unlinkControl: controls.unlinkControl, setControlAnalysis: controls.setControlAnalysis, setControlOwner: controls.setControlOwner,
   linkExistingControl: controls.linkExistingControl, unlinkExistingControl: controls.unlinkExistingControl, setExistingControlKind: controls.setExistingControlKind,
   createPlatform: platforms.createPlatform, updatePlatform: platforms.updatePlatform, setOwner: platforms.setOwner,
   retirePlatform: platforms.retirePlatform, deletePlatform: platforms.deletePlatform, linkHazard: platforms.linkHazard,

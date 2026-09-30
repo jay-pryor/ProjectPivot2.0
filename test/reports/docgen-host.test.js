@@ -107,12 +107,12 @@ test('Additional control analysis and Existing controls sections', async () => {
   const secs = docs.host.sections({ subjectId: 'p1' });
   const ctl = secs.find((s) => s.id === 'controls');
   assert.equal(ctl.label, 'Additional control analysis');
-  assert.deepEqual(ctl.columns.map((c) => c.id), ['number', 'control', 'tier', 'description', 'kind', 'recommendation', 'justification', 'state', 'reason']);
+  assert.deepEqual(ctl.columns.map((c) => c.id), ['number', 'control', 'tier', 'description', 'kind', 'recommendation', 'justification', 'state', 'reason', 'owner']);
   const sprinklers = ctl.rows().find((r) => r.title === 'Sprinklers');
   assert.deepEqual(['recommendation', 'justification', 'state', 'reason'].map((id) => ctl.columns.find((c) => c.id === id).get(sprinklers)), ['Fit', 'Because', 'Rejected', 'No water']);
   const ex = secs.find((s) => s.id === 'existing');
   assert.equal(ex.label, 'Existing controls');
-  assert.deepEqual(ex.columns.map((c) => c.id), ['tier', 'number', 'control', 'description', 'kind']);
+  assert.deepEqual(ex.columns.map((c) => c.id), ['tier', 'number', 'control', 'description', 'kind', 'owner']);
   assert.equal(ex.columns.find((c) => c.id === 'control').get(ex.rows()[0]), 'Fire drills');
 });
 
@@ -161,4 +161,20 @@ test('capability in Hazards and Risk assessments, and its justifications stay li
   const { report } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'T' });
   assert.ok(report.html.includes('Mission &lt;lost&gt;'));
   assert.equal(report.html.includes('Mission <lost>'), false);
+});
+
+test('additional and existing controls carry their owner on the platform, as an optional column', async () => {
+  const { setControlOwner, linkExistingControl } = await import('../../src/core/ops/controls.js');
+  const { docs } = setup((d) => {
+    let x = setControlOwner(d, act, { controlId: 'c1', platformId: 'p1', owner: 'customer' });
+    x = linkExistingControl(x, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
+    return setControlOwner(x, act, { controlId: 'c2', platformId: 'p1', owner: 'other', ownerName: 'Acme' });
+  });
+  const secs = docs.host.sections({ subjectId: 'p1' });
+  const ctl = secs.find((s) => s.id === 'controls');
+  const owner = ctl.columns.find((c) => c.id === 'owner');
+  assert.equal(owner.optional, true);
+  assert.equal(owner.get(ctl.rows().find((r) => r.title === 'Sprinklers')), 'Customer');
+  const ex = secs.find((s) => s.id === 'existing');
+  assert.equal(ex.columns.find((c) => c.id === 'owner').get(ex.rows()[0]), 'Acme');
 });

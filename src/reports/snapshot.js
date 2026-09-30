@@ -1,6 +1,6 @@
 import { get } from '../core/data.js';
 import { PivotError } from '../core/errors.js';
-import { platformHazards, hazardDetail, lastReviewed, referencesFor, assessmentOf, sfarpOf, existingControlsOn, phasesOf, safetyReportsOn } from '../core/queries.js';
+import { platformHazards, hazardDetail, lastReviewed, referencesFor, assessmentOf, sfarpOf, existingControlsOn, phasesOf, safetyReportsOn, controlOwner, ownerText } from '../core/queries.js';
 import { formatRating } from '../core/matrix.js';
 import { RECEPTORS, stageKey } from '../core/receptors.js';
 import { referenceLabel, controlLabel } from '../core/ids.js';
@@ -13,8 +13,8 @@ import { reviewState, aestDate } from '../core/time.js';
  *   review: { state: string, due: string | null, months: number | null, lastReviewed: string | null },
  *   references: { number: string, title: string, docNumber: string, revision: string, supports: string }[] }} Snapshot
  * @typedef {{ hazardId: string, number: number | null, reportId: string, title: string, description: string,
- *   causalFactors: string[], consequences: string[], controls: { number: string, title: string, description: string, kind: string, tier: string, state: string, reason: string, recommendation: string, justification: string }[],
- *   existingControls: { number: string, title: string, description: string, kind: string, tier: string }[],
+ *   causalFactors: string[], consequences: string[], controls: { number: string, title: string, description: string, owner: string, kind: string, tier: string, state: string, reason: string, recommendation: string, justification: string }[],
+ *   existingControls: { number: string, title: string, description: string, owner: string, kind: string, tier: string }[],
  *   phases: string[],
  *   safetyReports: { number: string, date: string | null, type: string, summary: string, description: string, location: string, parties: string }[],
  *   initial: any, residual: any,
@@ -44,7 +44,7 @@ export function buildSnapshot(data, platformId, o) {
       causalFactors: d.causalFactors.map((x) => x.text),
       consequences: d.consequences.map((x) => x.text),
       controls: r.controls.map((c) => ({
-        number: controlLabel(c.control), title: c.control.title, description: c.control.description ?? '',
+        number: controlLabel(c.control), title: c.control.title, description: c.control.description ?? '', owner: ownerText(controlOwner(data, c.control.id, platformId)),
         kind: c.kind, tier: c.control.tier ?? '', state: c.state, reason: c.state === 'rejected' ? c.ruling?.reason ?? '' : '',
         recommendation: c.link?.recommendation ?? '', justification: c.link?.justification ?? '',
       })),
@@ -53,7 +53,7 @@ export function buildSnapshot(data, platformId, o) {
         number: s.number, date: s.date, type: s.type, summary: s.summary, description: s.description, location: s.location, parties: s.parties,
       })),
       existingControls: existingControlsOn(data, r.hazard.id, platformId).map((x) => ({
-        number: controlLabel(x.control), title: x.control.title, description: x.control.description ?? '', kind: x.kind, tier: x.control.tier ?? '',
+        number: controlLabel(x.control), title: x.control.title, description: x.control.description ?? '', kind: x.kind, tier: x.control.tier ?? '', owner: ownerText(controlOwner(data, x.control.id, platformId)),
       })),
       initial: r.rating.initial,
       residual: r.rating.residual,

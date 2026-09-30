@@ -42,8 +42,8 @@ test('a snapshot holds the platform, and each of its hazards with everything a r
     { reportId: 'H-0001', title: 'Fire', causalFactors: ['Hot works'], consequences: ['Burns'], initial: { consequence: 1, likelihood: 'C' }, residual: { consequence: 2, likelihood: 'C' } },
   );
   assert.deepEqual(r.controls, [
-    { number: 'C-0001', title: 'Sprinklers', description: '', kind: 'preventative', tier: '', state: 'implemented', reason: '', recommendation: '', justification: '' },
-    { number: 'C-0002', title: 'Fire drills', description: '', kind: 'mitigating', tier: '', state: 'rejected', reason: 'No crew', recommendation: '', justification: '' },
+    { number: 'C-0001', title: 'Sprinklers', description: '', owner: '', kind: 'preventative', tier: '', state: 'implemented', reason: '', recommendation: '', justification: '' },
+    { number: 'C-0002', title: 'Fire drills', description: '', owner: '', kind: 'mitigating', tier: '', state: 'rejected', reason: 'No crew', recommendation: '', justification: '' },
   ]);
 });
 
@@ -122,7 +122,7 @@ test('a snapshot carries each additional control\'s analysis and status, and the
   const c1 = row.controls.find((c) => c.title === 'Sprinklers');
   assert.deepEqual([c1.state, c1.recommendation, c1.justification], ['planned', 'Fit in <bay 2>', 'Cuts spread']);
   assert.match(c1.number, /^C-\d{4}$/);
-  assert.deepEqual(row.existingControls, [{ number: row.existingControls[0].number, title: 'Fire drills', description: 'Twice a year', kind: 'mitigating', tier: 'Administrative' }]);
+  assert.deepEqual(row.existingControls, [{ number: row.existingControls[0].number, title: 'Fire drills', description: 'Twice a year', kind: 'mitigating', tier: 'Administrative', owner: '' }]);
 });
 
 test('a snapshot carries the hazard\'s lifecycle phases and its safety reports on the platform', () => {

@@ -5,8 +5,10 @@ import { referencesCard } from './references.js';
 import { statusColumn, idColumn, newRecord, notFound } from './hazards.js';
 import { get, live } from '../../core/data.js';
 import { hazardLabel, controlLabel } from '../../core/ids.js';
-import { controlRows, controlUsage, existingUsage, platformsReached } from '../../core/queries.js';
-import { CONTROL_TIERS, tierRank } from '../../core/ops/controls.js';
+import { controlRows, controlUsage, existingUsage, platformsReached, controlOwner, controlOnPlatform } from '../../core/queries.js';
+import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
+import { rejectionCell } from './platforms.js';
+import { CONTROL_TIERS, OWNERS, tierRank } from '../../core/ops/controls.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -60,8 +62,9 @@ export function controlView(state, data, id) {
   const head = html`<p>${go('← Controls', 'controls')}</p>
     <div class="doc-head"><span class="doc-id">${idTag(controlLabel(c))}</span>${statusTag(c.status)}</div>
     <input class="doc-title" name="title" value="${c.title}" required aria-label="Control title" ${dataAttrs({ change: 'updateControl', id })}>
-    ${pageTabs('control', { id }, tab, historyCount(state, data, 'control', id))}`;
+    ${pageTabs('control', { id }, tab, historyCount(state, data, 'control', id), reachedPlatforms(data, c).map((p) => /** @type {[string, unknown]} */ ([`p:${p.id}`, p.name])), 'Overview')}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'control', id)}`;
+  if (tab && tab.startsWith('p:')) return html`${head}${controlPlatformTab(state, data, c, tab.slice(2))}`;
   const usage = controlUsage(data, id);
   const existing = existingUsage(data, id);
   const reach = platformsReached(data, 'control', c).map((pid) => get(data, 'platform', pid)?.name ?? pid);
@@ -106,4 +109,50 @@ export function controlView(state, data, id) {
       <section class="block">${referencesCard(state, data, { kind: 'control', id })}</section>
     </article>
     <div class="actions page-actions">${actions}</div>`;
+}
+
+/** The platforms a control is used on, by name. @param {Data} data @param {any} c */
+function reachedPlatforms(data, c) {
+  return platformsReached(data, 'control', c).map((pid) => get(data, 'platform', pid)).filter(Boolean)
+    .sort((a, b) => String(a?.name).localeCompare(String(b?.name)));
+}
+
+const OWNER_WORD = { us: 'Us', customer: 'Customer', other: 'Other' };
+
+/**
+ * A control on one platform: who owns it there, and each hazard there that uses it, with the
+ * status of an additional control (changed here as on the platform page).
+ * @param {any} state @param {Data} data @param {any} c the control @param {string} platformId
+ */
+function controlPlatformTab(state, data, c, platformId) {
+  const p = get(data, 'platform', platformId);
+  if (!p || !platformsReached(data, 'control', c).includes(platformId)) {
+    return html`<p class="muted">This control is not used on that platform. ${go('Back to the overview', 'control', { id: c.id })}</p>`;
+  }
+  const o = controlOwner(data, c.id, platformId);
+  const at = { change: 'setControlOwner', 'control-id': c.id, 'platform-id': platformId };
+  const rows = controlOnPlatform(data, c.id, platformId).map((u) => ({ ...u, control: c }));
+  return html`<article class="doc">
+    <p class="doc-meta">Owner on ${p.name}
+      <select class="quiet inline-select" name="owner" aria-label="Owner on ${p.name}" ${dataAttrs(at)}>${option('', 'Not set', o?.owner ?? '')}${OWNERS.map((w) => option(w, OWNER_WORD[/** @type {'us'} */ (w)], o?.owner ?? ''))}</select>
+      ${o?.owner === 'other' ? html`<input class="quiet" name="ownerName" value="${o.ownerName}" placeholder="Who owns it…" aria-label="Owner's name" ${dataAttrs(at)}>` : ''}</p>
+    <section class="block">${dataTable(state, {
+      id: 'controlPlatformUses',
+      rowKey: (u) => `${u.hazard.id}:${u.role}`,
+      rows,
+      empty: 'No hazard on this platform uses it.',
+      columns: [
+        { key: 'hazard', label: `Hazards on ${p.name}`, width: 520, minWidth: 200, value: (u) => `${hazardLabel(u.hazard)} ${u.hazard.title}`,
+          render: (u) => html`<span class="id">${idTag(hazardLabel(u.hazard))}</span> ${go(u.hazard.title, 'hazard', { id: u.hazard.id, tab: `p:${platformId}` })}` },
+        { key: 'role', label: 'Role', width: 200, minWidth: 110, value: (u) => u.role, render: (u) => (u.role === 'existing' ? 'Existing' : 'Additional') },
+        { key: 'kind', label: 'Kind', width: 200, minWidth: 110, value: (u) => u.kind },
+        { key: 'state', label: 'Status', width: 240, minWidth: 150, value: (u) => (u.state ? CONTROL_STATUSES.indexOf(u.state) : -1),
+          render: (u) => (u.role === 'additional'
+            ? html`<select class="quiet state-select state-${u.state}" name="value" aria-label="Status of ${c.title}" ${dataAttrs({ change: 'setControlState', 'hazard-id': u.hazard.id, 'control-id': c.id, 'platform-id': platformId })}>${CONTROL_STATUSES.map((s) => option(s, s, u.state))}</select>`
+            : html`<span class="muted">—</span>`) },
+        { key: 'reason', label: 'Reason rejected, or who set it', width: 440, minWidth: 200, sortable: false,
+          render: (u) => (u.role === 'additional' ? rejectionCell(state, u, u.hazard.id, platformId, p.name) : '') },
+      ],
+    })}</section>
+  </article>`;
 }
