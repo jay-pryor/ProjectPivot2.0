@@ -174,11 +174,20 @@ function scaleValue(field, v) {
   return named ? `${v} ${named.label}` : show(v);
 }
 
+/** An owner change as a person reads it: who was made owner, or that it was cleared. @param {any} item */
+function ownerDetail(item) {
+  if (item.change === 'edited') return changeDetail(item);
+  if (item.change === 'deleted') return 'Owner cleared';
+  const after = Object.fromEntries(item.fields.map((/** @type {any} */ f) => [f.field, f.after]));
+  return `Owner: ${after.owner === 'us' ? 'Us' : after.owner === 'customer' ? 'Customer' : after.ownerName || 'Other'}`;
+}
+
 /** What an SSRA item is about, e.g. "Alpha · Residual personnel", read from its id. @param {any} data @param {any} item */
 function itemLabel(data, item) {
   const parts = String(item.id).split(':');
   const name = (/** @type {string} */ kind, /** @type {string} */ id) => data.records[kind]?.[id]?.[kind === 'platform' ? 'name' : 'title'] ?? id;
   if (item.kind === 'hazardControl') return `Control ${name('control', parts[2])}`;
+  if (item.kind === 'controlPlatform') return `${name('platform', parts[2])} · Owner of ${name('control', parts[1])}`;
   if (item.kind === 'ruling') return `${name('platform', parts[3])} · Status of ${name('control', parts[2])}`;
   if (item.kind === 'existingControl') return `${name('platform', parts[2])} · Existing control ${name('control', parts[3])}`;
   if (item.kind === 'hazardPhase') return `Phase ${data.records.phase?.[parts[2]]?.name ?? ''}`;
@@ -200,9 +209,9 @@ export function historyTable(state, data, kind, id, list = historyOf(data, kind,
   const rows = list.slice().reverse().map((e) => ({ e, item: e.items.find((/** @type {any} */ i) => i.kind === kind && i.id === id) ?? (e.items.length === 1 ? e.items[0] : null) }));
   // SSRA edits (assessments, SFARP) say which platform and which assessment each item is.
   /** @param {any} e */
-  const ssra = (e) => e.items.every((/** @type {any} */ i) => hazardOfItem(data, i) !== null);
+  const ssra = (e) => e.items.every((/** @type {any} */ i) => hazardOfItem(data, i) !== null || i.kind === 'controlPlatform');
   /** @param {any} e */
-  const labelled = (e) => html`${e.items.map((/** @type {any} */ i) => html`<div><span class="muted">${itemLabel(data, i)}</span> ${changeDetail(i)}</div>`)}`;
+  const labelled = (e) => html`${e.items.map((/** @type {any} */ i) => html`<div><span class="muted">${itemLabel(data, i)}</span> ${i.kind === 'controlPlatform' ? ownerDetail(i) : changeDetail(i)}</div>`)}`;
   return dataTable(state, {
     id: 'history',
     rowKey: (r) => r.e.id,

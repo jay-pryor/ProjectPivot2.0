@@ -45,3 +45,14 @@ test('the platform page\'s controls table shows each control\'s owner there', ()
   const out = platformView(state, data(), 'p1').toString();
   assert.match(out, /data-table="platformControls"[\s\S]*?<th data-col="owner"[\s\S]*?Acme &lt;Fire&gt;/);
 });
+
+test('owner changes in History say which platform, which control, and who the owner is', () => {
+  let d = setControlOwner(data(), act, { controlId: 'c1', platformId: 'p2', owner: 'us' });
+  d = setControlOwner(d, act, { controlId: 'c1', platformId: 'p2', owner: 'customer' });
+  d = setControlOwner(d, act, { controlId: 'c1', platformId: 'p2', owner: '' });
+  const out = controlView(on('history'), d, 'c1').toString();
+  assert.match(out, /Alpha · Owner of Sprinklers<\/span> Owner: Acme &lt;Fire&gt;/);
+  assert.match(out, /Bravo · Owner of Sprinklers<\/span> Owner: Us/);
+  assert.match(out, /Bravo · Owner of Sprinklers<\/span> <ul class="plain"><li><strong>owner<\/strong>: us → customer/);
+  assert.match(out, /Bravo · Owner of Sprinklers<\/span> Owner cleared/);
+});

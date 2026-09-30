@@ -178,3 +178,13 @@ test('additional and existing controls carry their owner on the platform, as an 
   const ex = secs.find((s) => s.id === 'existing');
   assert.equal(ex.columns.find((c) => c.id === 'owner').get(ex.rows()[0]), 'Acme');
 });
+
+test('the Owner columns start switched off, so saved designs keep their columns and widths', () => {
+  const { docs } = setup();
+  const secs = docs.host.sections({ subjectId: 'p1' });
+  for (const id of ['controls', 'existing']) assert.equal(secs.find((s) => s.id === id).columns.find((c) => c.id === 'owner').defaultOff, true, id);
+  const { report } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'T' });
+  const controls = report.markdown.slice(report.markdown.indexOf('Additional control analysis {'), report.markdown.indexOf('Causal factors and consequences {'));
+  assert.ok(controls.length > 0);
+  assert.doesNotMatch(controls, /Owner/, 'no Owner column until someone ticks it on');
+});
