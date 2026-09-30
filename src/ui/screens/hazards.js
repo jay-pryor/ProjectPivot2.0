@@ -7,7 +7,7 @@ import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
 import { hazardRows, hazardDetail, ratingOf, ratingsOf, bandOf, worseBand, hazardLastReviewed, byNumber } from '../../core/queries.js';
 import { platformTab } from './ssra.js';
-import { RECEPTORS, RECEPTOR_WORD, RECEPTOR_LETTER } from '../../core/receptors.js';
+import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
 import { day } from '../names.js';
 import { BANDS } from '../../core/matrix.js';
 import { CONTROL_KINDS, tierRank } from '../../core/ops/controls.js';
@@ -59,10 +59,10 @@ export function hazardsView(state, data) {
       columns: [
         idColumn((r) => r.hazard, hazardLabel, (r) => go(idTag(hazardLabel(r.hazard)), 'hazard', { id: r.hazard.id })),
         { key: 'title', label: 'Hazard', width: 640, minWidth: 200, value: (r) => r.hazard.title, filter: 'text' },
-        { key: 'platforms', label: 'Platforms (residual risk)', width: 640, minWidth: 200, value: (r) => r.platforms.map((p) => p.platform.name).join(', '),
+        { key: 'platforms', label: 'Platforms', width: 640, minWidth: 200, value: (r) => r.platforms.map((p) => p.platform.name).join(', '),
           filter: 'select', options: platformOptions, match: (r, v) => r.platforms.some((p) => p.platform.id === v),
           render: (r) => (r.platforms.length
-            ? html`<ul class="plain">${r.platforms.map((p) => html`<li>${p.platform.name}${RECEPTORS.map((x) => html` <span class="rx">${RECEPTOR_LETTER[/** @type {'personnel'} */ (x)]}</span> ${bandTag(/** @type {any} */ (p)[x])}`)}</li>`)}</ul>`
+            ? html`<ul class="plain">${r.platforms.map((p) => html`<li>${p.platform.name}</li>`)}</ul>`
             : html`<span class="muted">On no platform</span>`) },
         // On the platform filtered to, if one is; otherwise on any of its platforms.
         ...RECEPTORS.map((field) => [`risk${RECEPTOR_WORD[/** @type {'personnel'} */ (field)]}`, field, `worst${RECEPTOR_WORD[/** @type {'personnel'} */ (field)]}`, `Worst residual (${field})`]).map(([key, field, worst, label]) => ({

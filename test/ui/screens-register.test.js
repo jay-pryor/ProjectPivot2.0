@@ -14,7 +14,9 @@ test('the hazard list: one row per hazard, its platforms with their risk, filter
   const out = hazardsView(state, data()).toString();
   assert.match(out, /data-action="startEdit" data-kind="newHazard"/);
   assert.equal((out.match(/<tr data-row="h1"/g) || []).length, 1, 'h1 appears once though it is on two platforms');
-  assert.match(out, /Alpha <span class="rx">P<\/span> <span class="band band-uncategorised">/);
+  assert.match(out, /<th data-col="platforms"[\s\S]*?>Platforms</);
+  assert.match(out, /<li>Alpha<\/li><li>Bravo<\/li>/, 'the platforms listed by name only');
+  assert.doesNotMatch(out.slice(out.indexOf('<tbody')), /class="rx"/, 'no per-platform risk in the list');
   assert.match(out, /data-change="filterTable" data-table="hazards" data-key="platforms"/);
   assert.match(out, /data-change="filterTable" data-table="hazards" data-key="riskPersonnel"/);
   assert.match(out, /data-input="filterTable" data-table="hazards" data-key="title"/);

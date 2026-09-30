@@ -61,10 +61,10 @@ test('a tab for a platform the hazard is not on shows a note, not a crash', () =
 });
 
 
-test('the hazards list shows residual personnel and environment separately, each with a filter', async () => {
+test('the hazards list has a worst-residual column and filter per risk type', async () => {
   const { hazardsView } = await import('../../src/ui/screens/hazards.js');
   const out = hazardsView(state, data()).toString();
-  assert.match(out, /Alpha <span class="rx">P<\/span> <span class="band band-low">Low<\/span> <span class="rx">E<\/span> <span class="band band-serious">Serious<\/span>/);
+  assert.match(out, /<td data-col="riskPersonnel"|<th data-col="riskPersonnel"/);
   assert.match(out, /<th data-col="riskPersonnel"/);
   assert.match(out, /<th data-col="riskEnvironment"/);
   const env = hazardsView({ ...state, tables: { hazards: { filters: { riskEnvironment: 'Serious' } } } }, data()).toString();
@@ -229,7 +229,6 @@ test('the worst residual counts capability, on the tab and in the hazards list, 
   assert.match(hazardView(state, d, 'h1').toString(), /data-tab="p:p1">Alpha <span class="band band-high">High<\/span>/);
   assert.match(hazardView(state, d, 'h1').toString(), /data-table="hazardPlatforms"[\s\S]*?<th data-col="capability"/);
   const list = hazardsView(state, d).toString();
-  assert.match(list, /<span class="rx">C<\/span> <span class="band band-high">High<\/span>/);
   assert.match(list, /<th data-col="riskCapability"/);
   assert.match(hazardsView({ ...state, tables: { hazards: { filters: { riskCapability: 'High' } } } }, d).toString(), /data-row="h1"/);
 });
