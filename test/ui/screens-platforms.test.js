@@ -44,3 +44,16 @@ test('a platform\'s History tab shows every change that reached it', () => {
   assert.match(out, /Set residual rating/);
   assert.match(out, /Set control to rejected/);
 });
+
+test('the platform\'s controls table has the control ID and the control name in columns of their own', async () => {
+  const { platformView } = await import('../../src/ui/screens/platforms.js');
+  const { initialState } = await import('../../src/ui/controller.js');
+  const { assignNumbers } = await import('../../src/core/ops/hazards.js');
+  const { seed } = await import('../helpers.js');
+  const st = { ...initialState(), screen: 'main', today: '2026-09-28', profileId: 'u1', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }] };
+  const out = platformView(st, assignNumbers(seed()), 'p1').toString();
+  const table = out.slice(out.indexOf('data-table="platformControls"'));
+  const heads = [...table.split('</thead>')[0].matchAll(/<th data-col="(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(heads.slice(0, 2), ['id', 'control']);
+  assert.match(table, /<td><button type="button" class="link" data-action="go" data-view="control" data-id="c1">C-0001<\/button><\/td><td><button type="button" class="link" data-action="go" data-view="control" data-id="c1">Sprinklers<\/button><\/td>/);
+});

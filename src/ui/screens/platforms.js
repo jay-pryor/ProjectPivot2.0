@@ -118,8 +118,9 @@ export function platformView(state, data, id) {
           rows: controlRows,
           empty: 'The hazards here have no controls yet. Link controls on a hazard\'s page.',
           columns: [
-            { key: 'control', label: `Controls on ${p.name}`, width: 520, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`,
-              render: (c) => html`<span class="id">${idTag(controlLabel(c.control))}</span> ${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
+            idColumn((c) => c.control, controlLabel, (c) => go(idTag(controlLabel(c.control)), 'control', { id: c.control.id })),
+            { key: 'control', label: `Controls on ${p.name}`, width: 440, minWidth: 180, value: (c) => c.control.title, filter: 'text',
+              render: (c) => html`${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
             { key: 'hazard', label: 'For hazard', width: 300, minWidth: 140, value: (c) => hazardLabel(c.hazard), filter: 'text',
               render: (c) => go(idTag(hazardLabel(c.hazard)), 'hazard', { id: c.hazard.id }) },
             tierColumn((c) => c.control),
