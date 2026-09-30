@@ -362,3 +362,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--p-accent); }
 .copy-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; max-height: 50vh; overflow-y: auto; }
 .copy-choice { display: grid; gap: 4px; width: 100%; text-align: left; padding: 8px 10px; background: var(--p-surface); border: 1px solid var(--p-line); color: inherit; font: inherit; white-space: pre-wrap; }
 .copy-choice:hover { border-color: var(--p-accent); }
+
+/* Copy a whole stage of risk from another platform, beside the stage's heading. */
+.copy-stage { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; padding: 3px 9px; font-size: 13px; font-weight: 400; border: 1px solid var(--p-line); background: var(--p-surface-2); color: var(--p-fg); vertical-align: middle; }
+.copy-stage svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.copy-stage:hover { color: var(--p-accent); border-color: var(--p-accent); }
+.copy-levels { display: flex; flex-wrap: wrap; gap: 6px 16px; }

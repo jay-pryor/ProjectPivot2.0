@@ -290,3 +290,13 @@ test('a justification box offers to copy the same box from another platform, onl
   const picker = pickerView({ ...state, picker: { picker: 'copyJustification', hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'environment', field: 'likelihoodWhy' } }, d).toString();
   assert.match(picker, /data-action="copyJustification" data-hazard-id="h1" data-platform-id="p1" data-stage="initial" data-receptor="environment" data-field="likelihoodWhy" data-from="p2"[\s\S]*?Bravo[\s\S]*?Bunded &lt;store&gt;/);
 });
+
+test('Initial risk and Residual risk each offer to copy the whole stage from another platform that has one', () => {
+  const d = setAssessment(data(), act, { hazardId: 'h1', platformId: 'p2', stage: 'initial', receptor: 'capability', likelihood: 'D', consequence: 3 });
+  const out = hazardView(on('p:p1'), d, 'h1').toString();
+  assert.match(out, /<h2>Initial risk<button type="button" class="copy-stage" data-action="openPicker" data-picker="copyStage" data-hazard-id="h1" data-platform-id="p1" data-stage="initial" title="Copy all initial likelihoods and consequences from another platform">[\s\S]*?Copy from…<\/button><\/h2>/);
+  assert.doesNotMatch(out, /data-picker="copyStage"[^>]*data-stage="residual"/, 'no other platform has residual risk yet');
+  const picker = pickerView({ ...state, picker: { picker: 'copyStage', hazardId: 'h1', platformId: 'p1', stage: 'initial' } }, d).toString();
+  assert.match(picker, /Copy the initial risk/);
+  assert.match(picker, /data-action="copyStage" data-hazard-id="h1" data-platform-id="p1" data-stage="initial" data-from="p2"[\s\S]*?Bravo[\s\S]*?Capability[\s\S]*?3D Medium/);
+});

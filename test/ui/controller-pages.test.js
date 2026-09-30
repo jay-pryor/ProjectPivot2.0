@@ -101,3 +101,14 @@ test('copying a justification from another platform writes it into this platform
   await c.dispatch({ type: 'copyJustification', hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'capability', field: 'title', from: 'p2' });
   assert.match(c.getState().message.text, /justification/i, 'only the justification boxes can be copied');
 });
+
+test('copying a whole stage of risk from another platform, and the list closes', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'createPlatform', id: 'p2', name: 'Bravo', ownerId: c.getState().profileId });
+  await c.dispatch({ type: 'linkPlatforms', hazardId: 'h1', platformId: ['p1', 'p2'] });
+  await c.dispatch({ type: 'setAssessment', hazardId: 'h1', platformId: 'p2', stage: 'residual', receptor: 'personnel', likelihood: 'E', consequence: '4' });
+  await c.dispatch({ type: 'openPicker', picker: 'copyStage', hazardId: 'h1', platformId: 'p1', stage: 'residual' });
+  await c.dispatch({ type: 'copyStage', hazardId: 'h1', platformId: 'p1', stage: 'residual', from: 'p2' });
+  assert.deepEqual(ratingOf(W(c), 'h1', 'p1').residual, { consequence: 4, likelihood: 'E' });
+  assert.equal(c.getState().picker, null);
+});

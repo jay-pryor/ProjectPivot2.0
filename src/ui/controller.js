@@ -39,7 +39,7 @@ const EDITS = {
   retirePlatform: platforms.retirePlatform, deletePlatform: platforms.deletePlatform, linkHazard: platforms.linkHazard,
   unlinkHazard: platforms.unlinkHazard, setReportId: platforms.setReportId,
   setControlStatus: assessment.setControlStatus, setRating: assessment.setRating,
-  setAssessment: assessment.setAssessment, setSfarp: assessment.setSfarp,
+  setAssessment: assessment.setAssessment, copyStageRisk: assessment.copyStageRisk, setSfarp: assessment.setSfarp,
   setSchedule: reviews.setSchedule, startReview: reviews.startReview, markRow: reviews.markRow,
   setReviewOutcome: reviews.setReviewOutcome, setReviewNotes: reviews.setReviewNotes, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
@@ -457,6 +457,10 @@ export function createController(env) {
       const source = state.session?.working.records.assessment?.[`ra:${hazardId}:${from}:${stage}:${receptor}`];
       if (!source || source.status !== 'live' || !source[field]) throw new PivotError('not-found', 'That platform has no justification to copy.');
       await applyEdit('setAssessment', { hazardId, platformId, stage, receptor, [field]: source[field] });
+      set({ picker: null });
+    },
+    async copyStage({ hazardId, platformId, stage, from }) {
+      await applyEdit('copyStageRisk', { hazardId, platformId, stage, from });
       set({ picker: null });
     },
     async linkHazards(args) {

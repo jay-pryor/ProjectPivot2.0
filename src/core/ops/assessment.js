@@ -107,6 +107,24 @@ export function setRating(data, act, { hazardId, platformId, stage, consequence,
 }
 
 /**
+ * A stage's likelihood and consequence for every receptor, copied from another platform of the
+ * hazard in one change; justifications are left as they are.
+ * @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string, stage: string, from: string }} args
+ */
+export function copyStageRisk(data, act, { hazardId, platformId, stage, from }) {
+  if (!STAGES.includes(stage)) throw new PivotError('rating.stage', 'A risk assessment is initial or residual.');
+  if (from === platformId) throw new PivotError('rating.copy', 'Choose another platform to copy from.');
+  need(data, 'hazardPlatform', ids.hazardPlatform(hazardId, from));
+  const recs = RECEPTORS.map((receptor) => {
+    const src = get(data, 'assessment', ids.assessment(hazardId, from, stage, receptor));
+    const live = src && src.status === 'live' ? src : null;
+    return { kind: 'assessment', rec: assessmentRec(data, act, { hazardId, platformId, stage, receptor, likelihood: live?.likelihood ?? null, consequence: live?.consequence ?? null }) };
+  });
+  const name = get(data, 'platform', from)?.name ?? from;
+  return commit(data, act, `Copy ${stage} risk from ${name}`, recs);
+}
+
+/**
  * SFARP considerations for a hazard on a platform; fields left out keep their value.
  * @param {Data} data @param {Act} act
  * @param {{ hazardId: string, platformId: string, justification?: unknown, conclusion?: unknown, conditions?: unknown }} args

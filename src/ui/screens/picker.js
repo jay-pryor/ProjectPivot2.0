@@ -1,9 +1,10 @@
 import { html } from '../html.js';
-import { dataAttrs, option, idTag } from './common.js';
+import { dataAttrs, option, idTag, levelTag } from './common.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, referenceLabel, platformLabel } from '../../core/ids.js';
-import { hazardsNotOn, platformsNotOn, copySources, hazardDetail, referencesFor, referenceTargets, existingControlsOn, phasesOf } from '../../core/queries.js';
+import { hazardsNotOn, platformsNotOn, copySources, stageCopySources, hazardDetail, referencesFor, referenceTargets, existingControlsOn, phasesOf } from '../../core/queries.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
+import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
 
 /**
  * A list to tick things in, opened by a small + next to a table. Typing in its search box narrows
@@ -35,6 +36,15 @@ export function pickerView(state, data) {
     return frame(`Copy the ${what}`, html`<p class="muted">Choose the platform to copy from. It replaces what is in this box.</p>
       <ul class="copy-list">${sources.map((x) => html`<li><button type="button" class="copy-choice" ${dataAttrs({ action: 'copyJustification', 'hazard-id': p.hazardId, 'platform-id': p.platformId, stage: p.stage, receptor: p.receptor, field: p.field, from: x.platform.id })}><strong>${x.platform.name}</strong><span>${x.text}</span></button></li>`)}</ul>
       ${sources.length ? '' : html`<p class="muted">No other platform has text here yet.</p>`}
+      <div class="actions"><button type="button" ${dataAttrs({ action: 'closePicker' })}>Cancel</button></div>`);
+  }
+  if (p.picker === 'copyStage') {
+    const sources = stageCopySources(data, p.hazardId, p.platformId, p.stage);
+    return frame(`Copy the ${p.stage} risk`, html`<p class="muted">Choose the platform to copy from. Its likelihood and consequence for each risk type replace this platform's; justifications stay as they are.</p>
+      <ul class="copy-list">${sources.map(({ platform, ratings }) => html`<li><button type="button" class="copy-choice" ${dataAttrs({ action: 'copyStage', 'hazard-id': p.hazardId, 'platform-id': p.platformId, stage: p.stage, from: platform.id })}>
+        <strong>${platform.name}</strong>
+        <span class="copy-levels">${RECEPTORS.map((r) => html`<span>${RECEPTOR_WORD[/** @type {'personnel'} */ (r)]} ${levelTag(/** @type {any} */ (ratings)[r])}</span>`)}</span></button></li>`)}</ul>
+      ${sources.length ? '' : html`<p class="muted">No other platform has ${p.stage} risk yet.</p>`}
       <div class="actions"><button type="button" ${dataAttrs({ action: 'closePicker' })}>Cancel</button></div>`);
   }
   if (p.picker === 'linkControls') {

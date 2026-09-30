@@ -9,7 +9,7 @@ import { referencesCard } from './references.js';
 import { textTable } from './hazards.js';
 import { get } from '../../core/data.js';
 import { ids, controlLabel } from '../../core/ids.js';
-import { copySources, assessmentOf, ratingsOf, sfarpOf, hazardDetail, existingControlsOn, controlsOnPlatform, safetyReportsOn } from '../../core/queries.js';
+import { copySources, stageCopySources, assessmentOf, ratingsOf, sfarpOf, hazardDetail, existingControlsOn, controlsOnPlatform, safetyReportsOn } from '../../core/queries.js';
 import { SAFETY_REPORT_TYPES } from '../../core/ops/safety-reports.js';
 import { day } from '../names.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
@@ -140,6 +140,16 @@ export function riskPanels(state, data, h, platformId, stage) {
   return html`<div class="risk-panels risk-${stage}">${RECEPTORS.map((r) => panel(/** @type {'personnel'} */ (r)))}</div>`;
 }
 
+/**
+ * Copy a whole stage (every risk type's likelihood and consequence) from another platform of the
+ * hazard; shown only when another platform has something at that stage.
+ * @param {Data} data @param {any} h @param {string} platformId @param {'initial' | 'residual'} stage
+ */
+function copyStageButton(data, h, platformId, stage) {
+  if (!stageCopySources(data, h.id, platformId, stage).length) return '';
+  return html`<button type="button" class="copy-stage" ${dataAttrs({ action: 'openPicker', picker: 'copyStage', 'hazard-id': h.id, 'platform-id': platformId, stage })} title="Copy all ${stage} likelihoods and consequences from another platform"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="9" height="9"/><path d="M3 11V2h9"/></svg>Copy from…</button>`;
+}
+
 const SHARED = html`<span class="shared-mark">Shared across platforms</span>`;
 
 /**
@@ -163,9 +173,9 @@ export function platformTab(state, data, h, platformId) {
     <section class="ssra-sec"><h2>Safety reports</h2><section class="block">${safetyReportsSection(state, data, h, platformId)}</section></section>
     <section class="ssra-sec"><h2>Existing controls</h2><section class="block">${existingSection(state, data, h, platformId)}</section></section>
     <section class="ssra-sec"><h2>References ${SHARED}</h2><section class="block">${referencesCard(state, data, { kind: 'hazard', id: h.id })}</section></section>
-    <section class="ssra-sec"><h2>Initial risk</h2>${riskPanels(state, data, h, platformId, 'initial')}</section>
+    <section class="ssra-sec"><h2>Initial risk${copyStageButton(data, h, platformId, 'initial')}</h2>${riskPanels(state, data, h, platformId, 'initial')}</section>
     <section class="ssra-sec"><h2>Additional control analysis <span class="shared-mark">Recommendation and justification shared across platforms</span></h2><section class="block">${analysisSection(state, data, h, platformId, p.name)}</section></section>
-    <section class="ssra-sec"><h2>Residual risk</h2>${riskPanels(state, data, h, platformId, 'residual')}</section>
+    <section class="ssra-sec"><h2>Residual risk${copyStageButton(data, h, platformId, 'residual')}</h2>${riskPanels(state, data, h, platformId, 'residual')}</section>
     <section class="ssra-sec"><h2>SFARP considerations</h2>
       <div class="sfarp">
         <label>SFARP justification<textarea name="justification" rows="4" aria-label="SFARP justification" ${dataAttrs(sfAt)}>${sf.justification}</textarea></label>

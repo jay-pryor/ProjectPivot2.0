@@ -132,6 +132,19 @@ export function copySources(data, hazardId, platformId, stage, receptor, field) 
   }).sort((x, y) => String(x.platform.name).localeCompare(String(y.platform.name)));
 }
 
+/**
+ * The other platforms of a hazard with any likelihood or consequence at a stage, to copy the whole
+ * stage from: `{ platform, ratings }[]` (ratings per receptor), by platform name.
+ * @param {Data} data @param {string} hazardId @param {string} platformId @param {'initial' | 'residual'} stage
+ */
+export function stageCopySources(data, hazardId, platformId, stage) {
+  return live(data, 'hazardPlatform').filter((l) => l.hazardId === hazardId && l.platformId !== platformId).flatMap((l) => {
+    const ratings = ratingsOf(data, hazardId, l.platformId)[stage];
+    const platform = get(data, 'platform', l.platformId);
+    return platform && Object.values(ratings).some(Boolean) ? [{ platform, ratings }] : [];
+  }).sort((x, y) => String(x.platform.name).localeCompare(String(y.platform.name)));
+}
+
 /** @param {Data} data @param {string} hazardId @param {string} platformId */
 export function sfarpOf(data, hazardId, platformId) {
   const r = get(data, 'sfarp', ids.sfarp(hazardId, platformId));
