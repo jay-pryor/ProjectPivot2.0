@@ -267,3 +267,17 @@ test('initial risk panels are tinted red and residual ones blue, to tell them ap
   assert.match(css, /\.risk-initial \.risk-panel \{[^}]*background: color-mix\(in srgb, #d64541 [0-9]+%, var\(--p-surface\)\)/);
   assert.match(css, /\.risk-residual \.risk-panel \{[^}]*background: color-mix\(in srgb, #3b82c4 [0-9]+%, var\(--p-surface\)\)/);
 });
+
+test('a hazard links to platforms from its own Overview: + opens the live platforms it is not on', async () => {
+  const { createPlatform, retirePlatform } = await import('../../src/core/ops/platforms.js');
+  let d = createPlatform(data(), act, { id: 'p3', name: 'Charlie', ownerId: 'u1' });
+  d = createPlatform(d, act, { id: 'p4', name: 'Delta', ownerId: 'u1' });
+  d = retirePlatform(d, act, { id: 'p4' });
+  const out = hazardView(state, d, 'h1').toString();
+  assert.match(out, /data-table="hazardPlatforms"[\s\S]*?data-action="openPicker" data-picker="linkPlatforms" data-hazard-id="h1"/);
+  const picker = pickerView({ ...state, picker: { picker: 'linkPlatforms', hazardId: 'h1' } }, d).toString();
+  assert.match(picker, /<form data-action="linkPlatforms" data-hazard-id="h1"/);
+  assert.match(picker, /value="p3"/);
+  assert.doesNotMatch(picker, /value="p1"|value="p2"/, 'already on them');
+  assert.doesNotMatch(picker, /value="p4"/, 'retired');
+});

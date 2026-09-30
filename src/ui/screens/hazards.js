@@ -163,7 +163,8 @@ export function hazardView(state, data, id) {
           id: 'hazardPlatforms',
           rowKey: (p) => p.platform.id,
           rows: d.platforms,
-          empty: 'On no platform. Link it from a platform\'s page.',
+          empty: 'On no platform yet.',
+          tools: h.status === 'live' ? plus({ action: 'openPicker', picker: 'linkPlatforms', 'hazard-id': h.id }, 'Link platforms') : '',
           columns: [
             { key: 'platform', label: 'Platforms', width: 520, minWidth: 200, value: (p) => p.platform.name,
               render: (p) => html`<span class="id">${idTag(platformLabel(p.platform))}</span> ${go(p.platform.name, 'platform', { id: p.platform.id })}` },

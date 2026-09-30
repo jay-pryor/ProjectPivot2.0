@@ -195,6 +195,13 @@ export function controlUsage(data, controlId) {
 }
 
 /** @param {Data} data @param {string} platformId live hazards not yet on the platform */
+/** The live platforms a hazard is not on, by name. @param {Data} data @param {string} hazardId */
+export function platformsNotOn(data, hazardId) {
+  const on = new Set(live(data, 'hazardPlatform').filter((l) => l.hazardId === hazardId).map((l) => l.platformId));
+  return live(data, 'platform').filter((p) => !on.has(p.id)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+/** @param {Data} data @param {string} platformId */
 export function hazardsNotOn(data, platformId) {
   const on = new Set(live(data, 'hazardPlatform').filter((l) => l.platformId === platformId).map((l) => l.hazardId));
   return live(data, 'hazard').filter((h) => !on.has(h.id)).sort(byNumber);

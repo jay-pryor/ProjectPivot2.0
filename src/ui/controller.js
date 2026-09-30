@@ -448,6 +448,10 @@ export function createController(env) {
       for (const phaseId of list(args.phaseId)) await applyEdit('linkPhase', { hazardId: args.hazardId, phaseId });
       set({ picker: null });
     },
+    async linkPlatforms(args) {
+      for (const platformId of list(args.platformId)) await applyEdit('linkHazard', { hazardId: args.hazardId, platformId });
+      set({ picker: null });
+    },
     async linkHazards(args) {
       for (const hazardId of list(args.hazardId)) await applyEdit('linkHazard', { hazardId, platformId: args.platformId });
       set({ picker: null });

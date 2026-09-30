@@ -2,7 +2,7 @@ import { html } from '../html.js';
 import { dataAttrs, option, idTag } from './common.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, referenceLabel, platformLabel } from '../../core/ids.js';
-import { hazardsNotOn, hazardDetail, referencesFor, referenceTargets, existingControlsOn, phasesOf } from '../../core/queries.js';
+import { hazardsNotOn, platformsNotOn, hazardDetail, referencesFor, referenceTargets, existingControlsOn, phasesOf } from '../../core/queries.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
 
 /**
@@ -19,6 +19,14 @@ export function pickerView(state, data) {
       ${search()}
       <ul class="pick-list">${hazards.map((h) => html`<li data-pick-text="${`${hazardLabel(h)} ${h.title}`.toLowerCase()}"><label><input type="checkbox" name="hazardId" value="${h.id}"> <span class="id">${idTag(hazardLabel(h))}</span> ${h.title}</label></li>`)}</ul>
       ${hazards.length ? '' : html`<p class="muted">Every live hazard is already on this platform.</p>`}
+      ${buttons('Link')}</form>`);
+  }
+  if (p.picker === 'linkPlatforms') {
+    const platforms = platformsNotOn(data, p.hazardId);
+    return frame('Link platforms', html`<form data-action="linkPlatforms" ${dataAttrs({ 'hazard-id': p.hazardId })} class="picker-form">
+      ${search()}
+      <ul class="pick-list">${platforms.map((pl) => html`<li data-pick-text="${`${platformLabel(pl)} ${pl.name}`.toLowerCase()}"><label><input type="checkbox" name="platformId" value="${pl.id}"> <span class="id">${idTag(platformLabel(pl))}</span> ${pl.name}</label></li>`)}</ul>
+      ${platforms.length ? '' : html`<p class="muted">${live(data, 'platform').length ? 'The hazard is already on every live platform.' : 'No platforms yet: add them on the Platforms page.'}</p>`}
       ${buttons('Link')}</form>`);
   }
   if (p.picker === 'linkControls') {

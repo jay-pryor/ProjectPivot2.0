@@ -77,3 +77,13 @@ test('an assessment from its likelihood and consequence, and comments on history
   assert.deepEqual(commentsOn(W(c), entry.id).map((x) => x.text), ['From the 2025 survey']);
   assert.ok(entries(W(c)).length > 0);
 });
+
+test('linking platforms to a hazard from its page, several at once', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'createPlatform', id: 'p2', name: 'Bravo', ownerId: c.getState().profileId });
+  await c.dispatch({ type: 'openPicker', picker: 'linkPlatforms', hazardId: 'h1' });
+  await c.dispatch({ type: 'linkPlatforms', hazardId: 'h1', platformId: ['p1', 'p2'] });
+  assert.ok(W(c).records.hazardPlatform[ids.hazardPlatform('h1', 'p1')]);
+  assert.ok(W(c).records.hazardPlatform[ids.hazardPlatform('h1', 'p2')]);
+  assert.equal(c.getState().picker, null);
+});
