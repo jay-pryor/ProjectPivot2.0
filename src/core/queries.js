@@ -117,6 +117,20 @@ export function ratingOf(data, hazardId, platformId, receptor = 'personnel') {
   return { initial: r.initial[receptor], residual: r.residual[receptor] };
 }
 
+/**
+ * The other platforms of a hazard whose same assessment has text in the same justification box,
+ * to copy from: `{ platform, text }[]`, by platform name.
+ * @param {Data} data @param {string} hazardId @param {string} platformId the platform being written
+ * @param {string} stage @param {string} receptor @param {'likelihoodWhy' | 'consequenceWhy'} field
+ */
+export function copySources(data, hazardId, platformId, stage, receptor, field) {
+  return live(data, 'hazardPlatform').filter((l) => l.hazardId === hazardId && l.platformId !== platformId).flatMap((l) => {
+    const a = assessmentOf(data, hazardId, l.platformId, stage, receptor);
+    const platform = get(data, 'platform', l.platformId);
+    return a && a[field] && platform ? [{ platform, text: /** @type {string} */ (a[field]) }] : [];
+  }).sort((x, y) => String(x.platform.name).localeCompare(String(y.platform.name)));
+}
+
 /** @param {Data} data @param {string} hazardId @param {string} platformId */
 export function sfarpOf(data, hazardId, platformId) {
   const r = get(data, 'sfarp', ids.sfarp(hazardId, platformId));

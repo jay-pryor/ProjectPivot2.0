@@ -378,8 +378,8 @@ export function createController(env) {
       if (value) filters[key] = value; else delete filters[key];
       set({ tables: { ...state.tables, [table]: { ...t, filters } } });
     },
-    async openPicker({ picker, hazardId, platformId, referenceId, targetKind, targetId }) {
-      const extra = { hazardId, platformId, referenceId, targetKind, targetId };
+    async openPicker({ picker, hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field }) {
+      const extra = { hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field };
       set({ picker: { picker, ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v)) } });
     },
     async addReference({ title, url, path, file }) {
@@ -450,6 +450,13 @@ export function createController(env) {
     },
     async linkPlatforms(args) {
       for (const platformId of list(args.platformId)) await applyEdit('linkHazard', { hazardId: args.hazardId, platformId });
+      set({ picker: null });
+    },
+    async copyJustification({ hazardId, platformId, stage, receptor, field, from }) {
+      if (field !== 'likelihoodWhy' && field !== 'consequenceWhy') throw new PivotError('not-found', 'Only a likelihood or consequence justification can be copied.');
+      const source = state.session?.working.records.assessment?.[`ra:${hazardId}:${from}:${stage}:${receptor}`];
+      if (!source || source.status !== 'live' || !source[field]) throw new PivotError('not-found', 'That platform has no justification to copy.');
+      await applyEdit('setAssessment', { hazardId, platformId, stage, receptor, [field]: source[field] });
       set({ picker: null });
     },
     async linkHazards(args) {

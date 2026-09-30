@@ -87,3 +87,17 @@ test('linking platforms to a hazard from its page, several at once', async () =>
   assert.ok(W(c).records.hazardPlatform[ids.hazardPlatform('h1', 'p2')]);
   assert.equal(c.getState().picker, null);
 });
+
+test('copying a justification from another platform writes it into this platform\'s box', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'createPlatform', id: 'p2', name: 'Bravo', ownerId: c.getState().profileId });
+  await c.dispatch({ type: 'linkPlatforms', hazardId: 'h1', platformId: ['p1', 'p2'] });
+  await c.dispatch({ type: 'setAssessment', hazardId: 'h1', platformId: 'p2', stage: 'residual', receptor: 'capability', consequenceWhy: 'Spare airframe held' });
+  await c.dispatch({ type: 'openPicker', picker: 'copyJustification', hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'capability', field: 'consequenceWhy' });
+  assert.equal(c.getState().picker.field, 'consequenceWhy');
+  await c.dispatch({ type: 'copyJustification', hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'capability', field: 'consequenceWhy', from: 'p2' });
+  assert.equal(W(c).records.assessment['ra:h1:p1:residual:capability'].consequenceWhy, 'Spare airframe held');
+  assert.equal(c.getState().picker, null);
+  await c.dispatch({ type: 'copyJustification', hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'capability', field: 'title', from: 'p2' });
+  assert.match(c.getState().message.text, /justification/i, 'only the justification boxes can be copied');
+});

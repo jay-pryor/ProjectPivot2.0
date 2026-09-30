@@ -281,3 +281,12 @@ test('a hazard links to platforms from its own Overview: + opens the live platfo
   assert.doesNotMatch(picker, /value="p1"|value="p2"/, 'already on them');
   assert.doesNotMatch(picker, /value="p4"/, 'retired');
 });
+
+test('a justification box offers to copy the same box from another platform, only when one has text', () => {
+  const d = setAssessment(data(), act, { hazardId: 'h1', platformId: 'p2', stage: 'initial', receptor: 'environment', likelihood: 'D', likelihoodWhy: 'Bunded <store>' });
+  const onAlpha = hazardView(on('p:p1'), d, 'h1').toString();
+  assert.match(onAlpha, /<button type="button" class="copy-from" data-action="openPicker" data-picker="copyJustification" data-hazard-id="h1" data-platform-id="p1" data-stage="initial" data-receptor="environment" data-field="likelihoodWhy" title="Copy from another platform" aria-label="Copy the initial environment likelihood justification from another platform">/);
+  assert.equal((onAlpha.match(/class="copy-from"/g) ?? []).length, 1, 'no other platform has text in the other boxes');
+  const picker = pickerView({ ...state, picker: { picker: 'copyJustification', hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'environment', field: 'likelihoodWhy' } }, d).toString();
+  assert.match(picker, /data-action="copyJustification" data-hazard-id="h1" data-platform-id="p1" data-stage="initial" data-receptor="environment" data-field="likelihoodWhy" data-from="p2"[\s\S]*?Bravo[\s\S]*?Bunded &lt;store&gt;/);
+});

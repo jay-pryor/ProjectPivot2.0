@@ -9,7 +9,7 @@ import { referencesCard } from './references.js';
 import { textTable } from './hazards.js';
 import { get } from '../../core/data.js';
 import { ids, controlLabel } from '../../core/ids.js';
-import { assessmentOf, ratingsOf, sfarpOf, hazardDetail, existingControlsOn, controlsOnPlatform, safetyReportsOn } from '../../core/queries.js';
+import { copySources, assessmentOf, ratingsOf, sfarpOf, hazardDetail, existingControlsOn, controlsOnPlatform, safetyReportsOn } from '../../core/queries.js';
 import { SAFETY_REPORT_TYPES } from '../../core/ops/safety-reports.js';
 import { day } from '../names.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
@@ -125,11 +125,15 @@ export function riskPanels(state, data, h, platformId, stage) {
     const a = assessmentOf(data, h.id, platformId, stage, receptor);
     const at = { change: 'setAssessment', 'hazard-id': h.id, 'platform-id': platformId, stage, receptor };
     const label = `${WORD[stage]} ${receptor}`;
+    /** A copy icon for a justification box, when another platform of the hazard has text in the same box. @param {'likelihoodWhy' | 'consequenceWhy'} field */
+    const copy = (field) => (copySources(data, h.id, platformId, stage, receptor, field).length
+      ? html`<button type="button" class="copy-from" ${dataAttrs({ action: 'openPicker', picker: 'copyJustification', 'hazard-id': h.id, 'platform-id': platformId, stage, receptor, field })} title="Copy from another platform" aria-label="Copy the ${stage} ${receptor} ${field === 'likelihoodWhy' ? 'likelihood' : 'consequence'} justification from another platform"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="9" height="9"/><path d="M3 11V2h9"/></svg></button>`
+      : '');
     return html`<div class="risk-panel"><h3>${WORD[receptor]}</h3>
       <label class="risk-field">Likelihood <select name="likelihood" aria-label="${label} likelihood" ${dataAttrs(at)}>${option('', '—', a?.likelihood ?? '')}${LIKELIHOODS.map((l) => option(l.letter, `${l.letter} · ${l.label}`, a?.likelihood ?? ''))}</select></label>
-      <textarea name="likelihoodWhy" rows="3" placeholder="Why this likelihood…" aria-label="${label} likelihood justification" ${dataAttrs(at)}>${a?.likelihoodWhy ?? ''}</textarea>
+      <div class="why">${copy('likelihoodWhy')}<textarea name="likelihoodWhy" rows="3" placeholder="Why this likelihood…" aria-label="${label} likelihood justification" ${dataAttrs(at)}>${a?.likelihoodWhy ?? ''}</textarea></div>
       <label class="risk-field">Consequence <select name="consequence" aria-label="${label} consequence" ${dataAttrs(at)}>${option('', '—', a?.consequence == null ? '' : String(a.consequence))}${CONSEQUENCES.map((c) => option(String(c.level), `${c.level} · ${c.label}`, a?.consequence == null ? '' : String(a.consequence)))}</select></label>
-      <textarea name="consequenceWhy" rows="3" placeholder="Why this consequence…" aria-label="${label} consequence justification" ${dataAttrs(at)}>${a?.consequenceWhy ?? ''}</textarea>
+      <div class="why">${copy('consequenceWhy')}<textarea name="consequenceWhy" rows="3" placeholder="Why this consequence…" aria-label="${label} consequence justification" ${dataAttrs(at)}>${a?.consequenceWhy ?? ''}</textarea></div>
       <div class="risk-level">Assessed level ${levelTag(ratings[stage][receptor])}</div>
     </div>`;
   };

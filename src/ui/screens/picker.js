@@ -2,7 +2,7 @@ import { html } from '../html.js';
 import { dataAttrs, option, idTag } from './common.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, referenceLabel, platformLabel } from '../../core/ids.js';
-import { hazardsNotOn, platformsNotOn, hazardDetail, referencesFor, referenceTargets, existingControlsOn, phasesOf } from '../../core/queries.js';
+import { hazardsNotOn, platformsNotOn, copySources, hazardDetail, referencesFor, referenceTargets, existingControlsOn, phasesOf } from '../../core/queries.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
 
 /**
@@ -28,6 +28,14 @@ export function pickerView(state, data) {
       <ul class="pick-list">${platforms.map((pl) => html`<li data-pick-text="${`${platformLabel(pl)} ${pl.name}`.toLowerCase()}"><label><input type="checkbox" name="platformId" value="${pl.id}"> <span class="id">${idTag(platformLabel(pl))}</span> ${pl.name}</label></li>`)}</ul>
       ${platforms.length ? '' : html`<p class="muted">${live(data, 'platform').length ? 'The hazard is already on every live platform.' : 'No platforms yet: add them on the Platforms page.'}</p>`}
       ${buttons('Link')}</form>`);
+  }
+  if (p.picker === 'copyJustification') {
+    const sources = copySources(data, p.hazardId, p.platformId, p.stage, p.receptor, p.field);
+    const what = `${p.stage} ${p.receptor} ${p.field === 'likelihoodWhy' ? 'likelihood' : 'consequence'} justification`;
+    return frame(`Copy the ${what}`, html`<p class="muted">Choose the platform to copy from. It replaces what is in this box.</p>
+      <ul class="copy-list">${sources.map((x) => html`<li><button type="button" class="copy-choice" ${dataAttrs({ action: 'copyJustification', 'hazard-id': p.hazardId, 'platform-id': p.platformId, stage: p.stage, receptor: p.receptor, field: p.field, from: x.platform.id })}><strong>${x.platform.name}</strong><span>${x.text}</span></button></li>`)}</ul>
+      ${sources.length ? '' : html`<p class="muted">No other platform has text here yet.</p>`}
+      <div class="actions"><button type="button" ${dataAttrs({ action: 'closePicker' })}>Cancel</button></div>`);
   }
   if (p.picker === 'linkControls') {
     const d = hazardDetail(data, p.hazardId);

@@ -352,3 +352,13 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--p-accent); }
 /* Initial risk panels carry a faint red, residual a faint blue, so the two read apart at a glance. */
 .risk-initial .risk-panel { background: color-mix(in srgb, #d64541 7%, var(--p-surface)); border-left: 3px solid color-mix(in srgb, #d64541 55%, transparent); }
 .risk-residual .risk-panel { background: color-mix(in srgb, #3b82c4 13%, var(--p-surface)); border-left: 3px solid color-mix(in srgb, #3b82c4 75%, transparent); }
+
+/* A justification box with its copy-from-another-platform icon in the corner. */
+.why { position: relative; }
+.why textarea { width: 100%; }
+.copy-from { position: absolute; top: 4px; right: 4px; z-index: 1; width: 22px; height: 22px; padding: 3px; border: 1px solid var(--p-line); background: var(--p-surface-2); color: var(--p-muted); line-height: 0; }
+.copy-from svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.copy-from:hover { color: var(--p-accent); border-color: var(--p-accent); }
+.copy-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.copy-choice { display: grid; gap: 4px; width: 100%; text-align: left; padding: 8px 10px; background: var(--p-surface); border: 1px solid var(--p-line); color: inherit; font: inherit; white-space: pre-wrap; }
+.copy-choice:hover { border-color: var(--p-accent); }
