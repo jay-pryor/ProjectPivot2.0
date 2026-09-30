@@ -68,6 +68,8 @@ test('one window fills the stage; two split it; each has its filters, diagram, a
   assert.match(split, /<h2>Unsaved: H-0001 Fire on Bravo<\/h2>/);
   assert.match(split, /data-action="swapBowtiePanes"/);
   assert.match(split, /data-drag-pane="1"/);
+  const natural = Number(/<svg [^>]*? width="(\d+)"/.exec(split)[1]);
+  assert.match(split, new RegExp(`<div class="bt-canvas" style="min-width: ${Math.round(natural * 0.7)}px"><svg`), 'never shrunk below 70%, so the text stays readable');
 });
 
 test('saving a copy of a shared view, naming a view, and sharing it with ticks', () => {
@@ -111,6 +113,7 @@ test('the replace question, the nav, the route, and Open bow-tie on a hazard\'s 
   const d = data();
   const asking = bowtiesView(state(d, { workspace: one(B), bowtieReplace: { side: 'last', pane: A, index: 0 } }), d).toString();
   assert.match(asking, /class="picker-overlay"[\s\S]*?Replace the unsaved diagram\?[\s\S]*?data-action="confirmBowtieReplace"[\s\S]*?data-action="cancelBowtieReplace"/);
+  assert.match(asking, /data-action="cancelBowtieReplace" autofocus>Keep it/, 'focus lands on the safe choice, so Escape and the keyboard work');
   assert.match(shell(state(d), html``).toString(), /data-view="platforms">Platforms<\/button><button type="button" class="nav on" data-action="go" data-view="bowties">Bow-ties<\/button><button[^>]*data-view="references"/);
   assert.match(renderApp(state(d)), /<h1>Bow-ties<\/h1>/);
   const tab = hazardView(state(d, { view: { name: 'hazard', id: 'h1', tab: 'p:p1' } }), d, 'h1').toString();

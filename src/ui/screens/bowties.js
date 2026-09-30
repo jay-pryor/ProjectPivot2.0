@@ -123,7 +123,7 @@ function paneView(state, data, pane, side, split) {
         ${CONTROL_STATUSES.map((st) => html`<label><input type="checkbox" name="on" ${dataAttrs({ change: 'setPaneStatus', side: s, status: st })}${f.statuses.includes(st) ? raw(' checked') : ''}> ${STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (st)]}</label>`)}
       </fieldset>
     </div>
-    <div class="bt-diagram">${b.ok ? raw(bowtieSvg(b)) : html`<p class="bt-cannot">${/** @type {import('../../core/bowtie.js').Cannot} */ (b).message}</p>`}</div>
+    <div class="bt-diagram">${b.ok ? diagram(bowtieSvg(b)) : html`<p class="bt-cannot">${/** @type {import('../../core/bowtie.js').Cannot} */ (b).message}</p>`}</div>
     <div class="actions bt-actions">
       ${own ? button(dirty ? 'Save' : 'Saved', { action: 'saveBowtiePane', side: s }, !dirty) : button(view ? 'Save a copy' : 'Save', { action: 'saveBowtiePane', side: s })}
       ${button('Save as…', { action: 'startEdit', kind: 'bowtieName', id: s })}
@@ -134,11 +134,21 @@ function paneView(state, data, pane, side, split) {
   </article>`;
 }
 
+/**
+ * The drawing, shrunk to fit its window but never below 70% of its own size, so the text stays
+ * readable when two windows share the stage; past that the window scrolls sideways.
+ * @param {string} svg
+ */
+function diagram(svg) {
+  const width = Number(/ width="(\d+)"/.exec(svg)?.[1] ?? 0);
+  return html`<div class="bt-canvas" style="min-width: ${Math.round(width * 0.7)}px">${raw(svg)}</div>`;
+}
+
 /** @param {0 | 1} index the window that would be replaced */
 function replaceQuestion(index) {
   return html`<div class="picker-overlay"><div class="picker" role="alertdialog" aria-modal="true" aria-label="Replace diagram">
     <h2>Replace the unsaved diagram?</h2>
     <p>The ${index === 0 ? 'left' : 'right'} window has choices that are not saved as a view. Replacing it loses them.</p>
     <div class="actions"><button type="button" class="danger" ${dataAttrs({ action: 'confirmBowtieReplace' })}>Replace it</button>
-      <button type="button" ${dataAttrs({ action: 'cancelBowtieReplace' })}>Keep it</button></div></div></div>`;
+      <button type="button" ${dataAttrs({ action: 'cancelBowtieReplace' })} autofocus>Keep it</button></div></div></div>`;
 }
