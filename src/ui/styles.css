@@ -60,6 +60,8 @@ input, select, textarea { font: inherit; padding: 4px 8px; border: 1px solid var
 input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--p-accent); outline-offset: 1px; }
 textarea { width: 100%; }
 h1 { font-size: 22px; margin: 10px 0 14px; }
+/* Page titles in capitals, like the navigation; record titles, which people type, are left as typed. */
+.view h1 { text-transform: uppercase; letter-spacing: .06em; }
 h2 { font-size: 16px; margin: 22px 0 8px; }
 a { color: var(--p-link); }
 
@@ -72,9 +74,11 @@ a { color: var(--p-link); }
 .topbar .folder { opacity: .7; background: transparent; border-color: transparent; color: var(--p-bar-fg); }
 .topbar .folder:hover { opacity: 1; border-color: var(--p-bar-fg); }
 .topbar nav { display: flex; gap: 4px; }
-.topbar .nav { background: transparent; color: var(--p-bar-fg); border-color: transparent; }
+.topbar .nav { background: transparent; color: var(--p-bar-fg); border-color: transparent; text-transform: uppercase; letter-spacing: .06em; }
 .topbar .nav.on { border-color: var(--p-bar-fg); }
 .topbar .spacer { flex: 1; }
+/* Folder, save, theme and profile stay together, wrapping as one when the bar is narrow. */
+.topbar-end { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .topbar .profile { font-weight: 700; font-size: 17px; }
 .topbar .theme { background: transparent; color: var(--p-bar-fg); border-color: transparent; font-size: 17px; line-height: 1; padding: 4px 8px; text-align: center; }
 .save { min-width: 96px; font-weight: 700; text-align: center; }

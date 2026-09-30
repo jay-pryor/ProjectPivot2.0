@@ -62,3 +62,11 @@ test('the fulcrum\'s triangle is the HIGHCOM orange, in the app and the tab icon
   assert.match(FULCRUM_ICON, /<polygon[^>]*fill="#fa9a26"/);
   for (const svg of [FULCRUM_SVG, FULCRUM_ICON]) assert.doesNotMatch(svg, /3f7fa6/i);
 });
+
+test('the navigation and page titles read in capitals; what people type stays as typed', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../../src/ui/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.topbar \.nav \{[^}]*text-transform: uppercase;/);
+  assert.match(css, /\.view h1 \{[^}]*text-transform: uppercase;/);
+  assert.doesNotMatch(css, /\.doc-title \{[^}]*text-transform/, 'a record\'s own title is not changed');
+});

@@ -103,10 +103,12 @@ export function shell(state, body) {
     <span class="brand">${raw(FULCRUM_SVG)}PIVOT</span>
     <nav>${NAV.map(([view, label]) => html`<button type="button" class="nav${current === view ? ' on' : ''}" ${dataAttrs({ action: 'go', view })}>${view === 'home' && waiting ? `${label} (${waiting})` : label}</button>`)}</nav>
     <span class="spacer"></span>
-    <button type="button" class="folder" ${dataAttrs({ action: 'changeFolder' })} title="Choose a different data folder">Folder: ${state.folderName}</button>
-    ${save}
-    <button type="button" class="theme" ${dataAttrs({ action: 'setTheme', theme: other })} title="Switch to ${other} mode" aria-label="Switch to ${other} mode">${theme === 'dark' ? '☀' : '☾'}</button>
-    <span class="profile" title="Active profile">${profileName(state, state.profileId)}</span>
+    <span class="topbar-end">
+      <button type="button" class="folder" ${dataAttrs({ action: 'changeFolder' })} title="Choose a different data folder">Folder: ${state.folderName}</button>
+      ${save}
+      <button type="button" class="theme" ${dataAttrs({ action: 'setTheme', theme: other })} title="Switch to ${other} mode" aria-label="Switch to ${other} mode">${theme === 'dark' ? '☀' : '☾'}</button>
+      <span class="profile" title="Active profile">${profileName(state, state.profileId)}</span>
+    </span>
     ${state.saving ? html`<div class="save-progress" role="progressbar" aria-label="Saving"><span></span></div>` : ''}
   </header>
   <div class="messages">${messages(state)}</div>
