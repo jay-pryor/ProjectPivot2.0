@@ -3,6 +3,7 @@ import { ids, hazardLabel, referenceLabel } from './ids.js';
 import { ratingFor, BANDS } from './matrix.js';
 import { reviewState, addDays } from './time.js';
 import { waitingChanges } from './acks.js';
+import { RECEPTORS, RECEPTOR_WORD } from './receptors.js';
 import { tierRank } from './ops/controls.js';
 
 /** @typedef {import('./data.js').Data} Data */
@@ -105,13 +106,12 @@ export function ratingsOf(data, hazardId, platformId) {
     const a = assessmentOf(data, hazardId, platformId, stage, receptor);
     return a && (a.likelihood != null || a.consequence != null) ? { consequence: a.consequence, likelihood: a.likelihood } : null;
   };
-  return {
-    initial: { personnel: pair('initial', 'personnel'), environment: pair('initial', 'environment') },
-    residual: { personnel: pair('residual', 'personnel'), environment: pair('residual', 'environment') },
-  };
+  /** @param {string} stage */
+  const each = (stage) => /** @type {Record<'personnel' | 'environment' | 'capability', { consequence: any, likelihood: any } | null>} */ (Object.fromEntries(RECEPTORS.map((r) => [r, pair(stage, r)])));
+  return { initial: each('initial'), residual: each('residual') };
 }
 
-/** One receptor's initial and residual (personnel unless named): the shape callers had before assessments. @param {Data} data @param {string} hazardId @param {string} platformId @param {'personnel' | 'environment'} [receptor] */
+/** One receptor's initial and residual (personnel unless named): the shape callers had before assessments. @param {Data} data @param {string} hazardId @param {string} platformId @param {'personnel' | 'environment' | 'capability'} [receptor] */
 export function ratingOf(data, hazardId, platformId, receptor = 'personnel') {
   const r = ratingsOf(data, hazardId, platformId);
   return { initial: r.initial[receptor], residual: r.residual[receptor] };
@@ -130,10 +130,10 @@ export function worseBand(a, b) {
   return BANDS[Math.min(BANDS.indexOf(a), BANDS.indexOf(b))];
 }
 
-/** The worse residual band of a hazard on a platform, over personnel and environment. @param {Data} data @param {string} hazardId @param {string} platformId */
+/** The worst residual band of a hazard on a platform, over every receptor. @param {Data} data @param {string} hazardId @param {string} platformId */
 function worseResidual(data, hazardId, platformId) {
   const r = ratingsOf(data, hazardId, platformId).residual;
-  return worseBand(bandOf(r.personnel), bandOf(r.environment));
+  return RECEPTORS.map((x) => bandOf(r[/** @type {'personnel'} */ (x)])).reduce(worseBand);
 }
 
 /** @param {{ consequence: number | null, likelihood: string | null } | null | undefined} pair */
@@ -278,13 +278,13 @@ export function hazardRows(data) {
   return listHazards(data, 'any').map((hazard) => {
     const platforms = live(data, 'hazardPlatform').filter((l) => l.hazardId === hazard.id).map((l) => {
       const r = ratingsOf(data, hazard.id, l.platformId).residual;
-      const personnel = bandOf(r.personnel);
-      const environment = bandOf(r.environment);
-      return { platform: /** @type {Rec} */ (get(data, 'platform', l.platformId)), band: worseBand(personnel, environment), personnel, environment };
+      /** @type {Record<string, string>} */
+      const bands = Object.fromEntries(RECEPTORS.map((x) => [x, bandOf(r[/** @type {'personnel'} */ (x)])]));
+      return { platform: /** @type {Rec} */ (get(data, 'platform', l.platformId)), band: Object.values(bands).reduce(worseBand), ...bands };
     });
-    /** @param {'band' | 'personnel' | 'environment'} k */
-    const worstOf = (k) => (platforms.length ? BANDS[Math.min(...platforms.map((p) => BANDS.indexOf(p[k])))] : null);
-    return { hazard, platforms, worst: worstOf('band'), worstPersonnel: worstOf('personnel'), worstEnvironment: worstOf('environment') };
+    /** @param {string} k */
+    const worstOf = (k) => (platforms.length ? BANDS[Math.min(...platforms.map((p) => BANDS.indexOf(/** @type {any} */ (p)[k])))] : null);
+    return { hazard, platforms, worst: worstOf('band'), ...Object.fromEntries(RECEPTORS.map((x) => [`worst${RECEPTOR_WORD[/** @type {'personnel'} */ (x)]}`, worstOf(x)])) };
   });
 }
 
@@ -382,7 +382,7 @@ export function openItems(data, today, ownerId) {
       for (const c of ph.controls) if (c.state === 'recommended') out.awaiting.push({ platform, hazard: ph.hazard, control: c.control });
       const incomplete = (/** @type {any} */ pair) => !pair || pair.consequence == null || pair.likelihood == null;
       const missing = [];
-      for (const stage of ['initial', 'residual']) for (const receptor of ['personnel', 'environment']) {
+      for (const stage of ['initial', 'residual']) for (const receptor of RECEPTORS) {
         if (incomplete(ph.ratings[stage][receptor])) missing.push(`${stage} ${receptor}`);
       }
       if (missing.length) out.unrated.push({ platform, hazard: ph.hazard, missing });
@@ -446,10 +446,10 @@ export function upcomingReviews(data, today, ownerId, days = 90) {
 export function platformCards(data, today, ownerId) {
   return live(data, 'platform').filter((p) => ownedBy(p, ownerId)).map((platform) => {
     const hazards = platformHazards(data, platform.id);
-    /** @type {{ personnel: Record<string, number>, environment: Record<string, number> }} */
-    const bands = { personnel: {}, environment: {} };
+    /** @type {Record<string, Record<string, number>>} */
+    const bands = Object.fromEntries(RECEPTORS.map((r) => [r, {}]));
     for (const h of hazards) {
-      for (const receptor of /** @type {const} */ (['personnel', 'environment'])) {
+      for (const receptor of /** @type {('personnel' | 'environment' | 'capability')[]} */ ([...RECEPTORS])) {
         const b = bandOf(h.ratings.residual[receptor]);
         bands[receptor][b] = (bands[receptor][b] ?? 0) + 1;
       }

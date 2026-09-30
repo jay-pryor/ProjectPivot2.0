@@ -6,7 +6,7 @@ import { ids } from '../../src/core/ids.js';
 import { entries } from '../../src/core/history.js';
 import { checkRules } from '../../src/core/rules.js';
 import { mergeData } from '../../src/core/merge.js';
-import { RECEPTORS, STAGES, setAssessment, setRating, setRatingCell, setSfarp } from '../../src/core/ops/assessment.js';
+import { RECEPTORS, STAGES, setAssessment, setRating, setSfarp } from '../../src/core/ops/assessment.js';
 import { unlinkHazard, linkHazard } from '../../src/core/ops/platforms.js';
 import { assessmentOf, ratingsOf, ratingOf, sfarpOf, platformsReached, bandOf, platformHazards, hazardRows, openItems, platformCards, worseBand, filterHazards } from '../../src/core/queries.js';
 import { act, later, seed } from '../helpers.js';
@@ -16,7 +16,7 @@ const A = (d, stage, receptor) => assessmentOf(d, 'h1', 'p1', stage, receptor);
 
 test('four assessments per hazard on a platform, and SFARP, are records built from what they join', () => {
   assert.ok(KINDS.includes('assessment') && KINDS.includes('sfarp'));
-  assert.deepEqual([STAGES, RECEPTORS], [['initial', 'residual'], ['personnel', 'environment']]);
+  assert.deepEqual([STAGES, RECEPTORS], [['initial', 'residual'], ['personnel', 'environment', 'capability']]);
   assert.equal(ids.assessment('h1', 'p1', 'initial', 'personnel'), 'ra:h1:p1:initial:personnel');
   assert.equal(ids.sfarp('h1', 'p1'), 'sf:h1:p1');
 });
@@ -38,12 +38,12 @@ test('an assessment: likelihood and consequence with their justifications; each 
   assert.throws(() => setAssessment(d, act, { hazardId: 'h2', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihood: 'A' }), code('not-found'));
 });
 
-test('setRating sets both receptors unless one is named; setRatingCell likewise', () => {
+test('setRating sets every receptor unless one is named', () => {
   let d = setRating(seed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', consequence: 2, likelihood: 'C' });
-  assert.deepEqual(ratingsOf(d, 'h1', 'p1').residual, { personnel: { consequence: 2, likelihood: 'C' }, environment: { consequence: 2, likelihood: 'C' } });
+  assert.deepEqual(ratingsOf(d, 'h1', 'p1').residual, { personnel: { consequence: 2, likelihood: 'C' }, environment: { consequence: 2, likelihood: 'C' }, capability: { consequence: 2, likelihood: 'C' } });
   assert.equal(entries(d).at(-1).action, 'Set residual rating');
   assert.deepEqual(ratingOf(d, 'h1', 'p1'), { initial: null, residual: { consequence: 2, likelihood: 'C' } });
-  d = setRatingCell(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'environment', value: '4D' });
+  d = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'environment', consequence: 4, likelihood: 'D' });
   assert.deepEqual(ratingOf(d, 'h1', 'p1', 'environment').residual, { consequence: 4, likelihood: 'D' });
   assert.deepEqual(ratingOf(d, 'h1', 'p1').residual, { consequence: 2, likelihood: 'C' });
   assert.equal(entries(d).at(-1).action, 'Set residual environment risk');
@@ -68,7 +68,7 @@ test('unlinking clears assessments and SFARP; linking back starts empty; the rul
   assert.equal(d.records.sfarp['sf:h1:p1'].status, 'deleted');
   assert.deepEqual(checkRules(d), []);
   d = linkHazard(d, later, { hazardId: 'h1', platformId: 'p1' });
-  assert.deepEqual(ratingsOf(d, 'h1', 'p1').initial, { personnel: null, environment: null });
+  assert.deepEqual(ratingsOf(d, 'h1', 'p1').initial, { personnel: null, environment: null, capability: null });
   assert.deepEqual(sfarpOf(d, 'h1', 'p1').conclusion, '');
   const orphan = put(seed(), 'assessment', created(act, 'ra:h2:p1:initial:personnel', { hazardId: 'h2', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihood: 'A', consequence: 1, likelihoodWhy: '', consequenceWhy: '' }));
   assert.deepEqual(checkRules(orphan).map((v) => v.rule), ['assessment-without-platform-link']);
@@ -79,8 +79,8 @@ test('old ratings become four assessments on load, the same each time, and the r
   old.records.rating['rt:h1:p1'] = created(act, 'rt:h1:p1', { hazardId: 'h1', platformId: 'p1', initial: { consequence: 1, likelihood: 'B' }, residual: { consequence: 3, likelihood: 'D' } });
   const d = normalizeData(old);
   assert.deepEqual(ratingsOf(d, 'h1', 'p1'), {
-    initial: { personnel: { consequence: 1, likelihood: 'B' }, environment: { consequence: 1, likelihood: 'B' } },
-    residual: { personnel: { consequence: 3, likelihood: 'D' }, environment: { consequence: 3, likelihood: 'D' } },
+    initial: { personnel: { consequence: 1, likelihood: 'B' }, environment: { consequence: 1, likelihood: 'B' }, capability: null },
+    residual: { personnel: { consequence: 3, likelihood: 'D' }, environment: { consequence: 3, likelihood: 'D' }, capability: null },
   });
   const a = d.records.assessment['ra:h1:p1:initial:personnel'];
   assert.deepEqual([a.createdBy, a.createdAt, a.likelihoodWhy, a.consequenceWhy], [act.by, act.at, '', '']);
@@ -97,18 +97,18 @@ test('old ratings become four assessments on load, the same each time, and the r
 });
 
 test('derived views carry personnel and environment separately; one-value views take the worse', () => {
-  let d = setRatingCell(seed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'personnel', value: '4D' });
-  d = setRatingCell(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'environment', value: '2C' });
+  let d = setAssessment(seed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'personnel', consequence: 4, likelihood: 'D' });
+  d = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'environment', consequence: 2, likelihood: 'C' });
   assert.equal(worseBand('Low', 'Serious'), 'Serious');
-  assert.deepEqual(platformHazards(d, 'p1')[0].ratings.residual, { personnel: { consequence: 4, likelihood: 'D' }, environment: { consequence: 2, likelihood: 'C' } });
+  assert.deepEqual(platformHazards(d, 'p1')[0].ratings.residual, { personnel: { consequence: 4, likelihood: 'D' }, environment: { consequence: 2, likelihood: 'C' }, capability: null });
   const row = hazardRows(d).find((r) => r.hazard.id === 'h1');
   const p1 = row.platforms.find((p) => p.platform.id === 'p1');
   assert.deepEqual([p1.personnel, p1.environment, p1.band], ['Low', 'Serious', 'Serious']);
   assert.deepEqual([row.worstPersonnel, row.worstEnvironment, row.worst], ['Low', 'Serious', 'Serious']);
   assert.deepEqual(filterHazards(d, { band: 'Serious' }).map((r) => r.platform.id), ['p1']);
   const u = openItems(d, '2026-09-28', 'u1').unrated;
-  assert.deepEqual(u.map((x) => x.missing), [['initial personnel', 'initial environment']]);
+  assert.deepEqual(u.map((x) => x.missing), [['initial personnel', 'initial environment', 'initial capability', 'residual capability']]);
   const half = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihood: 'B' });
-  assert.deepEqual(openItems(half, '2026-09-28', 'u1').unrated[0].missing, ['initial personnel', 'initial environment'], 'a likelihood alone is not complete');
-  assert.deepEqual(platformCards(d, '2026-09-28', 'u1')[0].bands, { personnel: { Low: 1 }, environment: { Serious: 1 } });
+  assert.deepEqual(openItems(half, '2026-09-28', 'u1').unrated[0].missing, ['initial personnel', 'initial environment', 'initial capability', 'residual capability'], 'a likelihood alone is not complete');
+  assert.deepEqual(platformCards(d, '2026-09-28', 'u1')[0].bands, { personnel: { Low: 1 }, environment: { Serious: 1 }, capability: { Uncategorised: 1 } });
 });

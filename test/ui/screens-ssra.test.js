@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { hazardView } from '../../src/ui/screens/hazards.js';
 import { initialState } from '../../src/ui/controller.js';
 import { assignNumbers } from '../../src/core/ops/hazards.js';
-import { setAssessment, setRatingCell, setSfarp, setControlStatus } from '../../src/core/ops/assessment.js';
+import { setAssessment, setSfarp, setControlStatus } from '../../src/core/ops/assessment.js';
 import { setControlAnalysis, linkExistingControl, updateControl, retireControl } from '../../src/core/ops/controls.js';
 import { pickerView } from '../../src/ui/screens/picker.js';
 import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
@@ -14,8 +14,8 @@ const on = (tab) => ({ ...state, view: { name: 'hazard', id: 'h1', tab } });
 /** h1 on p1 (Alpha) and p2 (Bravo); Alpha residual: personnel 4D, environment 2C; an initial personnel likelihood with a justification; SFARP written. */
 function data(why = 'Seen twice a year') {
   let d = assignNumbers(seed());
-  d = setRatingCell(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'personnel', value: '4D' });
-  d = setRatingCell(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'environment', value: '2C' });
+  d = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'personnel', consequence: 4, likelihood: 'D' });
+  d = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'environment', consequence: 2, likelihood: 'C' });
   d = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihood: 'C', likelihoodWhy: why });
   return setSfarp(d, act, { hazardId: 'h1', platformId: 'p1', conclusion: 'Risk is SFARP' });
 }
@@ -85,7 +85,7 @@ test('dashboard cards show a personnel and an environment bar; unrated items nam
   const out = homeView(state, data()).toString();
   assert.match(out, /<span class="rx">Personnel<\/span><span class="riskbar">[\s\S]*?band-low/);
   assert.match(out, /<span class="rx">Environment<\/span><span class="riskbar">[\s\S]*?band-serious/);
-  assert.match(out, /no initial personnel, initial environment rating/);
+  assert.match(out, /no initial personnel, initial environment, initial capability, residual capability rating/);
 });
 
 test('SSRA edits on a platform tab show in the hazard page\'s History, naming the platform and assessment', () => {

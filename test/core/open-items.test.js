@@ -26,7 +26,7 @@ test('open items for one owner: changes to acknowledge, reviews, awaiting contro
     'u3 edited h1 on p1; u2 started a review on p2, not p1; u1\'s own edits never wait');
   assert.deepEqual(o.reviews.map((r) => [r.platform.id, r.state, r.due, r.open]), [['p1', 'overdue', '2026-09-01', false]]);
   assert.deepEqual(names(o.awaiting), ['p1:h1:c2']);
-  assert.deepEqual(names(o.unrated), ['p1:h1:residual personnel+residual environment']);
+  assert.deepEqual(names(o.unrated), ['p1:h1:residual personnel+residual environment+residual capability']);
 });
 
 test('the owner filter: another owner, and everyone', () => {
@@ -34,7 +34,7 @@ test('the owner filter: another owner, and everyone', () => {
   assert.deepEqual(u2.acks.map((a) => [a.platform.id, a.entry.action]), [['p2', 'Edit hazard']]);
   assert.deepEqual(u2.reviews.map((r) => [r.platform.id, r.state, r.open]), [['p2', 'none', true]], 'a review in progress, with no schedule');
   assert.deepEqual(names(u2.awaiting), ['p2:h1:c1', 'p2:h1:c2']);
-  assert.deepEqual(names(u2.unrated), ['p2:h1:initial personnel+initial environment+residual personnel+residual environment']);
+  assert.deepEqual(names(u2.unrated), ['p2:h1:initial personnel+initial environment+initial capability+residual personnel+residual environment+residual capability']);
   const all = openItems(data(), '2026-09-28', null);
   assert.equal(all.acks.length, 2);
   assert.equal(all.awaiting.length, 3);

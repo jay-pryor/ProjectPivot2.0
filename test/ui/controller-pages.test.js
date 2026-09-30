@@ -65,13 +65,14 @@ test('a control\'s state on a platform from one dropdown: confirmed, awaiting, o
   assert.equal(ruling().status, 'deleted');
 });
 
-test('ratings from a cell dropdown, and comments on history entries', async () => {
+test('an assessment from its likelihood and consequence, and comments on history entries', async () => {
   const c = await ready();
   await c.dispatch({ type: 'linkHazards', platformId: 'p1', hazardId: 'h1' });
-  await c.dispatch({ type: 'setRatingCell', hazardId: 'h1', platformId: 'p1', stage: 'initial', value: '1C' });
+  await c.dispatch({ type: 'setAssessment', hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihood: 'C' });
+  await c.dispatch({ type: 'setAssessment', hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', consequence: '1' });
   assert.deepEqual(ratingOf(W(c), 'h1', 'p1').initial, { consequence: 1, likelihood: 'C' });
   const entry = historyReaching(W(c), 'p1').at(-1);
-  assert.equal(entry.action, 'Set initial rating');
+  assert.equal(entry.action, 'Set initial personnel risk');
   await c.dispatch({ type: 'addComment', entryId: entry.id, text: 'From the 2025 survey' });
   assert.deepEqual(commentsOn(W(c), entry.id).map((x) => x.text), ['From the 2025 survey']);
   assert.ok(entries(W(c)).length > 0);

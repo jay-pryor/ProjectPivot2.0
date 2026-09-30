@@ -38,7 +38,7 @@ const EDITS = {
   createPlatform: platforms.createPlatform, updatePlatform: platforms.updatePlatform, setOwner: platforms.setOwner,
   retirePlatform: platforms.retirePlatform, deletePlatform: platforms.deletePlatform, linkHazard: platforms.linkHazard,
   unlinkHazard: platforms.unlinkHazard, setReportId: platforms.setReportId,
-  setControlStatus: assessment.setControlStatus, setRating: assessment.setRating, setRatingCell: assessment.setRatingCell,
+  setControlStatus: assessment.setControlStatus, setRating: assessment.setRating,
   setAssessment: assessment.setAssessment, setSfarp: assessment.setSfarp,
   setSchedule: reviews.setSchedule, startReview: reviews.startReview, markRow: reviews.markRow,
   setReviewOutcome: reviews.setReviewOutcome, setReviewNotes: reviews.setReviewNotes, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,

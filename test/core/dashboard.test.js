@@ -46,9 +46,9 @@ test('a card per platform: its review, the residual risk of its hazards, and wha
   assert.deepEqual(cards.map((c) => c.platform.id), ['p1', 'p3', 'p4']);
   const [p1, p3, p4] = cards;
   assert.deepEqual({ state: p1.state, due: p1.due, hazards: p1.hazards, awaiting: p1.awaiting, acks: p1.acks, bands: p1.bands },
-    { state: 'overdue', due: '2026-09-01', hazards: 1, awaiting: 1, acks: 1, bands: { personnel: { Serious: 1 }, environment: { Serious: 1 } } });
-  assert.deepEqual({ hazards: p3.hazards, awaiting: p3.awaiting, acks: p3.acks, bands: p3.bands }, { hazards: 1, awaiting: 0, acks: 0, bands: { personnel: { Uncategorised: 1 }, environment: { Uncategorised: 1 } } });
-  assert.deepEqual({ hazards: p4.hazards, bands: p4.bands, open: p4.open }, { hazards: 0, bands: { personnel: {}, environment: {} }, open: true });
+    { state: 'overdue', due: '2026-09-01', hazards: 1, awaiting: 1, acks: 1, bands: { personnel: { Serious: 1 }, environment: { Serious: 1 }, capability: { Serious: 1 } } });
+  assert.deepEqual({ hazards: p3.hazards, awaiting: p3.awaiting, acks: p3.acks, bands: p3.bands }, { hazards: 1, awaiting: 0, acks: 0, bands: { personnel: { Uncategorised: 1 }, environment: { Uncategorised: 1 }, capability: { Uncategorised: 1 } } });
+  assert.deepEqual({ hazards: p4.hazards, bands: p4.bands, open: p4.open }, { hazards: 0, bands: { personnel: {}, environment: {}, capability: {} }, open: true });
   assert.deepEqual(platformCards(data(), today, null).map((c) => c.platform.id), ['p1', 'p2', 'p3', 'p4']);
 });
 
@@ -56,5 +56,5 @@ test('needs attention: overdue reviews first, then changes (newest first), then 
   const items = attentionItems(openItems(data(), today, null));
   assert.deepEqual(items.map((i) => i.type), ['review', 'change', 'change', 'control', 'control', 'control', 'rating', 'rating', 'rating']);
   assert.equal(items[0].platform.id, 'p1');
-  assert.deepEqual(items.filter((i) => i.type === 'rating').map((i) => [i.platform.id, i.missing]), [['p1', ['initial personnel', 'initial environment']], ['p2', ['initial personnel', 'initial environment', 'residual personnel', 'residual environment']], ['p3', ['initial personnel', 'initial environment', 'residual personnel', 'residual environment']]]);
+  assert.deepEqual(items.filter((i) => i.type === 'rating').map((i) => [i.platform.id, i.missing]), [['p1', ['initial personnel', 'initial environment', 'initial capability']], ['p2', ['initial personnel', 'initial environment', 'initial capability', 'residual personnel', 'residual environment', 'residual capability']], ['p3', ['initial personnel', 'initial environment', 'initial capability', 'residual personnel', 'residual environment', 'residual capability']]]);
 });

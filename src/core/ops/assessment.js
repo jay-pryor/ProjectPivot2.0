@@ -3,6 +3,7 @@ import { ids } from '../ids.js';
 import { get, created, changed, need, needText } from '../data.js';
 import { commit } from '../apply.js';
 import { ratingFor } from '../matrix.js';
+import { RECEPTORS } from '../receptors.js';
 
 /** @typedef {import('../data.js').Data} Data */
 /** @typedef {import('../data.js').Act} Act */
@@ -44,7 +45,7 @@ export const excludeControl = (data, act, t) => setControlStatus(data, act, { ..
 export const resetControl = (data, act, t) => setControlStatus(data, act, { ...t, status: 'recommended' });
 
 export const STAGES = Object.freeze(['initial', 'residual']);
-export const RECEPTORS = Object.freeze(['personnel', 'environment']);
+export { RECEPTORS };
 
 /** @param {unknown} v */
 const blank = (v) => v === '' || v == null;
@@ -60,7 +61,7 @@ function readPair(consequence, likelihood) {
 /** @param {string} stage @param {string} receptor */
 function needScope(stage, receptor) {
   if (!STAGES.includes(stage)) throw new PivotError('rating.stage', 'A risk assessment is initial or residual.');
-  if (!RECEPTORS.includes(receptor)) throw new PivotError('rating.receptor', 'A risk assessment is for personnel or the environment.');
+  if (!RECEPTORS.includes(receptor)) throw new PivotError('rating.receptor', 'A risk assessment is for personnel, the environment or capability.');
 }
 
 /**
@@ -103,19 +104,6 @@ export function setRating(data, act, { hazardId, platformId, stage, consequence,
   const recs = receptors.map((r) => ({ kind: 'assessment', rec: assessmentRec(data, act, { hazardId, platformId, stage, receptor: r, consequence, likelihood }) }));
   const action = receptor ? `Set ${stage} ${receptor} risk` : stage === 'initial' ? 'Set initial rating' : 'Set residual rating';
   return commit(data, act, action, recs);
-}
-
-/**
- * A stage's rating from a matrix cell as a single dropdown gives it: `2C`, or blank.
- * @param {Data} data @param {Act} act
- * @param {{ hazardId: string, platformId: string, stage: string, receptor?: string, value: string }} args
- */
-export function setRatingCell(data, act, { hazardId, platformId, stage, receptor, value }) {
-  const v = String(value ?? '').trim();
-  if (v === '') return setRating(data, act, { hazardId, platformId, stage, receptor, consequence: null, likelihood: null });
-  const m = /^([1-5])([A-G])$/.exec(v);
-  if (!m) throw new PivotError('rating.cell', `${v} is not a cell of the risk matrix.`);
-  return setRating(data, act, { hazardId, platformId, stage, receptor, consequence: Number(m[1]), likelihood: m[2] });
 }
 
 /**
