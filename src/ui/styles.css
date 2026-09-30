@@ -63,7 +63,10 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 textarea { width: 100%; }
 h1 { font-size: 22px; margin: 10px 0 14px; }
 /* Page titles in capitals, like the navigation; record titles, which people type, are left as typed. */
-.view h1 { text-transform: uppercase; letter-spacing: .06em; }
+.view h1 { text-transform: uppercase; letter-spacing: .1em; font-weight: 800; font-size: 24px; display: inline-flex; align-items: center; gap: 12px; position: relative; padding-bottom: 6px; }
+/* A solid orange block before each page title, and a hairline fading out under it, as under HIGHCOM on the splash. */
+.view h1::before { content: ""; width: 8px; height: 1.05em; background: var(--p-accent); flex: none; }
+.view h1::after { content: ""; position: absolute; left: 20px; right: -48px; bottom: 0; height: 2px; background: linear-gradient(to right, var(--p-accent), transparent); }
 h2 { font-size: 16px; margin: 22px 0 8px; }
 a { color: var(--p-link); }
 
@@ -76,8 +79,13 @@ a { color: var(--p-link); }
 .topbar .folder { opacity: .7; background: transparent; border-color: transparent; color: var(--p-bar-fg); }
 .topbar .folder:hover { opacity: 1; border-color: var(--p-bar-fg); }
 .topbar nav { display: flex; gap: 4px; }
-.topbar .nav { background: transparent; color: var(--p-bar-fg); border-color: transparent; text-transform: uppercase; letter-spacing: .06em; }
-.topbar .nav.on { border-color: var(--p-bar-fg); }
+.topbar .nav { position: relative; background: transparent; color: var(--p-bar-fg); border: 0; border-radius: 0; padding: 8px 12px 9px; text-transform: uppercase; letter-spacing: .1em; font-weight: 600; opacity: .72; transition: opacity .15s, background-color .15s; }
+/* A square orange bar under each tab: it grows in on hover and stays full under the current one. */
+.topbar .nav::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: var(--p-accent); transform: scaleX(0); transform-origin: left; transition: transform .18s ease-out; }
+.topbar .nav:hover, .topbar .nav:focus-visible { opacity: 1; }
+.topbar .nav:hover::after { transform: scaleX(.55); }
+.topbar .nav.on { opacity: 1; background: color-mix(in srgb, var(--p-accent) 14%, transparent); }
+.topbar .nav.on::after { transform: scaleX(1); }
 .topbar .spacer { flex: 1; }
 /* Folder, save, theme and profile stay together, wrapping as one when the bar is narrow. */
 .topbar-end { display: flex; align-items: center; gap: 12px; margin-left: auto; }
