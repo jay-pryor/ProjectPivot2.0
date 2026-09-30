@@ -84,10 +84,10 @@ export function messages(state) {
       <button type="button" class="link" ${dataAttrs({ action: 'dismissMessage' })}>Dismiss</button></div>` : ''}${u ? html`<div class="msg msg-info" role="status"><strong>${u.text}</strong> <button type="button" ${dataAttrs({ action: 'undoDelete' })}>Undo</button></div>` : ''}${warnings.map((/** @type {string} */ w) => html`<div class="msg msg-warning" role="status">${w}</div>`)}`;
 }
 
-const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['references', 'References'], ['phases', 'Phases'], ['reports', 'Reports'], ['backups', 'Backups']];
+const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['bowties', 'Bow-ties'], ['references', 'References'], ['phases', 'Phases'], ['reports', 'Reports'], ['backups', 'Backups']];
 
 /** The top-bar section each view belongs to. */
-const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', references: 'references', reference: 'references', phases: 'phases', reports: 'reports', backups: 'backups' };
+const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', bowties: 'bowties', references: 'references', reference: 'references', phases: 'phases', reports: 'reports', backups: 'backups' };
 
 /** @param {any} state @param {import('../html.js').Raw} body */
 export function shell(state, body) {
