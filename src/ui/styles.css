@@ -348,3 +348,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--p-accent); }
 /* A cell that edits on one click: looks like its text, left-aligned, full width. */
 .cell-button { display: block; width: 100%; min-height: 1.6em; text-align: left; background: transparent; border: 1px solid transparent; padding: 2px 4px; color: inherit; font: inherit; }
 .cell-button:hover { border-color: var(--p-line); }
+
+/* Initial risk panels carry a faint red, residual a faint blue, so the two read apart at a glance. */
+.risk-initial .risk-panel { background: color-mix(in srgb, #d64541 7%, var(--p-surface)); border-left: 3px solid color-mix(in srgb, #d64541 55%, transparent); }
+.risk-residual .risk-panel { background: color-mix(in srgb, #3b82c4 13%, var(--p-surface)); border-left: 3px solid color-mix(in srgb, #3b82c4 75%, transparent); }

@@ -133,7 +133,7 @@ export function riskPanels(state, data, h, platformId, stage) {
       <div class="risk-level">Assessed level ${levelTag(ratings[stage][receptor])}</div>
     </div>`;
   };
-  return html`<div class="risk-panels">${RECEPTORS.map((r) => panel(/** @type {'personnel'} */ (r)))}</div>`;
+  return html`<div class="risk-panels risk-${stage}">${RECEPTORS.map((r) => panel(/** @type {'personnel'} */ (r)))}</div>`;
 }
 
 const SHARED = html`<span class="shared-mark">Shared across platforms</span>`;

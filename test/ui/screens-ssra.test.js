@@ -257,3 +257,13 @@ test('the safety reports table shows each report\'s description', () => {
   const out = hazardView(on('p:p1'), reported(), 'h1').toString();
   assert.match(out, /data-table="safetyReports"[\s\S]*?<th data-col="description"[\s\S]*?Blade tip hit a stand/);
 });
+
+test('initial risk panels are tinted red and residual ones blue, to tell them apart', async () => {
+  const fs = await import('node:fs');
+  const out = hazardView(on('p:p1'), data(), 'h1').toString();
+  assert.match(out, /<h2>Initial risk<\/h2><div class="risk-panels risk-initial">/);
+  assert.match(out, /<h2>Residual risk<\/h2><div class="risk-panels risk-residual">/);
+  const css = fs.readFileSync(new URL('../../src/ui/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.risk-initial \.risk-panel \{[^}]*background: color-mix\(in srgb, #d64541 [0-9]+%, var\(--p-surface\)\)/);
+  assert.match(css, /\.risk-residual \.risk-panel \{[^}]*background: color-mix\(in srgb, #3b82c4 [0-9]+%, var\(--p-surface\)\)/);
+});
