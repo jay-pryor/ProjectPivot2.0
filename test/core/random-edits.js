@@ -5,7 +5,7 @@ import { createPlatform, linkHazard, unlinkHazard, setReportId, retirePlatform }
 import { confirmControl, excludeControl, resetControl, setControlStatus, setRating, setAssessment, setSfarp } from '../../src/core/ops/assessment.js';
 import { createPhase, linkPhase, unlinkPhase, deletePhase } from '../../src/core/ops/phases.js';
 import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
-import { setSchedule, startReview, markRow, setReviewOutcome, completeReview, abandonReview } from '../../src/core/ops/reviews.js';
+import { setSchedule, startReview, markRow, setReviewOutcome, setReviewNotes, completeReview, abandonReview } from '../../src/core/ops/reviews.js';
 
 /** A small, seeded pseudo-random generator (mulberry32), so a failure can be replayed. @param {number} seed */
 export function prng(seed) {
@@ -71,6 +71,7 @@ export function randomEdit(d, rand, act) {
     () => startReview(d, act, { platformId: pick(rand, pl) }),
     () => markRow(d, act, { reviewId: pick(rand, rv), hazardId: pick(rand, hz), reviewed: rand() < 0.7, note: `Note ${n()}` }),
     () => setReviewOutcome(d, act, { reviewId: pick(rand, rv), outcome: `Outcome ${n()}` }),
+    () => setReviewNotes(d, act, { reviewId: pick(rand, rv), notes: `Notes ${n()}` }),
     () => completeReview(d, act, { reviewId: pick(rand, rv) }),
     () => abandonReview(d, act, { reviewId: pick(rand, rv) }),
   ];

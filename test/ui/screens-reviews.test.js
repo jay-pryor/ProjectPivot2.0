@@ -172,3 +172,19 @@ test('checkboxes are the accent orange', async () => {
   const css = fs.readFileSync(new URL('../../src/ui/styles.css', import.meta.url), 'utf8');
   assert.match(css, /input\[type="checkbox"\], input\[type="radio"\] \{ accent-color: var\(--p-accent\); \}/);
 });
+
+test('a review has additional notes beside its outcome, kept once completed', async () => {
+  const { setReviewNotes, REVIEW_DETAIL_ACTIONS } = await import('../../src/core/ops/reviews.js');
+  let d = startReview(data(), act, { id: 'r1', platformId: 'p1' });
+  d = setReviewNotes(d, act, { reviewId: 'r1', notes: '  Spares list <b>out of date</b>  ' });
+  assert.equal(d.records.review.r1.notes, 'Spares list <b>out of date</b>');
+  assert.equal(entries(d).at(-1).action, 'Set review notes');
+  assert.ok(REVIEW_DETAIL_ACTIONS.includes('Set review notes'), 'kept out of the platform History, like the outcome');
+  const open = platformView(onTab(), d, 'p1').toString();
+  assert.match(open, /name="outcome"[\s\S]*?<label class="outcome">Additional notes\s*<textarea name="notes"[^>]*data-change="setReviewNotes" data-review-id="r1">Spares list &lt;b&gt;out of date&lt;\/b&gt;<\/textarea>/);
+  d = setReviewOutcome(d, act, { reviewId: 'r1', outcome: 'All good' });
+  d = completeReview(d, act, { reviewId: 'r1' });
+  assert.throws(() => setReviewNotes(d, act, { reviewId: 'r1', notes: 'late' }));
+  const done = platformView(onTab({ reviewId: 'r1' }), d, 'p1').toString();
+  assert.match(done, /All good[\s\S]*?<h3>Additional notes<\/h3><p class="outcome-text">Spares list &lt;b&gt;out of date&lt;\/b&gt;<\/p>/);
+});

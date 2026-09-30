@@ -10,7 +10,7 @@ import { entries } from './history.js';
  * completion do wait) and producing a report. Written out rather than imported from
  * ops/reviews.js, which would make an import cycle through queries.js.
  */
-export const NOT_ACKNOWLEDGED = Object.freeze(['Mark review row', 'Set review outcome', 'Produce report']);
+export const NOT_ACKNOWLEDGED = Object.freeze(['Mark review row', 'Set review outcome', 'Set review notes', 'Produce report']);
 
 /** @param {Data} data @param {any} entry @returns {Data} */
 const append = (data, entry) => ({ ...data, history: { ...data.history, [entry.id]: entry } });

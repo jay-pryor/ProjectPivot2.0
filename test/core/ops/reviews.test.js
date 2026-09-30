@@ -55,7 +55,7 @@ test('ticking and noting a hazard, which must be on the platform', () => {
   assert.throws(() => markRow(d, later, { reviewId: 'r1', hazardId: 'h2', reviewed: true }), code('review.hazard'), 'h2 is on no platform');
   const linked = linkHazard(d, later, { hazardId: 'h2', platformId: 'p1' });
   assert.doesNotThrow(() => markRow(linked, later, { reviewId: 'r1', hazardId: 'h2', reviewed: true }), 'a hazard linked during the review can be ticked');
-  assert.deepEqual(REVIEW_DETAIL_ACTIONS, ['Mark review row', 'Set review outcome']);
+  assert.deepEqual(REVIEW_DETAIL_ACTIONS, ['Mark review row', 'Set review outcome', 'Set review notes']);
 });
 
 test('completing moves the due date on from the old due date by one period, and records the review', () => {

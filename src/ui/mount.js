@@ -104,10 +104,26 @@ export function mount(root, controller) {
   let designerRevision = 0;
   /** @type {Set<string>} */
   const submitting = new Set();
+  // Where focus is heading: pressing on a field, or tabbing to one. Leaving a box applies its edit
+  // and redraws before focus lands, so the redraw is told where it was going.
+  /** @type {Element | null} */
+  let moving = null;
+  const fieldAt = (/** @type {EventTarget | null} */ t) => (/** @type {Element | null} */ (t))?.closest?.('input, textarea, select') ?? null;
+  appEl.addEventListener('pointerdown', (e) => { moving = fieldAt(e.target); }, true);
+  appEl.addEventListener('focusout', (e) => { moving = fieldAt(/** @type {FocusEvent} */ (e).relatedTarget) ?? moving; }, true);
+  appEl.addEventListener('focusin', () => { moving = null; }, true);
+  // Tab leaves a box (applying it) before the browser says where focus goes: work it out here.
+  appEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const all = /** @type {HTMLElement[]} */ ([...appEl.querySelectorAll('input, textarea, select, button, a[href], [tabindex]:not([tabindex="-1"])')])
+      .filter((x) => !(/** @type {any} */ (x).disabled) && x.offsetParent !== null);
+    const i = all.indexOf(/** @type {HTMLElement} */ (e.target));
+    moving = i < 0 ? null : all[i + (e.shiftKey ? -1 : 1)] ?? null;
+  }, true);
   /** @param {any} state */
   const paint = (state) => {
     document.documentElement.dataset.theme = themeOf(state);
-    const drafts = captureDrafts(appEl, submitting);
+    const drafts = captureDrafts(appEl, submitting, moving);
     appEl.innerHTML = renderApp(state);
     restoreDrafts(appEl, drafts);
     // A box just opened in place (edit, add, a picker's search) takes the cursor.

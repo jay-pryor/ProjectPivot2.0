@@ -41,7 +41,7 @@ const EDITS = {
   setControlStatus: assessment.setControlStatus, setRating: assessment.setRating, setRatingCell: assessment.setRatingCell,
   setAssessment: assessment.setAssessment, setSfarp: assessment.setSfarp,
   setSchedule: reviews.setSchedule, startReview: reviews.startReview, markRow: reviews.markRow,
-  setReviewOutcome: reviews.setReviewOutcome, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,
+  setReviewOutcome: reviews.setReviewOutcome, setReviewNotes: reviews.setReviewNotes, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
   retireReference: references.retireReference, deleteReference: references.deleteReference,

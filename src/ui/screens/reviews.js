@@ -81,6 +81,8 @@ function openReviewBlock(state, data, p, review) {
     })}</section>
     <label class="outcome">Outcome
       <textarea name="outcome" rows="3" placeholder="What the review found, and anything to follow up…" ${dataAttrs({ change: 'setReviewOutcome', 'review-id': review.id })}>${review.outcome}</textarea></label>
+    <label class="outcome">Additional notes
+      <textarea name="notes" rows="4" placeholder="Anything else worth keeping with this review…" ${dataAttrs({ change: 'setReviewNotes', 'review-id': review.id })}>${review.notes ?? ''}</textarea></label>
     <div class="actions">
       <button type="button" class="primary" ${dataAttrs({ action: 'completeReview', 'review-id': review.id })}${p.reviewMonths ? '' : raw(' disabled')}>${unticked ? `Complete — ${unticked} not ticked` : 'Complete review'}</button>
       ${confirmButton('Abandon…', 'Abandon this review, discarding its ticks and notes', dataAttrs({ action: 'abandonReview', 'review-id': review.id }))}
@@ -93,6 +95,7 @@ function completedReview(state, data, p, review) {
   return html`<p>${go('← All reviews', 'platform', { id: p.id, tab: 'reviews' })}</p>
     <p class="doc-meta">Completed by ${profileName(state, review.completedBy)}, ${when(review.completedAt)}. It cleared the review due ${day(review.dueBefore)}; the next was then due ${day(review.dueAfter)}.</p>
     ${review.outcome ? html`<p class="outcome-text">${review.outcome}</p>` : ''}
+    ${review.notes ? html`<h3>Additional notes</h3><p class="outcome-text">${review.notes}</p>` : ''}
     <section class="block">${dataTable(state, {
       id: 'reviewRecord',
       rowKey: (i) => i.hazard.id,

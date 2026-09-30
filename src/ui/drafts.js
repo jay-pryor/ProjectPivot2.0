@@ -42,12 +42,27 @@ function edited(el) {
 }
 
 /**
+ * The field that should have the cursor after a redraw: the focused one, or, when the redraw lands
+ * while focus is moving from one field to the next (leaving a box applies its edit and redraws),
+ * the field it was moving to. Without this, clicking from one text box into the next loses the
+ * second, and what is typed goes nowhere.
+ * @template T
+ * @param {T} active document.activeElement @param {{ contains: (el: any) => boolean }} root
+ * @param {T | null} moving the field focus was last seen heading for
+ */
+export function focusTarget(active, root, moving) {
+  if (active && root.contains(active)) return active;
+  return moving && root.contains(moving) ? moving : null;
+}
+
+/**
  * Note every edited, unsubmitted field and where the cursor is.
  * @param {HTMLElement} root
  * @param {Set<string>} submitting form identities (formIdentity) being submitted:
  *   their fields are meant to clear, so they are not kept
+ * @param {Element | null} [moving] the field focus is on its way to, if a redraw lands mid-move
  */
-export function captureDrafts(root, submitting) {
+export function captureDrafts(root, submitting, moving = null) {
   /** @type {Map<string, string>} */
   const values = new Map();
   for (const el of /** @type {NodeListOf<HTMLInputElement>} */ (root.querySelectorAll(FIELDS))) {
@@ -55,8 +70,8 @@ export function captureDrafts(root, submitting) {
     if (!key || submitting.has(key.slice(0, key.lastIndexOf('|'))) || !edited(el)) continue;
     values.set(key, el.value);
   }
-  const active = /** @type {HTMLInputElement | null} */ (document.activeElement);
-  const focus = active && root.contains(active) ? { key: keyOf(active), start: active.selectionStart, end: active.selectionEnd } : null;
+  const active = /** @type {HTMLInputElement | null} */ (focusTarget(document.activeElement, root, moving));
+  const focus = active ? { key: keyOf(active), start: active.selectionStart, end: active.selectionEnd } : null;
   return { values, focus };
 }
 

@@ -12,7 +12,7 @@ import { openReview } from '../queries.js';
 export const MAX_REVIEW_MONTHS = 120;
 
 /** Row-level review actions: kept in the history, but left out of the platform's History tab. */
-export const REVIEW_DETAIL_ACTIONS = Object.freeze(['Mark review row', 'Set review outcome']);
+export const REVIEW_DETAIL_ACTIONS = Object.freeze(['Mark review row', 'Set review outcome', 'Set review notes']);
 
 /** @param {unknown} v */
 const blank = (v) => v === undefined || v === null || v === '';
@@ -46,7 +46,7 @@ export function startReview(data, act, { id = newId(), platformId }) {
   const p = need(data, 'platform', platformId);
   if (p.status !== 'live') throw new PivotError('platform.retired', `${p.name} is retired, so it cannot be reviewed.`);
   if (openReview(data, platformId)) throw new PivotError('review.open', `${p.name} already has a review in progress.`);
-  const rec = created(act, id, { platformId, state: 'open', outcome: '', dueBefore: null, dueAfter: null, completedBy: null, completedAt: null });
+  const rec = created(act, id, { platformId, state: 'open', outcome: '', notes: '', dueBefore: null, dueAfter: null, completedBy: null, completedAt: null });
   return commit(data, act, 'Start review', [{ kind: 'review', rec }]);
 }
 
@@ -74,6 +74,12 @@ export function markRow(data, act, { reviewId, hazardId, reviewed, note }) {
 export function setReviewOutcome(data, act, { reviewId, outcome }) {
   const r = needOpen(data, reviewId);
   return commit(data, act, 'Set review outcome', [{ kind: 'review', rec: changed(r, act, { outcome: String(outcome ?? '').trim() }) }]);
+}
+
+/** Anything else worth keeping with the review, beside its outcome. @param {Data} data @param {Act} act @param {{ reviewId: string, notes: string }} args */
+export function setReviewNotes(data, act, { reviewId, notes }) {
+  const r = needOpen(data, reviewId);
+  return commit(data, act, 'Set review notes', [{ kind: 'review', rec: changed(r, act, { notes: String(notes ?? '').trim() }) }]);
 }
 
 /**
