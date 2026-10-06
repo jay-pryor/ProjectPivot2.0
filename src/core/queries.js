@@ -19,12 +19,62 @@ export function platformsOfHazard(data, hazardId) {
   return sortedUnique(live(data, 'hazardPlatform').filter((l) => l.hazardId === hazardId).map((l) => l.platformId));
 }
 
+/** Causal factors and consequences in the order they were added; those from before the order was kept come first. @param {Rec} a @param {Rec} b */
+export const byAdded = (a, b) => (a.seq ?? 0) - (b.seq ?? 0) || String(a.createdAt).localeCompare(String(b.createdAt)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/** A hazard's live causal factors or consequences, in the order they were added. @param {Data} data @param {'causalFactor' | 'consequence'} kind @param {string} hazardId */
+export function childrenOf(data, kind, hazardId) {
+  return live(data, kind).filter((r) => r.hazardId === hazardId).sort(byAdded);
+}
+
+/**
+ * A hazard's causal factors on one platform: those for every platform and those for that one
+ * alone, in the order they were added. With no platform, every one of the hazard's.
+ * @param {Data} data @param {string} hazardId @param {string | null} [platformId]
+ */
+export function causalFactorsOn(data, hazardId, platformId = null) {
+  return childrenOf(data, 'causalFactor', hazardId).filter((r) => !platformId || !r.platformId || r.platformId === platformId);
+}
+
+/**
+ * A hazard's systems or elements, or its affected groups, on one platform, in the order they
+ * were added.
+ * @param {Data} data @param {'systemElement' | 'affectedGroup'} kind @param {string} hazardId @param {string} platformId
+ */
+export function platformListOn(data, kind, hazardId, platformId) {
+  return live(data, kind).filter((r) => r.hazardId === hazardId && r.platformId === platformId).sort(byAdded);
+}
+
+/**
+ * Every system or element (or affected group) already given, on any hazard and platform, once
+ * each ignoring case, in order: what the box suggests as you type.
+ * @param {Data} data @param {'systemElement' | 'affectedGroup'} kind @returns {string[]}
+ */
+export function platformListEntries(data, kind) {
+  /** @type {Map<string, string>} */
+  const seen = new Map();
+  for (const r of live(data, kind)) {
+    const t = String(r.text ?? '').trim();
+    if (t && !seen.has(t.toLowerCase())) seen.set(t.toLowerCase(), t);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
+}
+
+/** The platforms a causal factor is on: its own, or every platform of its hazard. @param {Data} data @param {Record<string, any>} r */
+function causalFactorPlatforms(data, r) {
+  const on = platformsOfHazard(data, r.hazardId);
+  return r.platformId ? on.filter((p) => p === r.platformId) : on;
+}
+
 /** The platforms a reference link's target is on. @param {Data} data @param {string} kind @param {string} id @returns {string[]} */
 function targetPlatforms(data, kind, id) {
   switch (kind) {
     case 'platform': return [id];
     case 'hazard': return platformsOfHazard(data, id);
-    case 'causalFactor':
+    case 'causalFactor': {
+      const r = get(data, kind, id);
+      return r ? causalFactorPlatforms(data, r) : [];
+    }
     case 'consequence': {
       const r = get(data, kind, id);
       return r ? platformsOfHazard(data, r.hazardId) : [];
@@ -43,7 +93,7 @@ function targetPlatforms(data, kind, id) {
 export function platformsReached(data, kind, rec) {
   switch (kind) {
     case 'hazard': return platformsOfHazard(data, rec.id);
-    case 'causalFactor':
+    case 'causalFactor': return causalFactorPlatforms(data, rec);
     case 'consequence':
     case 'hazardControl': return platformsOfHazard(data, rec.hazardId);
     case 'control':
@@ -60,6 +110,8 @@ export function platformsReached(data, kind, rec) {
     case 'existingControl':
     case 'safetyReport':
     case 'controlPlatform':
+    case 'systemElement':
+    case 'affectedGroup':
     case 'report': return [rec.platformId];
     case 'review': return [rec.platformId];
     case 'hazardPhase': return platformsOfHazard(data, rec.hazardId);
@@ -175,8 +227,8 @@ export function hazardDetail(data, hazardId) {
   if (!hazard) return null;
   return {
     hazard,
-    causalFactors: live(data, 'causalFactor').filter((r) => r.hazardId === hazardId),
-    consequences: live(data, 'consequence').filter((r) => r.hazardId === hazardId),
+    causalFactors: childrenOf(data, 'causalFactor', hazardId),
+    consequences: childrenOf(data, 'consequence', hazardId),
     controls: live(data, 'hazardControl').filter((l) => l.hazardId === hazardId)
       .map((link) => ({ link, control: /** @type {Rec} */ (get(data, 'control', link.controlId)) })),
     platforms: live(data, 'hazardPlatform').filter((l) => l.hazardId === hazardId)
@@ -266,6 +318,22 @@ export function filterHazards(data, f = {}) {
     }
   }
   return rows;
+}
+
+/**
+ * Every origin given to an existing control still in the library, once each (ignoring case, the
+ * first spelling kept), in order: what the Origin box suggests as you type.
+ * @param {Data} data @returns {string[]}
+ */
+export function controlOrigins(data) {
+  /** @type {Map<string, string>} */
+  const seen = new Map();
+  for (const c of Object.values(data.records.control ?? {})) {
+    const o = String(c.origin ?? '').trim();
+    if (c.category !== 'existing' || c.status === 'deleted' || !o || seen.has(o.toLowerCase())) continue;
+    seen.set(o.toLowerCase(), o);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
 }
 
 /**
@@ -381,22 +449,26 @@ export function reviewDueList(data, today) {
 
 /**
  * What is left to do on the live platforms of one owner (every owner when `ownerId` is null):
- * changes to acknowledge, reviews due or in progress, controls awaiting a decision, and
- * hazards missing a rating.
+ * changes to acknowledge, reviews due or in progress (and platforms with no review schedule),
+ * controls awaiting a decision, controls we own there and have planned, and hazards missing a
+ * rating.
  * @param {Data} data @param {string} today @param {string | null} ownerId
  */
 export function openItems(data, today, ownerId) {
-  /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string[] }[] }} */
-  const out = { acks: [], reviews: [], awaiting: [], unrated: [] };
+  /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], toImplement: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string[] }[] }} */
+  const out = { acks: [], reviews: [], awaiting: [], toImplement: [], unrated: [] };
   for (const platform of live(data, 'platform').filter((p) => ownerId == null || p.ownerId === ownerId)) {
     for (const entry of waitingChanges(data, platform.id)) out.acks.push({ entry, platform });
     const state = reviewState(platform, today);
     const open = Boolean(openReview(data, platform.id));
-    if (state === 'overdue' || state === 'dueSoon' || open) {
+    if (state === 'overdue' || state === 'dueSoon' || state === 'none' || open) {
       out.reviews.push({ platform, state, due: platform.reviewDue ?? null, lastReviewed: lastReviewed(data, platform.id), open });
     }
     for (const ph of platformHazards(data, platform.id)) {
-      for (const c of ph.controls) if (c.state === 'recommended') out.awaiting.push({ platform, hazard: ph.hazard, control: c.control });
+      for (const c of ph.controls) {
+        if (c.state === 'recommended') out.awaiting.push({ platform, hazard: ph.hazard, control: c.control });
+        if (c.state === 'planned' && controlOwner(data, c.control.id, platform.id)?.owner === 'us') out.toImplement.push({ platform, hazard: ph.hazard, control: c.control });
+      }
       const incomplete = (/** @type {any} */ pair) => !pair || pair.consequence == null || pair.likelihood == null;
       const missing = [];
       for (const stage of ['initial', 'residual']) for (const receptor of RECEPTORS) {
@@ -424,7 +496,7 @@ export function referencesFor(data, targetKind, targetId) {
 export function hazardReferences(data, hazardId) {
   const out = referencesFor(data, 'hazard', hazardId).map((x) => ({ ...x, forText: '' }));
   for (const [kind, word] of [['causalFactor', 'Causal factor'], ['consequence', 'Consequence']]) {
-    for (const r of live(data, kind).filter((x) => x.hazardId === hazardId)) {
+    for (const r of childrenOf(data, /** @type {'causalFactor'} */ (kind), hazardId)) {
       for (const x of referencesFor(data, kind, r.id)) out.push({ ...x, forText: `${word}: ${r.text}` });
     }
   }
@@ -482,7 +554,8 @@ export function platformCards(data, today, ownerId) {
 
 /**
  * The open items in order of urgency: overdue reviews (longest overdue first), changes to
- * acknowledge (newest first), controls awaiting a decision, then hazards missing a rating.
+ * acknowledge (newest first), controls awaiting a decision, controls we have planned, hazards
+ * missing a rating, then platforms with no review schedule.
  * @param {ReturnType<typeof openItems>} items
  */
 export function attentionItems(items) {
@@ -490,7 +563,9 @@ export function attentionItems(items) {
     ...items.reviews.filter((r) => r.state === 'overdue').sort((a, b) => ((a.due ?? '') < (b.due ?? '') ? -1 : 1)).map((r) => ({ type: 'review', ...r })),
     ...items.acks.map((a) => ({ type: 'change', ...a })),
     ...items.awaiting.map((x) => ({ type: 'control', ...x })),
+    ...items.toImplement.map((x) => ({ type: 'implement', ...x })),
     ...items.unrated.map((x) => ({ type: 'rating', ...x })),
+    ...items.reviews.filter((r) => r.state === 'none' && !r.open).map((r) => ({ type: 'schedule', ...r })),
   ];
 }
 
@@ -528,6 +603,28 @@ export function phasesOf(data, hazardId) {
 /** The hazards a phase is ticked on. @param {Data} data @param {string} phaseId */
 export function phaseUsage(data, phaseId) {
   return live(data, 'hazardPhase').filter((l) => l.phaseId === phaseId).map((l) => /** @type {Rec} */ (get(data, 'hazard', l.hazardId))).sort(byNumber);
+}
+
+/**
+ * What a lifecycle phase covers: its hazards, the platforms they are on, the additional controls
+ * linked to them, the worst residual band over every hazard on every platform, and how many of
+ * those hazard-on-platform pairs still lack a full residual rating.
+ * @param {Data} data @param {string} phaseId
+ */
+export function phaseStats(data, phaseId) {
+  const hazards = phaseUsage(data, phaseId);
+  const ids = new Set(hazards.map((h) => h.id));
+  const pairs = live(data, 'hazardPlatform').filter((l) => ids.has(l.hazardId));
+  const platforms = new Set(pairs.map((l) => l.platformId));
+  const controls = new Set(live(data, 'hazardControl').filter((l) => ids.has(l.hazardId)).map((l) => l.controlId));
+  let worst = 'Uncategorised';
+  let unrated = 0;
+  for (const l of pairs) {
+    const residual = ratingsOf(data, l.hazardId, l.platformId).residual;
+    if (RECEPTORS.some((r) => !residual[/** @type {'personnel'} */ (r)]?.likelihood || residual[/** @type {'personnel'} */ (r)]?.consequence == null)) unrated += 1;
+    for (const r of RECEPTORS) worst = worseBand(worst, bandOf(residual[/** @type {'personnel'} */ (r)]));
+  }
+  return { hazards: hazards.length, platforms: platforms.size, controls: controls.size, pairs: pairs.length, unrated, worst };
 }
 
 /** A hazard's safety reports on a platform: newest first, undated last, then by number. @param {Data} data @param {string} hazardId @param {string} platformId */

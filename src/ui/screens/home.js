@@ -2,6 +2,7 @@ import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
 import { html } from '../html.js';
 import { dataAttrs, option, go, reviewTag, changeDetail, idTag } from './common.js';
 import { dataTable, shownRows } from './table.js';
+import { sectionRail } from './dashboard.js';
 import { openItems, upcomingReviews, platformCards, attentionItems } from '../../core/queries.js';
 import { BANDS } from '../../core/matrix.js';
 import { get } from '../../core/data.js';
@@ -61,42 +62,49 @@ export function openItemsView(state, data) {
   };
   const keys = shownRows(state, ackSpec).map((r) => `${r.entry.id}|${r.platform.id}`);
   const overdue = items.reviews.filter((r) => r.state === 'overdue').length;
-  const dueSoon = items.reviews.filter((r) => r.state === 'dueSoon').length;
-  const summary = [
-    count(items.acks.length, 'change to acknowledge', 'changes to acknowledge'),
-    count(overdue, 'review overdue', 'reviews overdue'),
-    ...(dueSoon ? [count(dueSoon, 'review due soon', 'reviews due soon')] : []),
-    count(items.awaiting.length, 'control awaiting', 'controls awaiting'),
-    count(items.unrated.length, 'hazard unrated', 'hazards unrated'),
-  ].join(' · ');
   const hazardCell = (/** @type {any} */ r) => html`<span class="id">${idTag(hazardLabel(r.hazard))}</span> ${go(r.hazard.title, 'hazard', { id: r.hazard.id })}`;
-  return html`<p>${go('← Home', 'home')}</p>
-    <div class="head"><h1>Open items</h1>${ownerPicker(state)}</div>
-    <p class="muted home-summary">${summary}</p>
-    <article class="doc">
-      <div class="home-h"><h2>Changes to acknowledge</h2>${keys.length ? html`<button type="button" ${dataAttrs({ action: 'acknowledgeAll', keys: keys.join(',') })}>Acknowledge all shown (${keys.length})</button>` : ''}</div>
-      <section class="block">${dataTable(state, ackSpec)}</section>
-      <div class="home-h"><h2>Reviews</h2></div>
-      <section class="block">${dataTable(state, {
+  const open = state.sections?.openItems === undefined ? 'acks' : state.sections.openItems;
+  /** A headline count that opens its section below. @param {string} key @param {number} n @param {string} one @param {string} many @param {string} [tone] */
+  const tile = (key, n, one, many, tone = '') => html`<button type="button" class="tile${n && tone ? ` ${tone}` : ''}${open === key ? ' on' : ''}" ${dataAttrs({ action: 'showSection', page: 'openItems', section: key, keep: 'true' })}><b>${n}</b><span>${n === 1 ? one : many}</span></button>`;
+  return html`<div class="head"><h1>Open items</h1>${ownerPicker(state)}</div>
+    ${teamLine(state, data)}
+    <div class="tiles">
+      ${tile('acks', items.acks.length, 'change to acknowledge', 'changes to acknowledge')}
+      ${tile('reviews', overdue, 'review overdue', 'reviews overdue', 'bad')}
+      ${tile('awaiting', items.awaiting.length, 'control awaiting', 'controls awaiting', 'warn')}
+      ${tile('implement', items.toImplement.length, 'control to implement', 'controls to implement')}
+      ${tile('unrated', items.unrated.length, 'hazard unrated', 'hazards unrated')}
+    </div>
+    ${sectionRail(state, 'openItems', [
+      { key: 'acks', label: 'Changes to acknowledge', icon: 'acks', badge: items.acks.length, body: () => html`<div class="home-h"><h2>Changes to acknowledge</h2>${keys.length ? html`<button type="button" ${dataAttrs({ action: 'acknowledgeAll', keys: keys.join(',') })}>Acknowledge all shown (${keys.length})</button>` : ''}</div>
+        <section class="block">${dataTable(state, ackSpec)}</section>` },
+      { key: 'reviews', label: 'Reviews', icon: 'calendar', badge: items.reviews.length, body: () => html`<h2>Reviews</h2><section class="block">${dataTable(state, {
         id: 'homeReviews', rowKey: (r) => r.platform.id, rows: items.reviews, empty: 'No reviews due.',
         columns: [
           { key: 'platform', label: 'Platform', width: 360, minWidth: 160, value: (r) => r.platform.name, render: (r) => platformLink(r.platform, 'reviews') },
-          { key: 'due', label: 'Next due', width: 300, minWidth: 160, value: (r) => r.due, render: (r) => (r.due ? html`${day(r.due)}${reviewTag(r.state)}` : '—') },
+          { key: 'due', label: 'Next due', width: 300, minWidth: 160, value: (r) => r.due, render: (r) => (r.due ? html`${day(r.due)}${reviewTag(r.state)}` : html`<span class="tag">No schedule</span>`) },
           { key: 'last', label: 'Last reviewed', width: 240, minWidth: 140, value: (r) => r.lastReviewed, render: (r) => (r.lastReviewed ? day(r.lastReviewed) : html`<span class="muted">Never</span>`) },
           { key: 'open', label: 'Review', width: 220, minWidth: 120, value: (r) => (r.open ? 'In progress' : ''), render: (r) => (r.open ? 'In progress' : '') },
         ],
-      })}</section>
-      <div class="home-h"><h2>Controls awaiting a decision</h2></div>
-      <section class="block">${dataTable(state, {
+      })}</section>` },
+      { key: 'awaiting', label: 'Controls awaiting', icon: 'controls', badge: items.awaiting.length, body: () => html`<h2>Controls awaiting a decision</h2><section class="block">${dataTable(state, {
         id: 'homeAwaiting', rowKey: (r) => `${r.platform.id}|${r.hazard.id}|${r.control.id}`, rows: items.awaiting, empty: 'No controls awaiting a decision.',
         columns: [
           { key: 'platform', label: 'Platform', width: 300, minWidth: 140, value: (r) => r.platform.name, filter: 'text', render: (r) => platformLink(r.platform) },
           { key: 'hazard', label: 'Hazard', width: 520, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`, filter: 'text', render: hazardCell },
           { key: 'control', label: 'Control', width: 520, minWidth: 200, value: (r) => r.control.title, filter: 'text', render: (r) => go(r.control.title, 'control', { id: r.control.id }) },
         ],
-      })}</section>
-      <div class="home-h"><h2>Hazards without ratings</h2></div>
-      <section class="block">${dataTable(state, {
+      })}</section>` },
+      { key: 'implement', label: 'Controls to implement', icon: 'existing', badge: items.toImplement.length, body: () => html`<h2>Controls to implement</h2>
+        <p class="muted">Additional controls we own on the platform and have planned.</p><section class="block">${dataTable(state, {
+        id: 'homeImplement', rowKey: (r) => `${r.platform.id}|${r.hazard.id}|${r.control.id}`, rows: items.toImplement, empty: 'Nothing planned for us to implement.',
+        columns: [
+          { key: 'platform', label: 'Platform', width: 300, minWidth: 140, value: (r) => r.platform.name, filter: 'text', render: (r) => platformLink(r.platform) },
+          { key: 'hazard', label: 'Hazard', width: 520, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`, filter: 'text', render: hazardCell },
+          { key: 'control', label: 'Control', width: 520, minWidth: 200, value: (r) => r.control.title, filter: 'text', render: (r) => go(r.control.title, 'control', { id: r.control.id }) },
+        ],
+      })}</section>` },
+      { key: 'unrated', label: 'Hazards without ratings', icon: 'initial', badge: items.unrated.length, body: () => html`<h2>Hazards without ratings</h2><section class="block">${dataTable(state, {
         id: 'homeUnrated', rowKey: (r) => `${r.platform.id}|${r.hazard.id}`, rows: items.unrated, empty: 'Every hazard is rated.',
         columns: [
           { key: 'platform', label: 'Platform', width: 300, minWidth: 140, value: (r) => r.platform.name, filter: 'text', render: (r) => platformLink(r.platform) },
@@ -104,19 +112,32 @@ export function openItemsView(state, data) {
           { key: 'missing', label: 'Missing', width: 280, minWidth: 140, value: (r) => r.missing.join(', '),
             render: (r) => r.missing.join(', ') },
         ],
-      })}</section>
-    </article>`;
+      })}</section>` },
+    ], 'acks')}`;
 }
 
-/** How many "Needs attention" shows before See all. */
-export const ATTENTION_LIMIT = 8;
+/**
+ * The most "Needs attention" draws. The panel is a fixed share of the window's height and shows
+ * only the rows that fit whole (the rest are hidden in the browser, see mount.js); See all opens
+ * the full lists.
+ */
+export const ATTENTION_LIMIT = 40;
 
-const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'] };
+const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], implement: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'], schedule: ['Review', 'chip-review'] };
+
+/**
+ * Every open item across the team, whoever owns the platform: a quiet line above the counts.
+ * @param {any} state @param {Data} data
+ */
+function teamLine(state, data) {
+  const n = attentionItems(openItems(data, state.today, null)).length;
+  return html`<p class="team-line">Across the team: <b>${n}</b> open item${n === 1 ? '' : 's'}</p>`;
+}
 
 /**
  * A change in words: its action, then what it changed. Where the name repeats the end of the action,
- * the two run together: "Set residual environment risk" and "Residual environment risk of H-0004 on
- * Alpha" read "Set residual environment risk of H-0004 on Alpha".
+ * the two run together: "Set residual environment risk" and "Residual environment risk of HAZ-004 on
+ * Alpha" read "Set residual environment risk of HAZ-004 on Alpha".
  * @param {string} action @param {string} subject
  */
 export function changeSummary(action, subject) {
@@ -133,7 +154,8 @@ export function changeSummary(action, subject) {
 function attentionRow(state, data, item) {
   const [word, cls] = CHIP[/** @type {keyof typeof CHIP} */ (item.type)];
   /** @param {any} what @param {any} action @param {any} [by] */
-  const row = (what, action, by = '') => html`<tr><td class="kind"><span class="chip ${cls}">${word}</span></td><td class="what">${what}</td>
+  const key = [item.type, item.platform.id, item.entry?.id, item.hazard?.id, item.control?.id].filter(Boolean).join('|');
+  const row = (what, action, by = '') => html`<tr ${dataAttrs({ key })}><td class="kind"><span class="chip ${cls}">${word}</span></td><td class="what">${what}</td>
     <td class="by">${by}</td><td class="where">${platformLink(item.platform)}</td><td class="act">${action}</td></tr>`;
   if (item.type === 'review') return row(`Review overdue since ${day(item.due)}`, go('Review →', 'platform', { id: item.platform.id, tab: 'reviews' }));
   if (item.type === 'change') {
@@ -146,6 +168,10 @@ function attentionRow(state, data, item) {
   if (item.type === 'control') {
     return row(html`${item.control.title} <span class="muted">· ${hazardLabel(item.hazard)} ${item.hazard.title}</span>`, go('Decide →', 'platform', { id: item.platform.id }));
   }
+  if (item.type === 'implement') {
+    return row(html`${item.control.title} planned <span class="muted">· ${hazardLabel(item.hazard)} ${item.hazard.title}</span>`, go('Implement →', 'platform', { id: item.platform.id }));
+  }
+  if (item.type === 'schedule') return row('No review schedule', go('Set schedule →', 'platform', { id: item.platform.id, tab: 'reviews' }));
   return row(html`${hazardLabel(item.hazard)} ${item.hazard.title} <span class="muted">· no ${item.missing.join(', ')} rating</span>`, go('Rate →', 'platform', { id: item.platform.id }));
 }
 
@@ -174,18 +200,21 @@ export function homeView(state, data) {
   const owner = state.homeOwner || 'me';
   const heading = owner === 'everyone' ? 'Platforms' : ownerId === state.profileId ? 'My platforms' : `${profileName(state, ownerId)}’s platforms`;
   const more = attention.length > ATTENTION_LIMIT ? go(`See all ${attention.length} →`, 'openItems') : attention.length ? go('Open items →', 'openItems') : '';
+  const moreAttrs = { 'attn-more': '', total: attention.length };
   return html`<div class="head"><h1>Home</h1>${ownerPicker(state)}</div>
+    ${teamLine(state, data)}
     <div class="tiles">
       ${tile(items.acks.length, 'change to acknowledge', 'changes to acknowledge')}
       ${tile(overdue, 'review overdue', 'reviews overdue', 'bad')}
       ${tile(items.awaiting.length, 'control awaiting', 'controls awaiting', 'warn')}
+      ${tile(items.toImplement.length, 'control to implement', 'controls to implement')}
       ${tile(items.unrated.length, 'hazard unrated', 'hazards unrated')}
     </div>
     <div class="dash-cols">
-      <section class="panel"><h2>Needs attention</h2>
+      <section class="panel attn-panel"><h2>Needs attention</h2>
         ${attention.length
-          ? html`<table class="attn"><thead><tr><th>Type</th><th>Description</th><th>By</th><th>Platform</th><th></th></tr></thead>
-            <tbody>${attention.slice(0, ATTENTION_LIMIT).map((i) => attentionRow(state, data, i))}</tbody></table><div class="panel-more">${more}</div>`
+          ? html`<div class="attn-fit"><table class="attn"><colgroup><col class="c-kind"><col><col class="c-by"><col class="c-where"><col class="c-act"></colgroup><thead><tr><th>Type</th><th>Description</th><th>By</th><th>Platform</th><th></th></tr></thead>
+            <tbody>${attention.slice(0, ATTENTION_LIMIT).map((i) => attentionRow(state, data, i))}</tbody></table></div><div class="panel-more" ${dataAttrs(moreAttrs)}>${more}</div>`
           : html`<p class="muted">Nothing needs attention.</p>`}
       </section>
       <section class="panel"><h2>Coming up</h2>

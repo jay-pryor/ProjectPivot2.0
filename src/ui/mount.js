@@ -1,6 +1,7 @@
 import { renderApp } from './render.js';
 import { captureDrafts, restoreDrafts, formIdentity, formValues } from './drafts.js';
 import { themeOf } from './prefs.js';
+import { clampZoom, ZOOM_MIN, ZOOM_MAX } from './workspace.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
 
 /**
@@ -28,6 +29,7 @@ export function wire(el, dispatch, submitting = new Set()) {
     const t = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-action]'));
     if (!t || t.tagName === 'FORM' || !el.contains(t)) return;
     e.preventDefault();
+    if (t.dataset.action === 'acknowledge' || t.dataset.action === 'acknowledgeAll') { acknowledged(t, () => Promise.resolve(dispatch({ type: t.dataset.action, ...t.dataset }))); return; }
     void dispatch({ type: t.dataset.action, ...t.dataset });
   });
   el.addEventListener('submit', (e) => {
@@ -47,8 +49,40 @@ export function wire(el, dispatch, submitting = new Set()) {
     clearTimeout(typing);
     typing = setTimeout(() => void dispatch({ type: t.dataset.input, ...t.dataset, value: t.value }), 250);
   });
+  // A row's Options menu drops below its button, exactly as wide, placed in the window so a table
+  // that scrolls sideways cannot clip it; it follows the button as the page scrolls. One menu is
+  // open at a time, and a click elsewhere closes it.
+  const placeMenu = (/** @type {HTMLDetailsElement} */ d) => {
+    const r = /** @type {HTMLElement} */ (d.querySelector('summary')).getBoundingClientRect();
+    const body = /** @type {HTMLElement | null} */ (d.querySelector('.row-menu-body'));
+    if (!body) return;
+    body.style.left = `${r.left}px`;
+    body.style.width = `${r.width}px`;
+    body.style.top = `${r.bottom + 2}px`;
+  };
+  el.addEventListener('toggle', (e) => {
+    const d = /** @type {HTMLDetailsElement} */ (e.target);
+    if (!d.classList?.contains('row-menu') || !d.open) return;
+    for (const other of /** @type {NodeListOf<HTMLDetailsElement>} */ (el.querySelectorAll('details.row-menu[open]'))) if (other !== d) other.open = false;
+    placeMenu(d);
+  }, true);
+  document.addEventListener('click', (e) => {
+    for (const d of /** @type {NodeListOf<HTMLDetailsElement>} */ (el.querySelectorAll('details.row-menu[open], details.settings-menu[open]'))) if (!d.contains(/** @type {Node} */ (e.target))) d.open = false;
+  });
+  // Escape closes the settings menu and puts focus back on its three lines.
+  document.addEventListener('keydown', (e) => {
+    const d = /** @type {HTMLDetailsElement | null} */ (el.querySelector('details.settings-menu[open]'));
+    if (e.key !== 'Escape' || !d) return;
+    d.open = false;
+    d.querySelector('summary')?.focus();
+  });
+  const followMenus = () => { for (const d of /** @type {NodeListOf<HTMLDetailsElement>} */ (el.querySelectorAll('details.row-menu[open]'))) placeMenu(d); };
+  window.addEventListener('scroll', followMenus, true);
+  window.addEventListener('resize', followMenus);
   // Double-click a value to change it in place.
   el.addEventListener('dblclick', (e) => {
+    // Double-clicking a word in a box selects it, not the row the box sits in.
+    if (/** @type {HTMLElement} */ (e.target).closest?.('input, textarea, select')) return;
     const t = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-dblclick]'));
     if (t) void dispatch({ type: t.dataset.dblclick, ...t.dataset });
   });
@@ -56,6 +90,7 @@ export function wire(el, dispatch, submitting = new Set()) {
   el.addEventListener('keydown', (e) => {
     const t = /** @type {HTMLInputElement} */ (e.target);
     if (e.key === 'Escape') {
+      if (t.closest?.('.confirm-overlay')) { void dispatch({ type: 'confirmCancel' }); return; }
       if (t.closest?.('.picker-overlay')) { void dispatch({ type: 'closePicker' }); return; }
       if (t.classList?.contains('cell-edit') || t.closest?.('.new-record, .new-row, .comments + form, form.fill')) void dispatch({ type: 'cancelEdit' });
       return;
@@ -125,6 +160,10 @@ export function mount(root, controller) {
   // after choosing a profile); any redraw after that shows the screen as it is, without replaying it.
   let screen = '';
   let theme = '';
+  // A panel that has just appeared (a rail section, the tier choices) plays its opening once; the
+  // redraws that follow every edit inside it leave it still.
+  /** @type {Set<string>} */
+  let shown = new Set();
   // A title that wraps (a textarea) is still one line: Enter finishes it and a pasted line break is a space.
   appEl.addEventListener('keydown', (e) => {
     const t = /** @type {HTMLElement} */ (e.target);
@@ -146,6 +185,14 @@ export function mount(root, controller) {
     theme = t;
     appEl.innerHTML = renderApp(state);
     restoreDrafts(appEl, drafts);
+    const now = new Set();
+    for (const el of /** @type {NodeListOf<HTMLElement>} */ (appEl.querySelectorAll('[data-reveal]'))) {
+      const key = /** @type {string} */ (el.dataset.reveal);
+      now.add(key);
+      if (!shown.has(key)) el.classList.add('reveal');
+    }
+    shown = now;
+    fitAttention(appEl);
     // A box just opened in place (edit, add, a picker's search) takes the cursor.
     const opened = /** @type {HTMLInputElement | null} */ (appEl.querySelector('[autofocus]'));
     if (opened && !appEl.contains(document.activeElement)) {
@@ -158,9 +205,11 @@ export function mount(root, controller) {
       paintDesigner();
     }
   };
+  window.addEventListener('resize', () => fitAttention(appEl));
   wire(appEl, controller.dispatch, submitting);
   resizableColumns(appEl, controller.dispatch);
   bowtieDrag(appEl, controller.dispatch);
+  bowtiePanZoom(appEl, controller.dispatch);
   RD.wire({ root: designerEl, refreshMain: paintDesigner, quietEdit: (/** @type {() => void} */ fn) => fn() });
   designerEl.addEventListener('click', (e) => {
     const b = /** @type {HTMLButtonElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-generate-action]'));
@@ -169,6 +218,87 @@ export function mount(root, controller) {
   });
   controller.subscribe(paint);
   paint(controller.getState());
+}
+
+/**
+ * Acknowledging shows that it took: the rows flash orange and fold away, the change is made, and
+ * the rows below slide up into the space (any that now fit rise in). Without motion, the rows
+ * simply go. A screen reader hears that it was acknowledged.
+ * @param {HTMLElement} button @param {() => Promise<unknown>} act
+ */
+function acknowledged(button, act) {
+  const all = button.dataset.action === 'acknowledgeAll';
+  const rows = /** @type {HTMLElement[]} */ (all
+    ? [...(button.closest('section, article, .rail-panel')?.querySelectorAll('tr:has([data-action="acknowledge"])') ?? [])]
+    : [button.closest('tr')].filter(Boolean));
+  const n = all ? rows.length || 1 : 1;
+  const still = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+  for (const b of /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('[data-action="acknowledge"], [data-action="acknowledgeAll"]'))) b.disabled = true;
+  for (const r of rows) r.classList.add('ack-out');
+  setTimeout(async () => {
+    const before = rowPositions();
+    await act();
+    if (!still) slideRows(before);
+    const note = document.createElement('div');
+    note.className = 'sr-only';
+    note.setAttribute('role', 'status');
+    note.textContent = n === 1 ? 'Acknowledged' : `${n} acknowledged`;
+    document.body.append(note);
+    setTimeout(() => note.remove(), 2000);
+  }, still || !rows.length ? 0 : 420);
+}
+
+/** The rows of the open-item lists that are showing, by key, and where they sit. */
+function rowPositions() {
+  /** @type {Map<string, number>} */
+  const at = new Map();
+  for (const tr of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('table.attn tr[data-key], table[data-table^="home"] tr[data-row]'))) {
+    if (!tr.hidden) at.set(listKey(tr), tr.getBoundingClientRect().top);
+  }
+  return at;
+}
+
+/** @param {HTMLElement} tr */
+const listKey = (tr) => tr.dataset.key ?? `${tr.closest('table')?.dataset.table}:${tr.dataset.row}`;
+
+/**
+ * After a redraw, each row that was showing slides from where it was to where it is now; a row
+ * that was not showing before rises in.
+ * @param {Map<string, number>} before
+ */
+function slideRows(before) {
+  const now = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('table.attn tr[data-key], table[data-table^="home"] tr[data-row]')].filter((tr) => !(/** @type {HTMLElement} */ (tr)).hidden));
+  for (const tr of now) {
+    const was = before.get(listKey(tr));
+    if (was === undefined) { tr.classList.add('ack-in'); continue; }
+    const dy = was - tr.getBoundingClientRect().top;
+    if (!dy) continue;
+    tr.style.transition = 'none';
+    tr.style.transform = `translateY(${dy}px)`;
+    void tr.offsetHeight;
+    tr.style.transition = 'transform .32s cubic-bezier(.2, .8, .2, 1)';
+    tr.style.transform = '';
+  }
+}
+
+/**
+ * Needs attention is a fixed share of the window's height and shows only the rows that fit whole;
+ * when some are left out, its link says how many there are in all.
+ * @param {HTMLElement} root
+ */
+function fitAttention(root) {
+  for (const fit of /** @type {NodeListOf<HTMLElement>} */ (root.querySelectorAll('.attn-fit'))) {
+    const rows = /** @type {HTMLElement[]} */ ([...fit.querySelectorAll('tbody tr')]);
+    for (const r of rows) r.hidden = false;
+    const bottom = fit.getBoundingClientRect().bottom;
+    let hidden = 0;
+    for (const r of rows) {
+      if (hidden || r.getBoundingClientRect().bottom > bottom + 0.5) { r.hidden = true; hidden += 1; }
+    }
+    const more = /** @type {HTMLElement | null} */ (fit.parentElement?.querySelector('[data-attn-more] button'));
+    const total = Number(/** @type {HTMLElement} */ (fit.parentElement?.querySelector('[data-attn-more]'))?.dataset.total ?? 0);
+    if (more) more.textContent = hidden ? `See all ${total} →` : total > rows.length ? `See all ${total} →` : 'Open items →';
+  }
 }
 
 /**
@@ -281,4 +411,172 @@ function bowtieDrag(el, dispatch) {
     void dispatch({ type: 'dropBowtie', side: z.dataset.dropSide, ...d });
   });
   el.addEventListener('dragend', () => { dragging = null; end(); });
+}
+
+/**
+ * A bow-tie window's drawing zooms with the wheel, gliding to where the wheel sends it and keeping
+ * the point under the pointer still, and moves when dragged. The zoom buttons glide the same way.
+ * It all happens on screen alone; once the drawing settles, the window's view is kept (one redraw).
+ * @param {HTMLElement} el @param {(action: any) => Promise<void>} dispatch
+ */
+function bowtiePanZoom(el, dispatch) {
+  const still = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+  /**
+   * Each window's view as shown, and where it is gliding to: a zoom about a point (the wheel, the
+   * buttons) or a whole view (Fit). Read afresh from the drawing whenever the window is at rest.
+   * @typedef {{ z: number, x: number, y: number, to: null | { z: number, ax?: number, ay?: number, x?: number, y?: number },
+   *   frame: number, last: number, settle: ReturnType<typeof setTimeout> | undefined, dragging: boolean }} Live
+   */
+  /** @type {Map<string, Live>} */
+  const live = new Map();
+  const diagramOf = (/** @type {string} */ side) => /** @type {HTMLElement | null} */ (el.querySelector(`.bt-diagram.pannable[data-side="${side}"]`));
+  /** @param {HTMLElement} d @returns {Live} */
+  const liveOf = (d) => {
+    const side = String(d.dataset.side);
+    let v = live.get(side);
+    const busy = v && (v.frame || v.dragging || v.settle);
+    if (!v || !busy) {
+      const c = /** @type {HTMLElement} */ (d.querySelector('.bt-canvas'));
+      v = { z: Number(c.dataset.zoom) || 1, x: Number(c.dataset.x) || 0, y: Number(c.dataset.y) || 0, to: null, frame: 0, last: 0, settle: undefined, dragging: false };
+      live.set(side, v);
+    }
+    return v;
+  };
+  /** Where the drawing's own top-left corner sits on screen, before it is moved. @param {HTMLElement} d @param {Live} v */
+  const origin = (d, v) => {
+    const r = /** @type {HTMLElement} */ (d.querySelector('.bt-canvas')).getBoundingClientRect();
+    return { left: r.left - v.x, top: r.top - v.y };
+  };
+  /** @param {string} side @param {Live} v */
+  const show = (side, v) => {
+    const d = diagramOf(side);
+    if (!d) return;
+    const c = /** @type {HTMLElement} */ (d.querySelector('.bt-canvas'));
+    c.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.z})`;
+    const bar = d.closest('.bt-window');
+    const level = bar?.querySelector('[data-bt-zoom="fit"]');
+    if (level) level.textContent = Math.abs(v.z - 1) < 0.0005 && !Math.round(v.x) && !Math.round(v.y) ? 'Fit' : `${Math.round(v.z * 100)}%`;
+    const out = /** @type {HTMLButtonElement | null | undefined} */ (bar?.querySelector('[data-bt-zoom="out"]'));
+    const inn = /** @type {HTMLButtonElement | null | undefined} */ (bar?.querySelector('[data-bt-zoom="in"]'));
+    if (out) out.disabled = v.z <= ZOOM_MIN + 1e-6;
+    if (inn) inn.disabled = v.z >= ZOOM_MAX - 1e-6;
+  };
+  /** Keep the view once the drawing has been still a moment. @param {string} side @param {Live} v */
+  const settle = (side, v) => {
+    clearTimeout(v.settle);
+    v.settle = setTimeout(() => {
+      v.settle = undefined;
+      if (v.frame || v.dragging) return;
+      void dispatch({ type: 'viewBowtie', side, zoom: v.z, x: v.x, y: v.y });
+    }, 250);
+  };
+  /** One step of the glide, a fixed share of the way per moment whatever the frame rate. @param {string} side @param {Live} v @param {number} now */
+  const step = (side, v, now) => {
+    v.frame = 0;
+    const to = v.to;
+    if (!to) return;
+    const k = still() ? 1 : 1 - Math.exp(-(now - (v.last || now - 16)) / 70);
+    v.last = now;
+    const z = Math.abs(Math.log(to.z / v.z)) < 0.002 ? to.z : v.z * (to.z / v.z) ** k;
+    if (to.ax !== undefined && to.ay !== undefined) {
+      // The point under the pointer stays where it is as the drawing grows or shrinks about it.
+      v.x = to.ax - (to.ax - v.x) * (z / v.z);
+      v.y = to.ay - (to.ay - v.y) * (z / v.z);
+      v.z = z;
+      if (z === to.z) v.to = null;
+    } else {
+      const tx = to.x ?? 0, ty = to.y ?? 0;
+      v.z = z;
+      v.x += (tx - v.x) * k;
+      v.y += (ty - v.y) * k;
+      if (z === to.z && Math.abs(tx - v.x) < 0.5 && Math.abs(ty - v.y) < 0.5) { v.x = tx; v.y = ty; v.to = null; }
+    }
+    show(side, v);
+    if (v.to) v.frame = requestAnimationFrame((t) => step(side, v, t));
+    else { v.last = 0; settle(side, v); }
+  };
+  /** @param {string} side @param {Live} v */
+  const glide = (side, v) => {
+    clearTimeout(v.settle);
+    v.settle = undefined;
+    if (!v.frame) v.frame = requestAnimationFrame((t) => step(side, v, t));
+  };
+  /** Zoom by a factor about a point on screen. @param {HTMLElement} d @param {number} factor @param {number} cx @param {number} cy */
+  const zoomBy = (d, factor, cx, cy) => {
+    const side = String(d.dataset.side);
+    const v = liveOf(d);
+    const o = origin(d, v);
+    const z = clampZoom((v.to?.z ?? v.z) * factor);
+    v.to = { z, ax: cx - o.left, ay: cy - o.top };
+    glide(side, v);
+  };
+  el.addEventListener('wheel', (e) => {
+    const d = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest?.('.bt-diagram.pannable'));
+    if (!d) return;
+    e.preventDefault();
+    // Lines and pages become pixels; a trackpad pinch (sent as the wheel with Ctrl) moves in small steps, so counts for more.
+    const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    zoomBy(d, Math.exp(-px * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY);
+  }, { passive: false });
+  el.addEventListener('click', (e) => {
+    const b = /** @type {HTMLButtonElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-bt-zoom]'));
+    const d = /** @type {HTMLElement | null | undefined} */ (b?.closest('.bt-window')?.querySelector('.bt-diagram.pannable'));
+    if (!b || !d) return;
+    const r = d.getBoundingClientRect();
+    if (b.dataset.btZoom === 'fit') {
+      const v = liveOf(d);
+      v.to = { z: 1, x: 0, y: 0 };
+      glide(String(d.dataset.side), v);
+      return;
+    }
+    zoomBy(d, b.dataset.btZoom === 'in' ? 1.25 : 1 / 1.25, r.left + r.width / 2, r.top + r.height / 2);
+  });
+  el.addEventListener('pointerdown', (e) => {
+    const d = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('.bt-diagram.pannable'));
+    if (!d || e.button !== 0) return;
+    e.preventDefault();
+    const side = String(d.dataset.side);
+    const v = liveOf(d);
+    if (v.frame) cancelAnimationFrame(v.frame);
+    v.frame = 0;
+    v.to = null;
+    v.last = 0;
+    clearTimeout(v.settle);
+    v.settle = undefined;
+    v.dragging = true;
+    const start = { px: e.clientX, py: e.clientY, x: v.x, y: v.y };
+    // However far it is dragged, a strip of the drawing stays in the window to drag it back by.
+    const box = d.getBoundingClientRect();
+    const o = origin(d, v);
+    const c = /** @type {HTMLElement} */ (d.querySelector('.bt-canvas'));
+    const keep = 60;
+    const clamp = (/** @type {number} */ n, /** @type {number} */ lo, /** @type {number} */ hi) => Math.min(Math.max(n, lo), Math.max(lo, hi));
+    let moved = false;
+    d.setPointerCapture(e.pointerId);
+    d.classList.add('panning');
+    /** @param {PointerEvent} m */
+    const move = (m) => {
+      const dx = m.clientX - start.px, dy = m.clientY - start.py;
+      if (!moved && Math.hypot(dx, dy) < 3) return;
+      moved = true;
+      v.x = clamp(start.x + dx, box.left + keep - o.left - c.offsetWidth * v.z, box.right - keep - o.left);
+      v.y = clamp(start.y + dy, box.top + keep - o.top - c.offsetHeight * v.z, box.bottom - keep - o.top);
+      if (!v.frame) v.frame = requestAnimationFrame(() => { v.frame = 0; show(side, v); });
+    };
+    const up = () => {
+      d.removeEventListener('pointermove', move);
+      d.removeEventListener('pointerup', up);
+      d.removeEventListener('pointercancel', up);
+      d.classList.remove('panning');
+      if (v.frame) cancelAnimationFrame(v.frame);
+      v.frame = 0;
+      v.dragging = false;
+      if (!moved) return;
+      show(side, v);
+      settle(side, v);
+    };
+    d.addEventListener('pointermove', move);
+    d.addEventListener('pointerup', up);
+    d.addEventListener('pointercancel', up);
+  });
 }

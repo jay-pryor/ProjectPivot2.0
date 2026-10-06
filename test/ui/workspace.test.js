@@ -77,6 +77,8 @@ test('the workspace is remembered per folder and profile, and anything unreadabl
   assert.deepEqual(readWorkspace(s, key), emptyWorkspace());
   s.setItem(key, JSON.stringify({ panes: [null, { ...A, filters: { set: 'bogus' } }], lastUsed: 7 }));
   assert.deepEqual(readWorkspace(s, key), { panes: [{ ...A, filters: F }, null], lastUsed: 0 }, 'a lone window moves to the first slot');
+  s.setItem(key, JSON.stringify({ panes: [{ ...A, zoom: 2.5, pan: { x: -40, y: 12 } }, { ...C, zoom: 'big', pan: { x: 'left' } }], lastUsed: 0 }));
+  assert.deepEqual(readWorkspace(s, key).panes.map((p) => [p?.zoom, p?.pan]), [[2.5, { x: -40, y: 12 }], [undefined, undefined]], 'a view is kept; a bad one is fitted');
   s.refuseReads();
   assert.deepEqual(readWorkspace(s, key), emptyWorkspace());
   const full = new MemoryStorage();

@@ -1,5 +1,5 @@
 import { html, raw } from '../html.js';
-import { dataAttrs, option } from './common.js';
+import { dataAttrs, option, removeButton, removeColumn } from './common.js';
 import { dataTable } from './table.js';
 import { all, live } from '../../core/data.js';
 import { hasUnsavedRecords } from '../../storage/mirror.js';
@@ -23,7 +23,7 @@ export function reportsView(state, data) {
   const unsaved = state.session ? hasUnsavedRecords(state.session) : false;
   const platforms = live(data, 'platform');
   const chosen = platforms.find((p) => p.id === state.reportPlatformId) ?? platforms[0];
-  const reports = all(data, 'report').slice().reverse();
+  const reports = all(data, 'report').filter((r) => r.status !== 'deleted').reverse();
   return html`<div class="head"><h1>Reports</h1><button type="button" ${dataAttrs({ action: 'openDesigner' })}>Open the report designer</button></div>
     <section><h2>Produce a report</h2>
       ${unsaved ? html`<p class="note">Save your changes first: a report is produced from what is stored.</p>` : ''}
@@ -51,6 +51,7 @@ export function reportsView(state, data) {
           { key: 'download', label: 'Download', width: 150, sortable: false, render: (r) => html`<div class="actions">
             <button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'md' })}>.md</button>
             <button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'html' })}>.html</button></div>` },
+          removeColumn((r) => removeButton(`Delete ${r.title}`, `Delete ${r.title}?`, `The report produced for ${r.platformName} on ${when(r.producedAt)} will be deleted for everyone using this folder.`, { run: 'deleteReport', id: r.id })),
         ],
       })}
     </section>`;

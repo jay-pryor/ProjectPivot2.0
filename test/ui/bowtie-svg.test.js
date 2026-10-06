@@ -4,7 +4,7 @@ import { assignNumbers, updateHazard, addCausalFactor } from '../../src/core/ops
 import { linkExistingControl } from '../../src/core/ops/controls.js';
 import { bowtieOf, DEFAULT_FILTERS } from '../../src/core/bowtie.js';
 import { bowtieSvg, wrap } from '../../src/ui/bowtie-svg.js';
-import { seed, act } from '../helpers.js';
+import { seed, act, asExisting } from '../helpers.js';
 
 const ORDER = ['causal-factor', 'preventative-control', 'hazard', 'mitigating-control', 'consequence'];
 /** Every box and empty-column note, with its rect. @param {string} svg */
@@ -28,7 +28,7 @@ test('wrap breaks only at spaces and keeps every word, however long', () => {
 test('one box per thing, in five columns left to right, each column in order, nothing overlapping', () => {
   let d = seed();
   d = addCausalFactor(d, act, { id: 'cf2', hazardId: 'h1', text: 'Electrical fault in the switchboard room during maintenance' });
-  d = linkExistingControl(d, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c1', kind: 'preventative' });
+  d = linkExistingControl(asExisting(d, 'c1'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c1', kind: 'preventative' });
   const svg = drawn(assignNumbers(d));
   assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 \d+ \d+"/);
   const b = boxes(svg);
@@ -49,7 +49,7 @@ test('one box per thing, in five columns left to right, each column in order, no
 });
 
 test('existing and additional controls look different and say which they are in words', () => {
-  const d = linkExistingControl(seed(), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c1', kind: 'preventative' });
+  const d = linkExistingControl(asExisting(seed(), 'c1'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c1', kind: 'preventative' });
   const svg = drawn(assignNumbers(d));
   const controls = boxes(svg).filter((x) => x.kind.endsWith('-control'));
   const existing = controls.find((x) => x.attrs.includes('data-source="existing"'));
@@ -58,17 +58,19 @@ test('existing and additional controls look different and say which they are in 
   assert.doesNotMatch(existing.rect, /stroke-dasharray/);
   assert.match(additional.rect, /stroke-dasharray="6 4"/);
   assert.match(additional.attrs, /data-state="recommended"/);
-  assert.match(svg, />Existing<\/tspan>/);
-  assert.match(svg, />Additional · Recommended<\/tspan>/);
-  assert.match(svg, />C-0001 Sprinklers<\/tspan>/);
+  assert.match(svg, /data-bowtie-tag="existing"/);
+  assert.match(svg, /<g data-bowtie-tag="additional"><rect [^>]*style="fill:var\(--bt-tag-additional-bg, #f1eafa\)"\/><text [^>]*>Additional<\/text><\/g><g data-bowtie-tag="recommended">[^]*?>Recommended<\/text>/, 'badges, coloured by tag, light in a file');
+  assert.match(svg, /<title>EC-001 Sprinklers \(Additional, Recommended\)<\/title>/);
+  assert.match(svg, />EC-001 Sprinklers<\/tspan>/, 'an existing control reads EC-');
   assert.match(svg, /<text data-bowtie-caption="true"[^>]*>Alpha · Existing \+ Additional \(Recommended, Planned, Implemented\)<\/text>/);
 });
 
-test('an empty wing says so rather than vanishing', () => {
+test('an empty wing keeps its headed lane, with no box saying it is empty', () => {
   const svg = drawn(assignNumbers(seed()), { set: 'existing', statuses: [] });
-  assert.match(svg, /data-bowtie-empty="preventative-control"[\s\S]*?No preventative controls in this view/);
-  assert.match(svg, /data-bowtie-empty="mitigating-control"[\s\S]*?No mitigating controls in this view/);
-  assert.equal(boxes(svg).filter((x) => x.type === 'empty').length, 2);
+  assert.match(svg, /data-bowtie-lane="preventative-control"/);
+  assert.match(svg, /data-bowtie-lane="mitigating-control"/);
+  assert.doesNotMatch(svg, /in this view|data-bowtie-empty/);
+  assert.equal(boxes(svg).filter((x) => x.type === 'preventative-control' || x.type === 'mitigating-control').length, 0);
 });
 
 test('stored text is drawn as text, whole, never as markup; a long word widens its box', () => {
@@ -93,7 +95,7 @@ test('capitals and bold text fit their box: an all-caps hazard title stays insid
 });
 
 test('five labelled swimlanes, full height, side by side, each holding its own column', () => {
-  const svg = drawn(assignNumbers(linkExistingControl(seed(), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c1', kind: 'preventative' })));
+  const svg = drawn(assignNumbers(linkExistingControl(asExisting(seed(), 'c1'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c1', kind: 'preventative' })));
   const lanes = [...svg.matchAll(/<g data-bowtie-lane="([^"]+)"><rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)"[^>]*\/><text[^>]*>([^<]+)<\/text>/g)]
     .map((m) => ({ kind: m[1], x: +m[2], y: +m[3], w: +m[4], h: +m[5], heading: m[6] }));
   assert.deepEqual(lanes.map((l) => l.heading), ['Causal factors', 'Preventative controls', 'Hazard', 'Mitigating controls', 'Consequences']);

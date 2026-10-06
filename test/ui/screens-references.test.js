@@ -37,7 +37,7 @@ test('the references list: ID, title, doc number, revision, what it points at, h
   const out = referencesView({ ...state, missingFiles: ['files/r1/2-spec-2.pdf'] }, data()).toString();
   assert.match(out, /<h1>References<\/h1>/);
   assert.match(out, /data-action="startEdit" data-kind="newReference"/);
-  assert.match(out, /R-0001/);
+  assert.match(out, /REF-001/);
   assert.match(out, />Safety case<\/button> <span class="tag tag-missing">File missing<\/span>/);
   assert.match(out, /<span class="chip">File<\/span><span class="chip">Link<\/span><span class="chip">Path<\/span>/);
   assert.match(out, /Standard &lt;b&gt;x&lt;\/b&gt;/);
@@ -47,7 +47,7 @@ test('the references list: ID, title, doc number, revision, what it points at, h
 
 test('a reference page: fields in place, the stored file with its past files, the link, the path, and what it supports', () => {
   const out = referenceView(state, data(), 'r1').toString();
-  assert.match(out, /<input class="doc-title" name="title" value="Safety case"[^>]*data-change="updateReference" data-id="r1"/);
+  assert.match(out, /<input class="doc-title small" name="title" value="Safety case"[^>]*data-change="updateReference" data-id="r1"/);
   assert.match(out, /name="docNumber" value="SC-1"/);
   assert.match(out, /data-action="openReferenceFile" data-stored="files\/r1\/2-spec-2.pdf">spec-2.pdf</);
   assert.match(out, /Past files[\s\S]*?data-stored="files\/r1\/1-spec-1.pdf"/);
@@ -58,7 +58,7 @@ test('a reference page: fields in place, the stored file with its past files, th
   assert.match(out, /data-table="referenceTargets"/);
   assert.match(out, /data-action="openPicker" data-picker="linkTargets" data-reference-id="r1"/);
   assert.match(out, /Causal factor[\s\S]*?Hot works/);
-  assert.match(out, /data-action="unlinkReference" data-reference-id="r1" data-target-kind="control" data-target-id="c1"/);
+  assert.match(out, /data-action="askConfirm" data-run="unlinkReference" data-reference-id="r1" data-target-kind="control" data-target-id="c1"/);
   assert.doesNotMatch(out, /data-action="deleteReference"/, 'no delete while it supports records');
 });
 
@@ -69,12 +69,12 @@ test('a dangerous web link is never made clickable', () => {
 });
 
 test('record pages carry a References card; a hazard\'s includes its causal factors\'', () => {
-  const h = hazardView(state, data(), 'h1').toString();
+  const h = hazardView({ ...state, sections: { hazard: 'references' } }, data(), 'h1').toString();
   assert.match(h, /data-table="refs-hazard"/);
   assert.match(h, /data-action="openPicker" data-picker="linkReferences" data-target-kind="hazard" data-target-id="h1"/);
   assert.match(h, /Causal factor: Hot works/);
-  assert.match(controlView(state, data(), 'c1').toString(), /data-table="refs-control"[\s\S]*?Safety case/);
-  assert.match(platformView(state, data(), 'p1').toString(), /data-table="refs-platform"[\s\S]*?No references yet/);
+  assert.match(controlView({ ...state, sections: { control: 'references' } }, data(), 'c1').toString(), /data-table="refs-control"[\s\S]*?Safety case/);
+  assert.match(platformView({ ...state, sections: { platform: 'references' } }, data(), 'p1').toString(), /data-table="refs-platform"[\s\S]*?No references yet/);
 });
 
 test('the pickers: references not yet linked to a record; records not yet linked to a reference', () => {

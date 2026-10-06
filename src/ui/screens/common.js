@@ -46,6 +46,33 @@ export function go(label, view, extra = {}) {
 }
 
 /**
+ * A ✕ that removes something (deletes it, or unlinks it), asking first in a pop-up with the
+ * consequence and Continue or Cancel.
+ * @param {string} label what the button does, e.g. "Unlink Sprinklers"
+ * @param {string} title the pop-up's question @param {string} text what happens
+ * @param {Record<string, unknown>} act the action, as `run` and its fields
+ */
+export function removeButton(label, title, text, act) {
+  return html`<button type="button" class="icon-x" title="${label}" aria-label="${label}" ${dataAttrs({ action: 'askConfirm', ...act, title, text })}>✕</button>`;
+}
+
+/** A table's last column for a row's ✕: just wide enough, centred, shown when the row is hovered. @param {(row: any) => unknown} render */
+export function removeColumn(render) {
+  return { key: 'actions', label: '', width: 52, minWidth: 52, sortable: false, fixed: true, className: 'col-act',
+    render: (/** @type {any} */ row) => html`<div class="row-actions">${render(row)}</div>` };
+}
+
+/**
+ * A row's Options: a button that opens a short menu of what can be done to it.
+ * @param {string} label whose options, e.g. "Options for Design" @param {unknown[]} items buttons
+ */
+export function optionsMenu(label, items) {
+  const shown = items.filter(Boolean);
+  if (!shown.length) return '';
+  return html`<details class="row-menu"><summary aria-label="${label}" title="${label}">Options <span aria-hidden="true">▾</span></summary><div class="row-menu-body">${shown}</div></details>`;
+}
+
+/**
  * A destructive action behind one extra click, with its consequence spelled out.
  * @param {string} summary @param {string} text @param {import('../html.js').Raw} attrs
  */
@@ -63,7 +90,7 @@ export function deleteName(kind, rec) {
 /**
  * The last step before deleting a hazard or platform: it replaces the page's actions, so the
  * delete takes three deliberate clicks.
- * @param {'hazard' | 'platform'} kind @param {string} id @param {string} what e.g. "H-0001 Fire"
+ * @param {'hazard' | 'platform'} kind @param {string} id @param {string} what e.g. "HAZ-001 Fire"
  * @param {string} [note] what else goes with it
  */
 export function deletePanel(kind, id, what, note = '') {
@@ -83,10 +110,16 @@ export function messages(state) {
       <button type="button" class="link" ${dataAttrs({ action: 'dismissMessage' })}>Dismiss</button></div>` : ''}${u ? html`<div class="msg msg-info" role="status"><strong>${u.text}</strong> <button type="button" ${dataAttrs({ action: 'undoDelete' })}>Undo</button></div>` : ''}${warnings.map((/** @type {string} */ w) => html`<div class="msg msg-warning" role="status">${w}</div>`)}`;
 }
 
-const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['bowties', 'Bow-ties'], ['references', 'References'], ['phases', 'Phases'], ['reports', 'Reports'], ['backups', 'Backups']];
+const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['bowties', 'Bow-ties'], ['stats', 'Stats'], ['reports', 'Reports'], ['references', 'References']];
+
+/** The settings menu, opened from the three lines at the end of the top bar. */
+const SETTINGS = [['backups', 'Backups']];
 
 /** The top-bar section each view belongs to. */
-const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', bowties: 'bowties', references: 'references', reference: 'references', phases: 'phases', reports: 'reports', backups: 'backups' };
+const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', platforms: 'platforms', platform: 'platforms', bowties: 'bowties', references: 'references', reference: 'references', stats: 'stats', phases: 'stats', reports: 'reports', backups: 'backups' };
+
+/** The three lines that open the settings menu. */
+const MENU_SVG = '<svg viewBox="0 0 20 20" width="20" height="20" focusable="false" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg>';
 
 /** The moon on the theme switch: a solid crescent (the text moon draws only an outline in some fonts). */
 const MOON_SVG = '<svg class="moon" viewBox="0 0 16 16" focusable="false"><path d="M10.6 1.2A7 7 0 1 0 14.8 10.4 5.6 5.6 0 0 1 10.6 1.2Z" fill="currentColor"/></svg>';
@@ -117,11 +150,44 @@ export function shell(state, body) {
       ${save}
       <button type="button" class="theme" role="switch" aria-checked="${theme === 'dark' ? 'true' : 'false'}" aria-label="Dark mode" ${dataAttrs({ action: 'setTheme', theme: other })} title="Switch to ${other} mode"><span class="theme-track"><span class="theme-knob" aria-hidden="true">${theme === 'dark' ? raw(MOON_SVG) : '☀'}</span></span></button>
       <span class="profile" title="Active profile">${profileName(state, state.profileId)}</span>
+      <details class="settings-menu${SETTINGS.some(([v]) => v === current) ? ' on' : ''}">
+        <summary aria-label="Settings" title="Settings">${raw(MENU_SVG)}</summary>
+        <div class="settings-body" role="menu">${SETTINGS.map(([view, label]) => html`<button type="button" role="menuitem" class="${current === view ? 'on' : ''}" ${dataAttrs({ action: 'go', view })}>${label}</button>`)}</div>
+      </details>
     </span>
     ${state.saving ? html`<div class="save-progress" role="progressbar" aria-label="Saving"><span></span></div>` : ''}
   </header>
   <div class="messages">${messages(state)}</div>
-  <main class="view">${body}</main>`;
+  <main class="view">${state.view?.name === 'bowties' ? '' : backButton(state)}${body}</main>
+  ${confirmDialog(state)}`;
+}
+
+/** Back to the page open before this one, whichever it was. @param {any} state */
+export function backButton(state) {
+  const prev = (state.viewHistory ?? []).at(-1);
+  const where = prev ? pageName(state, prev) : '';
+  return html`<p class="back-row"><button type="button" class="back" ${dataAttrs({ action: 'goBack' })}${prev ? html` title="Back to ${where}"` : raw(' disabled title="Nothing to go back to"')}><span aria-hidden="true">←</span> Back${where ? html`<span class="back-to"> to ${where}</span>` : ''}</button></p>`;
+}
+
+const PAGE_WORD = { home: 'Home', openItems: 'Open items', hazards: 'Hazards', controls: 'Controls', platforms: 'Platforms', references: 'References', phases: 'Lifecycle phases', stats: 'Stats', reports: 'Reports', bowties: 'Bow-ties', backups: 'Backups' };
+
+/** A page as Back names it: a list by its name, a record by its number or name. @param {any} state @param {any} v a view */
+function pageName(state, v) {
+  const data = state.session?.working;
+  const rec = data && v.id ? data.records?.[v.name]?.[v.id] : null;
+  if (rec && v.name === 'hazard') return hazardLabel(rec) === UNNUMBERED ? rec.title : hazardLabel(rec);
+  if (rec) return rec.name ?? rec.title ?? PAGE_WORD[/** @type {keyof typeof PAGE_WORD} */ (`${v.name}s`)] ?? v.name;
+  return PAGE_WORD[/** @type {keyof typeof PAGE_WORD} */ (v.name)] ?? v.name;
+}
+
+/** The question asked before a consequential action: Continue or Cancel. @param {any} state */
+export function confirmDialog(state) {
+  const c = state.confirm;
+  if (!c) return '';
+  return html`<div class="picker-overlay confirm-overlay"><div class="picker confirm-box" role="alertdialog" aria-modal="true" aria-label="${c.title}">
+    <h2>${c.title}</h2><p>${c.text}</p>
+    <div class="actions"><button type="button" class="danger" ${dataAttrs({ action: 'confirmContinue' })}>Continue</button>
+      <button type="button" ${dataAttrs({ action: 'confirmCancel' })} autofocus>Cancel</button></div></div></div>`;
 }
 
 /** A rating reads as its matrix cell and band, e.g. "2C Serious". @param {any} v */

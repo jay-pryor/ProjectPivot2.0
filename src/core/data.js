@@ -9,20 +9,32 @@ export const KINDS = Object.freeze([
   'reference', 'referenceLink',
   'assessment', 'sfarp', 'existingControl',
   'phase', 'hazardPhase', 'safetyReport', 'controlPlatform',
-  'bowtieView',
+  'bowtieView', 'systemElement', 'affectedGroup',
 ]);
 
 export const STATUSES = Object.freeze(['live', 'retired', 'deleted']);
 
 const HEADER_TEXT = ['createdBy', 'createdAt', 'updatedBy', 'updatedAt'];
 
-/** The kinds that get a number a person reads, and the counter that only counts up for each. */
+/** Whether a control is one of the existing controls (EC-…) rather than an additional one (C-…). @param {Record<string, any>} c */
+export const isExistingControl = (c) => c.category === 'existing';
+
+/**
+ * The records that get a number a person reads, and the counter that only counts up for each.
+ * Additional and existing controls are numbered apart (C-001 and EC-001), so a group can be
+ * one category of a kind.
+ * @type {readonly { kind: string, counter: string, where?: (rec: Record<string, any>) => boolean }[]}
+ */
 export const NUMBERED = Object.freeze([
   { kind: 'hazard', counter: 'nextHazardNumber' },
-  { kind: 'control', counter: 'nextControlNumber' },
+  { kind: 'control', counter: 'nextControlNumber', where: (/** @type {Record<string, any>} */ c) => !isExistingControl(c) },
+  { kind: 'control', counter: 'nextExistingControlNumber', where: isExistingControl },
   { kind: 'platform', counter: 'nextPlatformNumber' },
   { kind: 'reference', counter: 'nextReferenceNumber' },
 ]);
+
+/** Whether a record is in a numbered group. @param {{ where?: (rec: any) => boolean }} n @param {Record<string, any>} rec */
+export const inGroup = (n, rec) => !n.where || n.where(rec);
 
 /**
  * Bring data written by an earlier version up to date: a kind it has no collection for gets an
@@ -69,10 +81,12 @@ export function normalizeData(value) {
   records.platform = Object.fromEntries(Object.entries(records.platform).map(([id, p]) => [
     id, isObject(p) && !('reviewDue' in p) ? { ...p, reviewMonths: null, reviewDue: null } : p,
   ]));
+  splitControls(records);
   const out = { ...value, records };
-  for (const { kind, counter } of NUMBERED) {
+  for (const n of NUMBERED) {
+    const { kind, counter } = n;
     if (!Number.isInteger(out[counter])) {
-      const used = Object.values(records[kind]).map((r) => (isObject(r) && Number.isInteger(r.number) ? r.number : 0));
+      const used = Object.values(records[kind]).map((r) => (isObject(r) && inGroup(n, r) && Number.isInteger(r.number) ? r.number : 0));
       out[counter] = Math.max(0, ...used) + 1;
     }
   }
@@ -81,11 +95,48 @@ export function normalizeData(value) {
 
 /** @typedef {{ by: string, at: string }} Act who is acting, and when (AEST) */
 /**
+ * Controls written before additional and existing controls were kept apart each become one or
+ * the other: existing when only ever used as an existing control, otherwise additional. One used
+ * both ways stays additional, and its existing uses move to an existing copy of it (with its
+ * owners on those platforms). An existing control is numbered afresh as EC-… when next saved.
+ * Ids are built from the original's, so everyone opening the same file converts it the same way.
+ * @param {Record<string, any>} records changed in place
+ */
+function splitControls(records) {
+  const usedAs = (/** @type {string} */ kind, /** @type {string} */ id) => Object.values(records[kind]).some((l) => isObject(l) && l.status === 'live' && l.controlId === id);
+  const controls = { ...records.control };
+  const existingLinks = { ...records.existingControl };
+  const owners = { ...records.controlPlatform };
+  for (const [id, c] of Object.entries(records.control)) {
+    if (!isObject(c) || 'category' in c) continue;
+    const additional = usedAs('hazardControl', id);
+    const existing = usedAs('existingControl', id);
+    if (!additional && existing) { controls[id] = { ...c, category: 'existing', number: null }; continue; }
+    controls[id] = { ...c, category: 'additional' };
+    if (!existing) continue;
+    const copyId = `${id}~existing`;
+    controls[copyId] = { ...c, id: copyId, category: 'existing', number: null };
+    for (const l of Object.values(records.existingControl)) {
+      if (!isObject(l) || l.controlId !== id) continue;
+      const moved = `ec:${l.hazardId}:${l.platformId}:${copyId}`;
+      existingLinks[moved] = { ...l, id: moved, controlId: copyId };
+      existingLinks[l.id] = { ...l, status: 'deleted' };
+      const o = records.controlPlatform[`cp:${id}:${l.platformId}`];
+      const ownerId = `cp:${copyId}:${l.platformId}`;
+      if (isObject(o) && !owners[ownerId]) owners[ownerId] = { ...o, id: ownerId, controlId: copyId };
+    }
+  }
+  records.control = controls;
+  records.existingControl = existingLinks;
+  records.controlPlatform = owners;
+}
+
+/**
  * @typedef {{ id: string, status: 'live' | 'retired' | 'deleted', createdBy: string, createdAt: string,
  *   updatedBy: string, updatedAt: string, [field: string]: any }} Rec
  */
 /**
- * @typedef {{ records: Record<string, Record<string, Rec>>, nextHazardNumber: number, nextControlNumber: number, nextPlatformNumber: number, nextReferenceNumber: number,
+ * @typedef {{ records: Record<string, Record<string, Rec>>, nextHazardNumber: number, nextControlNumber: number, nextPlatformNumber: number, nextReferenceNumber: number, nextExistingControlNumber: number,
  *   history: Record<string, any>, reportDesign: Record<string, any> }} Data
  */
 
@@ -94,7 +145,7 @@ export function emptyData() {
   /** @type {Record<string, Record<string, Rec>>} */
   const records = {};
   for (const k of KINDS) records[k] = {};
-  return { records, nextHazardNumber: 1, nextControlNumber: 1, nextPlatformNumber: 1, nextReferenceNumber: 1, history: {}, reportDesign: {} };
+  return { records, nextHazardNumber: 1, nextControlNumber: 1, nextExistingControlNumber: 1, nextPlatformNumber: 1, nextReferenceNumber: 1, history: {}, reportDesign: {} };
 }
 
 /** @param {unknown} v @returns {v is Record<string, any>} */

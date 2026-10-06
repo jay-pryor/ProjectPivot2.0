@@ -22,8 +22,8 @@ function reviewing() {
 test('an open review lists every hazard on the platform with its current ratings and control decisions', () => {
   const items = reviewRows(reviewing(), 'r1');
   assert.deepEqual(items.map((i) => [i.hazard.id, i.reportId, i.onPlatform, i.reviewed, i.note]), [
-    ['h1', 'H-0001', true, true, 'Fine'],
-    ['h2', 'H-0002', true, false, ''],
+    ['h1', 'HAZ-001', true, true, 'Fine'],
+    ['h2', 'HAZ-002', true, false, ''],
   ]);
   assert.deepEqual(items[0].counts, { recommended: 1, planned: 0, implemented: 1, rejected: 0 });
   assert.deepEqual(items[0].rating, { initial: null, residual: null });

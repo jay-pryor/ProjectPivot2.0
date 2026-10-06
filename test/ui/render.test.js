@@ -18,7 +18,7 @@ test('renderApp routes each screen and view', () => {
   const d = assignHazardNumbers(seed());
   assert.match(renderApp(main(d)), /<h1>Hazards<\/h1>/);
   assert.match(renderApp(main(d, { view: { name: 'controls' } })), /<h1>Controls<\/h1>/);
-  assert.match(renderApp(main(d, { view: { name: 'platform', id: 'p1' } })), /class="doc-title" name="name" value="Alpha"/);
+  assert.match(renderApp(main(d, { view: { name: 'platform', id: 'p1' } })), /class="doc-title small" name="name" value="Alpha"/);
   assert.match(renderApp(main(d, { view: { name: 'reports' } })), /<h1>Reports<\/h1>/);
   assert.match(renderApp(main(null, { session: null, view: { name: 'hazards' } })), /<h1>Backups<\/h1>/, 'no data: only backups');
 });

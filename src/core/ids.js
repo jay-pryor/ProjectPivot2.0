@@ -7,16 +7,16 @@ export function newId() {
 export const UNNUMBERED = 'TBC';
 
 /**
- * The id a person reads: `H-0042`, or `TBC` (UNNUMBERED) until the hazard is first saved and numbered.
+ * The id a person reads: `HAZ-042`, or `TBC` (UNNUMBERED) until the hazard is first saved and numbered.
  * @param {{ number?: number | null, [field: string]: any }} hazard
  */
 export function hazardLabel(hazard) {
-  return numberLabel('H', hazard);
+  return numberLabel('HAZ', hazard);
 }
 
-/** @param {{ number?: number | null, [field: string]: any }} control */
+/** An additional control reads C-001; an existing control EC-001. @param {{ number?: number | null, [field: string]: any }} control */
 export function controlLabel(control) {
-  return numberLabel('C', control);
+  return numberLabel(control.category === 'existing' ? 'EC' : 'C', control);
 }
 
 /** @param {{ number?: number | null, [field: string]: any }} platform */
@@ -26,12 +26,12 @@ export function platformLabel(platform) {
 
 /** @param {{ number?: number | null, [field: string]: any }} reference */
 export function referenceLabel(reference) {
-  return numberLabel('R', reference);
+  return numberLabel('REF', reference);
 }
 
 /** @param {string} prefix @param {{ number?: number | null }} rec */
 function numberLabel(prefix, rec) {
-  return rec.number == null ? UNNUMBERED : `${prefix}-${String(rec.number).padStart(4, '0')}`;
+  return rec.number == null ? UNNUMBERED : `${prefix}-${String(rec.number).padStart(3, '0')}`;
 }
 
 /**

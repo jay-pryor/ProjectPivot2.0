@@ -80,7 +80,8 @@ export function unlinkHazard(data, act, { hazardId, platformId }) {
 export function unlinkRecs(data, act, link) {
   const { hazardId, platformId } = link;
   const recs = [{ kind: 'hazardPlatform', rec: changed(link, act, { status: 'deleted' }) }];
-  for (const kind of ['ruling', 'assessment', 'sfarp', 'rating', 'existingControl']) {
+  // Causal factors for this platform alone go with it; those for every platform stay.
+  for (const kind of ['ruling', 'assessment', 'sfarp', 'rating', 'existingControl', 'causalFactor', 'systemElement', 'affectedGroup']) {
     for (const r of live(data, kind)) {
       if (r.hazardId === hazardId && r.platformId === platformId) recs.push({ kind, rec: changed(r, act, { status: 'deleted' }) });
     }

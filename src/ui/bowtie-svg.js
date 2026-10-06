@@ -3,8 +3,9 @@ import { hazardLabel, controlLabel } from '../core/ids.js';
 
 /** @typedef {import('../core/bowtie.js').Bowtie} Bowtie */
 /** @typedef {import('../core/bowtie.js').Item} Item */
+/** @typedef {import('../core/bowtie.js').Tag} Tag */
 /**
- * @typedef {{ kind: string, id: string | null, title: string, lines: string[], style: 'plain' | 'hazard' | 'existing' | 'additional' | 'empty',
+ * @typedef {{ kind: string, id: string | null, title: string, lines: string[], tags: Tag[], style: 'plain' | 'hazard' | 'existing' | 'additional',
  *   item: Item | null, x: number, y: number, width: number, height: number }} Box
  */
 
@@ -21,6 +22,12 @@ const FONT_SIZE = 12;
 const FONT = 'Atkinson Hyperlegible, Segoe UI, system-ui, sans-serif';
 const LANE_HEAD = 30;
 const HEAD_SIZE = 11;
+// A control's tags sit in a row of badges under its name.
+const TAG_SIZE = 10.5;
+const TAG_HEIGHT = 16;
+const TAG_PAD = 6;
+const TAG_GAP = 4;
+const TAG_ROW = TAG_HEIGHT + 6;
 // Each colour is a variable the page sets to follow its theme; on its own (an exported file) the
 // light fallback is used, so an export reads and prints the same in any viewer.
 const LIGHT = Object.freeze({
@@ -29,10 +36,20 @@ const LIGHT = Object.freeze({
 });
 /** @param {keyof typeof LIGHT} name */
 const c = (name) => `var(--bt-${name}, ${LIGHT[name]})`;
+/** Each tag's badge, [background, text], light; the page sets --bt-tag-<tone>-bg and -fg for its theme. */
+const TAG_LIGHT = Object.freeze({
+  existing: ['#dff1f4', '#0d5c6b'], additional: ['#f1eafa', '#6b3fa0'], tier: ['#eceff3', '#3c4450'],
+  recommended: ['#e3eefc', '#1f5aa8'], planned: ['#fff1d6', '#8a5300'], implemented: ['#e2f4e6', '#1e6b34'], rejected: ['#eceef1', '#5d6673'],
+});
+/** @param {Tag['tone']} tone @param {0 | 1} part */
+const tagColour = (tone, part) => `var(--bt-tag-${tone}-${part ? 'fg' : 'bg'}, ${TAG_LIGHT[tone][part]})`;
+/** A badge's width: its text, estimated as the boxes' text is, between its padding. @param {Tag} t */
+const tagWidth = (t) => Math.ceil(textWidth(t.text, true) * (TAG_SIZE / FONT_SIZE)) + 2 * TAG_PAD;
+/** @param {Tag[]} tags */
+const tagsWidth = (tags) => tags.reduce((w, t) => w + tagWidth(t), 0) + Math.max(0, tags.length - 1) * TAG_GAP;
 
 const COLUMNS = ['causal-factor', 'preventative-control', 'hazard', 'mitigating-control', 'consequence'];
 const HEADINGS = ['Causal factors', 'Preventative controls', 'Hazard', 'Mitigating controls', 'Consequences'];
-const EMPTY = ['No causal factors recorded', 'No preventative controls in this view', '', 'No mitigating controls in this view', 'No consequences recorded'];
 
 /**
  * The text's words, broken only at whitespace into lines of at most CHARS_PER_LINE characters
@@ -70,23 +87,33 @@ function textWidth(line, bold) {
   return bold ? w * 1.1 : w;
 }
 
-/** @param {string} kind @param {string | null} id @param {string} title @param {string[]} lines @param {Box['style']} style @param {Item | null} [item] @returns {Box} */
-function box(kind, id, title, lines, style, item = null) {
-  return { kind, id, title, lines, style, item, x: 0, y: 0, width: 0, height: lines.length * LINE_HEIGHT + 2 * PAD };
+/** @param {string} kind @param {string | null} id @param {string} title @param {string[]} lines @param {Box['style']} style @param {Item | null} [item] @param {Tag[]} [tags] @returns {Box} */
+function box(kind, id, title, lines, style, item = null, tags = []) {
+  return { kind, id, title, lines, tags, style, item, x: 0, y: 0, width: 0, height: lines.length * LINE_HEIGHT + (tags.length ? TAG_ROW : 0) + 2 * PAD };
 }
 
 /** @param {Item} i @param {string} kind */
 function controlBox(i, kind) {
   const name = `${controlLabel(i.control)} ${i.control.title}`;
-  return box(kind, i.control.id, name, [...wrap(name), i.line], i.source, i);
+  const title = i.tags.length ? `${name} (${i.tags.map((t) => t.text).join(', ')})` : name;
+  return box(kind, i.control.id, title, wrap(name), i.source, i, i.tags);
+}
+
+/** The box's tags as a row of badges under its text. @param {Box} b */
+function badges(b) {
+  let x = b.x + PAD;
+  const y = b.y + PAD + b.lines.length * LINE_HEIGHT + 6;
+  return b.tags.map((t) => {
+    const w = tagWidth(t);
+    const out = `<g data-bowtie-tag="${t.tone}"><rect x="${x}" y="${y}" width="${w}" height="${TAG_HEIGHT}" rx="3" style="fill:${tagColour(t.tone, 0)}"/>`
+      + `<text x="${x + w / 2}" y="${y + TAG_HEIGHT / 2 + TAG_SIZE * 0.36}" text-anchor="middle" font-family="${FONT}" font-size="${TAG_SIZE}" font-weight="700" style="fill:${tagColour(t.tone, 1)}">${esc(t.text)}</text></g>`;
+    x += w + TAG_GAP;
+    return out;
+  }).join('');
 }
 
 /** @param {Box} b @returns {string} */
 function drawBox(b) {
-  if (b.style === 'empty') {
-    return `<g data-bowtie-empty="${b.kind}"><title>${esc(b.title)}</title><rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" style="fill:none;stroke:none"/>`
-      + `<text font-family="${FONT}" font-size="${FONT_SIZE}" font-style="italic" style="fill:${c('muted')}">${tspans(b)}</text></g>`;
-  }
   const i = b.item;
   const attrs = i ? ` data-source="${i.source}"${i.state ? ` data-state="${esc(i.state)}"` : ''}` : '';
   const stroke = b.style === 'hazard' ? `stroke:${c('accent')}" stroke-width="3` : `stroke:${c('ink')}" stroke-width="1.5`;
@@ -95,7 +122,7 @@ function drawBox(b) {
   const weight = b.style === 'hazard' ? ' font-weight="700"' : '';
   return `<g data-bowtie-node="${b.kind}" data-record-id="${esc(b.id)}"${attrs}><title>${esc(b.title)}</title>`
     + `<rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" style="fill:${c('box')};${stroke}"${dash}/>`
-    + `<text font-family="${FONT}" font-size="${FONT_SIZE}" style="fill:${ink}"${weight}>${tspans(b)}</text></g>`;
+    + `<text font-family="${FONT}" font-size="${FONT_SIZE}" style="fill:${ink}"${weight}>${tspans(b)}</text>${badges(b)}</g>`;
 }
 
 /** @param {Box} b */
@@ -116,9 +143,9 @@ export function bowtieSvg(w) {
     [hazard],
     w.mitigating.map((i) => controlBox(i, 'mitigating-control')),
     w.consequences.map((q) => box('consequence', q.id, String(q.text), wrap(q.text), 'plain')),
-  ].map((col, n) => (col.length ? col : [box(COLUMNS[n], null, EMPTY[n], wrap(EMPTY[n]), 'empty')]));
-
-  const heights = columns.map((col) => col.reduce((sum, b) => sum + b.height, 0) + (col.length - 1) * ROW_GAP);
+  ];
+  // An empty lane stays, headed but blank: what is missing is plain without saying so.
+  const heights = columns.map((col) => (col.length ? col.reduce((sum, b) => sum + b.height, 0) + (col.length - 1) * ROW_GAP : 0));
   const contentHeight = Math.max(...heights);
   const lanesTop = MARGIN + CAPTION_HEIGHT;
   const top = lanesTop + LANE_HEAD;
@@ -128,7 +155,7 @@ export function bowtieSvg(w) {
   columns.forEach((col, n) => {
     // A column is at least as wide as its lane's heading, less the lane's own margins.
     const heading = textWidth(HEADINGS[n].toUpperCase(), true) * (HEAD_SIZE / FONT_SIZE) + 8 - COLUMN_GAP;
-    const width = Math.ceil(Math.max(7, heading - 2 * PAD, ...col.flatMap((b) => b.lines.map((l) => textWidth(l, b.style === 'hazard'))))) + 2 * PAD;
+    const width = Math.ceil(Math.max(7, heading - 2 * PAD, ...col.flatMap((b) => [...b.lines.map((l) => textWidth(l, b.style === 'hazard')), tagsWidth(b.tags)]))) + 2 * PAD;
     lanes.push({ x: x - COLUMN_GAP / 2, width: width + COLUMN_GAP });
     let y = top + Math.floor((contentHeight - heights[n]) / 2);
     for (const b of col) {
@@ -151,8 +178,8 @@ export function bowtieSvg(w) {
   // controls sit on those lines as barriers.
   const midY = hazard.y + Math.floor(hazard.height / 2);
   const edges = [
-    ...columns[0].filter((b) => b.style !== 'empty').map((b) => `<line data-bowtie-edge="${esc(b.id)}" x1="${b.x + b.width}" y1="${b.y + Math.floor(b.height / 2)}" x2="${hazard.x}" y2="${midY}" style="stroke:${c('edge')}" stroke-width="1.5"/>`),
-    ...columns[4].filter((b) => b.style !== 'empty').map((b) => `<line data-bowtie-edge="${esc(b.id)}" x1="${hazard.x + hazard.width}" y1="${midY}" x2="${b.x}" y2="${b.y + Math.floor(b.height / 2)}" style="stroke:${c('edge')}" stroke-width="1.5"/>`),
+    ...columns[0].map((b) => `<line data-bowtie-edge="${esc(b.id)}" x1="${b.x + b.width}" y1="${b.y + Math.floor(b.height / 2)}" x2="${hazard.x}" y2="${midY}" style="stroke:${c('edge')}" stroke-width="1.5"/>`),
+    ...columns[4].map((b) => `<line data-bowtie-edge="${esc(b.id)}" x1="${hazard.x + hazard.width}" y1="${midY}" x2="${b.x}" y2="${b.y + Math.floor(b.height / 2)}" style="stroke:${c('edge')}" stroke-width="1.5"/>`),
   ];
   const caption = `<text data-bowtie-caption="true" x="${MARGIN}" y="${MARGIN + FONT_SIZE + 2}" font-family="${FONT}" font-size="${FONT_SIZE + 2}" font-weight="700" style="fill:${c('ink')}">${esc(w.caption)}</text>`;
 

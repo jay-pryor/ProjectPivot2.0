@@ -1,15 +1,15 @@
 import { html } from '../html.js';
-import { dataAttrs, option, go, bandTag, plus, confirmButton, statusTag, idTag, levelTag } from './common.js';
+import { dataAttrs, option, go, bandTag, plus, confirmButton, statusTag, idTag, levelTag, removeColumn, removeButton } from './common.js';
 import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
 import { dataTable } from './table.js';
 import { tierColumn } from './controls.js';
-import { rejectionCell } from './platforms.js';
-import { phaseChips } from './phases.js';
+import { rejectionCell, statusSelect } from './platforms.js';
+import { phaseCard } from './phases.js';
 import { referencesCard } from './references.js';
-import { textTable } from './hazards.js';
+import { numberedCard, platformListCard, sectionRail, descriptionField } from './dashboard.js';
 import { get } from '../../core/data.js';
 import { ids, controlLabel } from '../../core/ids.js';
-import { copySources, stageCopySources, assessmentOf, ratingsOf, sfarpOf, hazardDetail, existingControlsOn, controlsOnPlatform, safetyReportsOn } from '../../core/queries.js';
+import { copySources, stageCopySources, assessmentOf, ratingsOf, sfarpOf, hazardDetail, existingControlsOn, controlsOnPlatform, safetyReportsOn, causalFactorsOn, platformListOn, platformListEntries, hazardReferences, bandOf, worseBand } from '../../core/queries.js';
 import { SAFETY_REPORT_TYPES } from '../../core/ops/safety-reports.js';
 import { day } from '../names.js';
 import { CONTROL_KINDS } from '../../core/ops/controls.js';
@@ -41,8 +41,8 @@ function existingSection(state, data, h, platformId) {
       tierColumn((x) => x.control, false),
       { key: 'kind', label: 'Kind', width: 300, minWidth: 150, value: (x) => x.kind,
         render: (x) => html`<select class="quiet" name="kind" aria-label="Kind of ${x.control.title}" ${dataAttrs({ change: 'setExistingControlKind', 'hazard-id': h.id, 'platform-id': platformId, 'control-id': x.control.id })}>${CONTROL_KINDS.map((k) => option(k, k, x.kind))}</select>` },
-      { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
-        render: (x) => html`<div class="row-actions">${confirmButton('✕', 'Remove this existing control from the platform', dataAttrs({ action: 'unlinkExistingControl', 'hazard-id': h.id, 'platform-id': platformId, 'control-id': x.control.id }))}</div>` },
+      removeColumn((x) => removeButton(`Remove ${x.control.title}`, `Remove ${x.control.title}?`, 'It will no longer be an existing control for this hazard on this platform.',
+        { run: 'unlinkExistingControl', 'hazard-id': h.id, 'platform-id': platformId, 'control-id': x.control.id })),
     ],
   });
 }
@@ -58,7 +58,7 @@ function analysisSection(state, data, h, platformId, platformName) {
     columns: [
       { key: 'control', label: 'Additional controls', width: 360, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`, render: controlCell },
       { key: 'state', label: `Status on ${platformName}`, width: 230, minWidth: 150, value: (c) => CONTROL_STATUSES.indexOf(c.state),
-        render: (c) => html`<select class="quiet state-select state-${c.state}" name="value" aria-label="Status of ${c.control.title}" ${dataAttrs({ change: 'setControlState', 'hazard-id': h.id, 'control-id': c.control.id, 'platform-id': platformId })}>${CONTROL_STATUSES.map((s) => option(s, s, c.state))}</select>` },
+        render: (c) => statusSelect(data, { hazardId: h.id, control: c.control, platformId, state: c.state }) },
       { key: 'reason', label: 'Reason rejected, or who set it', width: 320, minWidth: 200, sortable: false, render: (c) => rejectionCell(state, c, h.id, platformId, platformName) },
       tierColumn((c) => c.control, false),
       { key: 'kind', label: 'Kind', width: 180, minWidth: 120, value: (c) => c.kind },
@@ -105,8 +105,7 @@ function safetyReportsSection(state, data, h, platformId) {
       { key: 'location', label: 'Location', width: 260, minWidth: 120, value: (r) => r.location, render: (r) => cell(r, r.location) },
       { key: 'parties', label: 'Parties involved', width: 300, minWidth: 140, value: (r) => r.parties, render: (r) => cell(r, r.parties) },
       { key: 'description', label: 'Description', width: 560, minWidth: 200, value: (r) => r.description, render: (r) => cell(r, r.description) },
-      { key: 'actions', label: '', width: 110, minWidth: 80, sortable: false,
-        render: (r) => html`<div class="row-actions">${confirmButton('✕', 'Delete this safety report', dataAttrs({ action: 'deleteSafetyReport', id: r.id }))}</div>` },
+      removeColumn((r) => removeButton(`Delete ${r.number || r.summary}`, 'Delete this safety report?', `${r.number ? `${r.number}: ` : ''}${r.summary} will be deleted.`, { run: 'deleteSafetyReport', id: r.id })),
     ],
   })}
   ${editing === `new:${platformId}` ? safetyReportForm(h, platformId, null) : edited ? safetyReportForm(h, platformId, edited) : ''}`;
@@ -150,10 +149,37 @@ function copyStageButton(data, h, platformId, stage) {
   return html`<button type="button" class="copy-stage" ${dataAttrs({ action: 'openPicker', picker: 'copyStage', 'hazard-id': h.id, 'platform-id': platformId, stage })} title="Copy all ${stage} likelihoods and consequences from another platform"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="9" height="9"/><path d="M3 11V2h9"/></svg>Copy from…</button>`;
 }
 
+/**
+ * The hazard's causal factors on its other platforms whose wording is not already here, once
+ * each, with the platforms they come from.
+ * @param {Data} data @param {string} hazardId @param {string} platformId
+ */
+function causalFactorSuggestions(data, hazardId, platformId) {
+  const here = new Set(causalFactorsOn(data, hazardId, platformId).map((r) => String(r.text).trim().toLowerCase()));
+  /** @type {Map<string, { text: string, from: string[] }>} */
+  const found = new Map();
+  for (const r of causalFactorsOn(data, hazardId)) {
+    const key = String(r.text).trim().toLowerCase();
+    if (!r.platformId || r.platformId === platformId || here.has(key)) continue;
+    const name = String(get(data, 'platform', r.platformId)?.name ?? '');
+    const e = found.get(key) ?? { text: r.text, from: [] };
+    if (name && !e.from.includes(name)) e.from.push(name);
+    found.set(key, e);
+  }
+  return [...found.values()].map((e) => ({ text: e.text, from: e.from.join(', ') }));
+}
+
 const SHARED = html`<span class="shared-mark">Shared across platforms</span>`;
 
+/** The worst band over every receptor at one stage, as a dot on the rail; nothing until one is rated. @param {Record<string, any>} stage */
+const worstDot = (stage) => {
+  const band = RECEPTORS.map((x) => bandOf(stage[x])).reduce(worseBand);
+  return band === 'Uncategorised' ? '' : html`<span class="band band-${band.toLowerCase().replace(/\s+/g, '-')} rail-dot" title="Worst: ${band}"></span>`;
+};
+
 /**
- * One platform's SSRA for a hazard, in the document's order.
+ * One platform's SSRA for a hazard, as a dashboard: its risk and controls at a glance, the
+ * numbered causal factors and consequences, and a rail that opens one longer section at a time.
  * @param {any} state @param {Data} data @param {any} h the hazard @param {string} platformId
  */
 export function platformTab(state, data, h, platformId) {
@@ -163,26 +189,49 @@ export function platformTab(state, data, h, platformId) {
   const d = /** @type {NonNullable<ReturnType<typeof hazardDetail>>} */ (hazardDetail(data, h.id));
   const sf = sfarpOf(data, h.id, platformId);
   const sfAt = { change: 'setSfarp', 'hazard-id': h.id, 'platform-id': platformId };
-  return html`<article class="doc ssra">
-    <div class="actions ssra-tools"><button type="button" ${dataAttrs({ action: 'openBowtie', 'hazard-id': h.id, 'platform-id': platformId })}>Open bow-tie</button></div>
-    <section class="ssra-sec"><h2>Overview ${SHARED}</h2>
-      <textarea class="doc-text" name="description" rows="3" placeholder="Add a description…" aria-label="Description" ${dataAttrs({ change: 'updateHazard', id: h.id })}>${h.description}</textarea>
-      ${phaseChips(data, h)}
-      <section class="block">${textTable(state, 'CausalFactor', d.causalFactors, h.id)}</section>
-      <section class="block">${textTable(state, 'Consequence', d.consequences, h.id)}</section>
-    </section>
-    <section class="ssra-sec"><h2>Safety reports</h2><section class="block">${safetyReportsSection(state, data, h, platformId)}</section></section>
-    <section class="ssra-sec"><h2>Existing controls</h2><section class="block">${existingSection(state, data, h, platformId)}</section></section>
-    <section class="ssra-sec"><h2>References ${SHARED}</h2><section class="block">${referencesCard(state, data, { kind: 'hazard', id: h.id })}</section></section>
-    <section class="ssra-sec"><h2>Initial risk${copyStageButton(data, h, platformId, 'initial')}</h2>${riskPanels(state, data, h, platformId, 'initial')}</section>
-    <section class="ssra-sec"><h2>Additional control analysis <span class="shared-mark">Recommendation and justification shared across platforms</span></h2><section class="block">${analysisSection(state, data, h, platformId, p.name)}</section></section>
-    <section class="ssra-sec"><h2>Residual risk${copyStageButton(data, h, platformId, 'residual')}</h2>${riskPanels(state, data, h, platformId, 'residual')}</section>
-    <section class="ssra-sec"><h2>SFARP considerations</h2>
-      <div class="sfarp">
-        <label>SFARP justification<textarea name="justification" rows="4" aria-label="SFARP justification" ${dataAttrs(sfAt)}>${sf.justification}</textarea></label>
-        <label>SFARP conclusion<textarea name="conclusion" rows="2" aria-label="SFARP conclusion" ${dataAttrs(sfAt)}>${sf.conclusion}</textarea></label>
-        <label>Conditions of validity<textarea name="conditions" rows="3" aria-label="Conditions of validity" ${dataAttrs(sfAt)}>${sf.conditions}</textarea></label>
-      </div>
-    </section>
+  const ratings = ratingsOf(data, h.id, platformId);
+  const existing = existingControlsOn(data, h.id, platformId);
+  const additional = controlsOnPlatform(data, h.id, platformId);
+  const reports = safetyReportsOn(data, h.id, platformId);
+  const byState = CONTROL_STATUSES.map((st) => [st, additional.filter((c) => c.state === st).length]).filter(([, n]) => n);
+  return html`<article class="doc ssra dash">
+    <div class="dash-grid three">
+      <section class="dash-card" aria-label="Hazard">
+        <h3 class="dash-card-h">Hazard ${SHARED}<button type="button" class="small bt-open-btn" ${dataAttrs({ action: 'openBowtie', 'hazard-id': h.id, 'platform-id': platformId })}>Open bow-tie</button></h3>
+        ${descriptionField(h)}
+      </section>
+      <section class="dash-card" aria-label="Risk">
+        <h3 class="dash-card-h">Risk</h3>
+        <table class="risk-glance"><thead><tr><th></th>${RECEPTORS.map((x) => html`<th scope="col">${RECEPTOR_WORD[/** @type {'personnel'} */ (x)]}</th>`)}</tr></thead>
+          <tbody>${(/** @type {const} */ (['initial', 'residual'])).map((stage) => html`<tr><th scope="row">${WORD[stage]}</th>${RECEPTORS.map((x) => html`<td>${ratings[stage][/** @type {'personnel'} */ (x)] ? levelTag(ratings[stage][/** @type {'personnel'} */ (x)]) : html`<span class="muted">—</span>`}</td>`)}</tr>`)}</tbody></table>
+      </section>
+      <section class="dash-card" aria-label="Controls">
+        <h3 class="dash-card-h">Controls</h3>
+        <p class="glance-line"><strong>${existing.length}</strong> existing</p>
+        <p class="glance-line"><strong>${additional.length}</strong> additional${byState.length ? html` <span class="glance-tags">${byState.map(([st, n]) => html`<span class="tag state-${st}">${n} ${st}</span> `)}</span>` : ''}</p>
+        <p class="glance-line"><strong>${reports.length}</strong> safety report${reports.length === 1 ? '' : 's'}</p>
+      </section>
+    </div>
+    <div class="dash-grid five-even">
+      ${numberedCard(state, { name: 'CausalFactor', items: causalFactorsOn(data, h.id, platformId), hazardId: h.id, platformId, suggestions: causalFactorSuggestions(data, h.id, platformId) })}
+      ${numberedCard(state, { name: 'Consequence', items: d.consequences, hazardId: h.id })}
+      ${platformListCard(state, { kind: 'systemElement', items: platformListOn(data, 'systemElement', h.id, platformId), hazardId: h.id, platformId, entries: platformListEntries(data, 'systemElement') })}
+      ${phaseCard(data, h)}
+      ${platformListCard(state, { kind: 'affectedGroup', items: platformListOn(data, 'affectedGroup', h.id, platformId), hazardId: h.id, platformId, entries: platformListEntries(data, 'affectedGroup') })}
+    </div>
+    ${sectionRail(state, 'ssra', [
+      { key: 'reports', label: 'Safety reports', icon: 'reports', badge: reports.length, body: () => html`<h2>Safety reports</h2><section class="block">${safetyReportsSection(state, data, h, platformId)}</section>` },
+      { key: 'existing', label: 'Existing controls', icon: 'existing', badge: existing.length, body: () => html`<h2>Existing controls</h2><section class="block">${existingSection(state, data, h, platformId)}</section>` },
+      { key: 'references', label: 'References', icon: 'references', badge: hazardReferences(data, h.id).length, body: () => html`<h2>References ${SHARED}</h2><section class="block">${referencesCard(state, data, { kind: 'hazard', id: h.id })}</section>` },
+      { key: 'initial', label: 'Initial risk', icon: 'initial', badge: worstDot(ratings.initial), body: () => html`<h2>Initial risk${copyStageButton(data, h, platformId, 'initial')}</h2>${riskPanels(state, data, h, platformId, 'initial')}` },
+      { key: 'analysis', label: 'Additional controls', icon: 'analysis', badge: additional.length, body: () => html`<h2>Additional control analysis <span class="shared-mark">Recommendation and justification shared across platforms</span></h2><section class="block">${analysisSection(state, data, h, platformId, p.name)}</section>` },
+      { key: 'residual', label: 'Residual risk', icon: 'residual', badge: worstDot(ratings.residual), body: () => html`<h2>Residual risk${copyStageButton(data, h, platformId, 'residual')}</h2>${riskPanels(state, data, h, platformId, 'residual')}` },
+      { key: 'sfarp', label: 'SFARP', icon: 'sfarp', badge: sf.conclusion?.trim() ? '✓' : '', body: () => html`<h2>SFARP considerations</h2>
+        <div class="sfarp">
+          <label>SFARP justification<textarea name="justification" rows="4" aria-label="SFARP justification" ${dataAttrs(sfAt)}>${sf.justification}</textarea></label>
+          <label>SFARP conclusion<textarea name="conclusion" rows="2" aria-label="SFARP conclusion" ${dataAttrs(sfAt)}>${sf.conclusion}</textarea></label>
+          <label>Conditions of validity<textarea name="conditions" rows="3" aria-label="Conditions of validity" ${dataAttrs(sfAt)}>${sf.conditions}</textarea></label>
+        </div>` },
+    ], 'initial')}
   </article>`;
 }

@@ -1,13 +1,17 @@
 import { PivotError } from './errors.js';
 import { get, live, isObject } from './data.js';
 import { hazardLabel, ids, UNNUMBERED } from './ids.js';
-import { controlsOnPlatform, existingControlsOn } from './queries.js';
+import { controlsOnPlatform, existingControlsOn, causalFactorsOn, childrenOf } from './queries.js';
 import { CONTROL_STATUSES } from './ops/assessment.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Rec} Rec */
 /** @typedef {{ set: string, statuses: string[] }} Filters */
-/** @typedef {{ control: Rec, kind: string, source: 'existing' | 'additional', state: string | null, line: string }} Item */
+/**
+ * A tag drawn as a badge under a control's name; its tone picks the badge's colours.
+ * @typedef {{ text: string, tone: 'existing' | 'additional' | 'tier' | 'recommended' | 'planned' | 'implemented' | 'rejected' }} Tag
+ */
+/** @typedef {{ control: Rec, kind: string, source: 'existing' | 'additional', state: string | null, tags: Tag[] }} Item */
 /**
  * @typedef {{ ok: true, hazard: Rec, platform: Rec, filters: Filters, caption: string,
  *   causalFactors: Rec[], consequences: Rec[], preventative: Item[], mitigating: Item[] }} Bowtie
@@ -63,7 +67,7 @@ export function filterWords(f) {
   return `Existing + ${additional}`;
 }
 
-/** "H-0001 Fire", or just the title until the hazard is numbered. @param {Rec} h */
+/** "HAZ-001 Fire", or just the title until the hazard is numbered. @param {Rec} h */
 export function hazardName(h) {
   const label = hazardLabel(h);
   return label === UNNUMBERED ? String(h.title) : `${label} ${h.title}`;
@@ -87,20 +91,24 @@ export function bowtieOf(data, hazardId, platformId, filters) {
   /** @type {Item[]} */
   const existing = f.set === 'additional' ? [] : existingControlsOn(data, hazardId, platformId).map((x) => ({
     control: x.control, kind: x.kind, source: 'existing', state: null,
-    line: x.control.tier ? `Existing · ${x.control.tier}` : 'Existing',
+    tags: x.control.tier ? [{ text: String(x.control.tier), tone: 'tier' }] : [],
   }));
   /** @type {Item[]} */
   const additional = f.set === 'existing' ? [] : controlsOnPlatform(data, hazardId, platformId)
     .filter((x) => f.statuses.includes(x.state))
     .map((x) => ({
       control: x.control, kind: /** @type {string} */ (x.kind), source: 'additional', state: x.state,
-      line: `Additional · ${STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (x.state)]}`,
+      tags: [{ text: STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (x.state)], tone: /** @type {Tag['tone']} */ (x.state) }],
     }));
-  const items = [...existing, ...additional];
+  // Existing or Additional is said only when the diagram has both; with one kind it goes without saying.
+  const both = existing.length > 0 && additional.length > 0;
+  const items = [...existing, ...additional].map((i) => (both
+    ? { ...i, tags: [{ text: SET_WORD[i.source], tone: i.source }, ...i.tags] }
+    : i));
   return {
     ok: true, hazard, platform, filters: f, caption: `${platform.name} · ${filterWords(f)}`,
-    causalFactors: live(data, 'causalFactor').filter((r) => r.hazardId === hazardId),
-    consequences: live(data, 'consequence').filter((r) => r.hazardId === hazardId),
+    causalFactors: causalFactorsOn(data, hazardId, platformId),
+    consequences: childrenOf(data, 'consequence', hazardId),
     preventative: items.filter((i) => i.kind === 'preventative'),
     mitigating: items.filter((i) => i.kind === 'mitigating'),
   };

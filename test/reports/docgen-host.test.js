@@ -6,7 +6,7 @@ import { fixedClock } from '../../src/core/time.js';
 import { assignHazardNumbers, updateHazard } from '../../src/core/ops/hazards.js';
 import { confirmControl, setRating } from '../../src/core/ops/assessment.js';
 import { setReportDesign } from '../../src/core/ops/reports.js';
-import { act, seed } from '../helpers.js';
+import { act, seed, asExisting } from '../helpers.js';
 
 function setup(mutate = (d) => d) {
   let data = assignHazardNumbers(seed());
@@ -45,7 +45,7 @@ test('produce: a report with its markdown and html, carrying the marking and the
   const { report, markdownName, htmlName } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'Alpha hazards' });
   assert.equal(report.classification, 'OFFICIAL: Sensitive');
   assert.equal(report.rows.length, 1);
-  for (const text of ['H-0001', 'Fire', 'Sprinklers', '2C = Serious', 'Hot works', 'Burns']) {
+  for (const text of ['HAZ-001', 'Fire', 'Sprinklers', '2C = Serious', 'Hot works', 'Burns']) {
     assert.ok(report.markdown.includes(text), `markdown lacks ${text}`);
     assert.ok(report.html.includes(text), `html lacks ${text}`);
   }
@@ -74,7 +74,7 @@ test('the References section: ID, title, doc number, revision, what it supports'
   assert.equal(sec.label, 'References');
   assert.deepEqual([sec.keyColumn.label, ...sec.columns.map((c) => c.label)], ['ID', 'Reference', 'Doc number', 'Revision', 'Supports']);
   const [row] = sec.rows();
-  assert.deepEqual([sec.keyColumn.get(row), ...sec.columns.map((c) => c.get(row))], ['R-0001', 'Safety case', 'SC-1', '', 'Platform']);
+  assert.deepEqual([sec.keyColumn.get(row), ...sec.columns.map((c) => c.get(row))], ['REF-001', 'Safety case', 'SC-1', '', 'Platform']);
 });
 
 test('Hazards has four risk columns; Risk assessments and SFARP sections', async () => {
@@ -102,7 +102,7 @@ test('Additional control analysis and Existing controls sections', async () => {
   let data = assignHazardNumbers(seed());
   data = setControlAnalysis(data, act, { hazardId: 'h1', controlId: 'c1', recommendation: 'Fit', justification: 'Because' });
   data = setControlStatus(data, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'rejected', reason: 'No water' });
-  data = linkExistingControl(data, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
+  data = linkExistingControl(asExisting(data, 'c2'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
   const docs = createDocHost({ getData: () => data, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id });
   const secs = docs.host.sections({ subjectId: 'p1' });
   const ctl = secs.find((s) => s.id === 'controls');
@@ -167,7 +167,7 @@ test('additional and existing controls carry their owner on the platform, as an 
   const { setControlOwner, linkExistingControl } = await import('../../src/core/ops/controls.js');
   const { docs } = setup((d) => {
     let x = setControlOwner(d, act, { controlId: 'c1', platformId: 'p1', owner: 'customer' });
-    x = linkExistingControl(x, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
+    x = linkExistingControl(asExisting(x, 'c2'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
     return setControlOwner(x, act, { controlId: 'c2', platformId: 'p1', owner: 'other', ownerName: 'Acme' });
   });
   const secs = docs.host.sections({ subjectId: 'p1' });

@@ -1,12 +1,12 @@
 import { html, raw } from '../html.js';
-import { dataAttrs, option, confirmButton } from './common.js';
+import { dataAttrs, option, confirmButton, backButton } from './common.js';
 import { profileName } from '../names.js';
 import { get, live } from '../../core/data.js';
 import { byNumber } from '../../core/queries.js';
 import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
 import { SETS, SET_WORD, STATUS_WORD, bowtieOf, canSee, myViews, sharedWithMe, hazardName } from '../../core/bowtie.js';
 import { bowtieSvg } from '../bowtie-svg.js';
-import { paneCount, paneDirty } from '../workspace.js';
+import { paneCount, paneDirty, ZOOM_MIN, ZOOM_MAX } from '../workspace.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 /** @typedef {import('../../core/data.js').Rec} Rec */
@@ -37,9 +37,9 @@ function button(label, attrs, disabled = false) {
 export function bowtiesView(state, data) {
   const ws = state.workspace;
   const n = paneCount(ws);
-  return html`<div class="head"><h1>Bow-ties</h1></div>
-  <div class="bowties">
-    <aside class="bt-side" data-filter-scope>${sideList(state, data)}</aside>
+  // Back and the title sit in the side list, so the stage reaches the top of the page.
+  return html`<div class="bowties">
+    <aside class="bt-side" data-filter-scope>${backButton(state)}<h1>Bow-ties</h1>${sideList(state, data)}</aside>
     <section class="bt-stage${n === 2 ? ' split' : ''}" aria-label="Bow-tie diagrams">
       ${n === 0
         ? html`<div class="bt-empty"><p><strong>Open a saved view, or start a new diagram.</strong></p><p class="muted">Drag a view or a window to the left or right to compare two side by side.</p></div>`
@@ -57,12 +57,15 @@ function sideList(state, data) {
     .filter((x) => x.h && x.h.status === 'live' && x.p && x.p.status !== 'deleted')
     .sort((a, b) => byNumber(/** @type {Rec} */ (a.h), /** @type {Rec} */ (b.h)) || String(a.p?.name).localeCompare(String(b.p?.name)));
   const me = state.profileId;
-  return html`<form data-action="newBowtie" class="bt-new">
-      <label>New diagram<select name="pair" required aria-label="Hazard and platform"><option value="">Choose a hazard and platform…</option>
-        ${pairs.map((x) => option(`${x.h?.id}|${x.p?.id}`, `${hazardName(/** @type {Rec} */ (x.h))} — ${x.p?.name}`))}</select></label>
-      <button type="submit" class="primary">Open</button></form>
+  const choosing = state.editing?.kind === 'bowtieNew';
+  return html`${choosing
+      ? html`<form data-action="newBowtie" class="bt-new">
+      <select name="pair" required aria-label="Hazard and platform" autofocus><option value="">Choose a hazard and platform…</option>
+        ${pairs.map((x) => option(`${x.h?.id}|${x.p?.id}`, `${hazardName(/** @type {Rec} */ (x.h))} — ${x.p?.name}`))}</select>
+      <div class="row inline"><button type="submit" class="primary">Open</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></div></form>`
+      : html`<button type="button" class="primary bt-new-button" ${dataAttrs({ action: 'startEdit', kind: 'bowtieNew', id: '' })}>New diagram</button>`}
     <input class="bt-search" data-filter-list placeholder="Search views…" aria-label="Search views">
-    <h2>My views</h2>${viewList(state, data, myViews(data, me), true, 'You have no saved views yet.')}
+    <h2>My bow-ties</h2>${viewList(state, data, myViews(data, me), true, 'You have no saved bow-ties yet.')}
     <h2>Shared with me</h2>${viewList(state, data, sharedWithMe(data, me), false, 'Nothing is shared with you.')}`;
 }
 
@@ -74,9 +77,11 @@ function viewList(state, data, views, own, none) {
     const broken = !bowtieOf(data, v.hazardId, v.platformId, v.filters).ok;
     const renaming = own && state.editing?.kind === 'bowtieRename' && state.editing.id === v.id;
     const sharing = own && state.editing?.kind === 'bowtieShare' && state.editing.id === v.id;
+    const expanded = (state.bowtieDetails ?? []).includes(v.id);
     return html`<li class="bt-item${broken ? ' broken' : ''}" draggable="true" ${dataAttrs({ 'drag-view': v.id, 'pick-text': `${v.name} ${where}`.toLowerCase() })}>
       <button type="button" class="bt-open" ${dataAttrs({ action: 'openBowtieView', id: v.id })}>
-        <strong>${v.name}</strong><span class="muted">${where}</span>${own ? '' : html`<span class="muted">from ${profileName(state, v.ownerId)}</span>`}${broken ? html`<span class="tag tag-warn">Cannot draw</span>` : ''}</button>
+        <strong>${v.name}</strong>${expanded ? html`<span class="muted">${hazardText(data, v.hazardId)}</span><span class="muted">${platformText(data, v.platformId)}</span>` : ''}${own ? '' : html`<span class="muted">from ${profileName(state, v.ownerId)}</span>`}${broken ? html`<span class="tag tag-warn">Cannot draw</span>` : ''}</button>
+      <button type="button" class="bt-expand${expanded ? ' on' : ''}" aria-expanded="${expanded ? 'true' : 'false'}" aria-label="${expanded ? 'Hide' : 'Show'} hazard and platform for ${v.name}" title="${expanded ? 'Hide' : 'Show'} hazard and platform" ${dataAttrs({ action: 'toggleBowtieDetails', id: v.id })}>▸</button>
       <details class="bt-menu"><summary aria-label="More for ${v.name}" title="More">⋯</summary><div class="bt-menu-body">
         ${button('Open left', { action: 'openBowtieView', id: v.id, side: '0' })}
         ${button('Open right', { action: 'openBowtieView', id: v.id, side: '1' })}
@@ -122,8 +127,9 @@ function paneView(state, data, pane, side, split) {
       <fieldset${f.set === 'existing' ? raw(' disabled') : ''}><legend>${SET_WORD.additional}</legend>
         ${CONTROL_STATUSES.map((st) => html`<label><input type="checkbox" name="on" ${dataAttrs({ change: 'setPaneStatus', side: s, status: st })}${f.statuses.includes(st) ? raw(' checked') : ''}> ${STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (st)]}</label>`)}
       </fieldset>
+      ${b.ok ? zoomControls(pane) : ''}
     </div>
-    <div class="bt-diagram">${b.ok ? diagram(bowtieSvg(b)) : html`<p class="bt-cannot">${/** @type {import('../../core/bowtie.js').Cannot} */ (b).message}</p>`}</div>
+    <div class="bt-diagram${b.ok ? ' pannable' : ''}" ${dataAttrs({ side: s })}>${b.ok ? diagram(bowtieSvg(b), pane) : html`<p class="bt-cannot">${/** @type {import('../../core/bowtie.js').Cannot} */ (b).message}</p>`}</div>
     <div class="actions bt-actions">
       ${own ? button(dirty ? 'Save' : 'Saved', { action: 'saveBowtiePane', side: s }, !dirty) : button(view ? 'Save a copy' : 'Save', { action: 'saveBowtiePane', side: s })}
       ${button('Save as…', { action: 'startEdit', kind: 'bowtieName', id: s })}
@@ -135,14 +141,25 @@ function paneView(state, data, pane, side, split) {
 }
 
 /**
- * The drawing, scaled to fit its window both ways but never below 70% of its own size, so the
- * text stays readable when two windows share the stage; past that the window scrolls.
- * @param {string} svg
+ * The drawing, scaled to fit its window both ways, then zoomed and moved by the window's view:
+ * the wheel zooms about the pointer and dragging moves it (see bowtiePanZoom in mount.js).
+ * @param {string} svg @param {Pane} pane
  */
-function diagram(svg) {
-  const width = Number(/ width="(\d+)"/.exec(svg)?.[1] ?? 0);
-  const height = Number(/ height="(\d+)"/.exec(svg)?.[1] ?? 0);
-  return html`<div class="bt-canvas" style="min-width: ${Math.round(width * 0.7)}px; min-height: ${Math.round(height * 0.7)}px">${raw(svg)}</div>`;
+function diagram(svg, pane) {
+  return html`<div class="bt-canvas" ${dataAttrs({ zoom: pane.zoom ?? 1, x: pane.pan?.x ?? 0, y: pane.pan?.y ?? 0 })} style="transform: ${viewTransform(pane)}">${raw(svg)}</div>`;
+}
+
+/** @param {Pane} pane */
+const viewTransform = (pane) => `translate(${pane.pan?.x ?? 0}px, ${pane.pan?.y ?? 0}px) scale(${pane.zoom ?? 1})`;
+
+/** Zoom out, back to fitted, and in; the middle shows how far it is zoomed. @param {Pane} pane */
+function zoomControls(pane) {
+  const zoom = pane.zoom ?? 1;
+  return html`<div class="bt-zoom" role="group" aria-label="Zoom">
+    <button type="button" aria-label="Zoom out" title="Zoom out" data-bt-zoom="out"${zoom <= ZOOM_MIN ? raw(' disabled') : ''}>−</button>
+    <button type="button" class="bt-zoom-level" title="Fit the drawing to the window" data-bt-zoom="fit">${zoom === 1 && !pane.pan ? 'Fit' : `${Math.round(zoom * 100)}%`}</button>
+    <button type="button" aria-label="Zoom in" title="Zoom in" data-bt-zoom="in"${zoom >= ZOOM_MAX ? raw(' disabled') : ''}>+</button>
+  </div>`;
 }
 
 /** @param {0 | 1} index the window that would be replaced */

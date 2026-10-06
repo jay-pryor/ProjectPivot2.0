@@ -8,7 +8,7 @@ import { retirePlatform } from '../../src/core/ops/platforms.js';
 import { setAssessment, setSfarp, setControlStatus } from '../../src/core/ops/assessment.js';
 import { linkExistingControl } from '../../src/core/ops/controls.js';
 import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
-import { act, seed } from '../helpers.js';
+import { act, seed, asExisting } from '../helpers.js';
 
 const code = (c) => (e) => e instanceof PivotError && e.code === c;
 /** h1 on p1 and p2, with something of each per-platform kind on p1. */
@@ -16,7 +16,7 @@ function filled() {
   let d = setAssessment(seed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'capability', likelihood: 'C', consequence: 2 });
   d = setSfarp(d, act, { hazardId: 'h1', platformId: 'p1', conclusion: 'SFARP' });
   d = setControlStatus(d, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'planned' });
-  d = linkExistingControl(d, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
+  d = linkExistingControl(asExisting(d, 'c2'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
   return createSafetyReport(d, act, { id: 'sr1', hazardId: 'h1', platformId: 'p1', summary: 'Near miss' });
 }
 

@@ -42,8 +42,8 @@ test('ids: uuids, link ids, and the hazard label', () => {
   assert.equal(ids.hazardPlatform('h', 'p'), 'hp:h:p');
   assert.equal(ids.ruling('h', 'c', 'p'), 'ru:h:c:p');
   assert.equal(ids.rating('h', 'p'), 'rt:h:p');
-  assert.equal(hazardLabel({ number: 7 }), 'H-0007');
-  assert.equal(hazardLabel({ number: 12345 }), 'H-12345');
+  assert.equal(hazardLabel({ number: 7 }), 'HAZ-007');
+  assert.equal(hazardLabel({ number: 12345 }), 'HAZ-12345');
   assert.equal(hazardLabel({ number: null }), 'TBC');
 });
 

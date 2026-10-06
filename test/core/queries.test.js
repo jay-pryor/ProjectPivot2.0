@@ -41,7 +41,7 @@ test('hazardDetail gathers a hazard and what hangs off it', () => {
   assert.deepEqual(det.causalFactors.map((r) => r.text), ['Hot works']);
   assert.deepEqual(det.consequences.map((r) => r.text), ['Burns']);
   assert.deepEqual(det.controls.map((c) => `${c.control.title}:${c.link.kind}`), ['Sprinklers:preventative', 'Fire drills:mitigating']);
-  assert.deepEqual(det.platforms.map((p) => `${p.platform.name}:${p.reportId}`), ['Alpha:H-0001', 'Bravo:B-1']);
+  assert.deepEqual(det.platforms.map((p) => `${p.platform.name}:${p.reportId}`), ['Alpha:HAZ-001', 'Bravo:B-1']);
   assert.equal(hazardDetail(d, 'nope'), null);
 });
 
@@ -49,7 +49,7 @@ test('platformHazards is the one list of a platform\'s hazards, with ratings and
   const rows = platformHazards(assessed(), 'p1');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].hazard.id, 'h1');
-  assert.equal(rows[0].reportId, 'H-0001');
+  assert.equal(rows[0].reportId, 'HAZ-001');
   assert.deepEqual(rows[0].rating.residual, { consequence: 2, likelihood: 'C' });
   assert.deepEqual(rows[0].controls.map((c) => `${c.control.title}:${c.kind}:${c.state}`), ['Sprinklers:preventative:implemented', 'Fire drills:mitigating:rejected']);
 });

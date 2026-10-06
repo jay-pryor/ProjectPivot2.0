@@ -23,3 +23,14 @@ export function seed() {
   d = linkHazard(d, act, { hazardId: 'h1', platformId: 'p2' });
   return d;
 }
+
+/**
+ * The same data with these controls made existing controls (EC-…), so a test can add them on a
+ * platform as existing controls. Their links as additional controls, if any, are left alone.
+ * @param {import('../src/core/data.js').Data} d @param {...string} controlIds
+ */
+export function asExisting(d, ...controlIds) {
+  const control = { ...d.records.control };
+  for (const id of controlIds) if (control[id]) control[id] = { ...control[id], category: 'existing' };
+  return { ...d, records: { ...d.records, control } };
+}

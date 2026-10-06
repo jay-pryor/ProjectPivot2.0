@@ -1,7 +1,27 @@
 import { normalizeFilters, sameFilters, DEFAULT_FILTERS } from '../core/bowtie.js';
 
 /** @typedef {import('../core/bowtie.js').Filters} Filters */
-/** @typedef {{ viewId: string | null, hazardId: string, platformId: string, filters: Filters }} Pane */
+/** @typedef {{ viewId: string | null, hazardId: string, platformId: string, filters: Filters, zoom?: number, pan?: { x: number, y: number } }} Pane  zoom: times the fitted size, absent is 1; pan: pixels the drawing is moved by, absent is none */
+
+/** How far a window zooms out and in, as multiples of the drawing fitted to its window. */
+export const ZOOM_MIN = 0.5;
+export const ZOOM_MAX = 6;
+
+/** @param {number} z */
+export const clampZoom = (z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+
+/**
+ * What a window keeps of how it is viewed: the zoom (fitted is left out) and the pan (none is left out).
+ * @param {unknown} zoom @param {unknown} x @param {unknown} y
+ * @returns {{ zoom?: number, pan?: { x: number, y: number } }}
+ */
+export function paneView(zoom, x, y) {
+  const z = Number(zoom);
+  const px = Math.round(Number(x) || 0);
+  const py = Math.round(Number(y) || 0);
+  const z2 = Number.isFinite(z) ? Math.round(clampZoom(z) * 1000) / 1000 : 1;
+  return { ...(z2 !== 1 ? { zoom: z2 } : {}), ...(px || py ? { pan: { x: px, y: py } } : {}) };
+}
 /** @typedef {{ panes: [Pane | null, Pane | null], lastUsed: 0 | 1 }} Workspace */
 /** @typedef {0 | 1 | 'last'} Side */
 
@@ -89,7 +109,8 @@ function readPane(p) {
   if (!p || typeof p !== 'object') return null;
   const o = /** @type {Record<string, unknown>} */ (p);
   if (typeof o.hazardId !== 'string' || typeof o.platformId !== 'string') return null;
-  return { viewId: typeof o.viewId === 'string' ? o.viewId : null, hazardId: o.hazardId, platformId: o.platformId, filters: normalizeFilters(o.filters) };
+  const pan = /** @type {Record<string, unknown> | undefined} */ (o.pan && typeof o.pan === 'object' ? o.pan : undefined);
+  return { viewId: typeof o.viewId === 'string' ? o.viewId : null, hazardId: o.hazardId, platformId: o.platformId, filters: normalizeFilters(o.filters), ...paneView(o.zoom ?? 1, pan?.x, pan?.y) };
 }
 
 /**

@@ -29,7 +29,7 @@ test('references are numbered records; links are records built from what they jo
   delete old.records.reference;
   assert.equal(normalizeData(old).nextReferenceNumber, 1);
   assert.equal(ids.referenceLink('r1', 'hazard', 'h1'), 'rl:r1:hazard:h1');
-  assert.equal(referenceLabel({ number: 7 }), 'R-0007');
+  assert.equal(referenceLabel({ number: 7 }), 'REF-007');
   assert.equal(referenceLabel({ number: null }), 'TBC');
   const d = assignNumbers(put(emptyData(), 'reference', ref('r1')));
   assert.equal(d.records.reference.r1.number, 1);

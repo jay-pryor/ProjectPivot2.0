@@ -7,10 +7,15 @@ import { setAssessment, setSfarp, setControlStatus } from '../../src/core/ops/as
 import { setControlAnalysis, linkExistingControl, updateControl, retireControl, createControl } from '../../src/core/ops/controls.js';
 import { pickerView } from '../../src/ui/screens/picker.js';
 import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
-import { seed, act } from '../helpers.js';
+import { seed, act, asExisting } from '../helpers.js';
 
 const state = { ...initialState(), screen: 'main', today: '2026-09-28', profileId: 'u1', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }, { id: 'u2', name: 'Grace', createdAt: '' }] };
-const on = (tab) => ({ ...state, view: { name: 'hazard', id: 'h1', tab } });
+const on = (tab, section) => ({ ...state, view: { name: 'hazard', id: 'h1', tab }, ...(section === undefined ? {} : { sections: { ssra: section } }) });
+const SECTIONS = ['reports', 'existing', 'references', 'initial', 'analysis', 'residual', 'sfarp'];
+/** Alpha's tab drawn once with each rail section open in turn. */
+const everySection = (d, extra = {}) => SECTIONS.map((x) => hazardView({ ...on('p:p1', x), ...extra }, d, 'h1').toString()).join('\n');
+/** The rail's section labels, in order. @param {string} out */
+const railOrder = (out) => [...out.matchAll(/data-action="showSection" data-page="ssra" data-section="(\w+)"/g)].map((m) => m[1]);
 /** h1 on p1 (Alpha) and p2 (Bravo); Alpha residual: personnel 4D, environment 2C; an initial personnel likelihood with a justification; SFARP written. */
 function data(why = 'Seen twice a year') {
   let d = assignNumbers(seed());
@@ -26,21 +31,26 @@ test('the hazard page has an Overview tab, a tab per platform (with its worst re
   assert.match(out, /data-tab="p:p1">Alpha <span class="band band-serious">Serious<\/span>/);
   assert.match(out, /data-tab="p:p2">Bravo/);
   assert.match(out, /History \(/);
-  assert.match(out, /data-table="hazardPlatforms"[\s\S]*?<th data-col="personnel"[\s\S]*?<th data-col="environment"/, 'Overview: residual personnel and environment per platform');
-  assert.match(out, /data-action="go" data-view="hazard" data-id="h1" data-tab="p:p1"/, 'each platform row opens its tab');
+  assert.match(out, /<button type="button" class="dash-card plat-card" title="Open the SSRA for Alpha" data-action="go" data-view="hazard" data-id="h1" data-tab="p:p1">[\s\S]*?Personnel<\/span><span class="band band-low">Low[\s\S]*?Environment<\/span><span class="band band-serious">Serious/, 'Overview: a tile per platform with its residual per receptor, opening its tab');
+  assert.doesNotMatch(out, /Open SSRA|never reviewed/);
 });
 
-test('a platform tab reads like the SSRA: shared overview, references, initial risk, residual risk, SFARP', () => {
+test('a platform tab is a dashboard: risk and controls at a glance, the shared hazard, numbered lists, and a rail in SSRA order', () => {
   const out = hazardView(on('p:p1'), data(), 'h1').toString();
-  const order = ['Overview', 'References', 'Initial risk', 'Residual risk', 'SFARP considerations'].map((h) => out.indexOf(`<h2>${h}`));
-  assert.ok(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1])), `sections in SSRA order: ${order}`);
+  assert.deepEqual(railOrder(out), SECTIONS);
+  assert.match(out, /<table class="risk-glance">[\s\S]*?Initial[\s\S]*?Residual[\s\S]*?<span class="band band-serious">2C Serious<\/span>/);
   assert.match(out, /class="shared-mark">Shared across platforms/);
-  assert.match(out, /<textarea class="doc-text" name="description"[^>]*data-change="updateHazard"/);
-  assert.match(out, /data-table="causalFactor"/);
+  assert.match(out, /<textarea class="doc-text boxed" name="description"[^>]*data-change="updateHazard"/);
+  assert.match(out, /<section class="dash-card nl-card" aria-label="Causal factors">/);
+  assert.match(out, /aria-label="Causal factors">[\s\S]*?<span class="nl-num">1<\/span>[\s\S]*?aria-label="Consequences">[\s\S]*?<span class="nl-num">1<\/span>[\s\S]*?aria-label="System\/Element">[\s\S]*?aria-label="Lifecycle phases">[\s\S]*?aria-label="Affected groups">/);
+  assert.ok(out.indexOf('aria-label="Hazard"') < out.indexOf('aria-label="Risk"') && out.indexOf('aria-label="Risk"') < out.indexOf('aria-label="Controls"'), 'hazard, then risk, then controls');
+  assert.match(out, /class="rail-item on" aria-pressed="true"[^>]*data-section="initial"/, 'Initial risk is open until another is chosen');
+  assert.equal((out.match(/class="rail-panel"/g) ?? []).length, 1, 'one section open at a time');
+  assert.match(hazardView(on('p:p1', null), data(), 'h1').toString(), /Choose a section on the left/, 'the open one closes');
 });
 
 test('risk panels: personnel and environment side by side, each with likelihood, consequence, justifications and the level', () => {
-  const out = hazardView(on('p:p1'), data(), 'h1').toString();
+  const out = everySection(data());
   assert.match(out, /<select name="likelihood" aria-label="Initial personnel likelihood" data-change="setAssessment" data-hazard-id="h1" data-platform-id="p1" data-stage="initial" data-receptor="personnel">[\s\S]*?<option value="C" selected>C · Occasional<\/option>/);
   assert.match(out, /<textarea name="likelihoodWhy"[^>]*data-change="setAssessment" data-hazard-id="h1" data-platform-id="p1" data-stage="initial" data-receptor="personnel">Seen twice a year<\/textarea>/);
   assert.match(out, /<select name="consequence" aria-label="Residual environment consequence"[\s\S]*?<option value="2" selected>2 · Critical<\/option>/);
@@ -49,7 +59,7 @@ test('risk panels: personnel and environment side by side, each with likelihood,
 });
 
 test('SFARP considerations, and text shown literally', () => {
-  const out = hazardView(on('p:p1'), data('<b>x</b>'), 'h1').toString();
+  const out = everySection(data('<b>x</b>'));
   assert.match(out, /<textarea name="conclusion"[^>]*data-change="setSfarp" data-hazard-id="h1" data-platform-id="p1">Risk is SFARP<\/textarea>/);
   assert.match(out, /name="justification"[\s\S]*?name="conditions"/);
   assert.match(out, /&lt;b&gt;x&lt;\/b&gt;<\/textarea>/);
@@ -94,7 +104,7 @@ test('SSRA edits on a platform tab show in the hazard page\'s History, naming th
 
 test('unlinking a hazard from a platform warns that its assessments, justifications and SFARP go too', async () => {
   const { platformView } = await import('../../src/ui/screens/platforms.js');
-  assert.match(platformView(state, data(), 'p1').toString(), /Unlink, clearing its risk assessments, justifications, SFARP considerations and control decisions here/);
+  assert.match(platformView(state, data(), 'p1').toString(), /data-action="askConfirm" data-run="unlinkHazard" data-hazard-id="h1" data-platform-id="p1" data-title="Unlink Fire from Alpha\?" data-text="Unlinking clears its risk assessments, justifications, SFARP considerations and control decisions here\."/);
 });
 
 function controlled() {
@@ -102,16 +112,16 @@ function controlled() {
   d = setControlAnalysis(d, act, { hazardId: 'h1', controlId: 'c1', recommendation: 'Fit <b>now</b>', justification: 'Cuts spread' });
   d = setControlStatus(d, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'rejected', reason: 'No water main' });
   d = updateControl(d, act, { id: 'c2', tier: 'Administrative' });
-  return linkExistingControl(d, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
+  return linkExistingControl(asExisting(d, 'c2'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
 }
 
-test('a platform tab has Existing controls and the Additional control analysis, in SSRA order', () => {
-  const out = hazardView(on('p:p1'), controlled(), 'h1').toString();
-  const order = ['Overview', 'Existing controls', 'References', 'Initial risk', 'Additional control analysis', 'Residual risk', 'SFARP considerations'].map((h) => out.indexOf(`<h2>${h}`));
-  assert.ok(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1])), `sections in SSRA order: ${order}`);
+test('a platform tab has Existing controls and the Additional control analysis, counted on the dashboard', () => {
+  const out = everySection(controlled());
+  const glance = hazardView(on('p:p1'), controlled(), 'h1').toString();
+  assert.match(glance, /<strong>1<\/strong> existing[\s\S]*?<strong>2<\/strong> additional <span class="glance-tags"><span class="tag state-recommended">1 recommended<\/span> <span class="tag state-rejected">1 rejected<\/span>/);
   assert.match(out, /data-table="existingControls"[\s\S]*?Fire drills[\s\S]*?Administrative/);
   assert.match(out, /data-action="openPicker" data-picker="linkExistingControls" data-hazard-id="h1" data-platform-id="p1"/);
-  assert.match(out, /data-action="unlinkExistingControl" data-hazard-id="h1" data-platform-id="p1" data-control-id="c2"/);
+  assert.match(out, /data-action="askConfirm" data-run="unlinkExistingControl" data-hazard-id="h1" data-platform-id="p1" data-control-id="c2"/);
   assert.match(out, /data-table="controlAnalysis"[\s\S]*?<textarea class="cell-area" name="recommendation"[^>]*data-change="setControlAnalysis" data-hazard-id="h1" data-control-id="c1">Fit &lt;b&gt;now&lt;\/b&gt;<\/textarea>/);
   assert.match(out, /aria-label="Status of Sprinklers"[\s\S]*?<option value="rejected" selected>rejected<\/option>/);
   assert.match(out, /No water main/);
@@ -138,16 +148,16 @@ test('the Controls list counts existing uses among a control\'s hazards and plat
   const { controlsView, controlView } = await import('../../src/ui/screens/controls.js');
   const d = controlled();
   const c3 = createControl(d, act, { id: 'c3', title: 'Hot work permit' });
-  const withExisting = linkExistingControl(c3, act, { hazardId: 'h1', platformId: 'p2', controlId: 'c3', kind: 'preventative' });
-  const list = controlsView(state, withExisting).toString();
-  assert.match(list, /<tr data-row="c3">[\s\S]*?H-0001 Fire[\s\S]*?Bravo/, 'an existing-control use counts as a hazard and platform it serves');
-  const page = controlView(state, d, 'c2').toString();
+  const withExisting = linkExistingControl(asExisting(c3, 'c3'), act, { hazardId: 'h1', platformId: 'p2', controlId: 'c3', kind: 'preventative' });
+  const list = controlsView({ ...state, view: { name: 'controls', tab: 'existing' } }, withExisting).toString();
+  assert.match(list, /<tr data-row="c3"[^>]*>[\s\S]*?HAZ-001 Fire[\s\S]*?Bravo/, 'an existing-control use counts as a hazard and platform it serves');
+  const page = controlView({ ...state, sections: { control: 'existing' } }, d, 'c2').toString();
   assert.match(page, /data-table="controlExisting"[\s\S]*?Fire[\s\S]*?Alpha[\s\S]*?mitigating/);
   assert.doesNotMatch(page, /Delete this control/);
 });
 
 test('the control tables lead with the control, and the analysis shows its status before the long text columns', () => {
-  const out = hazardView(on('p:p1'), controlled(), 'h1').toString();
+  const out = everySection(controlled());
   const heads = (id) => [...out.slice(out.indexOf(`data-table="${id}"`)).split('</thead>')[0].matchAll(/<th data-col="(\w+)"/g)].map((m) => m[1]);
   assert.deepEqual(heads('existingControls'), ['control', 'tier', 'kind', 'actions']);
   assert.deepEqual(heads('controlAnalysis'), ['control', 'state', 'reason', 'tier', 'kind', 'recommendation', 'justification']);
@@ -163,11 +173,11 @@ test('the hazard\'s History includes its control analysis, statuses and existing
 test('acknowledgements and notices name the control, hazard and platform a record is about', async () => {
   const { recordName } = await import('../../src/ui/names.js');
   const d = controlled();
-  assert.equal(recordName('existingControl', d.records.existingControl['ec:h1:p1:c2'], d), 'Fire drills for H-0001 on Alpha');
-  assert.equal(recordName('ruling', d.records.ruling['ru:h1:c1:p1'], d), 'Sprinklers for H-0001 on Alpha');
-  assert.equal(recordName('hazardControl', d.records.hazardControl['hc:h1:c1'], d), 'Sprinklers for H-0001');
-  assert.equal(recordName('assessment', d.records.assessment['ra:h1:p1:residual:environment'], d), 'Residual environment risk of H-0001 on Alpha');
-  assert.equal(recordName('sfarp', d.records.sfarp['sf:h1:p1'], d), 'SFARP of H-0001 on Alpha');
+  assert.equal(recordName('existingControl', d.records.existingControl['ec:h1:p1:c2'], d), 'Fire drills for HAZ-001 on Alpha');
+  assert.equal(recordName('ruling', d.records.ruling['ru:h1:c1:p1'], d), 'Sprinklers for HAZ-001 on Alpha');
+  assert.equal(recordName('hazardControl', d.records.hazardControl['hc:h1:c1'], d), 'Sprinklers for HAZ-001');
+  assert.equal(recordName('assessment', d.records.assessment['ra:h1:p1:residual:environment'], d), 'Residual environment risk of HAZ-001 on Alpha');
+  assert.equal(recordName('sfarp', d.records.sfarp['sf:h1:p1'], d), 'SFARP of HAZ-001 on Alpha');
   assert.equal(recordName('ruling', d.records.ruling['ru:h1:c1:p1']), 'Control decision', 'without the data, the kind');
 });
 
@@ -177,24 +187,23 @@ function reported() {
   return createSafetyReport(d, act, { id: 'sr2', hazardId: 'h1', platformId: 'p2', summary: 'On Bravo' });
 }
 
-test('a platform tab lists that platform\'s safety reports after the overview, + to add, double-click to edit, ✕ to delete', () => {
-  const out = hazardView(on('p:p1'), reported(), 'h1').toString();
-  const order = ['Overview', 'Safety reports', 'Existing controls'].map((h) => out.indexOf(`<h2>${h}`));
-  assert.ok(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1])), `sections in SSRA order: ${order}`);
+test('a platform tab lists that platform\'s safety reports in its own section, + to add, double-click to edit, ✕ to delete', () => {
+  const out = hazardView(on('p:p1', 'reports'), reported(), 'h1').toString();
+  assert.match(out, /data-section="reports"[^>]*>[\s\S]*?<span class="rail-badge">1<\/span>/);
   assert.match(out, /data-table="safetyReports"[\s\S]*?SR-10[\s\S]*?4 Mar 2026[\s\S]*?Near miss[\s\S]*?Rotor &lt;b&gt;strike&lt;\/b&gt;[\s\S]*?Hangar 3[\s\S]*?Crew A/);
   assert.doesNotMatch(out, /On Bravo/);
   assert.match(out, /data-dblclick="startEdit" data-kind="safetyReport" data-id="sr1"/);
-  assert.match(out, /data-action="deleteSafetyReport" data-id="sr1"/);
+  assert.match(out, /data-action="askConfirm" data-run="deleteSafetyReport" data-id="sr1"/);
   assert.match(out, /data-action="startEdit" data-kind="safetyReport" data-id="new:p1"/);
   assert.doesNotMatch(out, /<b>strike<\/b>/);
 });
 
 test('the safety report form adds a new one, or edits one with its values filled in', () => {
-  const adding = hazardView({ ...on('p:p1'), editing: { kind: 'safetyReport', id: 'new:p1' } }, reported(), 'h1').toString();
+  const adding = hazardView({ ...on('p:p1', 'reports'), editing: { kind: 'safetyReport', id: 'new:p1' } }, reported(), 'h1').toString();
   assert.match(adding, /<form data-action="createSafetyReport" data-hazard-id="h1" data-platform-id="p1" class="report-form">/);
   assert.match(adding, /<select name="reportType"[^>]*>[\s\S]*?<option value="Occurrence" selected>/);
   assert.match(adding, /<input name="summary" required/);
-  const editing = hazardView({ ...on('p:p1'), editing: { kind: 'safetyReport', id: 'sr1' } }, reported(), 'h1').toString();
+  const editing = hazardView({ ...on('p:p1', 'reports'), editing: { kind: 'safetyReport', id: 'sr1' } }, reported(), 'h1').toString();
   assert.match(editing, /<form data-action="updateSafetyReport" data-id="sr1" class="report-form">/);
   assert.match(editing, /<input type="date" name="date" value="2026-03-04"/);
   assert.match(editing, /<option value="Near miss" selected>/);
@@ -214,7 +223,7 @@ test('deleting a hazard or a platform warns that its safety reports go too', asy
 const capability = (d, stage, likelihood, consequence, extra = {}) => setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage, receptor: 'capability', likelihood, consequence, ...extra });
 
 test('the platform tab has a Capability panel beside Personnel and Environment, for initial and residual risk', () => {
-  const out = hazardView(on('p:p1'), capability(data(), 'initial', 'B', null, { likelihoodWhy: '<b>x</b>' }), 'h1').toString();
+  const out = everySection(capability(data(), 'initial', 'B', null, { likelihoodWhy: '<b>x</b>' }));
   assert.equal((out.match(/class="risk-panel"/g) ?? []).length, 6, 'three panels per stage');
   assert.match(out, /<select name="likelihood" aria-label="Initial capability likelihood"[^>]*>[\s\S]*?<option value="B" selected>/);
   assert.match(out, /aria-label="Residual capability consequence"/);
@@ -227,7 +236,7 @@ test('the worst residual counts capability, on the tab and in the hazards list, 
   const { hazardsView } = await import('../../src/ui/screens/hazards.js');
   const d = capability(data(), 'residual', 'A', 1);
   assert.match(hazardView(state, d, 'h1').toString(), /data-tab="p:p1">Alpha <span class="band band-high">High<\/span>/);
-  assert.match(hazardView(state, d, 'h1').toString(), /data-table="hazardPlatforms"[\s\S]*?<th data-col="capability"/);
+  assert.match(hazardView(state, d, 'h1').toString(), /class="dash-card plat-card"[\s\S]*?Capability<\/span><span class="band band-high">High/);
   const list = hazardsView(state, d).toString();
   assert.match(list, /<th data-col="riskCapability"/);
   assert.match(hazardsView({ ...state, tables: { hazards: { filters: { riskCapability: 'High' } } } }, d).toString(), /data-row="h1"/);
@@ -254,13 +263,13 @@ test('Home has a capability bar; the review checklist a residual capability colu
 });
 
 test('the safety reports table shows each report\'s description', () => {
-  const out = hazardView(on('p:p1'), reported(), 'h1').toString();
+  const out = hazardView(on('p:p1', 'reports'), reported(), 'h1').toString();
   assert.match(out, /data-table="safetyReports"[\s\S]*?<th data-col="description"[\s\S]*?Blade tip hit a stand/);
 });
 
 test('initial risk panels are tinted red and residual ones blue, to tell them apart', async () => {
   const fs = await import('node:fs');
-  const out = hazardView(on('p:p1'), data(), 'h1').toString();
+  const out = everySection(data());
   assert.match(out, /<h2>Initial risk<\/h2><div class="risk-panels risk-initial">/);
   assert.match(out, /<h2>Residual risk<\/h2><div class="risk-panels risk-residual">/);
   const css = fs.readFileSync(new URL('../../src/ui/styles.css', import.meta.url), 'utf8');
@@ -274,7 +283,7 @@ test('a hazard links to platforms from its own Overview: + opens the live platfo
   d = createPlatform(d, act, { id: 'p4', name: 'Delta', ownerId: 'u1' });
   d = retirePlatform(d, act, { id: 'p4' });
   const out = hazardView(state, d, 'h1').toString();
-  assert.match(out, /data-table="hazardPlatforms"[\s\S]*?data-action="openPicker" data-picker="linkPlatforms" data-hazard-id="h1"/);
+  assert.match(out, /<h2 class="dash-h">Platforms <span class="count">2<\/span><button type="button" class="plus" data-action="openPicker" data-picker="linkPlatforms" data-hazard-id="h1"/);
   const picker = pickerView({ ...state, picker: { picker: 'linkPlatforms', hazardId: 'h1' } }, d).toString();
   assert.match(picker, /<form data-action="linkPlatforms" data-hazard-id="h1"/);
   assert.match(picker, /value="p3"/);
@@ -284,7 +293,7 @@ test('a hazard links to platforms from its own Overview: + opens the live platfo
 
 test('a justification box offers to copy the same box from another platform, only when one has text', () => {
   const d = setAssessment(data(), act, { hazardId: 'h1', platformId: 'p2', stage: 'initial', receptor: 'environment', likelihood: 'D', likelihoodWhy: 'Bunded <store>' });
-  const onAlpha = hazardView(on('p:p1'), d, 'h1').toString();
+  const onAlpha = hazardView(on('p:p1', 'initial'), d, 'h1').toString();
   assert.match(onAlpha, /<button type="button" class="copy-from" data-action="openPicker" data-picker="copyJustification" data-hazard-id="h1" data-platform-id="p1" data-stage="initial" data-receptor="environment" data-field="likelihoodWhy" title="Copy from another platform" aria-label="Copy the initial environment likelihood justification from another platform">/);
   assert.equal((onAlpha.match(/class="copy-from"/g) ?? []).length, 1, 'no other platform has text in the other boxes');
   const picker = pickerView({ ...state, picker: { picker: 'copyJustification', hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'environment', field: 'likelihoodWhy' } }, d).toString();
@@ -293,10 +302,25 @@ test('a justification box offers to copy the same box from another platform, onl
 
 test('Initial risk and Residual risk each offer to copy the whole stage from another platform that has one', () => {
   const d = setAssessment(data(), act, { hazardId: 'h1', platformId: 'p2', stage: 'initial', receptor: 'capability', likelihood: 'D', consequence: 3 });
-  const out = hazardView(on('p:p1'), d, 'h1').toString();
+  const out = everySection(d);
   assert.match(out, /<h2>Initial risk<button type="button" class="copy-stage" data-action="openPicker" data-picker="copyStage" data-hazard-id="h1" data-platform-id="p1" data-stage="initial" title="Copy all initial likelihoods and consequences from another platform">[\s\S]*?Copy from…<\/button><\/h2>/);
   assert.doesNotMatch(out, /data-picker="copyStage"[^>]*data-stage="residual"/, 'no other platform has residual risk yet');
   const picker = pickerView({ ...state, picker: { picker: 'copyStage', hazardId: 'h1', platformId: 'p1', stage: 'initial' } }, d).toString();
   assert.match(picker, /Copy the initial risk/);
   assert.match(picker, /data-action="copyStage" data-hazard-id="h1" data-platform-id="p1" data-stage="initial" data-from="p2"[\s\S]*?Bravo[\s\S]*?Capability[\s\S]*?3D Medium/);
+});
+
+test('a platform tab\'s System/Element and Affected groups: numbered, + opens a box suggesting what was typed before', async () => {
+  const { addSystemElement } = await import('../../src/core/ops/hazards.js');
+  let d = addSystemElement(data(), act, { id: 's1', hazardId: 'h1', platformId: 'p1', text: 'Engine room' });
+  d = addSystemElement(d, act, { id: 's2', hazardId: 'h1', platformId: 'p2', text: 'Galley' });
+  const out = hazardView(on('p:p1'), d, 'h1').toString();
+  const card = out.slice(out.indexOf('aria-label="System/Element"'), out.indexOf('aria-label="Lifecycle phases"'));
+  assert.match(card, /System\/Element <span class="count">1<\/span><button[^>]*data-action="startEdit" data-kind="newSystemElement" data-id="h1:p1"/);
+  assert.match(card, /<span class="cell-text nl-text" data-dblclick="startEdit" data-kind="systemElement" data-id="s1"[^>]*>Engine room<\/span>/);
+  assert.doesNotMatch(card, /Galley|<datalist/, 'Bravo\'s stay on Bravo; no suggestions until adding');
+  assert.match(out, /aria-label="Affected groups">[\s\S]*?No affected groups yet\./);
+  const adding = hazardView({ ...on('p:p1'), editing: { kind: 'newSystemElement', id: 'h1:p1' } }, d, 'h1').toString();
+  assert.match(adding, /<form data-action="addSystemElement" data-hazard-id="h1" data-platform-id="p1"[^>]*><input name="text" required list="systemElement-entries"/);
+  assert.match(adding, /<datalist id="systemElement-entries"><option value="Engine room"><\/option><option value="Galley"><\/option><\/datalist>/, 'suggests entries from every hazard and platform');
 });

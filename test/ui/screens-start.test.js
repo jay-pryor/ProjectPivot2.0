@@ -44,8 +44,8 @@ test('the notices screen says what replaced each of the user\'s edits', () => {
     notices: [{ id: 'n1', at: '2026-09-28T10:00:00+10:00', by: 'u2', items: [{ kind: 'hazard', id: 'h1', theirs: { number: 1, title: 'Mine' }, mine: { number: 1, title: 'Grace\'s' } }] }],
   };
   const out = noticesScreen(state).toString();
-  assert.match(out, /H-0001 Mine/);
-  assert.match(out, /H-0001 Grace&#39;s/);
+  assert.match(out, /HAZ-001 Mine/);
+  assert.match(out, /HAZ-001 Grace&#39;s/);
   assert.match(out, /Grace/);
   assert.match(out, /data-action="dismissNotices"/);
 });
@@ -86,7 +86,19 @@ test('the top bar highlights the section a view belongs to', () => {
   assert.equal(on({ name: 'platform', id: 'p' }), 'Platforms');
   assert.equal(on({ name: 'hazard', id: 'h' }), 'Hazards');
   assert.equal(on({ name: 'control', id: 'c' }), 'Controls');
-  assert.equal(on({ name: 'backups' }), 'Backups');
+  assert.equal(on({ name: 'backups' }), undefined, 'Backups is not a tab');
+});
+
+test('the tabs end with References, and Backups sits in the settings menu after the profile, lit while open', () => {
+  const data = emptyData();
+  const base = { ...initialState(), screen: 'main', profiles: [], profileId: 'u1', session: { base: data, working: data, loadedStamp: null } };
+  const out = shell({ ...base, view: { name: 'home' } }, html``).toString();
+  assert.deepEqual([...out.matchAll(/class="nav[^"]*" data-action="go" data-view="(\w+)"/g)].map((m) => m[1]), ['home', 'hazards', 'controls', 'platforms', 'bowties', 'stats', 'reports', 'references']);
+  assert.match(out, /class="profile"[^>]*>[^<]*<\/span>\s*<details class="settings-menu">\s*<summary aria-label="Settings"/);
+  assert.match(out, /<button type="button" role="menuitem" class="" data-action="go" data-view="backups">Backups<\/button>/);
+  const backups = shell({ ...base, view: { name: 'backups' } }, html``).toString();
+  assert.match(backups, /<details class="settings-menu on">/);
+  assert.match(backups, /role="menuitem" class="on" data-action="go" data-view="backups">Backups/);
 });
 
 test('the top bar: the folder is labelled, one save button says Unsaved or Saved, and there is a theme switch', () => {

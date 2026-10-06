@@ -38,5 +38,5 @@ test('the owner filter: another owner, and everyone', () => {
   const all = openItems(data(), '2026-09-28', null);
   assert.equal(all.acks.length, 2);
   assert.equal(all.awaiting.length, 3);
-  assert.deepEqual(openItems(data(), '2026-09-28', 'nobody'), { acks: [], reviews: [], awaiting: [], unrated: [] });
+  assert.deepEqual(openItems(data(), '2026-09-28', 'nobody'), { acks: [], reviews: [], awaiting: [], toImplement: [], unrated: [] });
 });

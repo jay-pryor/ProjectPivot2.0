@@ -92,8 +92,7 @@ function openReviewBlock(state, data, p, review) {
 
 /** @param {any} state @param {Data} data @param {any} p @param {any} review */
 function completedReview(state, data, p, review) {
-  return html`<p>${go('← All reviews', 'platform', { id: p.id, tab: 'reviews' })}</p>
-    <p class="doc-meta">Completed by ${profileName(state, review.completedBy)}, ${when(review.completedAt)}. It cleared the review due ${day(review.dueBefore)}; the next was then due ${day(review.dueAfter)}.</p>
+  return html`<p class="doc-meta">Completed by ${profileName(state, review.completedBy)}, ${when(review.completedAt)}. It cleared the review due ${day(review.dueBefore)}; the next was then due ${day(review.dueAfter)}.</p>
     ${review.outcome ? html`<p class="outcome-text">${review.outcome}</p>` : ''}
     ${review.notes ? html`<h3>Additional notes</h3><p class="outcome-text">${review.notes}</p>` : ''}
     <section class="block">${dataTable(state, {

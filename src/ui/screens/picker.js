@@ -22,6 +22,32 @@ export function pickerView(state, data) {
       ${hazards.length ? '' : html`<p class="muted">Every live hazard is already on this platform.</p>`}
       ${buttons('Link')}</form>`);
   }
+  if (p.picker === 'controlHazards') {
+    const c = data.records.control[p.controlId];
+    if (!c) return '';
+    const kinds = (/** @type {string} */ key, /** @type {string} */ name) => html`<select name="kind:${key}" aria-label="Kind for ${name}">${CONTROL_KINDS.map((k) => option(k, k))}</select>`;
+    if (c.category === 'existing') {
+      const placed = new Set(live(data, 'existingControl').filter((l) => l.controlId === c.id).map((l) => `${l.hazardId}|${l.platformId}`));
+      const pairs = live(data, 'hazardPlatform').map((l) => ({ h: data.records.hazard[l.hazardId], pl: data.records.platform[l.platformId], key: `${l.hazardId}|${l.platformId}` }))
+        .filter((x) => x.h?.status === 'live' && x.pl && x.pl.status !== 'deleted' && !placed.has(x.key))
+        .sort((a, b) => (a.h.number ?? Infinity) - (b.h.number ?? Infinity) || String(a.pl.name).localeCompare(String(b.pl.name)));
+      return frame(`Put ${c.title} in place`, html`<form data-action="placeExistingControl" ${dataAttrs({ 'control-id': c.id })} class="picker-form">
+        <p class="muted">An existing control is in place for a hazard on one platform. Tick each hazard and platform it is in place for.</p>
+        ${search()}
+        <ul class="pick-list">${pairs.map((x) => html`<li data-pick-text="${`${hazardLabel(x.h)} ${x.h.title} ${x.pl.name}`.toLowerCase()}"><label><input type="checkbox" name="pair" value="${x.key}"> <span class="id">${idTag(hazardLabel(x.h))}</span> ${x.h.title} <span class="muted">on ${x.pl.name}</span></label>
+          ${kinds(x.key, `${x.h.title} on ${x.pl.name}`)}</li>`)}</ul>
+        ${pairs.length ? '' : html`<p class="muted">It is already in place for every hazard on every platform, or no hazard is on a platform yet.</p>`}
+        ${buttons('Add')}</form>`);
+    }
+    const linked = new Set(live(data, 'hazardControl').filter((l) => l.controlId === c.id).map((l) => l.hazardId));
+    const hazards = live(data, 'hazard').filter((h) => !linked.has(h.id)).sort((a, b) => (a.number ?? Infinity) - (b.number ?? Infinity));
+    return frame(`Link ${c.title} to hazards`, html`<form data-action="linkControlToHazards" ${dataAttrs({ 'control-id': c.id })} class="picker-form">
+      ${search()}
+      <ul class="pick-list">${hazards.map((h) => html`<li data-pick-text="${`${hazardLabel(h)} ${h.title}`.toLowerCase()}"><label><input type="checkbox" name="hazardId" value="${h.id}"> <span class="id">${idTag(hazardLabel(h))}</span> ${h.title}</label>
+        ${kinds(h.id, h.title)}</li>`)}</ul>
+      ${hazards.length ? '' : html`<p class="muted">${live(data, 'hazard').length ? 'It is already linked to every live hazard.' : 'No hazards yet: add them on the Hazards page.'}</p>`}
+      ${buttons('Link')}</form>`);
+  }
   if (p.picker === 'linkPlatforms') {
     const platforms = platformsNotOn(data, p.hazardId);
     return frame('Link platforms', html`<form data-action="linkPlatforms" ${dataAttrs({ 'hazard-id': p.hazardId })} class="picker-form">
@@ -50,22 +76,24 @@ export function pickerView(state, data) {
   if (p.picker === 'linkControls') {
     const d = hazardDetail(data, p.hazardId);
     const linked = new Set((d?.controls ?? []).map((c) => c.control.id));
-    const controls = live(data, 'control').filter((c) => !linked.has(c.id));
+    const library = live(data, 'control').filter((c) => c.category !== 'existing');
+    const controls = library.filter((c) => !linked.has(c.id));
     return frame('Link controls', html`<form data-action="linkControls" ${dataAttrs({ 'hazard-id': p.hazardId })} class="picker-form">
       ${search()}
       <ul class="pick-list">${controls.map((c) => html`<li data-pick-text="${`${controlLabel(c)} ${c.title}`.toLowerCase()}"><label><input type="checkbox" name="controlId" value="${c.id}"> <span class="id">${idTag(controlLabel(c))}</span> ${c.title}</label>
         <select name="kind:${c.id}" aria-label="Kind of ${c.title}">${CONTROL_KINDS.map((k) => option(k, k))}</select></li>`)}</ul>
-      ${controls.length ? '' : html`<p class="muted">${live(data, 'control').length ? 'Every control in the library is already linked.' : 'The control library is empty: add controls on the Controls page.'}</p>`}
+      ${controls.length ? '' : html`<p class="muted">${library.length ? 'Every additional control is already linked.' : 'There are no additional controls yet: add them on the Controls page.'}</p>`}
       ${buttons('Link')}</form>`);
   }
   if (p.picker === 'linkExistingControls') {
     const listed = new Set(existingControlsOn(data, p.hazardId, p.platformId).map((x) => x.control.id));
-    const controls = live(data, 'control').filter((c) => !listed.has(c.id));
+    const library = live(data, 'control').filter((c) => c.category === 'existing');
+    const controls = library.filter((c) => !listed.has(c.id));
     return frame('Add existing controls', html`<form data-action="linkExistingControls" ${dataAttrs({ 'hazard-id': p.hazardId, 'platform-id': p.platformId })} class="picker-form">
       ${search()}
       <ul class="pick-list">${controls.map((c) => html`<li data-pick-text="${`${controlLabel(c)} ${c.title}`.toLowerCase()}"><label><input type="checkbox" name="controlId" value="${c.id}"> <span class="id">${idTag(controlLabel(c))}</span> ${c.title}</label>
         <select name="kind:${c.id}" aria-label="Kind of ${c.title}">${CONTROL_KINDS.map((k) => option(k, k))}</select></li>`)}</ul>
-      ${controls.length ? '' : html`<p class="muted">${live(data, 'control').length ? 'Every live control is already listed here.' : 'The control library is empty: add controls on the Controls page.'}</p>`}
+      ${controls.length ? '' : html`<p class="muted">${library.length ? 'Every existing control is already listed here.' : 'There are no existing controls yet: add them on the Controls page, under Existing controls.'}</p>`}
       ${buttons('Add')}</form>`);
   }
   if (p.picker === 'linkPhases') {

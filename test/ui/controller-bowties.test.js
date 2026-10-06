@@ -42,8 +42,10 @@ test('opening diagrams: from a hazard\'s platform tab, from New diagram, and dro
   await c.dispatch({ type: 'openBowtie', hazardId: 'h1', platformId: 'p1' });
   assert.equal(S(c).view.name, 'bowties');
   assert.deepEqual(panes(c), ['p1', null]);
+  await c.dispatch({ type: 'startEdit', kind: 'bowtieNew', id: '' });
   await c.dispatch({ type: 'newBowtie', pair: 'h1|p2' });
   assert.deepEqual(panes(c), ['p2', null], 'a click replaces the only window');
+  assert.equal(S(c).editing, null, 'the hazard and platform choice closes once a diagram opens');
   await c.dispatch({ type: 'openBowtie', hazardId: 'h1', platformId: 'p1' });
   await c.dispatch({ type: 'saveBowtiePaneAs', side: '0', name: 'Alpha' });
   const v = myViews(W(c), S(c).profileId)[0];
@@ -59,6 +61,15 @@ test('opening diagrams: from a hazard\'s platform tab, from New diagram, and dro
   assert.equal(S(c).workspace.panes[1], null);
   await c.dispatch({ type: 'newBowtie', pair: 'nonsense' });
   assert.equal(S(c).message.kind, 'error');
+});
+
+test('a saved view\'s hazard and platform show and hide with its arrow', async () => {
+  const { c } = await ready();
+  await c.dispatch({ type: 'toggleBowtieDetails', id: 'v1' });
+  await c.dispatch({ type: 'toggleBowtieDetails', id: 'v2' });
+  assert.deepEqual(S(c).bowtieDetails, ['v1', 'v2']);
+  await c.dispatch({ type: 'toggleBowtieDetails', id: 'v1' });
+  assert.deepEqual(S(c).bowtieDetails, ['v2']);
 });
 
 test('filters change per window; replacing an unsaved window asks first', async () => {
@@ -145,4 +156,80 @@ test('the windows are remembered for the folder and profile, and export writes t
   storage.setItem(key, '{broken');
   const third = await open(folder, 'Ada', storage);
   assert.deepEqual(S(third).workspace, emptyWorkspace());
+});
+
+test('a page\'s rail opens one section at a time, the open one closing when clicked again; causal factors are added for a platform', async () => {
+  const { c } = await ready();
+  await c.dispatch({ type: 'showSection', page: 'ssra', section: 'sfarp' });
+  assert.equal(S(c).sections.ssra, 'sfarp');
+  await c.dispatch({ type: 'showSection', page: 'ssra', section: 'sfarp' });
+  assert.equal(S(c).sections.ssra, null);
+  await c.dispatch({ type: 'showSection', page: 'ssra', section: 'initial' });
+  assert.equal(S(c).sections.ssra, 'initial');
+  await c.dispatch({ type: 'showSection', page: 'hazard', section: 'controls' });
+  assert.equal(S(c).sections.hazard, null, 'the section open by default closes too');
+  await c.dispatch({ type: 'addCausalFactor', hazardId: 'h1', text: 'Fuel leak', platformId: 'p2' });
+  const cf = Object.values(W(c).records.causalFactor)[0];
+  assert.equal(cf.platformId, 'p2');
+});
+
+test('Back steps through the pages opened, tabs included, and never past the first', async () => {
+  const { c } = await ready();
+  await c.dispatch({ type: 'go', view: 'hazards' });
+  await c.dispatch({ type: 'go', view: 'hazard', id: 'h1' });
+  await c.dispatch({ type: 'go', view: 'hazard', id: 'h1', tab: 'p:p1' });
+  await c.dispatch({ type: 'go', view: 'platform', id: 'p1' });
+  await c.dispatch({ type: 'goBack' });
+  assert.deepEqual([S(c).view.name, S(c).view.tab], ['hazard', 'p:p1']);
+  await c.dispatch({ type: 'goBack' });
+  assert.deepEqual([S(c).view.name, S(c).view.tab], ['hazard', undefined]);
+  await c.dispatch({ type: 'goBack' });
+  assert.equal(S(c).view.name, 'hazards');
+  const depth = S(c).viewHistory.length;
+  await c.dispatch({ type: 'go', view: 'hazards' });
+  assert.equal(S(c).viewHistory.length, depth, 'opening the page already open is not a step');
+  while (S(c).viewHistory.length) await c.dispatch({ type: 'goBack' });
+  const at = S(c).view;
+  await c.dispatch({ type: 'goBack' });
+  assert.equal(S(c).view, at, 'nothing left to go back to');
+});
+
+test('unlinking a control asks first in a pop-up: Cancel keeps it, Continue unlinks', async () => {
+  const { c } = await ready();
+  const ask = { type: 'askConfirm', action: 'askConfirm', run: 'unlinkControl', hazardId: 'h1', controlId: 'c1', title: 'Unlink Sprinklers?', text: 'It goes.' };
+  await c.dispatch(ask);
+  assert.deepEqual(S(c).confirm, { title: 'Unlink Sprinklers?', text: 'It goes.', action: { type: 'unlinkControl', hazardId: 'h1', controlId: 'c1' } });
+  await c.dispatch({ type: 'confirmCancel' });
+  assert.equal(S(c).confirm, null);
+  assert.equal(W(c).records.hazardControl['hc:h1:c1'].status, 'live');
+  await c.dispatch(ask);
+  await c.dispatch({ type: 'confirmContinue' });
+  assert.equal(S(c).confirm, null);
+  assert.equal(W(c).records.hazardControl['hc:h1:c1'].status, 'deleted');
+});
+
+test('a bow-tie window keeps where it was zoomed and moved to, within limits, fitted leaving nothing behind', async () => {
+  const { c } = await ready();
+  await c.dispatch({ type: 'openBowtie', hazardId: 'h1', platformId: 'p1' });
+  await c.dispatch({ type: 'viewBowtie', side: '0', zoom: 1.7321, x: -120.4, y: 33.6 });
+  assert.deepEqual(S(c).workspace.panes[0].zoom, 1.732);
+  assert.deepEqual(S(c).workspace.panes[0].pan, { x: -120, y: 34 });
+  await c.dispatch({ type: 'setPaneSet', side: '0', value: 'existing' });
+  assert.equal(S(c).workspace.panes[0].zoom, 1.732, 'changing its filters keeps the view');
+  await c.dispatch({ type: 'viewBowtie', side: '0', zoom: 99, x: 0, y: 0 });
+  assert.equal(S(c).workspace.panes[0].zoom, 6, 'never past the largest zoom');
+  assert.equal(S(c).workspace.panes[0].pan, undefined);
+  await c.dispatch({ type: 'viewBowtie', side: '0', zoom: 1, x: 0, y: 0 });
+  assert.ok(!('zoom' in S(c).workspace.panes[0]) && !('pan' in S(c).workspace.panes[0]), 'fitted');
+});
+
+test('a control links to hazards from its own side: an additional one to hazards, an existing one to hazards on platforms', async () => {
+  const { c } = await ready();
+  await c.dispatch({ type: 'createHazard', id: 'h2', title: 'Flood' });
+  await c.dispatch({ type: 'linkControlToHazards', controlId: 'c1', hazardId: ['h2'], 'kind:h2': 'mitigating' });
+  assert.equal(W(c).records.hazardControl['hc:h2:c1'].kind, 'mitigating');
+  await c.dispatch({ type: 'createControl', id: 'e1', title: 'Fire wall', category: 'existing' });
+  await c.dispatch({ type: 'placeExistingControl', controlId: 'e1', pair: ['h1|p1', 'h1|p2'], 'kind:h1|p2': 'mitigating' });
+  assert.deepEqual(['ec:h1:p1:e1', 'ec:h1:p2:e1'].map((id) => W(c).records.existingControl[id].kind), ['preventative', 'mitigating']);
+  assert.equal(S(c).picker, null);
 });

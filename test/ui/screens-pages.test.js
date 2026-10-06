@@ -24,10 +24,10 @@ test('lists open with an ID column: hazards H-, controls C-, platforms P-; new r
   assert.match(hazardsView(state, data()).toString(), /data-action="startEdit" data-kind="newHazard"/);
   const controls = controlsView(state, data()).toString();
   assert.match(controls, /<th data-col="id"/);
-  assert.match(controls, /C-0001/);
-  assert.match(controls, /data-action="startEdit" data-kind="newControl"/);
+  assert.match(controls, /C-001/);
+  assert.match(controls, /data-action="startEdit" data-kind="new-additional-control"/);
   const platforms = platformsView(state, data()).toString();
-  assert.match(platforms, /P-0001/);
+  assert.match(platforms, /P-001/);
   assert.doesNotMatch(platforms, /<form data-action="createPlatform"/, 'no form until + is pressed');
   const adding = platformsView({ ...state, editing: { kind: 'newPlatform', id: 'new' } }, data()).toString();
   assert.match(adding, /<form data-action="createPlatform"[\s\S]*?name="name"[^>]*autofocus/);
@@ -35,37 +35,41 @@ test('lists open with an ID column: hazards H-, controls C-, platforms P-; new r
 
 test('a platform page: report IDs as text, changed by double-click; calculated risk levels; control states as dropdowns', () => {
   const out = platformView(state, data(), 'p1').toString();
-  assert.match(out, /P-0001/);
+  assert.match(out, /P-001/);
   assert.doesNotMatch(out, />Set</);
   assert.doesNotMatch(out, /Assess/);
-  assert.match(out, /data-dblclick="startEdit" data-kind="reportId" data-id="h1"[^>]*>H-0001</);
+  assert.match(out, /data-dblclick="startEdit" data-kind="reportId" data-id="h1"[^>]*>HAZ-001</);
   assert.match(out, /<th data-col="residualPersonnel"[\s\S]*?<span class="band band-serious">2C Serious<\/span>/, 'levels are shown, calculated, not picked');
   assert.doesNotMatch(out, /setRatingCell/);
-  assert.match(out, /data-table="platformControls"/);
-  assert.match(out, /data-change="setControlState" data-hazard-id="h1" data-control-id="c2" data-platform-id="p1"[\s\S]*?<option value="rejected" selected>/);
-  assert.match(out, /No crew/);
+  const controls = platformView({ ...state, sections: { platform: 'controls' } }, data(), 'p1').toString();
+  assert.match(controls, /data-table="platformControls"/);
+  assert.match(controls, /data-change="setControlState" data-hazard-id="h1" data-control-id="c2" data-platform-id="p1"[\s\S]*?<option value="rejected" selected>/);
+  assert.match(controls, /No crew/);
   assert.match(out, /data-action="openPicker" data-picker="linkHazards" data-platform-id="p1"/);
 });
 
 test('editing in place: a report ID, and the reason when a control is set to excluded', () => {
   const rid = platformView({ ...state, editing: { kind: 'reportId', id: 'h1' } }, data(), 'p1').toString();
-  assert.match(rid, /<input class="cell-edit" name="reportId" value="" placeholder="H-0001"[^>]*data-change="setReportId" data-hazard-id="h1" data-platform-id="p1"/);
-  const why = platformView({ ...state, editing: { kind: 'rejection', id: 'h1|c1|p1' } }, data(), 'p1').toString();
+  assert.match(rid, /<input class="cell-edit" name="reportId" value="" placeholder="HAZ-001"[^>]*data-change="setReportId" data-hazard-id="h1" data-platform-id="p1"/);
+  const why = platformView({ ...state, sections: { platform: 'controls' }, editing: { kind: 'rejection', id: 'h1|c1|p1' } }, data(), 'p1').toString();
   assert.match(why, /name="reason"[^>]*data-change="rejectControl" data-hazard-id="h1" data-control-id="c1" data-platform-id="p1"/);
 });
 
 test('a hazard page reads like a report: the title and description are the document, + buttons add rows and link controls', () => {
   const out = hazardView(state, data(), 'h1').toString();
-  assert.match(out, /<input class="doc-title" name="title" value="Fire"/);
-  assert.match(out, /<textarea class="doc-text" name="description"[^>]*placeholder="Add a description…"/);
-  assert.match(out, /data-action="startEdit" data-kind="newCausalFactor" data-id="h1"/);
+  const onAlpha = hazardView({ ...state, view: { name: 'hazard', id: 'h1', tab: 'p:p1' } }, data(), 'h1').toString();
+  assert.match(out, /<input class="doc-title small" name="title" value="Fire"/);
+  assert.match(out, /<textarea class="doc-text boxed" name="description"[^>]*placeholder="Add a description…"/);
+  assert.match(onAlpha, /data-action="startEdit" data-kind="newCausalFactor" data-id="h1"/, 'causal factors are kept on each platform\'s tab');
+  assert.doesNotMatch(out, /newCausalFactor/);
   assert.match(out, /data-action="openPicker" data-picker="linkControls" data-hazard-id="h1"/);
   assert.doesNotMatch(out, /<select name="controlId"/, 'no dropdown-and-button link form');
-  assert.match(out, /data-dblclick="startEdit" data-kind="causalFactor" data-id="cf1"/);
-  const adding = hazardView({ ...state, editing: { kind: 'newCausalFactor', id: 'h1' } }, data(), 'h1').toString();
+  assert.match(onAlpha, /data-dblclick="startEdit" data-kind="causalFactor" data-id="cf1"/);
+  const adding = hazardView({ ...state, view: { name: 'hazard', id: 'h1', tab: 'p:p1' }, editing: { kind: 'newCausalFactor', id: 'h1' } }, data(), 'h1').toString();
   assert.match(adding, /<form data-action="addCausalFactor" data-hazard-id="h1"[\s\S]*?autofocus/);
   assert.doesNotMatch(out, /On (one|\d+) platform/, 'the platforms table says where it is used');
-  assert.match(out, /<section class="block">[\s\S]*?data-table="causalFactor"/);
+  assert.match(out, /<div class="dash-grid two">\s*<section class="dash-card nl-card" aria-label="Consequences">[\s\S]*?<span class="nl-num">1<\/span>[\s\S]*?aria-label="Lifecycle phases"/);
+  assert.match(out, /class="dash-card plat-card"[\s\S]*?<span class="plat-count"><b>1<\/b> causal factor<\/span>/, 'each platform tile counts its causal factors');
 });
 
 test('records not yet numbered show a TBC badge in place of an ID', () => {

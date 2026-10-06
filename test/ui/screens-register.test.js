@@ -36,11 +36,11 @@ test('the hazard list filters: status (live by default), platform, and risk on t
 
 test('the control library lists each control once, with its hazards and platforms; a control\'s page has the per-platform detail', () => {
   const list = controlsView(state, data()).toString();
-  assert.match(list, /data-action="startEdit" data-kind="newControl"/);
+  assert.match(list, /data-action="startEdit" data-kind="new-additional-control"/);
   assert.equal((list.match(/<tr data-row="c1"/g) ?? []).length, 1, 'one row per control, whatever it serves');
   const heads = [...list.split('</thead>')[0].matchAll(/<th data-col="(\w+)"/g)].map((m) => m[1]);
-  assert.deepEqual(heads, ['id', 'control', 'tier', 'hazards', 'platforms', 'status']);
-  assert.match(list, /<tr data-row="c1">[\s\S]*?data-view="hazard" data-id="h1">H-0001 Fire<\/button>[\s\S]*?data-view="platform" data-id="p1">Alpha<\/button>[\s\S]*?data-view="platform" data-id="p2">Bravo<\/button>/);
+  assert.deepEqual(heads, ['id', 'control', 'tier', 'hazards', 'platforms', 'status', 'options']);
+  assert.match(list, /<tr data-row="c1"[^>]*>[\s\S]*?data-view="hazard" data-id="h1">HAZ-001 Fire<\/button>[\s\S]*?data-view="platform" data-id="p1">Alpha<\/button>[\s\S]*?data-view="platform" data-id="p2">Bravo<\/button>/);
   const onBravo = controlsView({ ...state, tables: { controls: { filters: { platforms: 'p2' } } } }, data()).toString();
   assert.match(onBravo, /data-row="c1"/);
   const byHazard = controlsView({ ...state, tables: { controls: { filters: { hazards: 'flood' } } } }, data()).toString();
@@ -60,17 +60,17 @@ test('an unknown id shows a not-found note, not a crash', () => {
 test('a control page leaves where it is used to its platform tabs, without a line saying so', () => {
   const out = controlView(state, data(), 'c1').toString();
   assert.doesNotMatch(out, /Used on|Changes here reach/);
-  assert.match(out, /<textarea class="doc-title" name="title" rows="1" required aria-label="Control title" data-change="updateControl" data-id="c1">Sprinklers<\/textarea>/, 'a long title wraps');
-  assert.match(out, /<label class="field-block"><span class="field-label">Description<\/span>\s*<textarea class="doc-text boxed" name="description"/);
+  assert.match(out, /<textarea class="doc-title small" name="title" rows="1" required aria-label="Control title" data-change="updateControl" data-id="c1">Sprinklers<\/textarea>/, 'a long title wraps');
+  assert.match(out, /<label class="field-block dash-desc"><span class="field-label">Description<\/span>\s*<textarea class="doc-text boxed" name="description"/);
 });
 
 test('a hazard page: fields apply when left (no Apply), retire and delete at the bottom, no heading repeating a table\'s title', () => {
   const out = hazardView(state, data(), 'h1').toString();
   assert.doesNotMatch(out, />Apply</);
-  assert.match(out, /<input class="doc-title" name="title" value="Fire" required[^>]*data-change="updateHazard" data-id="h1"/);
-  assert.match(out, /<textarea class="doc-text" name="description"[^>]*data-change="updateHazard" data-id="h1"/);
+  assert.match(out, /<input class="doc-title small" name="title" value="Fire" required[^>]*data-change="updateHazard" data-id="h1"/);
+  assert.match(out, /<textarea class="doc-text boxed" name="description"[^>]*data-change="updateHazard" data-id="h1"/);
   assert.doesNotMatch(out, /<h2>(Causal factors|Consequences|Controls|Platforms)<\/h2>/);
-  assert.match(out, /data-action="sortTable" data-table="causalFactor" data-key="text"[^>]*>Causal factors/);
+  assert.match(out, /<h3 class="dash-card-h">Consequences <span class="count">\d+<\/span>/);
   assert.ok(out.lastIndexOf('data-action="retireHazard"') > out.lastIndexOf('</table>'), 'retire comes after the tables');
 });
 

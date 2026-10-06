@@ -38,20 +38,48 @@ function needKind(kind) {
   return kind;
 }
 
-/** @param {Data} data @param {Act} act @param {{ id?: string, title: string, description?: string, tier?: string | null }} args */
-export function createControl(data, act, { id = newId(), title, description = '', tier = null }) {
-  const rec = created(act, id, { number: null, title: needText(title, 'A control title'), description: String(description ?? '').trim(), tier: needTier(tier) });
-  return commit(data, act, 'Create control', [{ kind: 'control', rec }]);
+/** Additional controls are proposed for a hazard; existing controls are already in place on a platform. */
+export const CONTROL_CATEGORIES = Object.freeze(['additional', 'existing']);
+
+/** @param {unknown} category @returns {'additional' | 'existing'} */
+function needCategory(category) {
+  if (category === undefined || category === null || category === '') return 'additional';
+  if (category !== 'additional' && category !== 'existing') throw new PivotError('control.category', 'A control is either an additional control or an existing control.');
+  return category;
 }
 
-/** @param {Data} data @param {Act} act @param {{ id: string, title?: string, description?: string, tier?: string | null }} args */
-export function updateControl(data, act, { id, title, description, tier }) {
+/** @param {Data} data @param {Act} act @param {{ id?: string, title: string, description?: string, tier?: string | null, category?: string }} args */
+export function createControl(data, act, { id = newId(), title, description = '', tier = null, category }) {
+  const cat = needCategory(category);
+  const rec = created(act, id, { number: null, category: cat, title: needText(title, 'A control title'), description: String(description ?? '').trim(), tier: needTier(tier) });
+  return commit(data, act, cat === 'existing' ? 'Create existing control' : 'Create control', [{ kind: 'control', rec }]);
+}
+
+/**
+ * Make a control of the other category from one: the same title, description and tier, as a new
+ * additional or existing control with its own number. The original is untouched.
+ * @param {Data} data @param {Act} act @param {{ id?: string, from: string, category: string }} args
+ */
+export function copyControlAs(data, act, { id = newId(), from, category }) {
+  const c = need(data, 'control', from);
+  const cat = needCategory(category);
+  if ((c.category ?? 'additional') === cat) throw new PivotError('control.category', `${c.title} is already ${cat === 'existing' ? 'an existing' : 'an additional'} control.`);
+  return createControl(data, act, { id, title: c.title, description: c.description ?? '', tier: c.tier ?? null, category: cat });
+}
+
+/**
+ * @param {Data} data @param {Act} act
+ * @param {{ id: string, title?: string, description?: string, tier?: string | null, origin?: string }} args
+ *   origin: where an existing control came from (free text; blank clears it)
+ */
+export function updateControl(data, act, { id, title, description, tier, origin }) {
   const c = need(data, 'control', id);
   /** @type {Record<string, string | null>} */
   const fields = {};
   if (title !== undefined) fields.title = needText(title, 'A control title');
   if (description !== undefined) fields.description = String(description).trim();
   if (tier !== undefined) fields.tier = needTier(tier);
+  if (origin !== undefined) fields.origin = String(origin ?? '').trim();
   return commit(data, act, 'Edit control', [{ kind: 'control', rec: changed(c, act, fields) }]);
 }
 
@@ -82,6 +110,7 @@ export function linkControl(data, act, { hazardId, controlId, kind }) {
   need(data, 'hazard', hazardId);
   const c = need(data, 'control', controlId);
   if (c.status !== 'live') throw new PivotError('control.retired', `${c.title} is retired, so it cannot be linked to a hazard.`);
+  if (c.category === 'existing') throw new PivotError('control.category', `${c.title} is an existing control. Add it on a platform's SSRA, under Existing controls.`);
   const k = needKind(kind);
   const id = ids.hazardControl(hazardId, controlId);
   const existing = get(data, 'hazardControl', id);
@@ -125,6 +154,7 @@ export function linkExistingControl(data, act, { hazardId, platformId, controlId
   need(data, 'hazardPlatform', ids.hazardPlatform(hazardId, platformId));
   const c = need(data, 'control', controlId);
   if (c.status !== 'live') throw new PivotError('control.retired', `${c.title} is retired, so it cannot be linked to a hazard.`);
+  if (c.category !== 'existing') throw new PivotError('control.category', `${c.title} is an additional control. Link it from the hazard's Overview.`);
   const k = needKind(kind);
   const id = ids.existingControl(hazardId, platformId, controlId);
   const existing = get(data, 'existingControl', id);

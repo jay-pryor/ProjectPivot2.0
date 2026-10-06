@@ -10,7 +10,7 @@ import { setControlOwner, OWNERS, linkExistingControl, unlinkControl, deleteCont
 import { unlinkHazard, deletePlatform } from '../../src/core/ops/platforms.js';
 import { controlOwner, ownerText, controlOnPlatform, platformsReached } from '../../src/core/queries.js';
 import { setControlStatus } from '../../src/core/ops/assessment.js';
-import { act, later, seed } from '../helpers.js';
+import { act, later, seed, asExisting } from '../helpers.js';
 
 const code = (c) => (e) => e instanceof PivotError && e.code === c;
 
@@ -38,7 +38,7 @@ test('a control has an owner on each platform: us, the customer, or another name
 
 test('a control on a platform lists each hazard there that uses it, as an additional or an existing control', () => {
   let d = setControlStatus(seed(), act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'planned' });
-  d = linkExistingControl(d, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
+  d = linkExistingControl(asExisting(d, 'c2'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
   assert.deepEqual(controlOnPlatform(d, 'c1', 'p1').map((u) => [u.hazard.id, u.role, u.state]), [['h1', 'additional', 'planned']]);
   assert.deepEqual(controlOnPlatform(d, 'c2', 'p1').map((u) => [u.hazard.id, u.role, u.kind]), [['h1', 'additional', 'mitigating'], ['h1', 'existing', 'mitigating']]);
 });

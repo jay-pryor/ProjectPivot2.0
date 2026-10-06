@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, go, idTag, statusTag, confirmButton, pageTabs, historyTable, historyCount, plus } from './common.js';
+import { dataAttrs, go, idTag, statusTag, confirmButton, pageTabs, historyTable, historyCount, plus, removeColumn, removeButton } from './common.js';
 import { dataTable } from './table.js';
 import { statusColumn, idColumn, notFound } from './hazards.js';
 import { all, get } from '../../core/data.js';
@@ -91,9 +91,10 @@ export function referenceView(state, data, id) {
   const r = get(data, 'reference', id);
   if (!r) return notFound();
   const tab = state.view?.tab;
-  const head = html`<p>${go('← References', 'references')}</p>
-    <div class="doc-head"><span class="doc-id">${idTag(referenceLabel(r))}</span>${statusTag(r.status)}</div>
-    <input class="doc-title" name="title" value="${r.title}" required aria-label="Reference title" ${dataAttrs({ change: 'updateReference', id })}>
+  const page = tab === 'history' ? 'History' : 'Details';
+  const head = html`<div class="doc-head"><h1 class="doc-page"><span class="doc-id">${idTag(referenceLabel(r))}</span> <span class="doc-page-sep" aria-hidden="true">—</span> ${page}</h1>${statusTag(r.status)}</div>
+    <label class="doc-subtitle"><span class="field-label">Reference</span>
+      <input class="doc-title small" name="title" value="${r.title}" required aria-label="Reference title" ${dataAttrs({ change: 'updateReference', id })}></label>
     ${pageTabs('reference', { id }, tab, historyCount(state, data, 'reference', id))}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'reference', id)}`;
   const missing = new Set(state.missingFiles ?? []);
@@ -128,8 +129,8 @@ export function referenceView(state, data, id) {
         columns: [
           { key: 'kind', label: 'Supports', width: 240, minWidth: 140, value: (x) => KIND_WORD[/** @type {keyof typeof KIND_WORD} */ (x.link.targetKind)] },
           { key: 'record', label: 'Record', width: 900, minWidth: 260, sortable: false, render: (x) => targetCell(data, x) },
-          { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
-            render: (x) => html`<div class="row-actions">${confirmButton('✕', 'Unlink', dataAttrs({ action: 'unlinkReference', 'reference-id': id, 'target-kind': x.link.targetKind, 'target-id': x.link.targetId }))}</div>` },
+          removeColumn((x) => removeButton(`Unlink ${KIND_WORD[/** @type {keyof typeof KIND_WORD} */ (x.link.targetKind)].toLowerCase()}`, 'Unlink this record?', `${referenceLabel(r)} will no longer support it.`,
+            { run: 'unlinkReference', 'reference-id': id, 'target-kind': x.link.targetKind, 'target-id': x.link.targetId })),
         ],
       })}</section>
     </article>
@@ -154,8 +155,8 @@ export function referencesCard(state, data, { kind, id }) {
         render: (x) => html`<span class="id">${idTag(referenceLabel(x.reference))}</span> ${go(x.reference.title, 'reference', { id: x.reference.id })}${statusTag(x.reference.status)}` },
       ...(kind === 'hazard' ? [{ key: 'for', label: 'For', width: 420, minWidth: 160, value: (/** @type {any} */ x) => x.forText }] : []),
       { key: 'points', label: 'Points at', width: 220, minWidth: 130, sortable: false, render: (x) => pointsAt(x.reference) },
-      { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
-        render: (x) => html`<div class="row-actions">${confirmButton('✕', 'Unlink', dataAttrs({ action: 'unlinkReference', 'reference-id': x.reference.id, 'target-kind': x.link.targetKind, 'target-id': x.link.targetId }))}</div>` },
+      removeColumn((x) => removeButton(`Unlink ${x.reference.title}`, `Unlink ${x.reference.title}?`, 'The reference stays in the library; it just no longer supports this record.',
+        { run: 'unlinkReference', 'reference-id': x.reference.id, 'target-kind': x.link.targetKind, 'target-id': x.link.targetId })),
     ],
   });
 }

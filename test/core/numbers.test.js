@@ -10,11 +10,11 @@ import { mergeData } from '../../src/core/merge.js';
 const act = { by: 'u1', at: '2026-09-28T10:00:00+10:00' };
 const later = { by: 'u1', at: '2026-09-28T10:00:01+10:00' };
 
-test('controls and platforms get IDs a person reads: C-0001, P-0001, or TBC until first saved', () => {
-  assert.equal(controlLabel({ number: 3 }), 'C-0003');
-  assert.equal(platformLabel({ number: 12 }), 'P-0012');
+test('controls and platforms get IDs a person reads: C-001, P-001, or TBC until first saved', () => {
+  assert.equal(controlLabel({ number: 3 }), 'C-003');
+  assert.equal(platformLabel({ number: 12 }), 'P-012');
   assert.equal(controlLabel({ number: null }), 'TBC');
-  assert.equal(hazardLabel({ number: 7 }), 'H-0007');
+  assert.equal(hazardLabel({ number: 7 }), 'HAZ-007');
 });
 
 test('new controls and platforms have no number until saved, then each kind counts on its own and never reuses one', () => {

@@ -1,18 +1,19 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, bandTag, go, confirmButton, deletePanel, deleteName, pageTabs, historyTable, historyCount, plus, idTag } from './common.js';
+import { dataAttrs, option, statusTag, bandTag, go, confirmButton, deletePanel, deleteName, pageTabs, historyTable, historyCount, plus, idTag, removeColumn, removeButton } from './common.js';
 import { dataTable } from './table.js';
 import { referencesCard } from './references.js';
 import { tierColumn } from './controls.js';
 import { live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
-import { hazardRows, hazardDetail, ratingOf, ratingsOf, bandOf, worseBand, hazardLastReviewed, byNumber } from '../../core/queries.js';
+import { hazardRows, hazardDetail, ratingOf, ratingsOf, bandOf, worseBand, hazardLastReviewed, byNumber, hazardReferences, causalFactorsOn } from '../../core/queries.js';
 import { platformTab } from './ssra.js';
 import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
 import { day } from '../names.js';
 import { BANDS } from '../../core/matrix.js';
 import { CONTROL_KINDS, tierRank } from '../../core/ops/controls.js';
 import { analysisArea } from './ssra.js';
-import { phaseChips } from './phases.js';
+import { phaseCard } from './phases.js';
+import { numberedCard, sectionRail, descriptionField } from './dashboard.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -44,7 +45,7 @@ export function newRecord(state, kind, action, field, placeholder, extra = '') {
 }
 
 export function notFound() {
-  return html`<p class="muted">That record no longer exists.</p><p>${go('← Hazards', 'hazards')}</p>`;
+  return html`<p class="muted">That record no longer exists.</p>`;
 }
 
 /** @param {any} state @param {Data} data */
@@ -56,6 +57,7 @@ export function hazardsView(state, data) {
       rowKey: (r) => r.hazard.id,
       rows: hazardRows(data),
       empty: 'No hazards yet.',
+      rowAttrs: (r) => ({ dblclick: 'go', view: 'hazard', id: r.hazard.id }),
       columns: [
         idColumn((r) => r.hazard, hazardLabel, (r) => go(idTag(hazardLabel(r.hazard)), 'hazard', { id: r.hazard.id })),
         { key: 'title', label: 'Hazard', width: 640, minWidth: 200, value: (r) => r.hazard.title, filter: 'text' },
@@ -76,34 +78,6 @@ export function hazardsView(state, data) {
     })}`;
 }
 
-/**
- * Causal factors or consequences: a table titled by its header, a + beside the title to add one,
- * and a row's text changed by double-clicking it.
- * @param {any} state @param {'CausalFactor' | 'Consequence'} name @param {any[]} items @param {string} hazardId
- */
-export function textTable(state, name, items, hazardId) {
-  const kind = name === 'CausalFactor' ? 'causalFactor' : 'consequence';
-  const what = name === 'CausalFactor' ? 'causal factor' : 'consequence';
-  const editing = (/** @type {any} */ r) => state.editing?.kind === kind && state.editing.id === r.id;
-  const adding = state.editing?.kind === `new${name}` && state.editing.id === hazardId;
-  return html`${dataTable(state, {
-      id: kind,
-      rowKey: (r) => r.id,
-      rows: items,
-      empty: `No ${what}s yet.`,
-      tools: plus({ action: 'startEdit', kind: `new${name}`, id: hazardId }, `Add a ${what}`),
-      columns: [
-        { key: 'text', label: name === 'CausalFactor' ? 'Causal factors' : 'Consequences', width: 1120, minWidth: 240, value: (r) => r.text,
-          render: (r) => (editing(r)
-            ? html`<input class="cell-edit" name="text" value="${r.text}" required aria-label="${what}" autofocus ${dataAttrs({ change: `update${name}`, id: r.id })}>`
-            : html`<span class="cell-text" ${dataAttrs({ dblclick: 'startEdit', kind, id: r.id })} title="Double-click to change">${r.text}</span>`) },
-        { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
-          render: (r) => html`<div class="row-actions">${confirmButton('✕', `Delete this ${what}`, dataAttrs({ action: `delete${name}`, id: r.id }))}</div>` },
-      ],
-    })}
-    ${adding ? html`<form data-action="add${name}" ${dataAttrs({ 'hazard-id': hazardId })} class="row inline fill new-row"><input name="text" required placeholder="New ${what}…" aria-label="New ${what}" class="grow" autofocus><button type="submit">Add</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></form>` : ''}`;
-}
-
 /** What deleting a hazard still on (retired) platforms also takes. @param {string[]} names */
 function retiredNote(names) {
   if (!names.length) return '';
@@ -121,9 +95,11 @@ export function hazardView(state, data, id) {
     const r = ratingsOf(data, h.id, p.platform.id).residual;
     return /** @type {[string, unknown]} */ ([`p:${p.platform.id}`, html`${p.platform.name} ${bandTag(RECEPTORS.map((x) => bandOf(r[/** @type {'personnel'} */ (x)])).reduce(worseBand))}`]);
   });
-  const head = html`<p>${go('← Hazards', 'hazards')}</p>
-    <div class="doc-head"><span class="doc-id">${idTag(hazardLabel(h))}</span>${statusTag(h.status)}</div>
-    <input class="doc-title" name="title" value="${h.title}" required aria-label="Hazard title" ${dataAttrs({ change: 'updateHazard', id: h.id })}>
+  const onPlatform = tab?.startsWith('p:') ? d.platforms.find((p) => `p:${p.platform.id}` === tab)?.platform.name ?? 'Platform' : null;
+  const page = tab === 'history' ? 'History' : onPlatform ?? 'Overview';
+  const head = html`<div class="doc-head"><h1 class="doc-page"><span class="doc-id">${idTag(hazardLabel(h))}</span> <span class="doc-page-sep" aria-hidden="true">—</span> ${page}</h1>${statusTag(h.status)}</div>
+    <label class="doc-subtitle"><span class="field-label">Hazard</span>
+      <input class="doc-title small" name="title" value="${h.title}" required aria-label="Hazard title" ${dataAttrs({ change: 'updateHazard', id: h.id })}></label>
     ${pageTabs('hazard', { id: h.id }, tab, historyCount(state, data, 'hazard', h.id), platformTabs, 'Overview')}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'hazard', h.id)}`;
   if (tab && tab.startsWith('p:')) return html`${head}${platformTab(state, data, h, tab.slice(2))}`;
@@ -132,56 +108,57 @@ export function hazardView(state, data, id) {
        ${confirmButton('Delete…', 'Delete this hazard, its causal factors, consequences, control links, lifecycle phases and safety reports', dataAttrs({ action: 'askDelete', kind: 'hazard', id: h.id }))}`
     : h.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'hazard', id: h.id })}>Restore</button>` : '';
   return html`${head}
-    <article class="doc">
-      <textarea class="doc-text" name="description" rows="3" placeholder="Add a description…" aria-label="Description" ${dataAttrs({ change: 'updateHazard', id: h.id })}>${h.description}</textarea>
-      ${phaseChips(data, h)}
-      <section class="block">${textTable(state, 'CausalFactor', d.causalFactors, h.id)}</section>
-      <section class="block">${textTable(state, 'Consequence', d.consequences, h.id)}</section>
-      <section class="block">
-        ${dataTable(state, {
-          id: 'hazardControls',
-          rowKey: (c) => c.control.id,
-          rows: [...d.controls].sort((a, b) => tierRank(a.control.tier) - tierRank(b.control.tier) || byNumber(a.control, b.control)),
-          empty: 'No controls linked yet.',
-          tools: plus({ action: 'openPicker', picker: 'linkControls', 'hazard-id': h.id }, 'Link controls'),
-          columns: [
-            { key: 'control', label: 'Additional controls', width: 720, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`,
-              render: (c) => html`<span class="id">${idTag(controlLabel(c.control))}</span> ${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
-            tierColumn((c) => c.control, false),
-            { key: 'kind', label: 'Kind', width: 300, minWidth: 150, value: (c) => c.link.kind,
-              render: (c) => html`<select class="quiet" name="kind" aria-label="Kind of ${c.control.title}" ${dataAttrs({ change: 'setControlKind', 'hazard-id': h.id, 'control-id': c.control.id })}>${CONTROL_KINDS.map((k) => option(k, k, c.link.kind))}</select>` },
-            { key: 'description', label: 'Description', width: 440, minWidth: 160, value: (c) => c.control.description ?? '', render: (c) => html`<span class="muted">${c.control.description ?? ''}</span>` },
-            { key: 'recommendation', label: 'Recommendation', width: 520, minWidth: 200, sortable: false, render: (c) => analysisArea('recommendation', c, h.id) },
-            { key: 'justification', label: 'Justification', width: 520, minWidth: 200, sortable: false, render: (c) => analysisArea('justification', c, h.id) },
-            { key: 'actions', label: '', width: 120, minWidth: 80, sortable: false,
-              render: (c) => html`<div class="row-actions">${confirmButton('✕', 'Unlink, clearing its decisions on every platform', dataAttrs({ action: 'unlinkControl', 'hazard-id': h.id, 'control-id': c.control.id }))}</div>` },
-          ],
-        })}
-      </section>
-      <section class="block">
-        ${dataTable(state, {
-          id: 'hazardPlatforms',
-          rowKey: (p) => p.platform.id,
-          rows: d.platforms,
-          empty: 'On no platform yet.',
-          tools: h.status === 'live' ? plus({ action: 'openPicker', picker: 'linkPlatforms', 'hazard-id': h.id }, 'Link platforms') : '',
-          columns: [
-            { key: 'platform', label: 'Platforms', width: 520, minWidth: 200, value: (p) => p.platform.name,
-              render: (p) => html`<span class="id">${idTag(platformLabel(p.platform))}</span> ${go(p.platform.name, 'platform', { id: p.platform.id })}` },
-            { key: 'reportId', label: 'Report ID', width: 320, minWidth: 150, value: (p) => p.reportId, render: (p) => idTag(p.reportId) },
-            ...RECEPTORS.map((x) => ({ key: x, label: `Residual (${x})`, width: 240, minWidth: 150,
-              value: (/** @type {any} */ p) => BANDS.indexOf(bandOf(ratingsOf(data, h.id, p.platform.id).residual[/** @type {'personnel'} */ (x)])),
-              render: (/** @type {any} */ p) => bandTag(bandOf(ratingsOf(data, h.id, p.platform.id).residual[/** @type {'personnel'} */ (x)])) })),
-            { key: 'ssra', label: '', width: 170, minWidth: 120, sortable: false, render: (p) => go('Open SSRA →', 'hazard', { id: h.id, tab: `p:${p.platform.id}` }) },
-            { key: 'lastReviewed', label: 'Last reviewed', width: 280, minWidth: 140, value: (p) => hazardLastReviewed(data, h.id, p.platform.id),
-              render: (p) => {
-                const at = hazardLastReviewed(data, h.id, p.platform.id);
-                return at ? day(at) : html`<span class="muted">Never</span>`;
-              } },
-          ],
-        })}
-      </section>
-      <section class="block">${referencesCard(state, data, { kind: 'hazard', id: h.id })}</section>
+    <article class="doc dash">
+      <section class="dash-card dash-summary">${descriptionField(h)}</section>
+      <div class="dash-grid two">
+        ${numberedCard(state, { name: 'Consequence', items: d.consequences, hazardId: h.id })}
+        ${phaseCard(data, h)}
+      </div>
+      <h2 class="dash-h">Platforms <span class="count">${d.platforms.length}</span>${h.status === 'live' ? plus({ action: 'openPicker', picker: 'linkPlatforms', 'hazard-id': h.id }, 'Link platforms') : ''}</h2>
+      ${d.platforms.length ? html`<div class="dash-grid cards">${d.platforms.map((p) => platformCard(data, h, p))}</div>` : html`<p class="muted">On no platform yet.</p>`}
+      ${sectionRail(state, 'hazard', [
+        { key: 'controls', label: 'Additional controls', icon: 'controls', badge: d.controls.length, body: () => controlsTable(state, h, d) },
+        { key: 'references', label: 'References', icon: 'references', badge: hazardReferences(data, h.id).length, body: () => referencesCard(state, data, { kind: 'hazard', id: h.id }) },
+      ], 'controls')}
     </article>
     ${state.confirmDelete?.kind === 'hazard' && state.confirmDelete.id === h.id ? deletePanel('hazard', h.id, deleteName('hazard', h), retiredNote(d.platforms.map((p) => p.platform.name))) : html`<div class="actions page-actions">${actions}</div>`}`;
+}
+
+/**
+ * A platform the hazard is on, as a tile: its residual risk for each receptor and how many causal
+ * factors it has there. Clicking it opens the hazard's SSRA on that platform, where they are kept.
+ * @param {Data} data @param {any} h @param {any} p a hazardDetail platform row
+ */
+function platformCard(data, h, p) {
+  const residual = ratingsOf(data, h.id, p.platform.id).residual;
+  const factors = causalFactorsOn(data, h.id, p.platform.id).length;
+  return html`<button type="button" class="dash-card plat-card" title="Open the SSRA for ${p.platform.name}" ${dataAttrs({ action: 'go', view: 'hazard', id: h.id, tab: `p:${p.platform.id}` })}>
+    <span class="plat-name"><span class="id">${idTag(platformLabel(p.platform))}</span> ${p.platform.name}</span>
+    <span class="plat-sub">Residual risk</span>
+    <span class="plat-risk">${RECEPTORS.map((x) => html`<span class="plat-rx"><span class="plat-rx-word">${RECEPTOR_WORD[/** @type {'personnel'} */ (x)]}</span>${residual[/** @type {'personnel'} */ (x)] ? bandTag(bandOf(residual[/** @type {'personnel'} */ (x)])) : html`<span class="muted">Not rated</span>`}</span>`)}</span>
+    <span class="plat-count"><b>${factors}</b> causal factor${factors === 1 ? '' : 's'}</span>
+  </button>`;
+}
+
+/** The hazard's additional controls, with the analysis shared across its platforms. @param {any} state @param {any} h @param {any} d hazardDetail */
+function controlsTable(state, h, d) {
+  return dataTable(state, {
+    id: 'hazardControls',
+    rowKey: (c) => c.control.id,
+    rows: [...d.controls].sort((a, b) => tierRank(a.control.tier) - tierRank(b.control.tier) || byNumber(a.control, b.control)),
+    empty: 'No controls linked yet.',
+    tools: plus({ action: 'openPicker', picker: 'linkControls', 'hazard-id': h.id }, 'Link controls'),
+    columns: [
+      { key: 'control', label: 'Additional controls', width: 720, minWidth: 200, value: (c) => `${controlLabel(c.control)} ${c.control.title}`,
+        render: (c) => html`<span class="id">${idTag(controlLabel(c.control))}</span> ${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
+      tierColumn((c) => c.control, false),
+      { key: 'kind', label: 'Kind', width: 300, minWidth: 150, value: (c) => c.link.kind,
+        render: (c) => html`<select class="quiet" name="kind" aria-label="Kind of ${c.control.title}" ${dataAttrs({ change: 'setControlKind', 'hazard-id': h.id, 'control-id': c.control.id })}>${CONTROL_KINDS.map((k) => option(k, k, c.link.kind))}</select>` },
+      { key: 'description', label: 'Description', width: 440, minWidth: 160, value: (c) => c.control.description ?? '', render: (c) => html`<span class="muted">${c.control.description ?? ''}</span>` },
+      { key: 'recommendation', label: 'Recommendation', width: 520, minWidth: 200, sortable: false, render: (c) => analysisArea('recommendation', c, h.id) },
+      { key: 'justification', label: 'Justification', width: 520, minWidth: 200, sortable: false, render: (c) => analysisArea('justification', c, h.id) },
+      removeColumn((c) => removeButton(`Unlink ${c.control.title}`, `Unlink ${c.control.title}?`, `This unlinks the control from ${deleteName('hazard', h)} and clears its decisions on every platform.`,
+        { run: 'unlinkControl', 'hazard-id': h.id, 'control-id': c.control.id })),
+    ],
+  });
 }

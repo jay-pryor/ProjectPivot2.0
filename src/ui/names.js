@@ -10,7 +10,7 @@ export const KIND_LABEL = Object.freeze({
   review: 'Review', reviewRow: 'Review row', reference: 'Reference', referenceLink: 'Reference link',
   assessment: 'Risk assessment', sfarp: 'SFARP considerations', existingControl: 'Existing control',
   phase: 'Lifecycle phase', hazardPhase: 'Lifecycle phase link', safetyReport: 'Safety report', controlPlatform: 'Control owner',
-  bowtieView: 'Bow-tie view',
+  bowtieView: 'Bow-tie view', systemElement: 'System/Element', affectedGroup: 'Affected group',
 });
 
 /**
@@ -35,6 +35,8 @@ export function recordName(kind, rec, data) {
       case 'controlPlatform': return `${control} on ${platform}`;
       case 'hazardPhase': return `${data.records.phase?.[rec.phaseId]?.name ?? ''} for ${hazard}`;
       case 'safetyReport': return `${rec.number || rec.summary} for ${hazard} on ${platform}`;
+      case 'systemElement':
+      case 'affectedGroup': return `${rec.text} for ${hazard} on ${platform}`;
       default: break;
     }
   }
@@ -48,7 +50,9 @@ export function recordName(kind, rec, data) {
     case 'bowtieView': return rec.name;
     case 'safetyReport': return rec.number || rec.summary;
     case 'causalFactor':
-    case 'consequence': return rec.text;
+    case 'consequence':
+    case 'systemElement':
+    case 'affectedGroup': return rec.text;
     default: return KIND_LABEL[kind] ?? kind;
   }
 }

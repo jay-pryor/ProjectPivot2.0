@@ -1,4 +1,4 @@
-import { createReport } from '../core/ops/reports.js';
+import { createReport, deleteReport } from '../core/ops/reports.js';
 import { reportFileBase } from '../reports/docgen-host.js';
 import { when } from './names.js';
 import * as store from '../storage/store.js';
@@ -21,7 +21,7 @@ import * as safetyReports from '../core/ops/safety-reports.js';
 import * as bowtieViews from '../core/ops/bowtie-views.js';
 import { bowtieOf, canSee, normalizeFilters, DEFAULT_FILTERS, hazardName } from '../core/bowtie.js';
 import { bowtieSvg } from './bowtie-svg.js';
-import { emptyWorkspace, placePane, movePane, swapPanes, closePane, updatePane, replacedBy, paneDirty, workspaceKey, readWorkspace, writeWorkspace } from './workspace.js';
+import { emptyWorkspace, placePane, movePane, swapPanes, closePane, updatePane, replacedBy, paneDirty, workspaceKey, readWorkspace, writeWorkspace, paneView } from './workspace.js';
 import { setReportDesign } from '../core/ops/reports.js';
 import { createDocHost } from '../reports/docgen-host.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
@@ -35,7 +35,9 @@ const EDITS = {
   deleteHazard: hazards.deleteHazard, restoreRecord: hazards.restoreRecord,
   addCausalFactor: hazards.addCausalFactor, updateCausalFactor: hazards.updateCausalFactor, deleteCausalFactor: hazards.deleteCausalFactor,
   addConsequence: hazards.addConsequence, updateConsequence: hazards.updateConsequence, deleteConsequence: hazards.deleteConsequence,
-  createControl: controls.createControl, updateControl: controls.updateControl, retireControl: controls.retireControl,
+  addSystemElement: hazards.addSystemElement, updateSystemElement: hazards.updateSystemElement, deleteSystemElement: hazards.deleteSystemElement,
+  addAffectedGroup: hazards.addAffectedGroup, updateAffectedGroup: hazards.updateAffectedGroup, deleteAffectedGroup: hazards.deleteAffectedGroup,
+  createControl: controls.createControl, copyControlAs: controls.copyControlAs, updateControl: controls.updateControl, retireControl: controls.retireControl,
   deleteControl: controls.deleteControl, linkControl: controls.linkControl, setControlKind: controls.setControlKind,
   unlinkControl: controls.unlinkControl, setControlAnalysis: controls.setControlAnalysis, setControlOwner: controls.setControlOwner,
   linkExistingControl: controls.linkExistingControl, unlinkExistingControl: controls.unlinkExistingControl, setExistingControlKind: controls.setExistingControlKind,
@@ -55,17 +57,26 @@ const EDITS = {
   linkReference: references.linkReference, unlinkReference: references.unlinkReference,
   createBowtieView: bowtieViews.createBowtieView, updateBowtieView: bowtieViews.updateBowtieView,
   setBowtieSharing: bowtieViews.setBowtieSharing, deleteBowtieView: bowtieViews.deleteBowtieView,
-  addComment,
+  addComment, deleteReport,
 };
 
 /** After creating one of these, show it. */
-const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', createPlatform: 'platform', createReference: 'reference' };
+const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', copyControlAs: 'control', createPlatform: 'platform', createReference: 'reference' };
+
+/** The section a page's rail opens until another is chosen; it matches the page's own fallback. */
+const DEFAULT_SECTION = { ssra: 'initial', hazard: 'controls', openItems: 'acks', control: 'usage', existingControl: 'existing', platform: 'hazards' };
+
+/** How many pages Back can step through. */
+const HISTORY_LIMIT = 50;
+
+/** @param {any} a @param {any} b */
+const sameView = (a, b) => ['name', 'id', 'tab', 'reviewId', 'hazardId', 'platformId'].every((k) => (a?.[k] ?? null) === (b?.[k] ?? null));
 
 const BACKUP_CHECK_MS = 60_000;
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
-  'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneSet', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace',
+  'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneSet', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'showSection', 'goBack', 'viewBowtie', 'askConfirm', 'confirmCancel', 'confirmContinue',
 ]);
 
 export function initialState() {
@@ -76,7 +87,7 @@ export function initialState() {
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
-    workspace: emptyWorkspace(), bowtieReplace: null,
+    workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], sections: {}, viewHistory: [], confirm: null,
   };
 }
 
@@ -102,7 +113,13 @@ export function createController(env) {
   const listeners = new Set();
 
   /** @param {Record<string, any>} patch */
+  // Back returns to the page before, as a browser does: every move to another page (or tab) while
+  // working is remembered, except the move Back itself makes.
+  let goingBack = false;
   function set(patch) {
+    if (patch.view && !goingBack && state.screen === 'main' && !sameView(patch.view, state.view)) {
+      patch = { ...patch, viewHistory: [...(state.viewHistory ?? []), state.view].slice(-HISTORY_LIMIT) };
+    }
     state = { ...state, ...patch, today: aestDate(env.clock.now()) };
     for (const f of listeners) f(state);
   }
@@ -430,8 +447,8 @@ export function createController(env) {
       if (value) filters[key] = value; else delete filters[key];
       set({ tables: { ...state.tables, [table]: { ...t, filters } } });
     },
-    async openPicker({ picker, hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field }) {
-      const extra = { hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field };
+    async openPicker({ picker, hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field, controlId }) {
+      const extra = { hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field, controlId };
       set({ picker: { picker, ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v)) } });
     },
     async addReference({ title, url, path, file }) {
@@ -487,6 +504,21 @@ export function createController(env) {
     async linkControls(args) {
       for (const controlId of list(args.controlId)) {
         await applyEdit('linkControl', { hazardId: args.hazardId, controlId, kind: args[`kind:${controlId}`] || 'preventative' });
+      }
+      set({ picker: null });
+    },
+    /** From a control's side: link an additional control to the hazards ticked, each with its kind. */
+    async linkControlToHazards(args) {
+      for (const hazardId of list(args.hazardId)) {
+        await applyEdit('linkControl', { hazardId, controlId: args.controlId, kind: args[`kind:${hazardId}`] || 'preventative' });
+      }
+      set({ picker: null });
+    },
+    /** From a control's side: put an existing control in place for the hazards ticked, each on its platform. */
+    async placeExistingControl(args) {
+      for (const pair of list(args.pair)) {
+        const [hazardId, platformId] = String(pair).split('|');
+        await applyEdit('linkExistingControl', { hazardId, platformId, controlId: args.controlId, kind: args[`kind:${pair}`] || 'preventative' });
       }
       set({ picker: null });
     },
@@ -627,7 +659,42 @@ export function createController(env) {
       if (!d || !hazardId || !platformId || !bowtieOf(d, hazardId, platformId, DEFAULT_FILTERS).ok) {
         throw new PivotError('not-found', 'Choose a hazard and a platform it is on.');
       }
+      if (state.editing?.kind === 'bowtieNew') set({ editing: null });
       place('last', { viewId: null, hazardId, platformId, filters: normalizeFilters(DEFAULT_FILTERS) });
+    },
+    /** Open a section of a page's rail, or close it if it is the one open (unless asked to keep it open). */
+    async showSection({ page, section, keep }) {
+      const sections = state.sections ?? {};
+      const open = sections[page] === undefined ? DEFAULT_SECTION[/** @type {keyof typeof DEFAULT_SECTION} */ (page)] : sections[page];
+      set({ sections: { ...sections, [page]: open === section && !keep ? null : section } });
+    },
+    async goBack() {
+      const history = state.viewHistory ?? [];
+      const prev = history.at(-1);
+      if (!prev) return;
+      goingBack = true;
+      try {
+        set({ viewHistory: history.slice(0, -1) });
+        await handlers.go({ ...prev, view: prev.name });
+      } finally {
+        goingBack = false;
+      }
+    },
+    /** Ask before an action: a pop-up with the warning, Continue or Cancel. `run` is the action to take. */
+    async askConfirm({ run, title, text, action: _self, ...rest }) {
+      set({ confirm: { title, text, action: { type: run, ...rest } } });
+    },
+    async confirmCancel() {
+      set({ confirm: null });
+    },
+    async confirmContinue() {
+      const action = state.confirm?.action;
+      set({ confirm: null });
+      if (action) await dispatch(action);
+    },
+    async toggleBowtieDetails({ id }) {
+      const shown = state.bowtieDetails ?? [];
+      set({ bowtieDetails: shown.includes(id) ? shown.filter((x) => x !== id) : [...shown, id] });
     },
     async openBowtieView({ id, side }) {
       place(sideOf(side), paneForView(id));
@@ -642,6 +709,16 @@ export function createController(env) {
     },
     async closeBowtiePane({ side }) {
       setWorkspace(closePane(state.workspace, paneIndex(side)));
+    },
+    // Where a window's drawing is zoomed and moved to, once the wheel or a drag settles.
+    async viewBowtie({ side, zoom, x, y }) {
+      const i = paneIndex(side);
+      const p = state.workspace.panes[i];
+      if (!p) return;
+      const { zoom: _z, pan: _p, ...rest } = p;
+      const panes = /** @type {[import('./workspace.js').Pane | null, import('./workspace.js').Pane | null]} */ ([...state.workspace.panes]);
+      panes[i] = { ...rest, ...paneView(zoom, x, y) };
+      setWorkspace({ panes, lastUsed: i });
     },
     async setPaneSet({ side, value }) {
       const p = paneAt(side);
@@ -712,7 +789,7 @@ export function createController(env) {
   async function openFolder(h) {
     handle = h;
     // A different folder is a fresh start: nothing of the last one's session carries over.
-    set({ session: null, profileId: null, view: initialState().view, editing: null, picker: null, confirmDelete: null, undo: null, recoverable: null });
+    set({ session: null, profileId: null, view: initialState().view, viewHistory: [], editing: null, picker: null, confirmDelete: null, undo: null, recoverable: null });
     const check = await store.checkFolder(h);
     const profilesBad = check.failed.some((x) => x.file === store.FILES.profiles);
     const dataBlocked = check.failed.some((x) => x.file === store.FILES.data);

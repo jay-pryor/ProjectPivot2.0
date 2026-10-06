@@ -35,11 +35,12 @@ test('homeOwnerId: me is the active profile, everyone is null', () => {
 
 test('Open items: an owner chooser, a summary, and the four full tables', () => {
   const d = data();
-  const out = openItemsView(state, d).toString();
+  const out = ['acks', 'reviews', 'awaiting', 'unrated'].map((x) => openItemsView({ ...state, sections: { openItems: x } }, d).toString()).join('\n');
   assert.match(out, /<h1>Open items<\/h1>/);
-  assert.match(out, /data-action="go" data-view="home">← Home/);
   assert.match(out, /<select name="ownerId" data-change="setHomeOwner"[\s\S]*?<option value="me" selected>Me<\/option>[\s\S]*?<option value="u2">Grace<\/option>[\s\S]*?<option value="everyone">Everyone<\/option>/);
-  assert.match(out, /1 change to acknowledge · 1 review overdue · 2 controls awaiting · 1 hazard unrated/);
+  assert.match(out, /<b>1<\/b><span>change to acknowledge<\/span>[\s\S]*?<b>1<\/b><span>review overdue<\/span>[\s\S]*?<b>2<\/b><span>controls awaiting<\/span>[\s\S]*?<b>1<\/b><span>hazard unrated<\/span>/);
+  assert.match(out, /class="tile on" data-action="showSection" data-page="openItems" data-section="acks" data-keep="true"/, 'a tile opens its section');
+  assert.deepEqual([...openItemsView(state, d).toString().matchAll(/class="rail-item[^"]*"[^>]*data-section="(\w+)"/g)].map((m) => m[1]), ['acks', 'reviews', 'awaiting', 'implement', 'unrated']);
   for (const t of ['homeAcks', 'homeReviews', 'homeAwaiting', 'homeUnrated']) assert.match(out, new RegExp(`data-table="${t}"`));
   const [e] = waitingChanges(d, 'p1');
   assert.match(out, new RegExp(`data-action="acknowledge" data-entry-id="${e.id}" data-platform-id="p1"`));
@@ -56,10 +57,10 @@ test('Acknowledge all acts on the rows shown: a filter that hides every row leav
 test('empty sections say so; everyone shows every platform', () => {
   const none = openItemsView({ ...state, homeOwner: 'u3' }, data()).toString();
   assert.match(none, /Nothing to acknowledge\./);
-  assert.match(none, /No reviews due\./);
+  assert.match(openItemsView({ ...state, homeOwner: 'u3', sections: { openItems: 'reviews' } }, data()).toString(), /No reviews due\./);
   const everyone = openItemsView({ ...state, homeOwner: 'everyone' }, data()).toString();
   assert.match(everyone, /<option value="everyone" selected>/);
-  assert.match(everyone, /2 changes to acknowledge/);
+  assert.match(everyone, /<b>2<\/b><span>changes to acknowledge/);
 });
 
 test('before and after values are shown literally', () => {
@@ -106,7 +107,7 @@ test('needs attention: most urgent first; changes acknowledged in place; the res
   assert.match(out, /data-action="go" data-view="openItems">Open items →/);
 });
 
-test('needs attention shows the eight most urgent and a See all link', () => {
+test('needs attention draws its items, each keyed so it can slide when one goes, in a fixed-height panel the browser fits them to', () => {
   let d = data();
   for (const n of [3, 4, 5, 6, 7, 8]) {
     d = createControl(d, at('10:50', 'u1'), { id: `c${n}`, title: `Control ${n}` });
@@ -114,8 +115,10 @@ test('needs attention shows the eight most urgent and a See all link', () => {
   }
   const out = homeView(state, d).toString();
   const list = out.slice(out.indexOf('<table class="attn">'), out.indexOf('</table>', out.indexOf('<table class="attn">')));
-  assert.equal((list.match(/<tr>/g) ?? []).length, 9, 'a header row and eight items');
-  assert.match(out, />See all 11 →</);
+  assert.equal((list.match(/<tr data-key="/g) ?? []).length, 11, 'every item, up to the most it draws');
+  assert.match(list, /<tr data-key="control\|p1\|h1\|c3">/);
+  assert.match(out, /<section class="panel attn-panel"><h2>Needs attention<\/h2>\s*<div class="attn-fit"><table class="attn">/);
+  assert.match(out, /<div class="panel-more" data-attn-more="" data-total="11"><button[^>]*>Open items →/, 'the browser says See all 11 when some do not fit');
 });
 
 test('coming up: reviews due in the next 90 days; nothing says so', () => {
@@ -142,8 +145,8 @@ test('my platforms: a card per platform with its review, risk bar and what is op
 });
 
 test('a change in Needs attention says its action once: a name that repeats the action runs on from it', () => {
-  assert.equal(changeSummary('Set residual environment risk', 'Residual environment risk of H-0004 on Alpha'), 'Set residual environment risk of H-0004 on Alpha');
-  assert.equal(changeSummary('Edit hazard', 'H-0001 Fire'), 'Edit hazard: H-0001 Fire');
+  assert.equal(changeSummary('Set residual environment risk', 'Residual environment risk of HAZ-004 on Alpha'), 'Set residual environment risk of HAZ-004 on Alpha');
+  assert.equal(changeSummary('Edit hazard', 'HAZ-001 Fire'), 'Edit hazard: HAZ-001 Fire');
   assert.equal(changeSummary('Set review notes', 'Review notes'), 'Set review notes');
   assert.equal(changeSummary('Set risk', 'Riskiest thing'), 'Set risk: Riskiest thing', 'whole words only');
   assert.equal(changeSummary('Delete hazard', ''), 'Delete hazard');

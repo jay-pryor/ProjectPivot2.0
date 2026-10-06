@@ -30,12 +30,13 @@ test('the platform list names each owner, filters by owner and status in its hea
 test('a platform page: the name applies when left, the owner in a sentence, retire and delete at the bottom, History as a tab', () => {
   const out = platformView(state, data(), 'p1').toString();
   assert.doesNotMatch(out, />Rename</);
-  assert.match(out, /<input class="doc-title" name="name" value="Alpha" required[^>]*data-change="updatePlatform" data-id="p1"/);
+  assert.match(out, /<input class="doc-title small" name="name" value="Alpha" required[^>]*data-change="updatePlatform" data-id="p1"/);
   assert.match(out, /Owned by <select[^>]*data-change="setOwner" data-id="p1"/);
   assert.ok(out.lastIndexOf('data-action="retirePlatform"') > out.lastIndexOf('</table>'));
   assert.match(out, /data-tab="history"/);
-  assert.match(out, /No crew &lt;aboard&gt;/, 'reasons are shown escaped');
-  assert.match(out, /Ada, 2026-09-28 10:00/, 'who confirmed, and when');
+  const controls = platformView({ ...state, sections: { platform: 'controls' } }, data(), 'p1').toString();
+  assert.match(controls, /No crew &lt;aboard&gt;/, 'reasons are shown escaped');
+  assert.match(controls, /Ada, 2026-09-28 10:00/, 'who confirmed, and when');
 });
 
 test('a platform\'s History tab shows every change that reached it', () => {
@@ -51,9 +52,9 @@ test('the platform\'s controls table has the control ID and the control name in 
   const { assignNumbers } = await import('../../src/core/ops/hazards.js');
   const { seed } = await import('../helpers.js');
   const st = { ...initialState(), screen: 'main', today: '2026-09-28', profileId: 'u1', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }] };
-  const out = platformView(st, assignNumbers(seed()), 'p1').toString();
+  const out = platformView({ ...st, sections: { platform: 'controls' } }, assignNumbers(seed()), 'p1').toString();
   const table = out.slice(out.indexOf('data-table="platformControls"'));
   const heads = [...table.split('</thead>')[0].matchAll(/<th data-col="(\w+)"/g)].map((m) => m[1]);
   assert.deepEqual(heads.slice(0, 2), ['id', 'control']);
-  assert.match(table, /<td><button type="button" class="link" data-action="go" data-view="control" data-id="c1">C-0001<\/button><\/td><td><button type="button" class="link" data-action="go" data-view="control" data-id="c1">Sprinklers<\/button><\/td>/);
+  assert.match(table, /<td><button type="button" class="link" data-action="go" data-view="control" data-id="c1">C-001<\/button><\/td><td><button type="button" class="link" data-action="go" data-view="control" data-id="c1">Sprinklers<\/button><\/td>/);
 });

@@ -25,6 +25,7 @@ function mainView(state) {
     case 'platform': return platformView(state, data, v.id);
     case 'references': return referencesView(state, data);
     case 'reference': return referenceView(state, data, v.id);
+    case 'stats':
     case 'phases': return phasesView(state, data);
     case 'reports': return reportsView(state, data);
     case 'bowties': return bowtiesView(state, data);

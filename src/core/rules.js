@@ -45,6 +45,16 @@ export function checkRules(data) {
       }
     }
   }
+  for (const kind of ['systemElement', 'affectedGroup']) {
+    for (const r of live(data, kind)) {
+      const hp = ids.hazardPlatform(r.hazardId, r.platformId);
+      if (!liveRec('hazardPlatform', hp)) out.push({ rule: `${kind}-without-platform-link`, message: `${kind === 'systemElement' ? 'A system or element' : 'An affected group'} is for a platform the hazard is not on.`, records: [{ kind, id: r.id }, { kind: 'hazardPlatform', id: hp }] });
+    }
+  }
+  for (const r of live(data, 'causalFactor')) {
+    const hp = r.platformId ? ids.hazardPlatform(r.hazardId, r.platformId) : null;
+    if (hp && !liveRec('hazardPlatform', hp)) out.push({ rule: 'causalFactor-without-platform-link', message: 'A causal factor is for a platform the hazard is not on.', records: [{ kind: 'causalFactor', id: r.id }, { kind: 'hazardPlatform', id: hp }] });
+  }
   for (const r of live(data, 'ruling')) {
     const hc = ids.hazardControl(r.hazardId, r.controlId);
     const hp = ids.hazardPlatform(r.hazardId, r.platformId);

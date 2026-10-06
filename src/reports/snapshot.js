@@ -1,6 +1,6 @@
 import { get } from '../core/data.js';
 import { PivotError } from '../core/errors.js';
-import { platformHazards, hazardDetail, lastReviewed, referencesFor, assessmentOf, sfarpOf, existingControlsOn, phasesOf, safetyReportsOn, controlOwner, ownerText } from '../core/queries.js';
+import { platformHazards, hazardDetail, causalFactorsOn, lastReviewed, referencesFor, assessmentOf, sfarpOf, existingControlsOn, phasesOf, safetyReportsOn, controlOwner, ownerText } from '../core/queries.js';
 import { formatRating } from '../core/matrix.js';
 import { RECEPTORS, stageKey } from '../core/receptors.js';
 import { referenceLabel, controlLabel } from '../core/ids.js';
@@ -41,7 +41,7 @@ export function buildSnapshot(data, platformId, o) {
       reportId: r.reportId,
       title: r.hazard.title,
       description: r.hazard.description ?? '',
-      causalFactors: d.causalFactors.map((x) => x.text),
+      causalFactors: causalFactorsOn(data, r.hazard.id, platformId).map((x) => x.text),
       consequences: d.consequences.map((x) => x.text),
       controls: r.controls.map((c) => ({
         number: controlLabel(c.control), title: c.control.title, description: c.control.description ?? '', owner: ownerText(controlOwner(data, c.control.id, platformId)),
@@ -84,7 +84,7 @@ export function buildSnapshot(data, platformId, o) {
   for (const r of platformHazards(data, platformId)) {
     add('hazard', r.hazard.id, r.reportId);
     const d = /** @type {NonNullable<ReturnType<typeof hazardDetail>>} */ (hazardDetail(data, r.hazard.id));
-    for (const cf of d.causalFactors) add('causalFactor', cf.id, `${r.reportId} causal factor`);
+    for (const cf of causalFactorsOn(data, r.hazard.id, platformId)) add('causalFactor', cf.id, `${r.reportId} causal factor`);
     for (const cq of d.consequences) add('consequence', cq.id, `${r.reportId} consequence`);
     for (const c of r.controls) add('control', c.control.id, c.control.title);
   }

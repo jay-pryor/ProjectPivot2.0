@@ -61,16 +61,6 @@ test('with a review open, the Reviews tab shows the schedule and the review, and
   assert.doesNotMatch(out, /data-action="beginReview"|Continue review/);
 });
 
-test('a hazard page shows when it was last reviewed on each platform', () => {
-  let d = startReview(data(), act, { id: 'r1', platformId: 'p1' });
-  d = markRow(d, act, { reviewId: 'r1', hazardId: 'h1', reviewed: true });
-  d = completeReview(d, act, { reviewId: 'r1' });
-  const out = hazardView(state, d, 'h1').toString();
-  assert.match(out, /<th data-col="lastReviewed"/);
-  assert.match(out, /28 Sep 2026/);
-  assert.match(out, /Never/, 'not reviewed on Bravo');
-});
-
 const onTab = (extra = {}) => ({ ...state, view: { name: 'platform', id: 'p1', tab: 'reviews', ...extra } });
 
 test('the Reviews tab with no review open offers to start one', () => {
