@@ -1,4 +1,4 @@
-import { KINDS, NUMBERED, inGroup, put } from './data.js';
+import { KINDS, NUMBERED, put } from './data.js';
 import { PivotError } from './errors.js';
 import { sameJson } from './json.js';
 import { checkRules } from './rules.js';
@@ -65,11 +65,10 @@ export function mergeData(base, mine, theirs, act) {
   // A replaced file restarts numbering; a number the other file gave that one of my loaded
   // records already holds is cleared, so the save numbers that record afresh.
   if (missingFromDisk > 0) {
-    for (const n of NUMBERED) {
-      const { kind } = n;
-      const held = new Set(Object.values(records[kind]).filter((r) => inGroup(n, r) && base.records[kind][r.id] !== undefined && r.number != null).map((r) => r.number));
+    for (const { kind } of NUMBERED) {
+      const held = new Set(Object.values(records[kind]).filter((r) => base.records[kind][r.id] !== undefined && r.number != null).map((r) => r.number));
       for (const r of Object.values(records[kind])) {
-        if (inGroup(n, r) && base.records[kind][r.id] === undefined && mine.records[kind][r.id] === undefined && r.number != null && held.has(r.number)) {
+        if (base.records[kind][r.id] === undefined && mine.records[kind][r.id] === undefined && r.number != null && held.has(r.number)) {
           records[kind][r.id] = { ...r, number: null };
           conflicts.set(`${kind}:${r.id}`, { kind, id: r.id, reason: 'renumbered', mine: records[kind][r.id], theirs: r, overriddenBy: r.updatedBy });
         }
@@ -80,9 +79,8 @@ export function mergeData(base, mine, theirs, act) {
 
   /** @type {Record<string, number>} */
   const counters = {};
-  for (const n of NUMBERED) {
-    const { kind, counter } = n;
-    const highest = Math.max(0, ...Object.values(records[kind]).filter((r) => inGroup(n, r)).map((r) => r.number ?? 0));
+  for (const { kind, counter } of NUMBERED) {
+    const highest = Math.max(0, ...Object.values(records[kind]).map((r) => r.number ?? 0));
     counters[counter] = Math.max(/** @type {any} */ (theirs)[counter] ?? 1, /** @type {any} */ (mine)[counter] ?? 1, highest + 1);
   }
 
@@ -91,7 +89,6 @@ export function mergeData(base, mine, theirs, act) {
     records,
     nextHazardNumber: counters.nextHazardNumber,
     nextControlNumber: counters.nextControlNumber,
-    nextExistingControlNumber: counters.nextExistingControlNumber,
     nextPlatformNumber: counters.nextPlatformNumber,
     nextReferenceNumber: counters.nextReferenceNumber,
     history: { ...theirs.history, ...mine.history },

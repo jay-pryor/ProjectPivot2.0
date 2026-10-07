@@ -14,12 +14,22 @@ test('a stage\'s likelihoods and consequences, for every risk type, copy from an
   d = set(d, 'p1', 'environment', 'A', 1, { likelihoodWhy: 'Kept' });
   assert.deepEqual(stageCopySources(d, 'h1', 'p1', 'initial').map((x) => x.platform.id), ['p2']);
   assert.deepEqual(stageCopySources(d, 'h1', 'p1', 'residual'), [], 'nothing to copy at residual');
-  d = copyStageRisk(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', from: 'p2' });
+  const whole = copyStageRisk(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', from: 'p2' });
+  assert.equal(assessmentOf(whole, 'h1', 'p1', 'initial', 'environment').likelihoodWhy, '', 'with justifications (the usual): Bravo\'s, empty, replaces it');
+  d = copyStageRisk(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', from: 'p2', withWhy: false });
   assert.equal(entries(d).at(-1).action, 'Copy initial risk from Bravo');
   assert.deepEqual(ratingsOf(d, 'h1', 'p1').initial, {
     personnel: { consequence: 1, likelihood: 'B' }, environment: null, capability: { consequence: 3, likelihood: 'D' },
   }, 'environment becomes unset, as on Bravo');
-  assert.equal(assessmentOf(d, 'h1', 'p1', 'initial', 'environment').likelihoodWhy, 'Kept', 'justifications are left alone');
+  assert.equal(assessmentOf(d, 'h1', 'p1', 'initial', 'environment').likelihoodWhy, 'Kept', 'without justifications: those here are left alone');
   assert.throws(() => copyStageRisk(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'final', from: 'p2' }), (e) => e instanceof PivotError && e.code === 'rating.stage');
   assert.throws(() => copyStageRisk(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', from: 'p1' }), (e) => e instanceof PivotError);
+});
+
+test('copying a stage with its justifications brings each risk type\'s likelihood and consequence text across', () => {
+  let d = set(seed(), 'p2', 'personnel', 'B', 1, { likelihoodWhy: 'Seen twice a year', consequenceWhy: 'Minor burns' });
+  d = set(d, 'p1', 'personnel', 'A', 1, { likelihoodWhy: 'Old text' });
+  d = copyStageRisk(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', from: 'p2', withWhy: true });
+  const a = assessmentOf(d, 'h1', 'p1', 'initial', 'personnel');
+  assert.deepEqual([a.likelihood, a.consequence, a.likelihoodWhy, a.consequenceWhy], ['B', 1, 'Seen twice a year', 'Minor burns']);
 });

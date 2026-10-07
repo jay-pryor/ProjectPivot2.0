@@ -1,10 +1,10 @@
 import { html } from '../html.js';
-import { dataAttrs, go, idTag, statusTag, confirmButton, pageTabs, historyTable, historyCount, plus, removeColumn, removeButton } from './common.js';
+import { dataAttrs, go, idTag, statusTag, pageTabs, historyTable, historyCount, plus, removeColumn, removeButton, recordMenu, menuItem, optionsMenu } from './common.js';
 import { dataTable } from './table.js';
 import { statusColumn, idColumn, notFound } from './hazards.js';
 import { all, get } from '../../core/data.js';
 import { referenceLabel, hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
-import { referenceTargets, referencesFor, hazardReferences } from '../../core/queries.js';
+import { referenceTargets, referencesFor, hazardReferences, hazardReferenceRows } from '../../core/queries.js';
 import { profileName, when } from '../names.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
@@ -29,8 +29,18 @@ const size = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024
 /** @param {any} r @param {Set<string>} missing */
 const missingTag = (r, missing) => ([r.file, ...(r.pastFiles ?? [])].some((f) => f && missing.has(f.stored)) ? html` <span class="tag tag-missing">File missing</span>` : '');
 
-/** @param {any} r */
-const pointsAt = (r) => html`${r.file ? html`<span class="chip">File</span>` : ''}${r.url ? html`<span class="chip">Link</span>` : ''}${r.path ? html`<span class="chip">Path</span>` : ''}`;
+/**
+ * What a reference points at, each a small box that opens it: the file (in a new tab where the
+ * browser can show it), the web link in a new tab, and the network path copied, as a browser
+ * cannot open one.
+ * @param {any} r
+ */
+const pointsAt = (r) => {
+  const href = safeHref(r.url);
+  return html`${r.file ? html`<button type="button" class="chip chip-open" title="Open ${r.file.name}" ${dataAttrs({ action: 'openReferenceFile', stored: r.file.stored })}>File</button>` : ''}${r.url
+    ? (href ? html`<a class="chip chip-open" href="${href}" target="_blank" rel="noopener" title="Open ${href} in a new tab">Link</a>` : html`<span class="chip" title="Not a web link that can be opened">Link</span>`)
+    : ''}${r.path ? html`<button type="button" class="chip chip-open" title="Copy ${r.path}" ${dataAttrs({ action: 'copyPath', path: r.path })}>Path</button>` : ''}`;
+};
 
 /** @param {any} state */
 function newReference(state) {
@@ -44,22 +54,38 @@ function newReference(state) {
     <div class="actions"><button type="submit" class="primary">Add</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></div></form>`;
 }
 
-/** @param {any} state @param {Data} data */
+/** The References page's sub-tabs: those in use, then the archive. */
+const REFERENCE_TABS = /** @type {const} */ ([['active', 'Active'], ['archived', 'Archived']]);
+
+/**
+ * References, as two sub-tabs: Active, and Archived (out of use, kept apart and not offered for
+ * linking). Each row's Options moves it from one to the other.
+ * @param {any} state @param {Data} data
+ */
 export function referencesView(state, data) {
   const missing = new Set(state.missingFiles ?? []);
-  return html`<div class="head"><h1>References</h1>${newReference(state)}</div>
+  const archived = state.view?.tab === 'archived';
+  const rows = all(data, 'reference').filter((r) => Boolean(r.archived) === archived);
+  const count = (/** @type {boolean} */ a) => all(data, 'reference').filter((r) => r.status !== 'deleted' && Boolean(r.archived) === a).length;
+  return html`<div class="head"><h1>References</h1>${archived ? '' : newReference(state)}</div>
+    <nav class="tabs">${REFERENCE_TABS.map(([t, label]) => html`<button type="button" class="tab${(t === 'archived') === archived ? ' on' : ''}" ${dataAttrs({ action: 'go', view: 'references', tab: t })}>${label} <span class="count">${count(t === 'archived')}</span></button>`)}</nav>
     ${dataTable(state, {
-      id: 'references',
+      id: archived ? 'referencesArchived' : 'references',
       rowKey: (r) => r.id,
-      rows: all(data, 'reference'),
-      empty: 'No references yet.',
+      rows,
+      empty: archived ? 'Nothing is archived.' : 'No references yet.',
+      rowAttrs: (r) => ({ dblclick: 'go', view: 'reference', id: r.id }),
+      rowEnd: (r) => (r.status === 'deleted' ? '' : optionsMenu(`Options for ${r.title}`, [
+        html`<button type="button" ${dataAttrs({ action: 'go', view: 'reference', id: r.id })}>Open</button>`,
+        html`<button type="button" ${dataAttrs({ action: 'setReferenceArchived', id: r.id, archived: archived ? 'false' : 'true' })}>${archived ? 'Move to Active' : 'Move to Archived'}</button>`,
+      ])),
       columns: [
         idColumn((r) => r, referenceLabel, (r) => go(idTag(referenceLabel(r)), 'reference', { id: r.id })),
         { key: 'title', label: 'Reference', width: 560, minWidth: 200, value: (r) => r.title, filter: 'text',
           render: (r) => html`${go(r.title, 'reference', { id: r.id })}${missingTag(r, missing)}` },
         { key: 'docNumber', label: 'Doc number', width: 260, minWidth: 120, value: (r) => r.docNumber, filter: 'text' },
         { key: 'revision', label: 'Revision', width: 180, minWidth: 100, value: (r) => r.revision },
-        { key: 'points', label: 'Points at', width: 240, minWidth: 140, sortable: false, render: (r) => pointsAt(r) },
+        { key: 'points', label: 'Points at', width: 240, minWidth: 180, sortable: false, render: (r) => pointsAt(r) },
         { key: 'supports', label: 'Supports', width: 180, minWidth: 110, value: (r) => referenceTargets(data, r.id).length },
         statusColumn((r) => r.status),
       ],
@@ -79,12 +105,16 @@ function targetCell(data, x) {
     case 'hazard': return html`<span class="id">${idTag(hazardLabel(target))}</span> ${go(target.title, 'hazard', { id: target.id })}`;
     case 'causalFactor':
     case 'consequence': return html`<span class="id">${idTag(hazardLabel(hazard))}</span> ${go(hazard.title, 'hazard', { id: hazard.id })}: ${target.text}`;
+    case 'hazardPhase': return html`<span class="id">${idTag(hazardLabel(hazard))}</span> ${go(hazard.title, 'hazard', { id: hazard.id })}: ${get(data, 'phase', target.phaseId)?.name ?? ''}`;
+    case 'failureMode':
+    case 'systemElement':
+    case 'affectedGroup': return html`<span class="id">${idTag(hazardLabel(hazard))}</span> ${go(hazard.title, 'hazard', { id: hazard.id, tab: `p:${target.platformId}` })} on ${get(data, 'platform', target.platformId)?.name ?? ''}: ${target.text}`;
     case 'control': return html`<span class="id">${idTag(controlLabel(target))}</span> ${go(target.title, 'control', { id: target.id })}`;
     default: return html`<span class="id">${idTag(platformLabel(target))}</span> ${go(target.name, 'platform', { id: target.id })}`;
   }
 }
 
-const KIND_WORD = { hazard: 'Hazard', causalFactor: 'Causal factor', consequence: 'Consequence', control: 'Control', platform: 'Platform' };
+const KIND_WORD = { hazard: 'Hazard', causalFactor: 'Causal factor', consequence: 'Consequence', hazardPhase: 'Lifecycle phase', failureMode: 'Element failure mode', systemElement: 'System/Element', affectedGroup: 'Affected group', control: 'Control', platform: 'Platform' };
 
 /** @param {any} state @param {Data} data @param {string} id */
 export function referenceView(state, data, id) {
@@ -92,20 +122,21 @@ export function referenceView(state, data, id) {
   if (!r) return notFound();
   const tab = state.view?.tab;
   const page = tab === 'history' ? 'History' : 'Details';
-  const head = html`<div class="doc-head"><h1 class="doc-page"><span class="doc-id">${idTag(referenceLabel(r))}</span> <span class="doc-page-sep" aria-hidden="true">—</span> ${page}</h1>${statusTag(r.status)}</div>
+  const targets = referenceTargets(data, id);
+  const menu = recordMenu('Reference options', r.status === 'live'
+    ? [menuItem(r.archived ? 'Move to Active' : 'Move to Archived', { action: 'setReferenceArchived', id, archived: r.archived ? 'false' : 'true' }),
+      menuItem('Retire', { action: 'retireReference', id }),
+      targets.length ? '' : menuItem('Delete…', { action: 'askConfirm', run: 'deleteReference', id, title: `Delete ${r.title}?`, text: 'It supports nothing. It will be deleted; its stored files stay in the folder.' }, true)]
+    : r.status === 'retired' ? [menuItem('Restore', { action: 'restoreRecord', kind: 'reference', id })] : []);
+  const head = html`<div class="doc-head"><h1 class="doc-page"><span class="doc-id">${idTag(referenceLabel(r))}</span> <span class="doc-page-sep" aria-hidden="true">—</span> ${page}</h1>${statusTag(r.status)}${r.archived ? html`<span class="tag">Archived</span>` : ''}${menu}</div>
     <label class="doc-subtitle"><span class="field-label">Reference</span>
       <input class="doc-title small" name="title" value="${r.title}" required aria-label="Reference title" ${dataAttrs({ change: 'updateReference', id })}></label>
     ${pageTabs('reference', { id }, tab, historyCount(state, data, 'reference', id))}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'reference', id)}`;
   const missing = new Set(state.missingFiles ?? []);
   const edit = { change: 'updateReference', id };
-  const targets = referenceTargets(data, id);
   const href = safeHref(r.url);
   const pathHref = fileUrl(r.path);
-  const actions = r.status === 'live'
-    ? html`<button type="button" ${dataAttrs({ action: 'retireReference', id })}>Retire</button>
-       ${targets.length ? '' : confirmButton('Delete…', 'Delete this reference', dataAttrs({ action: 'deleteReference', id }))}`
-    : r.status === 'retired' ? html`<button type="button" ${dataAttrs({ action: 'restoreRecord', kind: 'reference', id })}>Restore</button>` : '';
   return html`${head}
     <article class="doc">
       <div class="ref-fields">
@@ -133,30 +164,42 @@ export function referenceView(state, data, id) {
             { run: 'unlinkReference', 'reference-id': id, 'target-kind': x.link.targetKind, 'target-id': x.link.targetId })),
         ],
       })}</section>
-    </article>
-    <div class="actions page-actions">${actions}</div>`;
+    </article>`;
 }
 
 /**
- * A record page's References card: the references linked to it (for a hazard, also to its causal
- * factors and consequences), a + to link more, and ✕ to unlink.
- * @param {any} state @param {Data} data @param {{ kind: string, id: string }} target
+ * A record page's References card: the references linked to it (for a hazard, also to the parts of
+ * it the page shows, each saying what it is for), a + to link more, and ✕ to unlink.
+ * @param {any} state @param {Data} data
+ * @param {{ kind: string, id: string, platformId?: string | null }} target platformId: the hazard's platform tab it is on
  */
-export function referencesCard(state, data, { kind, id }) {
-  const rows = kind === 'hazard' ? hazardReferences(data, id) : referencesFor(data, kind, id).map((x) => ({ ...x, forText: '' }));
+export function referencesCard(state, data, { kind, id, platformId = null }) {
+  // A hazard's references once each, with all the page has them for in one cell: General for the
+  // hazard itself, then its parts. Any other record's, a row a link.
+  const rows = kind === 'hazard'
+    ? hazardReferenceRows(data, id, platformId)
+    : referencesFor(data, kind, id).map((x) => ({ reference: x.reference, fors: [{ link: x.link, forText: '' }] }));
+  const forWord = (/** @type {string} */ t) => t || 'General';
+  /** @param {any} x */
+  const forCell = (x) => html`<div class="for-cell"><ul class="plain for-list">${x.fors.map((/** @type {any} */ f) => html`<li><span class="for-text">${f.forText ? f.forText : html`<span class="muted">General</span>`}</span>${x.fors.length > 1
+    ? html`<button type="button" class="icon-x for-x" title="Unlink from ${forWord(f.forText)}" aria-label="Unlink ${x.reference.title} from ${forWord(f.forText)}" ${dataAttrs({ action: 'unlinkReference', 'reference-id': x.reference.id, 'target-kind': f.link.targetKind, 'target-id': f.link.targetId })}>✕</button>` : ''}</li>`)}</ul>
+    ${plus({ action: 'openPicker', picker: 'linkReferenceFor', 'reference-id': x.reference.id, 'hazard-id': id, 'platform-id': platformId ?? '' }, `Link ${x.reference.title} to more of this hazard`)}</div>`;
   return dataTable(state, {
     id: `refs-${kind}`,
-    rowKey: (x) => x.link.id,
+    rowKey: (x) => x.reference.id,
     rows,
     empty: 'No references yet.',
     tools: plus({ action: 'openPicker', picker: 'linkReferences', 'target-kind': kind, 'target-id': id }, 'Link references'),
     columns: [
-      { key: 'reference', label: 'References', width: 640, minWidth: 220, value: (x) => `${referenceLabel(x.reference)} ${x.reference.title}`,
+      { key: 'reference', label: 'References', width: 440, minWidth: 220, value: (x) => `${referenceLabel(x.reference)} ${x.reference.title}`,
         render: (x) => html`<span class="id">${idTag(referenceLabel(x.reference))}</span> ${go(x.reference.title, 'reference', { id: x.reference.id })}${statusTag(x.reference.status)}` },
-      ...(kind === 'hazard' ? [{ key: 'for', label: 'For', width: 420, minWidth: 160, value: (/** @type {any} */ x) => x.forText }] : []),
-      { key: 'points', label: 'Points at', width: 220, minWidth: 130, sortable: false, render: (x) => pointsAt(x.reference) },
-      removeColumn((x) => removeButton(`Unlink ${x.reference.title}`, `Unlink ${x.reference.title}?`, 'The reference stays in the library; it just no longer supports this record.',
-        { run: 'unlinkReference', 'reference-id': x.reference.id, 'target-kind': x.link.targetKind, 'target-id': x.link.targetId })),
+      ...(kind === 'hazard' ? [{ key: 'for', label: 'Informs', width: 360, minWidth: 160, value: (/** @type {any} */ x) => x.fors.map((/** @type {any} */ f) => forWord(f.forText)).join(', '), render: forCell }] : []),
+      { key: 'points', label: 'Points at', width: 220, minWidth: 180, sortable: false, render: (x) => pointsAt(x.reference) },
+      removeColumn((x) => (x.fors.length === 1
+        ? removeButton(`Unlink ${x.reference.title}`, `Unlink ${x.reference.title}?`, 'The reference stays in the library; it just no longer supports this record.',
+          { run: 'unlinkReference', 'reference-id': x.reference.id, 'target-kind': x.fors[0].link.targetKind, 'target-id': x.fors[0].link.targetId })
+        : removeButton(`Unlink ${x.reference.title} from all of these`, `Unlink ${x.reference.title} from all ${x.fors.length}?`, `It no longer supports ${x.fors.map((/** @type {any} */ f) => forWord(f.forText)).join(', ')} here. The reference stays in the library.`,
+          { run: 'unlinkReferenceFrom', 'reference-id': x.reference.id, targets: x.fors.map((/** @type {any} */ f) => `${f.link.targetKind}|${f.link.targetId}`).join(',') }))),
     ],
   });
 }

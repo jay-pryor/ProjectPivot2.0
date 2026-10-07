@@ -108,17 +108,19 @@ export function setRating(data, act, { hazardId, platformId, stage, consequence,
 
 /**
  * A stage's likelihood and consequence for every receptor, copied from another platform of the
- * hazard in one change; justifications are left as they are.
- * @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string, stage: string, from: string }} args
+ * hazard in one change, with their justifications unless withWhy is false (then those here stay).
+ * @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string, stage: string, from: string, withWhy?: boolean | string }} args
  */
-export function copyStageRisk(data, act, { hazardId, platformId, stage, from }) {
+export function copyStageRisk(data, act, { hazardId, platformId, stage, from, withWhy }) {
   if (!STAGES.includes(stage)) throw new PivotError('rating.stage', 'A risk assessment is initial or residual.');
   if (from === platformId) throw new PivotError('rating.copy', 'Choose another platform to copy from.');
   need(data, 'hazardPlatform', ids.hazardPlatform(hazardId, from));
   const recs = RECEPTORS.map((receptor) => {
     const src = get(data, 'assessment', ids.assessment(hazardId, from, stage, receptor));
     const live = src && src.status === 'live' ? src : null;
-    return { kind: 'assessment', rec: assessmentRec(data, act, { hazardId, platformId, stage, receptor, likelihood: live?.likelihood ?? null, consequence: live?.consequence ?? null }) };
+    // With its justifications too, unless asked for the likelihoods and consequences alone.
+    const why = withWhy === false || withWhy === 'false' ? {} : { likelihoodWhy: live?.likelihoodWhy ?? '', consequenceWhy: live?.consequenceWhy ?? '' };
+    return { kind: 'assessment', rec: assessmentRec(data, act, { hazardId, platformId, stage, receptor, likelihood: live?.likelihood ?? null, consequence: live?.consequence ?? null, ...why }) };
   });
   const name = get(data, 'platform', from)?.name ?? from;
   return commit(data, act, `Copy ${stage} risk from ${name}`, recs);
@@ -138,4 +140,82 @@ export function setSfarp(data, act, { hazardId, platformId, justification, concl
   const fields = { justification: text(justification, cur.justification), conclusion: text(conclusion, cur.conclusion), conditions: text(conditions, cur.conditions) };
   const rec = existing ? changed(existing, act, { ...fields, status: 'live' }) : created(act, id, { hazardId, platformId, ...fields });
   return commit(data, act, 'Edit SFARP considerations', [{ kind: 'sfarp', rec }]);
+}
+
+/** The other platform to copy from, refused if it is this one or the hazard is not on it; and its name. @param {Data} data @param {string} hazardId @param {string} platformId @param {string} from */
+function copyFrom(data, hazardId, platformId, from) {
+  if (from === platformId) throw new PivotError('rating.copy', 'Choose another platform to copy from.');
+  need(data, 'hazardPlatform', ids.hazardPlatform(hazardId, platformId));
+  need(data, 'hazardPlatform', ids.hazardPlatform(hazardId, from));
+  return String(get(data, 'platform', from)?.name ?? from);
+}
+
+/**
+ * Make this platform's controls for the hazard match another platform's: each control the hazard
+ * has is on here where it is on there (and off where it is off), with the status (and any
+ * rejection reason) it has there.
+ * @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string, from: string }} args
+ */
+export function copyControls(data, act, { hazardId, platformId, from }) {
+  const name = copyFrom(data, hazardId, platformId, from);
+  const recs = [];
+  for (const l of Object.values(data.records.hazardControl ?? {})) {
+    if (l.status !== 'live' || l.hazardId !== hazardId) continue;
+    // On or off: off there means off here; on there, on here.
+    const onThere = get(data, 'controlOn', ids.controlOn(hazardId, l.controlId, from));
+    const offThere = Boolean(onThere && onThere.status === 'live' && onThere.off);
+    const aoId = ids.controlOn(hazardId, l.controlId, platformId);
+    const onHere = get(data, 'controlOn', aoId);
+    const offHere = Boolean(onHere && onHere.status === 'live' && onHere.off);
+    if (offThere !== offHere) {
+      recs.push({ kind: 'controlOn', rec: onHere
+        ? changed(onHere, act, { status: 'live', off: offThere, ...(onHere.status === 'live' ? {} : { kind: null, targets: [] }) })
+        : created(act, aoId, { hazardId, controlId: l.controlId, platformId, kind: null, targets: [], off: offThere }) });
+    }
+    if (offThere) continue;
+    const src = get(data, 'ruling', ids.ruling(hazardId, l.controlId, from));
+    const there = src && src.status === 'live' ? src : null;
+    const id = ids.ruling(hazardId, l.controlId, platformId);
+    const here = get(data, 'ruling', id);
+    const live = here && here.status === 'live' ? here : null;
+    if (!there) {
+      if (live) recs.push({ kind: 'ruling', rec: changed(live, act, { status: 'deleted' }) });
+      continue;
+    }
+    if (live && live.state === there.state && (live.reason ?? '') === (there.reason ?? '')) continue;
+    const fields = { hazardId, controlId: l.controlId, platformId, state: there.state, reason: there.reason ?? '' };
+    recs.push({ kind: 'ruling', rec: here ? changed(here, act, { ...fields, status: 'live' }) : created(act, id, fields) });
+  }
+  return recs.length ? commit(data, act, `Copy controls from ${name}`, recs) : data;
+}
+
+/**
+ * The SFARP considerations another platform of the hazard has, in place of these.
+ * @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string, from: string }} args
+ */
+export function copySfarp(data, act, { hazardId, platformId, from }) {
+  const name = copyFrom(data, hazardId, platformId, from);
+  const src = get(data, 'sfarp', ids.sfarp(hazardId, from));
+  const there = src && src.status === 'live' ? src : { justification: '', conclusion: '', conditions: '' };
+  const fields = { justification: there.justification ?? '', conclusion: there.conclusion ?? '', conditions: there.conditions ?? '' };
+  const id = ids.sfarp(hazardId, platformId);
+  const existing = get(data, 'sfarp', id);
+  const rec = existing ? changed(existing, act, { ...fields, status: 'live' }) : created(act, id, { hazardId, platformId, ...fields });
+  return commit(data, act, `Copy SFARP from ${name}`, [{ kind: 'sfarp', rec }]);
+}
+
+/**
+ * How far a control has got on a platform, in words: free text, beside its status.
+ * Blank clears it.
+ * @param {Data} data @param {Act} act @param {Triple & { text?: unknown }} args
+ */
+export function setImplementationStatus(data, act, { hazardId, controlId, platformId, text }) {
+  needTriple(data, { hazardId, controlId, platformId });
+  const id = ids.implementationStatus(hazardId, controlId, platformId);
+  const t = String(text ?? '').trim();
+  const existing = get(data, 'implementationStatus', id);
+  const live = existing && existing.status === 'live' ? existing : null;
+  if ((live?.text ?? '') === t) return data;
+  const rec = existing ? changed(existing, act, { text: t, status: 'live' }) : created(act, id, { hazardId, controlId, platformId, text: t });
+  return commit(data, act, t ? 'Set implementation status' : 'Clear implementation status', [{ kind: 'implementationStatus', rec }]);
 }

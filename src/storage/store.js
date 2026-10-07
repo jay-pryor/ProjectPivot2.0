@@ -263,6 +263,20 @@ export async function storeReferenceFile(handle, referenceId, n, file) {
   return stored;
 }
 
+/**
+ * Copy a platform's image into the data folder, at a path never used before; the image it
+ * replaces stays in the folder, so an older save can still show it.
+ * @param {Dir} handle @param {string} platformId @param {Blob} blob @param {string} name
+ * @returns {Promise<string>} the stored path
+ */
+export async function storePlatformImage(handle, platformId, blob, name) {
+  let stored = '';
+  do stored = `${FILES.files}/platforms/${platformId}/${newId().slice(0, 8)}-${safeName(name)}`;
+  while (await exists(handle, stored));
+  await writeWhole(handle, stored, blob);
+  return stored;
+}
+
 /** @param {Dir} handle @param {string} stored @returns {Promise<File>} */
 export async function openReferenceFile(handle, stored) {
   const f = await readFile(handle, stored);

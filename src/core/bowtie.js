@@ -1,51 +1,48 @@
 import { PivotError } from './errors.js';
 import { get, live, isObject } from './data.js';
 import { hazardLabel, ids, UNNUMBERED } from './ids.js';
-import { controlsOnPlatform, existingControlsOn, causalFactorsOn, childrenOf } from './queries.js';
+import { controlsOnPlatform, causalFactorsOn, childrenOf } from './queries.js';
 import { CONTROL_STATUSES } from './ops/assessment.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Rec} Rec */
-/** @typedef {{ set: string, statuses: string[] }} Filters */
+/** @typedef {{ statuses: string[] }} Filters */
 /**
  * A tag drawn as a badge under a control's name; its tone picks the badge's colours.
- * @typedef {{ text: string, tone: 'existing' | 'additional' | 'tier' | 'recommended' | 'planned' | 'implemented' | 'rejected' }} Tag
+ * @typedef {{ text: string, tone: 'tier' | 'recommended' | 'planned' | 'implemented' | 'rejected' }} Tag
  */
-/** @typedef {{ control: Rec, kind: string, source: 'existing' | 'additional', state: string | null, tags: Tag[] }} Item */
+/**
+ * A control on the diagram: its status, its tags, and the causal factors or consequences it
+ * prevents or mitigates (their ids), which the drawing joins it to. One implemented on the
+ * platform is drawn solid; any other, dashed.
+ * @typedef {{ control: Rec, kind: string, state: string, tags: Tag[], targets: string[] }} Item
+ */
 /**
  * @typedef {{ ok: true, hazard: Rec, platform: Rec, filters: Filters, caption: string,
  *   causalFactors: Rec[], consequences: Rec[], preventative: Item[], mitigating: Item[] }} Bowtie
  */
 /** @typedef {{ ok: false, reason: 'hazard-gone' | 'hazard-retired' | 'platform-gone' | 'not-on-platform', message: string }} Cannot */
 
-/** Which controls a diagram draws: those already in place, the additional ones, or both. */
-export const SETS = Object.freeze(['existing', 'additional', 'all']);
-
-export const SET_WORD = Object.freeze({ existing: 'Existing', additional: 'Additional', all: 'All' });
 export const STATUS_WORD = Object.freeze({ recommended: 'Recommended', planned: 'Planned', implemented: 'Implemented', rejected: 'Rejected' });
 
-/** Existing and additional controls, rejected ones hidden. */
-export const DEFAULT_FILTERS = Object.freeze({ set: 'all', statuses: Object.freeze(['recommended', 'planned', 'implemented']) });
+/** Every control but the rejected ones. */
+export const DEFAULT_FILTERS = Object.freeze({ statuses: Object.freeze(['recommended', 'planned', 'implemented']) });
 
 /**
- * Filters as they are kept, whatever was read: an unknown set or a missing list becomes the
- * default's, unknown statuses are dropped, and the rest are in the statuses' own order.
+ * Filters as they are kept, whatever was read: a missing list becomes the default's, unknown
+ * statuses are dropped, and the rest are in the statuses' own order.
  * @param {unknown} f @returns {Filters}
  */
 export function normalizeFilters(f) {
-  const set = isObject(f) && SETS.includes(f.set) ? f.set : DEFAULT_FILTERS.set;
   const statuses = isObject(f) && Array.isArray(f.statuses)
     ? CONTROL_STATUSES.filter((s) => f.statuses.includes(s))
     : [...DEFAULT_FILTERS.statuses];
-  return { set, statuses };
+  return { statuses };
 }
 
 /** Filters an op is asked to store, refused when they are not filters. @param {unknown} f @returns {Filters} */
 export function needFilters(f) {
-  if (!isObject(f) || !SETS.includes(f.set)) {
-    throw new PivotError('bowtie.filters', 'A bow-tie shows existing controls, additional controls, or all.');
-  }
-  if (!Array.isArray(f.statuses) || f.statuses.some((s) => !CONTROL_STATUSES.includes(s))) {
+  if (!isObject(f) || !Array.isArray(f.statuses) || f.statuses.some((s) => !CONTROL_STATUSES.includes(s))) {
     throw new PivotError('bowtie.filters', `A bow-tie's statuses are among ${CONTROL_STATUSES.join(', ')}.`);
   }
   return normalizeFilters(f);
@@ -55,16 +52,13 @@ export function needFilters(f) {
 export function sameFilters(a, b) {
   const x = normalizeFilters(a);
   const y = normalizeFilters(b);
-  return x.set === y.set && x.statuses.join('|') === y.statuses.join('|');
+  return x.statuses.join('|') === y.statuses.join('|');
 }
 
-/** The filters in words, for the caption: e.g. "Existing + Additional (Planned, Implemented)". @param {unknown} f */
+/** The filters in words, for the caption: e.g. "Planned, Implemented", or "No controls". @param {unknown} f */
 export function filterWords(f) {
-  const { set, statuses } = normalizeFilters(f);
-  const additional = `Additional (${statuses.length ? statuses.map((s) => STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (s)]).join(', ') : 'none'})`;
-  if (set === 'existing') return 'Existing';
-  if (set === 'additional') return additional;
-  return `Existing + ${additional}`;
+  const { statuses } = normalizeFilters(f);
+  return statuses.length ? statuses.map((s) => STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (s)]).join(', ') : 'No controls';
 }
 
 /** "HAZ-001 Fire", or just the title until the hazard is numbered. @param {Rec} h */
@@ -89,22 +83,15 @@ export function bowtieOf(data, hazardId, platformId, filters) {
   const link = get(data, 'hazardPlatform', ids.hazardPlatform(hazardId, platformId));
   if (!link || link.status !== 'live') return { ok: false, reason: 'not-on-platform', message: `${hazardName(hazard)} is no longer on ${platform.name}.` };
   /** @type {Item[]} */
-  const existing = f.set === 'additional' ? [] : existingControlsOn(data, hazardId, platformId).map((x) => ({
-    control: x.control, kind: x.kind, source: 'existing', state: null,
-    tags: x.control.tier ? [{ text: String(x.control.tier), tone: 'tier' }] : [],
-  }));
-  /** @type {Item[]} */
-  const additional = f.set === 'existing' ? [] : controlsOnPlatform(data, hazardId, platformId)
+  const items = controlsOnPlatform(data, hazardId, platformId)
     .filter((x) => f.statuses.includes(x.state))
     .map((x) => ({
-      control: x.control, kind: /** @type {string} */ (x.kind), source: 'additional', state: x.state,
-      tags: [{ text: STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (x.state)], tone: /** @type {Tag['tone']} */ (x.state) }],
+      control: x.control, kind: /** @type {string} */ (x.kind), state: x.state,
+      // Its status, then its tier.
+      tags: [{ text: STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (x.state)], tone: /** @type {Tag['tone']} */ (x.state) },
+        ...(x.control.tier ? [{ text: String(x.control.tier), tone: /** @type {Tag['tone']} */ ('tier') }] : [])],
+      targets: x.targets.map((t) => t.id),
     }));
-  // Existing or Additional is said only when the diagram has both; with one kind it goes without saying.
-  const both = existing.length > 0 && additional.length > 0;
-  const items = [...existing, ...additional].map((i) => (both
-    ? { ...i, tags: [{ text: SET_WORD[i.source], tone: i.source }, ...i.tags] }
-    : i));
   return {
     ok: true, hazard, platform, filters: f, caption: `${platform.name} · ${filterWords(f)}`,
     causalFactors: causalFactorsOn(data, hazardId, platformId),

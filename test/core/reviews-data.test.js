@@ -22,7 +22,7 @@ test('a new platform has no review schedule', () => {
   assert.equal(d.records.platform.p9.reviewDue, null);
 });
 
-test('an older data file gains the review kinds and platform fields on load, and still validates', () => {
+test('an older data file gains the review kinds on load, and still validates', () => {
   const old = emptyData();
   delete old.records.review;
   delete old.records.reviewRow;
@@ -30,12 +30,7 @@ test('an older data file gains the review kinds and platform fields on load, and
   const d = normalizeData(old);
   assert.deepEqual(d.records.review, {});
   assert.deepEqual(d.records.reviewRow, {});
-  assert.equal(d.records.platform.p1.reviewMonths, null);
-  assert.equal(d.records.platform.p1.reviewDue, null);
   assert.deepEqual(validateData(d), []);
-  const scheduled = { ...d.records.platform.p1, reviewMonths: 6, reviewDue: '2026-12-31' };
-  const again = normalizeData(put(d, 'platform', scheduled));
-  assert.equal(again.records.platform.p1.reviewMonths, 6, 'a schedule already there is kept');
 });
 
 test('a review and its rows reach their platform; openReview finds the open one', () => {

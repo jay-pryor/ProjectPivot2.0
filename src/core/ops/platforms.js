@@ -21,6 +21,20 @@ export function updatePlatform(data, act, { id, name }) {
   return commit(data, act, 'Rename platform', [{ kind: 'platform', rec: changed(p, act, { name: needText(name, 'A platform name') }) }]);
 }
 
+/**
+ * A platform's picture, shown on its page and its card on Home: the file stored in the folder, or
+ * none (null or nothing given takes it away).
+ * @param {Data} data @param {Act} act
+ * @param {{ id: string, image?: { stored: string, name: string, type: string, addedBy: string, addedAt: string } | null | '' }} args
+ */
+export function setPlatformImage(data, act, { id, image }) {
+  const p = need(data, 'platform', id);
+  const next = image && typeof image === 'object' && typeof image.stored === 'string' && image.stored ? image : null;
+  if (!next && !p.image) return data;
+  const action = !next ? 'Remove platform image' : p.image ? 'Change platform image' : 'Add platform image';
+  return commit(data, act, action, [{ kind: 'platform', rec: changed(p, act, { image: next }) }]);
+}
+
 /** @param {Data} data @param {Act} act @param {{ id: string, ownerId: string }} args */
 export function setOwner(data, act, { id, ownerId }) {
   const p = need(data, 'platform', id);
@@ -43,7 +57,7 @@ export function deletePlatform(data, act, { id }) {
     throw new PivotError('platform.has-hazards', `${p.name} still has ${on.length === 1 ? 'a hazard' : `${on.length} hazards`} on it. Unlink them first.`, { hazardIds: on.map((l) => l.hazardId) });
   }
   const open = openReview(data, id);
-  const reports = ['safetyReport', 'controlPlatform'].flatMap((kind) => live(data, kind).filter((r) => r.platformId === id).map((r) => ({ kind, rec: changed(r, act, { status: 'deleted' }) })));
+  const reports = ['safetyReport', 'implementer', 'platformGroupLink'].flatMap((kind) => live(data, kind).filter((r) => r.platformId === id).map((r) => ({ kind, rec: changed(r, act, { status: 'deleted' }) })));
   return commit(data, act, 'Delete platform', [{ kind: 'platform', rec: changed(p, act, { status: 'deleted' }) }, ...reports, ...(open ? abandonRecs(data, act, open) : []), ...linksTo(data, act, [{ kind: 'platform', id }])]);
 }
 
@@ -69,7 +83,10 @@ export function linkHazard(data, act, { hazardId, platformId }) {
  */
 export function unlinkHazard(data, act, { hazardId, platformId }) {
   const l = need(data, 'hazardPlatform', ids.hazardPlatform(hazardId, platformId));
-  return commit(data, act, 'Unlink hazard from platform', unlinkRecs(data, act, l));
+  const recs = unlinkRecs(data, act, l);
+  // What goes with it there (its own causal factors, failure modes…) takes its reference links too.
+  const parts = recs.filter((r) => ['causalFactor', 'failureMode', 'systemElement', 'affectedGroup'].includes(r.kind)).map((r) => ({ kind: r.kind, id: r.rec.id }));
+  return commit(data, act, 'Unlink hazard from platform', [...recs, ...linksTo(data, act, parts)]);
 }
 
 /**
@@ -81,7 +98,7 @@ export function unlinkRecs(data, act, link) {
   const { hazardId, platformId } = link;
   const recs = [{ kind: 'hazardPlatform', rec: changed(link, act, { status: 'deleted' }) }];
   // Causal factors for this platform alone go with it; those for every platform stay.
-  for (const kind of ['ruling', 'assessment', 'sfarp', 'rating', 'existingControl', 'causalFactor', 'systemElement', 'affectedGroup']) {
+  for (const kind of ['ruling', 'implementationStatus', 'controlOn', 'assessment', 'sfarp', 'rating', 'causalFactor', 'failureMode', 'systemElement', 'affectedGroup']) {
     for (const r of live(data, kind)) {
       if (r.hazardId === hazardId && r.platformId === platformId) recs.push({ kind, rec: changed(r, act, { status: 'deleted' }) });
     }

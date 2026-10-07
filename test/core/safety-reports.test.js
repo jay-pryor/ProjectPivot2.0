@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { PivotError } from '../../src/core/errors.js';
 import { entries, historyOf } from '../../src/core/history.js';
 import { checkRules } from '../../src/core/rules.js';
-import { SAFETY_REPORT_TYPES, createSafetyReport, updateSafetyReport, deleteSafetyReport } from '../../src/core/ops/safety-reports.js';
+import { SAFETY_REPORT_TYPES, createSafetyReport, updateSafetyReport, deleteSafetyReport, moveSafetyReport } from '../../src/core/ops/safety-reports.js';
 import { unlinkHazard, linkHazard, deletePlatform } from '../../src/core/ops/platforms.js';
 import { deleteHazard } from '../../src/core/ops/hazards.js';
 import { createPhase, linkPhase } from '../../src/core/ops/phases.js';
@@ -13,16 +13,16 @@ import { act, later, seed } from '../helpers.js';
 const code = (c) => (e) => e instanceof PivotError && e.code === c;
 const base = { hazardId: 'h1', platformId: 'p1' };
 const two = () => {
-  let d = createSafetyReport(seed(), act, { ...base, id: 'sr1', number: 'SR-10', date: '2026-03-04', reportType: 'Near miss', summary: 'Rotor <b>strike</b>', location: 'Hangar 3', parties: 'Crew A' });
-  return createSafetyReport(d, act, { ...base, id: 'sr2', number: 'SR-11', date: '2026-05-01', summary: 'Fuel spill' });
+  let d = createSafetyReport(seed(), act, { ...base, id: 'sr1', date: '2026-03-04', reportType: 'Near miss', summary: 'Rotor <b>strike</b>', location: 'Hangar 3', parties: 'Crew A' });
+  return createSafetyReport(d, act, { ...base, id: 'sr2', date: '2026-05-01', summary: 'Fuel spill' });
 };
 
 test('a safety report records an event for a hazard on a platform', () => {
-  assert.deepEqual(SAFETY_REPORT_TYPES, ['Occurrence', 'Near miss', 'Hazard report', 'Other']);
+  assert.deepEqual(SAFETY_REPORT_TYPES, ['Occurrence', 'Near miss', 'Hazard report', 'Field Service Bulletin', 'Other']);
   let d = two();
   assert.equal(entries(d).at(-1).action, 'Add safety report');
   const r = d.records.safetyReport.sr1;
-  assert.deepEqual([r.number, r.date, r.type, r.summary, r.description, r.location, r.parties], ['SR-10', '2026-03-04', 'Near miss', 'Rotor <b>strike</b>', '', 'Hangar 3', 'Crew A']);
+  assert.deepEqual([r.date, r.type, r.summary, r.description, r.location, r.parties], ['2026-03-04', 'Near miss', 'Rotor <b>strike</b>', '', 'Hangar 3', 'Crew A']);
   assert.equal(d.records.safetyReport.sr2.type, 'Occurrence', 'the default type');
   assert.deepEqual(safetyReportsOn(d, 'h1', 'p1').map((x) => x.id), ['sr2', 'sr1'], 'newest first');
   assert.deepEqual(safetyReportsOn(d, 'h1', 'p2'), []);
@@ -63,4 +63,17 @@ test('a hazard\'s History includes its phase links and safety reports', () => {
   assert.ok(actions.includes('Add safety report'));
   assert.ok(actions.includes('Add lifecycle phase'));
   assert.ok(!historyOf(d, 'hazard', 'h2').some((e) => e.action === 'Add safety report'));
+});
+
+test('a safety report moves to another platform the hazard is on, and both platforms see the move', () => {
+  let d = createSafetyReport(seed(), act, { ...base, id: 'sr1', summary: 'Rotor strike' });
+  d = moveSafetyReport(d, later, { id: 'sr1', platformId: 'p2' });
+  assert.deepEqual(safetyReportsOn(d, 'h1', 'p1'), []);
+  assert.deepEqual(safetyReportsOn(d, 'h1', 'p2').map((r) => r.id), ['sr1']);
+  const e = entries(d).at(-1);
+  assert.equal(e.action, 'Move safety report');
+  assert.deepEqual(e.platforms, ['p1', 'p2'], 'both platforms see it');
+  assert.equal(moveSafetyReport(d, later, { id: 'sr1', platformId: 'p2' }), d, 'already there: nothing recorded');
+  assert.throws(() => moveSafetyReport(d, later, { id: 'sr1', platformId: 'nowhere' }), code('not-found'));
+  assert.deepEqual(checkRules(d), []);
 });

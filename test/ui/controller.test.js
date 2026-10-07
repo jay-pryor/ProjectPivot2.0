@@ -120,6 +120,26 @@ test('Review focus 5: recovered work merges with a save made by someone else sin
   assert.match(a2.getState().message.text, /Grace had saved/);
 });
 
+test('recovered work kept by an earlier version, lacking newer kinds of record, opens and can be added to', async () => {
+  const f = new MemoryFolder();
+  const storage = new MemoryStorage();
+  const a = createController(env(f, storage));
+  await openAs(a, 'Ada');
+  await a.dispatch({ type: 'createHazard', id: 'ha', title: 'Unsaved' });
+  // As an earlier version kept it: no facet options or their groups.
+  const m = JSON.parse(storage.getItem('pivot.unsaved.v2'));
+  for (const side of ['base', 'working']) { delete m[side].records.facetOption; delete m[side].records.optionGroup; }
+  storage.setItem('pivot.unsaved.v2', JSON.stringify(m));
+  const a2 = createController(env(f, storage));
+  await a2.dispatch({ type: 'chooseFolder' });
+  await a2.dispatch({ type: 'selectProfile', id: a2.getState().profiles[0].id });
+  await a2.dispatch({ type: 'recover' });
+  await a2.dispatch({ type: 'createFacetOption', facet: 'causalFactor', name: 'Propeller strike' });
+  const working = a2.getState().session.working;
+  assert.equal(working.records.hazard.ha.title, 'Unsaved');
+  assert.deepEqual(Object.values(working.records.facetOption).map((o) => o.name), ['Propeller strike']);
+});
+
 test('discarding recovered work leaves the folder as it was', async () => {
   const f = new MemoryFolder();
   const storage = new MemoryStorage();

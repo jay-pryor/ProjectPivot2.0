@@ -31,7 +31,9 @@ test('a platform tab numbers only that platform\'s causal factors, and adds new 
   assert.doesNotMatch(out, /class="scope|setCausalFactorPlatform/, 'no platform dropdowns');
   const adding = hazardView(on('p:p2', { editing: { kind: 'newCausalFactor', id: 'h1' } }), data(), 'h1').toString();
   assert.match(adding, /<form data-action="addCausalFactor" data-hazard-id="h1"[^>]*>[\s\S]*?<input type="hidden" name="platformId" value="p2">/, 'a new one is Bravo\'s');
-  assert.match(adding, /On this hazard's other platforms[\s\S]*?<button type="button" class="suggest-item" title="Add it here" data-action="addCausalFactor" data-hazard-id="h1" data-platform-id="p2" data-text="Fuel leak">[\s\S]*?Fuel leak[\s\S]*?<span class="suggest-from">Alpha<\/span>/, 'Alpha\'s own, offered here');
+  assert.match(adding, /other platforms<\/p>[\s\S]*?<label class="suggest-item"><input type="checkbox" name="pick" value="Fuel leak"><span class="suggest-text">Fuel leak<\/span><span class="suggest-from">Alpha<\/span><\/label>/, 'Alpha\'s own, offered here to tick');
+  const form = adding.slice(adding.indexOf('<form data-action="addCausalFactor"'), adding.indexOf('</form>', adding.indexOf('<form data-action="addCausalFactor"')));
+  assert.match(form, /data-picks[\s\S]*name="pick"/, 'the ticks are in the form, so Add takes them with the box');
   assert.doesNotMatch(adding.slice(adding.indexOf('class="suggest"')), /Hot works|Lightning/, 'not what is here already');
 });
 
@@ -76,51 +78,39 @@ test('a produced report can be deleted after a pop-up, and leaves the list', asy
   assert.doesNotMatch(reportsView(state, d).toString(), /Alpha hazards/);
 });
 
-test('a phase\'s actions are in an Options menu that is always there', async () => {
-  const { phasesView } = await import('../../src/ui/screens/phases.js');
-  const { createPhase } = await import('../../src/core/ops/phases.js');
-  const out = phasesView(state, createPhase(data(), act, { id: 'ph1', name: 'Design' })).toString();
-  assert.match(out, /<table class="grid has-gutter" data-table="phases"/);
-  assert.match(out, /<th data-col="options" class="row-out">/, 'a gutter beside the table, not a column in it');
-  assert.match(out, /<td>live<\/td><td class="row-out"><details class="row-menu"><summary aria-label="Options for Design" title="Options for Design">Options <span aria-hidden="true">▾<\/span><\/summary><div class="row-menu-body"><button type="button" data-action="startEdit" data-kind="phaseName" data-id="ph1">Rename<\/button><button type="button" data-action="retirePhase" data-id="ph1">Retire<\/button><button type="button" class="danger" data-action="askConfirm" data-run="deletePhase" data-id="ph1"/);
-  assert.doesNotMatch(out, /class="row-actions"/);
-});
-
-test('a status is worded for the control\'s owner on the platform: the customer\'s four, our three', async () => {
+test('a status reads the same whoever implements the control: Recommended, Planned, Implemented, Rejected', async () => {
   const { platformView } = await import('../../src/ui/screens/platforms.js');
-  const { setControlOwner } = await import('../../src/core/ops/controls.js');
-  let d = setControlOwner(data(), act, { controlId: 'c1', platformId: 'p1', owner: 'customer' });
-  d = setControlOwner(d, act, { controlId: 'c2', platformId: 'p1', owner: 'us' });
+  const { setImplementedBy } = await import('../../src/core/ops/controls.js');
+  let d = setImplementedBy(data(), act, { controlId: 'c1', platformId: 'p1', implementedBy: 'customer' });
+  d = setImplementedBy(d, act, { controlId: 'c2', platformId: 'p1', implementedBy: 'highcom' });
+  d = setImplementedBy(d, act, { controlId: 'c1', platformId: 'p2', implementedBy: 'oem' });
   const out = platformView({ ...state, sections: { platform: 'controls' } }, d, 'p1').toString();
-  const select = (title) => out.slice(out.indexOf(`aria-label="Status of ${title}"`)).split('</select>')[0];
-  assert.match(select('Sprinklers'), /<option value="recommended" selected>Recommended to customer<\/option><option value="planned">Planned by customer<\/option><option value="implemented">Implemented by customer<\/option><option value="rejected">Rejected by customer<\/option>/);
-  assert.match(select('Fire drills'), /<option value="recommended" selected>Recommended<\/option><option value="planned">Planned<\/option><option value="implemented">Implemented<\/option><option value="rejected">Rejected<\/option>/, 'undecided still shows as Recommended');
-  assert.match(out, /aria-label="Owner of Sprinklers on Alpha" data-change="setControlOwner" data-control-id="c1" data-platform-id="p1">[\s\S]*?<option value="customer" selected>/);
+  const select = (html, title) => html.slice(html.indexOf(`aria-label="Status of ${title}"`)).split('</select>')[0];
+  const plain = /<option value="recommended" selected>Recommended<\/option><option value="planned">Planned<\/option><option value="implemented">Implemented<\/option><option value="rejected">Rejected<\/option>/;
+  assert.match(select(out, 'Sprinklers'), plain, 'the customer');
+  assert.match(select(out, 'Fire drills'), plain, 'HighCom: Recommended still offered');
+  const bravo = platformView({ ...state, sections: { platform: 'controls' } }, d, 'p2').toString();
+  assert.match(select(bravo, 'Sprinklers'), plain, 'the OEM');
+  assert.match(out, /aria-label="Who implements Sprinklers on Alpha" data-change="setImplementedBy" data-control-id="c1" data-platform-id="p1">[\s\S]*?<option value="customer" selected>Customer<\/option>/);
   assert.match(out, /aria-label="Tier of Sprinklers" data-change="updateControl" data-id="c1"/);
   assert.match(out, /aria-label="Kind of Sprinklers"[^>]*data-change="setControlKind" data-hazard-id="h1" data-control-id="c1"/);
 });
 
-test('the Controls page has Additional and Existing sub-tabs, each with its own list and Create as', async () => {
+test('the Controls page is one list of every control, with an Origin for each, and no sub-tabs', async () => {
   const { controlsView } = await import('../../src/ui/screens/controls.js');
-  const { createControl } = await import('../../src/core/ops/controls.js');
-  const d = assignNumbers(createControl(data(), act, { id: 'e1', title: 'Fire wall', category: 'existing' }));
-  const add = controlsView({ ...state, view: { name: 'controls' } }, d).toString();
-  assert.match(add, /class="tab on" data-action="go" data-view="controls" data-tab="additional">Additional controls<\/button><button type="button" class="tab" data-action="go" data-view="controls" data-tab="existing">Existing controls/);
-  assert.match(add, /Sprinklers/);
-  assert.doesNotMatch(add, /Fire wall/);
-  assert.match(add, /data-action="copyControlAs" data-from="c1" data-category="existing">Create as existing control/);
-  const ex = controlsView({ ...state, view: { name: 'controls', tab: 'existing' } }, d).toString();
-  assert.match(ex, /EC-001[\s\S]*?Fire wall/);
-  assert.doesNotMatch(ex, /Sprinklers/);
-  assert.match(ex, /data-action="copyControlAs" data-from="e1" data-category="additional">Create as additional control/);
-  assert.match(ex, /<input type="hidden" name="category" value="existing">|data-kind="new-existing-control"/);
-  assert.doesNotMatch(add, /data-col="origin"|control-origins/, 'additional controls have no origin');
-  const { updateControl } = await import('../../src/core/ops/controls.js');
-  const withOrigin = updateControl(d, act, { id: 'e1', origin: 'Original build' });
-  const ex2 = controlsView({ ...state, view: { name: 'controls', tab: 'existing' } }, withOrigin).toString();
-  assert.match(ex2, /<th data-col="origin">/);
-  assert.match(ex2, /<input class="cell-input" name="origin" list="control-origins"[^>]*value="Original build" data-change="updateControl" data-id="e1">/);
-  assert.match(ex2, /<datalist id="control-origins"><option value="Original build"><\/option><\/datalist>/);
+  const { createControl, updateControl } = await import('../../src/core/ops/controls.js');
+  let d = assignNumbers(createControl(data(), act, { id: 'e1', title: 'Fire wall' }));
+  d = updateControl(d, act, { id: 'e1', origin: 'Original build' });
+  const out = controlsView({ ...state, view: { name: 'controls' } }, d).toString();
+  assert.doesNotMatch(out, /<nav class="tabs">|data-tab="(additional|existing)"|copyControlAs|Create as/);
+  assert.match(out, /C-001[\s\S]*?Sprinklers/);
+  assert.match(out, /C-003[\s\S]*?Fire wall/, 'numbered in the one C- sequence');
+  assert.doesNotMatch(out, /EC-/);
+  assert.match(out, /<h1>Controls<\/h1><button type="button" class="plus" data-action="newControl" title="New control"/);
+  assert.match(out, /<th data-col="origin">/);
+  assert.match(out, /<input class="cell-input" name="origin" list="control-origins"[^>]*value="Original build" data-change="updateControl" data-id="e1">/);
+  assert.match(out, /<input class="cell-input" name="origin" list="control-origins"[^>]*value="" data-change="updateControl" data-id="c1">/, 'any control can have an origin');
+  assert.match(out, /<datalist id="control-origins"><option value="Original build"><\/option><\/datalist>/);
 });
 
 test('Home: a quiet count of the team\'s open items above the owner\'s tiles, and a tile for controls to implement', async () => {
@@ -130,17 +120,18 @@ test('Home: a quiet count of the team\'s open items above the owner\'s tiles, an
   assert.match(out, /<span>controls to implement<\/span>/);
 });
 
-test('the link-to-hazards picker offers an additional control the hazards it is not on, an existing one each hazard on each platform', async () => {
+test('the link-to-hazards picker offers a control the hazards it is not linked to, each with its kind', async () => {
   const { pickerView } = await import('../../src/ui/screens/picker.js');
   const { createControl } = await import('../../src/core/ops/controls.js');
-  const d = createControl(data(), act, { id: 'e1', title: 'Fire wall', category: 'existing' });
-  const add = pickerView({ ...state, picker: { picker: 'controlHazards', controlId: 'c1' } }, d).toString();
-  assert.match(add, /<form data-action="linkControlToHazards" data-control-id="c1"/);
-  assert.match(add, /value="h2"[\s\S]*?name="kind:h2"/);
-  assert.doesNotMatch(add, /value="h1"/, 'already linked');
-  const ex = pickerView({ ...state, picker: { picker: 'controlHazards', controlId: 'e1' } }, d).toString();
-  assert.match(ex, /<form data-action="placeExistingControl" data-control-id="e1"/);
-  assert.match(ex, /value="h1\|p1"[\s\S]*?on Alpha[\s\S]*?value="h1\|p2"[\s\S]*?on Bravo/);
+  const d = createControl(data(), act, { id: 'e1', title: 'Fire wall' });
+  const linked = pickerView({ ...state, picker: { picker: 'controlHazards', controlId: 'c1' } }, d).toString();
+  assert.match(linked, /<form data-action="linkControlToHazards" data-control-id="c1"/);
+  assert.match(linked, /value="h2"[\s\S]*?name="kind:h2"/);
+  assert.doesNotMatch(linked, /value="h1"/, 'already linked');
+  const fresh = pickerView({ ...state, picker: { picker: 'controlHazards', controlId: 'e1' } }, d).toString();
+  assert.match(fresh, /<form data-action="linkControlToHazards" data-control-id="e1"/);
+  assert.match(fresh, /value="h1"[\s\S]*?value="h2"/);
+  assert.doesNotMatch(fresh, /placeExistingControl|h1\|p1/);
 });
 
 test('the Controls list puts each row\'s Options in a gutter outside the table, as Lifecycle phases does', async () => {
@@ -149,4 +140,19 @@ test('the Controls list puts each row\'s Options in a gutter outside the table, 
   assert.match(out, /<table class="grid has-gutter" data-table="controls"/);
   assert.match(out, /<th data-col="options" class="row-out">/);
   assert.match(out, /<td>live<\/td><td class="row-out"><details class="row-menu"><summary aria-label="Options for Sprinklers"/);
+});
+
+test('a control\'s and a reference\'s Retire and Delete are in the ⋯ menu by the heading; Delete asks in a pop-up, and only when nothing uses it', async () => {
+  const { controlView } = await import('../../src/ui/screens/controls.js');
+  const { referenceView } = await import('../../src/ui/screens/references.js');
+  const { createControl } = await import('../../src/core/ops/controls.js');
+  const { createReference } = await import('../../src/core/ops/references.js');
+  let d = createControl(data(), act, { id: 'c9', title: 'Spare' });
+  d = createReference(d, act, { id: 'r1', title: 'Manual', url: 'https://example.com/manual' });
+  const spare = controlView({ ...state, view: { name: 'control', id: 'c9' } }, d, 'c9').toString();
+  assert.match(spare, /<div class="doc-head">[\s\S]*?<details class="dots-menu doc-menu"><summary aria-label="Control options"[\s\S]*?data-action="retireControl" data-id="c9">[\s\S]*?class="danger-item" data-action="askConfirm" data-run="deleteControl" data-id="c9" data-title="Delete Spare\?"/);
+  assert.doesNotMatch(spare, /page-actions/);
+  assert.doesNotMatch(controlView({ ...state, view: { name: 'control', id: 'c1' } }, d, 'c1').toString(), /deleteControl/, 'in use: no Delete');
+  const ref = referenceView({ ...state, view: { name: 'reference', id: 'r1' } }, d, 'r1').toString();
+  assert.match(ref, /aria-label="Reference options"[\s\S]*?data-action="retireReference"[\s\S]*?data-run="deleteReference" data-id="r1"/);
 });

@@ -61,7 +61,7 @@ test('Undo is offered only until the next change', async () => {
 test('the pages ask before deleting: the red button asks, and the final panel deletes or keeps', () => {
   const d = seed();
   const h = hazardView({ ...state, view: { name: 'hazard', id: 'h2' } }, d, 'h2').toString();
-  assert.match(h, /<summary>Delete…<\/summary><button type="button" class="danger" data-action="askDelete" data-kind="hazard" data-id="h2">/);
+  assert.match(h, /<details class="dots-menu doc-menu"><summary aria-label="Hazard options"[\s\S]*?<button type="button" role="menuitem" class="danger-item" data-action="askDelete" data-kind="hazard" data-id="h2">[\s\S]*?Delete…<\/button>/);
   assert.doesNotMatch(h, /data-action="deleteHazard"/);
   const asking = hazardView({ ...state, view: { name: 'hazard', id: 'h2' }, confirmDelete: { kind: 'hazard', id: 'h2' } }, d, 'h2').toString();
   assert.match(asking, /class="delete-panel"[\s\S]*?data-action="confirmDelete" data-kind="hazard" data-id="h2"[^>]*>Yes, delete Flood<\/button>[\s\S]*?data-action="cancelDelete"[^>]*>Keep it</);

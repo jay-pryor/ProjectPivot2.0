@@ -8,8 +8,12 @@ import { commit } from '../apply.js';
 /** @typedef {import('../data.js').Rec} Rec */
 /** @typedef {{ name: string, stored: string, size: number, type: string, addedBy: string, addedAt: string }} StoredFile */
 
-/** The kinds of record a reference can support. */
-export const TARGET_KINDS = Object.freeze(['hazard', 'causalFactor', 'consequence', 'control', 'platform']);
+/**
+ * The kinds of record a reference can support: a hazard and the parts of it its pages show (a
+ * causal factor, consequence, lifecycle phase as ticked on that hazard, and on a platform its
+ * element failure modes, systems or elements and affected groups), a control, a platform.
+ */
+export const TARGET_KINDS = Object.freeze(['hazard', 'causalFactor', 'consequence', 'hazardPhase', 'failureMode', 'systemElement', 'affectedGroup', 'control', 'platform']);
 
 /** @param {unknown} v */
 const text = (v) => String(v ?? '').trim();
@@ -52,6 +56,18 @@ export function attachFile(data, act, { id, file }) {
   return commit(data, act, r.file ? 'Replace reference file' : 'Add reference file', [{ kind: 'reference', rec: changed(r, act, { file, pastFiles }) }]);
 }
 
+/**
+ * Move a reference to the archive, or back to the active list. Archived, it is listed apart and
+ * not offered for linking; what it already supports stays linked.
+ * @param {Data} data @param {Act} act @param {{ id: string, archived: unknown }} args
+ */
+export function setReferenceArchived(data, act, { id, archived }) {
+  const r = need(data, 'reference', id);
+  const on = archived === true || archived === 'true';
+  if (Boolean(r.archived) === on) return data;
+  return commit(data, act, on ? 'Archive reference' : 'Return reference from archive', [{ kind: 'reference', rec: changed(r, act, { archived: on }) }]);
+}
+
 /** @param {Data} data @param {Act} act @param {{ id: string }} args */
 export function retireReference(data, act, { id }) {
   const r = need(data, 'reference', id);
@@ -70,7 +86,7 @@ export function deleteReference(data, act, { id }) {
 /** @param {Data} data @param {Act} act @param {{ referenceId: string, targetKind: string, targetId: string }} args */
 export function linkReference(data, act, { referenceId, targetKind, targetId }) {
   need(data, 'reference', referenceId);
-  if (!TARGET_KINDS.includes(targetKind)) throw new PivotError('reference.target', 'A reference supports hazards, causal factors, consequences, controls and platforms.');
+  if (!TARGET_KINDS.includes(targetKind)) throw new PivotError('reference.target', 'A reference supports hazards and their parts, controls and platforms.');
   need(data, targetKind, targetId);
   const id = ids.referenceLink(referenceId, targetKind, targetId);
   const existing = get(data, 'referenceLink', id);
@@ -83,6 +99,20 @@ export function linkReference(data, act, { referenceId, targetKind, targetId }) 
 export function unlinkReference(data, act, { referenceId, targetKind, targetId }) {
   const l = need(data, 'referenceLink', ids.referenceLink(referenceId, targetKind, targetId));
   return commit(data, act, 'Unlink reference', [{ kind: 'referenceLink', rec: changed(l, act, { status: 'deleted' }) }]);
+}
+
+/**
+ * Unlink one reference from several records at once (all it supports on one page): one change.
+ * @param {Data} data @param {Act} act @param {{ referenceId: string, targets: string | string[] }} args targets: "kind|id" each
+ */
+export function unlinkReferenceFrom(data, act, { referenceId, targets }) {
+  const list = (Array.isArray(targets) ? targets : String(targets ?? '').split(',')).filter(Boolean);
+  const recs = list.map((t) => {
+    const [targetKind, targetId] = t.split('|');
+    const l = get(data, 'referenceLink', ids.referenceLink(referenceId, targetKind, targetId));
+    return l && l.status === 'live' ? { kind: 'referenceLink', rec: changed(l, act, { status: 'deleted' }) } : null;
+  }).filter((x) => x !== null);
+  return recs.length ? commit(data, act, 'Unlink reference', /** @type {{ kind: string, rec: Rec }[]} */ (recs)) : data;
 }
 
 /**

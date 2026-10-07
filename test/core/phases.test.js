@@ -41,7 +41,7 @@ test('phases are a managed list: named, unique, renamed, retired, restored, dele
   assert.equal(listPhases(d).length, 2, 'a deleted name can be used again');
 });
 
-test('a hazard ticks phases; a retired phase stays on it but cannot be newly ticked; a phase in use cannot be deleted', () => {
+test('a hazard ticks phases; a retired phase stays on it but cannot be newly ticked; deleting one in use takes it off its hazards', () => {
   let d = linkPhase(withPhases(), act, { hazardId: 'h1', phaseId: 'ph2' });
   d = linkPhase(d, act, { hazardId: 'h1', phaseId: 'ph1' });
   assert.equal(entries(d).at(-1).action, 'Add lifecycle phase');
@@ -49,7 +49,10 @@ test('a hazard ticks phases; a retired phase stays on it but cannot be newly tic
   assert.deepEqual(phaseUsage(d, 'ph1').map((h) => h.id), ['h1']);
   assert.deepEqual(platformsReached(d, 'hazardPhase', d.records.hazardPhase['hph:h1:ph1']), ['p1', 'p2']);
   assert.deepEqual(platformsReached(d, 'phase', d.records.phase.ph1), ['p1', 'p2']);
-  assert.throws(() => deletePhase(d, act, { id: 'ph1' }), code('phase.in-use'));
+  const gone = deletePhase(d, act, { id: 'ph1' });
+  assert.deepEqual(names(gone), ['Operation']);
+  assert.equal(gone.records.hazardPhase['hph:h1:ph1'].status, 'deleted');
+  assert.deepEqual(checkRules(gone), []);
   d = retirePhase(d, act, { id: 'ph1' });
   assert.deepEqual(names(d), ['Design', 'Operation']);
   assert.throws(() => linkPhase(d, act, { hazardId: 'h2', phaseId: 'ph1' }), code('phase.retired'));

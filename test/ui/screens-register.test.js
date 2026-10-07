@@ -36,10 +36,11 @@ test('the hazard list filters: status (live by default), platform, and risk on t
 
 test('the control library lists each control once, with its hazards and platforms; a control\'s page has the per-platform detail', () => {
   const list = controlsView(state, data()).toString();
-  assert.match(list, /data-action="startEdit" data-kind="new-additional-control"/);
+  assert.match(list, /data-action="newControl" title="New control"/);
+  assert.doesNotMatch(list, /data-category/);
   assert.equal((list.match(/<tr data-row="c1"/g) ?? []).length, 1, 'one row per control, whatever it serves');
   const heads = [...list.split('</thead>')[0].matchAll(/<th data-col="(\w+)"/g)].map((m) => m[1]);
-  assert.deepEqual(heads, ['id', 'control', 'tier', 'hazards', 'platforms', 'status', 'options']);
+  assert.deepEqual(heads, ['id', 'control', 'origin', 'tier', 'hazards', 'platforms', 'status', 'options'], 'an Origin for every control');
   assert.match(list, /<tr data-row="c1"[^>]*>[\s\S]*?data-view="hazard" data-id="h1">HAZ-001 Fire<\/button>[\s\S]*?data-view="platform" data-id="p1">Alpha<\/button>[\s\S]*?data-view="platform" data-id="p2">Bravo<\/button>/);
   const onBravo = controlsView({ ...state, tables: { controls: { filters: { platforms: 'p2' } } } }, data()).toString();
   assert.match(onBravo, /data-row="c1"/);
@@ -71,7 +72,8 @@ test('a hazard page: fields apply when left (no Apply), retire and delete at the
   assert.match(out, /<textarea class="doc-text boxed" name="description"[^>]*data-change="updateHazard" data-id="h1"/);
   assert.doesNotMatch(out, /<h2>(Causal factors|Consequences|Controls|Platforms)<\/h2>/);
   assert.match(out, /<h3 class="dash-card-h">Consequences <span class="count">\d+<\/span>/);
-  assert.ok(out.lastIndexOf('data-action="retireHazard"') > out.lastIndexOf('</table>'), 'retire comes after the tables');
+  assert.ok(out.indexOf('data-action="retireHazard"') < out.indexOf('<article'), 'retire is in the ⋯ menu by the heading');
+  assert.doesNotMatch(out, /page-actions/);
 });
 
 test('a hazard page has a History tab: a table of when, who, what and the fields changed', () => {

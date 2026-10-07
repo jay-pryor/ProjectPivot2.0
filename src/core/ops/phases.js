@@ -2,6 +2,7 @@ import { PivotError } from '../errors.js';
 import { newId, ids } from '../ids.js';
 import { get, all, live, created, changed, need, needText } from '../data.js';
 import { commit } from '../apply.js';
+import { linksTo } from './references.js';
 
 /** @typedef {import('../data.js').Data} Data */
 /** @typedef {import('../data.js').Act} Act */
@@ -34,14 +35,16 @@ export function retirePhase(data, act, { id }) {
   return commit(data, act, 'Retire phase', [{ kind: 'phase', rec: changed(p, act, { status: 'retired' }) }]);
 }
 
-/** @param {Data} data @param {Act} act @param {{ id: string }} args */
+/**
+ * Delete a phase: it comes off every hazard it is ticked on, and out of its platform groups.
+ * @param {Data} data @param {Act} act @param {{ id: string }} args
+ */
 export function deletePhase(data, act, { id }) {
   const p = need(data, 'phase', id);
-  const uses = live(data, 'hazardPhase').filter((l) => l.phaseId === id);
-  if (uses.length) {
-    throw new PivotError('phase.in-use', `${p.name} is ticked on ${uses.length === 1 ? 'a hazard' : `${uses.length} hazards`}. Remove it there first, or retire it.`, { hazardIds: uses.map((u) => u.hazardId) });
-  }
-  return commit(data, act, 'Delete phase', [{ kind: 'phase', rec: changed(p, act, { status: 'deleted' }) }]);
+  const ticks = live(data, 'hazardPhase').filter((l) => l.phaseId === id).map((l) => ({ kind: 'hazardPhase', rec: changed(l, act, { status: 'deleted' }) }));
+  const groups = live(data, 'optionGroup').filter((l) => l.optionId === id).map((l) => ({ kind: 'optionGroup', rec: changed(l, act, { status: 'deleted' }) }));
+  return commit(data, act, 'Delete phase', [{ kind: 'phase', rec: changed(p, act, { status: 'deleted' }) }, ...ticks, ...groups,
+    ...linksTo(data, act, ticks.map((t) => ({ kind: 'hazardPhase', id: t.rec.id })))]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ hazardId: string, phaseId: string }} args */
@@ -59,5 +62,5 @@ export function linkPhase(data, act, { hazardId, phaseId }) {
 /** @param {Data} data @param {Act} act @param {{ hazardId: string, phaseId: string }} args */
 export function unlinkPhase(data, act, { hazardId, phaseId }) {
   const l = need(data, 'hazardPhase', ids.hazardPhase(hazardId, phaseId));
-  return commit(data, act, 'Remove lifecycle phase', [{ kind: 'hazardPhase', rec: changed(l, act, { status: 'deleted' }) }]);
+  return commit(data, act, 'Remove lifecycle phase', [{ kind: 'hazardPhase', rec: changed(l, act, { status: 'deleted' }) }, ...linksTo(data, act, [{ kind: 'hazardPhase', id: l.id }])]);
 }

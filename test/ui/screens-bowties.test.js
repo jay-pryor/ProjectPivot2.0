@@ -12,7 +12,7 @@ import { unlinkHazard } from '../../src/core/ops/platforms.js';
 import { placePane, emptyWorkspace } from '../../src/ui/workspace.js';
 import { seed, act, later } from '../helpers.js';
 
-const F = { set: 'all', statuses: ['recommended', 'planned', 'implemented'] };
+const F = { statuses: ['recommended', 'planned', 'implemented'] };
 const profiles = [{ id: 'u1', name: 'Ada', createdAt: '' }, { id: 'u2', name: 'Ben', createdAt: '' }, { id: 'u3', name: 'Cy', createdAt: '' }];
 /** u1 owns v1 "Alpha & now" (h1 on p1); u2 owns v2 (h1 on p2), shared with u1; u2 owns v3, not shared. */
 function data() {
@@ -27,7 +27,7 @@ const state = (d, extra = {}) => ({ ...initialState(), screen: 'main', today: '2
 const one = (pane) => placePane(emptyWorkspace(), 'last', pane);
 const two = (a, b) => placePane(one(a), 1, b);
 const A = { viewId: 'v1', hazardId: 'h1', platformId: 'p1', filters: F };
-const B = { viewId: null, hazardId: 'h1', platformId: 'p2', filters: { set: 'existing', statuses: [] } };
+const B = { viewId: null, hazardId: 'h1', platformId: 'p2', filters: { statuses: ['implemented'] } };
 
 test('the side list: New diagram, my views, views shared with me by their owner, and nobody else\'s', () => {
   const out = bowtiesView(state(data()), data()).toString();
@@ -64,7 +64,8 @@ test('one window fills the stage; two split it; each has its filters, diagram, a
   assert.match(single, /<section class="bt-stage"/);
   assert.match(single, /<header class="bt-bar" draggable="true" data-drag-pane="0">[\s\S]*?<h2>Alpha &amp; now<\/h2>/);
   assert.match(single, /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
-  assert.match(single, /data-change="setPaneSet" data-side="0"/);
+  assert.match(single, /<div class="bt-filters">\s*<fieldset><legend>Controls<\/legend>/, 'which statuses, with no existing or additional choice');
+  assert.doesNotMatch(single, /setPaneSet|Existing only|Additional only/);
   assert.match(single, /name="on" data-change="setPaneStatus" data-side="0" data-status="rejected">/, 'rejected is off');
   assert.match(single, /data-status="planned" checked>/);
   assert.match(single, /data-action="saveBowtiePane" data-side="0" disabled>Saved/);
@@ -76,14 +77,14 @@ test('one window fills the stage; two split it; each has its filters, diagram, a
   assert.match(split, /<h2>Unsaved: HAZ-001 Fire on Bravo<\/h2>/);
   assert.match(split, /data-action="swapBowtiePanes"/);
   assert.match(split, /data-drag-pane="1"/);
-  assert.match(split, /<div class="bt-diagram pannable" data-side="1"><div class="bt-canvas" data-zoom="1" data-x="0" data-y="0" style="transform: translate\(0px, 0px\) scale\(1\)"><svg/, 'fitted to its window, nothing moved');
+  assert.match(split, /<div class="bt-diagram pannable" data-side="1"><div class="bt-canvas" data-zoom="1" data-x="0" data-y="0" style="max-width: \d+px; max-height: \d+px; transform: translate\(0px, 0px\) scale\(1\)"><svg/, 'fitted to its window, nothing moved');
   assert.match(split, /data-bt-zoom="fit">Fit</);
 });
 
 test('a window shows its drawing zoomed and moved as it was left', () => {
   const d = data();
   const out = bowtiesView(state(d, { workspace: one({ ...A, zoom: 2.5, pan: { x: -40, y: 12 } }) }), d).toString();
-  assert.match(out, /<div class="bt-canvas" data-zoom="2.5" data-x="-40" data-y="12" style="transform: translate\(-40px, 12px\) scale\(2.5\)">/);
+  assert.match(out, /<div class="bt-canvas" data-zoom="2.5" data-x="-40" data-y="12" style="max-width: \d+px; max-height: \d+px; transform: translate\(-40px, 12px\) scale\(2.5\)">/);
   assert.match(out, /data-bt-zoom="fit">250%</);
 });
 
@@ -129,7 +130,7 @@ test('the replace question, the nav, the route, and Open bow-tie on a hazard\'s 
   const asking = bowtiesView(state(d, { workspace: one(B), bowtieReplace: { side: 'last', pane: A, index: 0 } }), d).toString();
   assert.match(asking, /class="picker-overlay"[\s\S]*?Replace the unsaved diagram\?[\s\S]*?data-action="confirmBowtieReplace"[\s\S]*?data-action="cancelBowtieReplace"/);
   assert.match(asking, /data-action="cancelBowtieReplace" autofocus>Keep it/, 'focus lands on the safe choice, so Escape and the keyboard work');
-  assert.match(shell(state(d), html``).toString(), /data-view="platforms">Platforms<\/button><button type="button" class="nav on" data-action="go" data-view="bowties">Bow-ties<\/button><button[^>]*data-view="stats"/);
+  assert.match(shell(state(d), html``).toString(), /data-view="platforms">Platforms<\/button><button type="button" class="nav on" data-action="go" data-view="bowties">Bow-ties<\/button><button[^>]*data-view="info"/);
   assert.match(renderApp(state(d)), /<h1>Bow-ties<\/h1>/);
   const tab = hazardView(state(d, { view: { name: 'hazard', id: 'h1', tab: 'p:p1' } }), d, 'h1').toString();
   assert.match(tab, /data-action="openBowtie" data-hazard-id="h1" data-platform-id="p1"/);

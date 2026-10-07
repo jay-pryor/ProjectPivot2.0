@@ -51,13 +51,14 @@ test('opening diagrams: from a hazard\'s platform tab, from New diagram, and dro
   const v = myViews(W(c), S(c).profileId)[0];
   await c.dispatch({ type: 'dropBowtie', side: '1', viewId: v.id });
   assert.deepEqual(panes(c), [`p1:${v.id}`, `p1:${v.id}`]);
-  await c.dispatch({ type: 'setPaneSet', side: '1', value: 'existing' });
+  await c.dispatch({ type: 'setPaneStatus', side: '1', status: 'recommended', on: 'false' });
+  const changed = ['planned', 'implemented'];
   await c.dispatch({ type: 'dropBowtie', side: '0', pane: '1' });
-  assert.equal(S(c).workspace.panes[0].filters.set, 'existing', 'dragging a window across swaps the two');
+  assert.deepEqual(S(c).workspace.panes[0].filters.statuses, changed, 'dragging a window across swaps the two');
   await c.dispatch({ type: 'swapBowtiePanes' });
-  assert.equal(S(c).workspace.panes[1].filters.set, 'existing');
+  assert.deepEqual(S(c).workspace.panes[1].filters.statuses, changed);
   await c.dispatch({ type: 'closeBowtiePane', side: '0' });
-  assert.equal(S(c).workspace.panes[0].filters.set, 'existing');
+  assert.deepEqual(S(c).workspace.panes[0].filters.statuses, changed);
   assert.equal(S(c).workspace.panes[1], null);
   await c.dispatch({ type: 'newBowtie', pair: 'nonsense' });
   assert.equal(S(c).message.kind, 'error');
@@ -98,9 +99,9 @@ test('saving: Save on an unsaved window asks for a name; Save on your own view s
   const id = S(c).workspace.panes[0].viewId;
   assert.equal(W(c).records.bowtieView[id].name, 'Alpha now');
   assert.equal(S(c).editing, null);
-  await c.dispatch({ type: 'setPaneSet', side: '0', value: 'additional' });
+  await c.dispatch({ type: 'setPaneStatus', side: '0', status: 'rejected', on: 'true' });
   await c.dispatch({ type: 'saveBowtiePane', side: '0' });
-  assert.equal(W(c).records.bowtieView[id].filters.set, 'additional');
+  assert.deepEqual(W(c).records.bowtieView[id].filters, { statuses: ['recommended', 'planned', 'implemented', 'rejected'] });
   await c.dispatch({ type: 'renameBowtieView', id, name: 'Alpha later' });
   assert.equal(W(c).records.bowtieView[id].name, 'Alpha later');
   await c.dispatch({ type: 'removeBowtieView', id });
@@ -214,7 +215,7 @@ test('a bow-tie window keeps where it was zoomed and moved to, within limits, fi
   await c.dispatch({ type: 'viewBowtie', side: '0', zoom: 1.7321, x: -120.4, y: 33.6 });
   assert.deepEqual(S(c).workspace.panes[0].zoom, 1.732);
   assert.deepEqual(S(c).workspace.panes[0].pan, { x: -120, y: 34 });
-  await c.dispatch({ type: 'setPaneSet', side: '0', value: 'existing' });
+  await c.dispatch({ type: 'setPaneStatus', side: '0', status: 'planned', on: 'false' });
   assert.equal(S(c).workspace.panes[0].zoom, 1.732, 'changing its filters keeps the view');
   await c.dispatch({ type: 'viewBowtie', side: '0', zoom: 99, x: 0, y: 0 });
   assert.equal(S(c).workspace.panes[0].zoom, 6, 'never past the largest zoom');
@@ -223,13 +224,79 @@ test('a bow-tie window keeps where it was zoomed and moved to, within limits, fi
   assert.ok(!('zoom' in S(c).workspace.panes[0]) && !('pan' in S(c).workspace.panes[0]), 'fitted');
 });
 
-test('a control links to hazards from its own side: an additional one to hazards, an existing one to hazards on platforms', async () => {
+test('a control links to hazards from its own side; from a platform tab, controls are added there alone, a new one with them', async () => {
   const { c } = await ready();
   await c.dispatch({ type: 'createHazard', id: 'h2', title: 'Flood' });
   await c.dispatch({ type: 'linkControlToHazards', controlId: 'c1', hazardId: ['h2'], 'kind:h2': 'mitigating' });
   assert.equal(W(c).records.hazardControl['hc:h2:c1'].kind, 'mitigating');
-  await c.dispatch({ type: 'createControl', id: 'e1', title: 'Fire wall', category: 'existing' });
-  await c.dispatch({ type: 'placeExistingControl', controlId: 'e1', pair: ['h1|p1', 'h1|p2'], 'kind:h1|p2': 'mitigating' });
-  assert.deepEqual(['ec:h1:p1:e1', 'ec:h1:p2:e1'].map((id) => W(c).records.existingControl[id].kind), ['preventative', 'mitigating']);
+  await c.dispatch({ type: 'createControl', id: 'e1', title: 'Fire wall' });
+  await c.dispatch({ type: 'openPicker', picker: 'addControlsHere', hazardId: 'h1', platformId: 'p1' });
+  await c.dispatch({ type: 'addControlsHere', hazardId: 'h1', platformId: 'p1', controlId: ['e1'], 'kind:e1': 'mitigating', newTitle: 'Fire watch', newKind: 'preventative' });
+  assert.equal(W(c).records.hazardControl['hc:h1:e1'].kind, 'mitigating');
+  assert.equal(W(c).records.controlOn['on:h1:e1:p2'].off, true, 'on Alpha alone');
+  const made = Object.values(W(c).records.control).find((x) => x.title === 'Fire watch');
+  assert.ok(made && W(c).records.hazardControl[`hc:h1:${made.id}`]?.status === 'live', 'the new one is made and added with them');
+  assert.equal(W(c).records.controlOn[`on:h1:${made.id}:p2`].off, true);
   assert.equal(S(c).picker, null);
+});
+
+test('Show tags: a window\'s control boxes drawn with their badges, or without, remembered for that window', async () => {
+  const { bowtieSvg } = await import('../../src/ui/bowtie-svg.js');
+  const { bowtieOf, DEFAULT_FILTERS } = await import('../../src/core/bowtie.js');
+  const { c } = await ready();
+  await c.dispatch({ type: 'openBowtie', hazardId: 'h1', platformId: 'p1' });
+  assert.equal(S(c).workspace.panes[0].hideTags, undefined, 'shown to begin with');
+  await c.dispatch({ type: 'toggleBowtieTags', side: '0' });
+  assert.equal(S(c).workspace.panes[0].hideTags, true);
+  const b = bowtieOf(W(c), 'h1', 'p1', DEFAULT_FILTERS);
+  assert.match(bowtieSvg(b), /data-bowtie-tag=/);
+  assert.doesNotMatch(bowtieSvg(b, { tags: false }), /data-bowtie-tag=/, 'no badges');
+  await c.dispatch({ type: 'toggleBowtieTags', side: '0' });
+  assert.ok(!('hideTags' in S(c).workspace.panes[0]), 'on again');
+});
+
+test('Show gaps: a window marks causal factors and consequences no control stands against, or not, remembered for that window', async () => {
+  const { bowtieSvg } = await import('../../src/ui/bowtie-svg.js');
+  const { bowtieOf, DEFAULT_FILTERS } = await import('../../src/core/bowtie.js');
+  const { bowtiesView } = await import('../../src/ui/screens/bowties.js');
+  const { c } = await ready();
+  await c.dispatch({ type: 'addCausalFactor', hazardId: 'h1', platformId: 'p1', text: 'Lightning' });
+  await c.dispatch({ type: 'openBowtie', hazardId: 'h1', platformId: 'p1' });
+  const screen = () => bowtiesView(S(c), W(c)).toString();
+  assert.match(screen(), /role="switch" aria-checked="true"[^>]*data-action="toggleBowtieGaps" data-side="0">[\s\S]*?Show gaps<\/button>/, 'shown to begin with, beside Show tags');
+  assert.match(screen(), /data-bowtie-unguarded/);
+  await c.dispatch({ type: 'toggleBowtieGaps', side: '0' });
+  assert.equal(S(c).workspace.panes[0].hideGaps, true);
+  assert.equal(S(c).workspace.panes[0].hideTags, undefined, 'tags left as they were');
+  assert.doesNotMatch(screen(), /data-bowtie-unguarded|no control stands against it/);
+  assert.match(screen(), /aria-checked="false"[^>]*data-action="toggleBowtieGaps"/);
+  const b = bowtieOf(W(c), 'h1', 'p1', DEFAULT_FILTERS);
+  assert.doesNotMatch(bowtieSvg(b, { gaps: false }), /data-bowtie-unguarded/);
+  await c.dispatch({ type: 'toggleBowtieGaps', side: '0' });
+  assert.ok(!('hideGaps' in S(c).workspace.panes[0]), 'on again');
+});
+
+test('Fit never enlarges a drawing past its own size: the window holds it no bigger than its viewBox', async () => {
+  const { bowtiesView } = await import('../../src/ui/screens/bowties.js');
+  const { c } = await ready();
+  await c.dispatch({ type: 'openBowtie', hazardId: 'h1', platformId: 'p1' });
+  const out = bowtiesView(S(c), W(c)).toString();
+  const [, w, h] = /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 (\d+) (\d+)"/.exec(out) ?? [];
+  assert.match(out, new RegExp(`<div class="bt-canvas"[^>]*style="max-width: ${w}px; max-height: ${h}px; transform: translate\\(0px, 0px\\) scale\\(1\\)">`));
+});
+
+test('Focus or traditional: a window opens in focus, can switch, and draws and exports what it shows', async () => {
+  const { bowtiesView } = await import('../../src/ui/screens/bowties.js');
+  const { c } = await ready();
+  await c.dispatch({ type: 'openBowtie', hazardId: 'h1', platformId: 'p1' });
+  const screen = () => bowtiesView(S(c), W(c)).toString();
+  assert.equal(S(c).workspace.panes[0].layout, undefined, 'focus to begin with');
+  assert.match(screen(), /aria-pressed="true"[^>]*data-layout="focus">Focus</);
+  assert.match(screen(), /data-bowtie-layout="focus"/);
+  await c.dispatch({ type: 'setBowtieLayout', side: '0', layout: 'traditional' });
+  assert.equal(S(c).workspace.panes[0].layout, 'traditional');
+  assert.match(screen(), /aria-pressed="true"[^>]*data-layout="traditional">Traditional</);
+  assert.match(screen(), /data-bowtie-layout="traditional"/);
+  await c.dispatch({ type: 'setBowtieLayout', side: '0', layout: 'focus' });
+  assert.ok(!('layout' in S(c).workspace.panes[0]), 'back to focus');
 });

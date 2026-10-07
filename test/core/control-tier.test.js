@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PivotError } from '../../src/core/errors.js';
-import { emptyData, normalizeData, created } from '../../src/core/data.js';
+import { emptyData } from '../../src/core/data.js';
 import { entries } from '../../src/core/history.js';
 import { CONTROL_TIERS, tierRank, createControl, updateControl } from '../../src/core/ops/controls.js';
 import { assignHazardNumbers } from '../../src/core/ops/hazards.js';
@@ -13,7 +13,7 @@ import { act, seed } from '../helpers.js';
 const code = (c) => (e) => e instanceof PivotError && e.code === c;
 
 test('the hierarchy of controls, most effective first; not set sorts last', () => {
-  assert.deepEqual(CONTROL_TIERS, ['Elimination', 'Substitution', 'Engineering', 'Administrative', 'PPE']);
+  assert.deepEqual(CONTROL_TIERS, ['Elimination', 'Substitution', 'Isolation', 'Engineering', 'Administrative', 'PPE']);
   assert.deepEqual(['PPE', null, 'Elimination', 'Engineering'].sort((a, b) => tierRank(a) - tierRank(b)), ['Elimination', 'Engineering', 'PPE', null]);
 });
 
@@ -26,15 +26,6 @@ test('a control starts with no tier; its tier is set, changed and cleared, and l
   assert.equal(updateControl(d, act, { id: 'c1', tier: '' }).records.control.c1.tier, null, 'blank clears it');
   assert.throws(() => updateControl(d, act, { id: 'c1', tier: 'Magic' }), code('control.tier'));
   assert.equal(createControl(emptyData(), act, { id: 'c2', title: 'Gloves', tier: 'PPE' }).records.control.c2.tier, 'PPE');
-});
-
-test('controls in an older data file get no tier on load', () => {
-  const old = emptyData();
-  old.records.control.c1 = created(act, 'c1', { number: 1, title: 'Guard rail', description: '' });
-  assert.equal(normalizeData(old).records.control.c1.tier, null);
-  const set = emptyData();
-  set.records.control.c1 = created(act, 'c1', { number: 1, title: 'Guard rail', description: '', tier: 'Engineering' });
-  assert.equal(normalizeData(set).records.control.c1.tier, 'Engineering');
 });
 
 test('reports: each control carries its tier, and the Controls section has an optional Tier column', () => {

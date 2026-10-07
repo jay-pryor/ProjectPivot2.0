@@ -6,9 +6,9 @@ import { checkRules } from '../../src/core/rules.js';
 import { deleteHazard } from '../../src/core/ops/hazards.js';
 import { retirePlatform } from '../../src/core/ops/platforms.js';
 import { setAssessment, setSfarp, setControlStatus } from '../../src/core/ops/assessment.js';
-import { linkExistingControl } from '../../src/core/ops/controls.js';
+import { createControl, addControlHere } from '../../src/core/ops/controls.js';
 import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
-import { act, seed, asExisting } from '../helpers.js';
+import { act, seed } from '../helpers.js';
 
 const code = (c) => (e) => e instanceof PivotError && e.code === c;
 /** h1 on p1 and p2, with something of each per-platform kind on p1. */
@@ -16,7 +16,8 @@ function filled() {
   let d = setAssessment(seed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'capability', likelihood: 'C', consequence: 2 });
   d = setSfarp(d, act, { hazardId: 'h1', platformId: 'p1', conclusion: 'SFARP' });
   d = setControlStatus(d, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'planned' });
-  d = linkExistingControl(asExisting(d, 'c2'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
+  d = createControl(d, act, { id: 'c3', title: 'Fire doors' });
+  d = addControlHere(d, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c3', kind: 'mitigating' });
   return createSafetyReport(d, act, { id: 'sr1', hazardId: 'h1', platformId: 'p1', summary: 'Near miss' });
 }
 
@@ -31,7 +32,7 @@ test('a hazard only on retired platforms can be deleted, taking its links and ev
   d = deleteHazard(d, act, { id: 'h1' });
   assert.equal(entries(d).at(-1).action, 'Delete hazard');
   assert.equal(d.records.hazard.h1.status, 'deleted');
-  for (const [kind, id] of [['hazardPlatform', 'hp:h1:p1'], ['hazardPlatform', 'hp:h1:p2'], ['assessment', 'ra:h1:p1:residual:capability'], ['sfarp', 'sf:h1:p1'], ['ruling', 'ru:h1:c1:p1'], ['existingControl', 'ec:h1:p1:c2'], ['safetyReport', 'sr1']]) {
+  for (const [kind, id] of [['hazardPlatform', 'hp:h1:p1'], ['hazardPlatform', 'hp:h1:p2'], ['assessment', 'ra:h1:p1:residual:capability'], ['sfarp', 'sf:h1:p1'], ['ruling', 'ru:h1:c1:p1'], ['hazardControl', 'hc:h1:c3'], ['controlOn', 'on:h1:c3:p2'], ['safetyReport', 'sr1']]) {
     assert.equal(d.records[kind][id].status, 'deleted', `${kind} ${id}`);
   }
   assert.equal(d.records.platform.p1.status, 'retired', 'the platforms themselves stay');

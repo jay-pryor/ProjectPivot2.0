@@ -4,7 +4,7 @@ import { ratingFor, BANDS } from './matrix.js';
 import { reviewState, addDays } from './time.js';
 import { waitingChanges } from './acks.js';
 import { RECEPTORS, RECEPTOR_WORD } from './receptors.js';
-import { tierRank } from './ops/controls.js';
+import { tierRank, IMPLEMENTER_WORD } from './ops/controls.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Rec} Rec */
@@ -37,18 +37,18 @@ export function causalFactorsOn(data, hazardId, platformId = null) {
 }
 
 /**
- * A hazard's systems or elements, or its affected groups, on one platform, in the order they
+ * A hazard's element failure modes, systems or elements, or affected groups on one platform, in the order they
  * were added.
- * @param {Data} data @param {'systemElement' | 'affectedGroup'} kind @param {string} hazardId @param {string} platformId
+ * @param {Data} data @param {'failureMode' | 'systemElement' | 'affectedGroup'} kind @param {string} hazardId @param {string} platformId
  */
 export function platformListOn(data, kind, hazardId, platformId) {
   return live(data, kind).filter((r) => r.hazardId === hazardId && r.platformId === platformId).sort(byAdded);
 }
 
 /**
- * Every system or element (or affected group) already given, on any hazard and platform, once
+ * Every element failure mode (or system or element, or affected group) already given, on any hazard and platform, once
  * each ignoring case, in order: what the box suggests as you type.
- * @param {Data} data @param {'systemElement' | 'affectedGroup'} kind @returns {string[]}
+ * @param {Data} data @param {'failureMode' | 'systemElement' | 'affectedGroup'} kind @returns {string[]}
  */
 export function platformListEntries(data, kind) {
   /** @type {Map<string, string>} */
@@ -75,6 +75,13 @@ function targetPlatforms(data, kind, id) {
       const r = get(data, kind, id);
       return r ? causalFactorPlatforms(data, r) : [];
     }
+    case 'failureMode':
+    case 'systemElement':
+    case 'affectedGroup': {
+      const r = get(data, kind, id);
+      return r ? [r.platformId] : [];
+    }
+    case 'hazardPhase':
     case 'consequence': {
       const r = get(data, kind, id);
       return r ? platformsOfHazard(data, r.hazardId) : [];
@@ -97,23 +104,23 @@ export function platformsReached(data, kind, rec) {
     case 'consequence':
     case 'hazardControl': return platformsOfHazard(data, rec.hazardId);
     case 'control':
-      return sortedUnique([
-        ...live(data, 'hazardControl').filter((l) => l.controlId === rec.id).flatMap((l) => platformsOfHazard(data, l.hazardId)),
-        ...live(data, 'existingControl').filter((l) => l.controlId === rec.id).map((l) => l.platformId),
-      ]);
+      return sortedUnique(live(data, 'hazardControl').filter((l) => l.controlId === rec.id).flatMap((l) => controlPlatforms(data, l.hazardId, rec.id)));
     case 'platform': return [rec.id];
     case 'hazardPlatform':
     case 'ruling':
+    case 'implementationStatus':
+    case 'controlOn':
     case 'rating':
     case 'assessment':
     case 'sfarp':
-    case 'existingControl':
     case 'safetyReport':
-    case 'controlPlatform':
+    case 'implementer':
+    case 'failureMode':
     case 'systemElement':
     case 'affectedGroup':
     case 'report': return [rec.platformId];
-    case 'review': return [rec.platformId];
+    case 'review':
+    case 'platformGroupLink': return [rec.platformId];
     case 'hazardPhase': return platformsOfHazard(data, rec.hazardId);
     case 'phase':
       return sortedUnique(live(data, 'hazardPhase').filter((l) => l.phaseId === rec.id).flatMap((l) => platformsOfHazard(data, l.hazardId)));
@@ -134,6 +141,20 @@ export function byNumber(a, b) {
   if (a.number != null) return -1;
   if (b.number != null) return 1;
   return byCreated(a, b);
+}
+
+/**
+ * Whether a control linked to a hazard has been taken off one of the hazard's platforms.
+ * @param {Data} data @param {string} hazardId @param {string} controlId @param {string} platformId
+ */
+export function controlOff(data, hazardId, controlId, platformId) {
+  const on = get(data, 'controlOn', ids.controlOn(hazardId, controlId, platformId));
+  return Boolean(on && on.status === 'live' && on.off);
+}
+
+/** The platforms of its hazard a linked control is on: all of them but those it was taken off. @param {Data} data @param {string} hazardId @param {string} controlId */
+export function controlPlatforms(data, hazardId, controlId) {
+  return platformsOfHazard(data, hazardId).filter((p) => !controlOff(data, hazardId, controlId, p));
 }
 
 /** @param {Data} data @param {string} hazardId @param {string} controlId @param {string} platformId */
@@ -197,6 +218,25 @@ export function stageCopySources(data, hazardId, platformId, stage) {
   }).sort((x, y) => String(x.platform.name).localeCompare(String(y.platform.name)));
 }
 
+/**
+ * The hazard's other platforms with something to copy here, each with what: controls (any on
+ * it, with their statuses), or SFARP considerations (any written).
+ * @param {Data} data @param {string} hazardId @param {string} platformId @param {'controls' | 'sfarp'} part
+ * @returns {{ platform: Rec, states?: string[], sfarp?: { justification: string, conclusion: string, conditions: string } }[]}
+ */
+export function partCopySources(data, hazardId, platformId, part) {
+  return live(data, 'hazardPlatform').filter((l) => l.hazardId === hazardId && l.platformId !== platformId).flatMap((l) => /** @type {any[]} */ ((() => {
+    const platform = get(data, 'platform', l.platformId);
+    if (!platform) return [];
+    if (part === 'controls') {
+      const states = controlsOnPlatform(data, hazardId, l.platformId).map((c) => String(c.state));
+      return states.length ? [{ platform, states }] : [];
+    }
+    const sfarp = sfarpOf(data, hazardId, l.platformId);
+    return sfarp.justification || sfarp.conclusion || sfarp.conditions ? [{ platform, sfarp }] : [];
+  })())).sort((x, y) => String(x.platform.name).localeCompare(String(y.platform.name)));
+}
+
 /** @param {Data} data @param {string} hazardId @param {string} platformId */
 export function sfarpOf(data, hazardId, platformId) {
   const r = get(data, 'sfarp', ids.sfarp(hazardId, platformId));
@@ -238,9 +278,13 @@ export function hazardDetail(data, hazardId) {
 
 /** @param {Data} data @param {string} hazardId @param {string} platformId */
 export function controlsOnPlatform(data, hazardId, platformId) {
-  return live(data, 'hazardControl').filter((l) => l.hazardId === hazardId).map((link) => {
+  return live(data, 'hazardControl').filter((l) => l.hazardId === hazardId && !controlOff(data, hazardId, l.controlId, platformId)).map((link) => {
     const s = controlState(data, hazardId, link.controlId, platformId);
-    return { control: /** @type {Rec} */ (get(data, 'control', link.controlId)), kind: link.kind, state: s.state, ruling: s.ruling, link };
+    // On this platform its kind may differ from the hazard's, and it says what it prevents or mitigates.
+    const on = get(data, 'controlOn', ids.controlOn(hazardId, link.controlId, platformId));
+    const here = on && on.status === 'live' ? on : null;
+    const kind = /** @type {string} */ (here?.kind || link.kind);
+    return { control: /** @type {Rec} */ (get(data, 'control', link.controlId)), kind, state: s.state, ruling: s.ruling, link, targets: barrierTargets(data, kind, here?.targets, hazardId, platformId) };
   }).sort((a, b) => tierRank(a.control.tier) - tierRank(b.control.tier) || byNumber(a.control, b.control));
 }
 
@@ -266,7 +310,7 @@ export function platformHazards(data, platformId) {
 export function controlUsage(data, controlId) {
   return live(data, 'hazardControl').filter((l) => l.controlId === controlId).map((link) => {
     const hazard = /** @type {Rec} */ (get(data, 'hazard', link.hazardId));
-    const platforms = live(data, 'hazardPlatform').filter((l) => l.hazardId === hazard.id).map((hp) => ({
+    const platforms = live(data, 'hazardPlatform').filter((l) => l.hazardId === hazard.id && !controlOff(data, hazard.id, controlId, l.platformId)).map((hp) => ({
       platform: /** @type {Rec} */ (get(data, 'platform', hp.platformId)),
       ...controlState(data, hazard.id, controlId, hp.platformId),
     }));
@@ -321,7 +365,7 @@ export function filterHazards(data, f = {}) {
 }
 
 /**
- * Every origin given to an existing control still in the library, once each (ignoring case, the
+ * Every origin given to a control still in the library, once each (ignoring case, the
  * first spelling kept), in order: what the Origin box suggests as you type.
  * @param {Data} data @returns {string[]}
  */
@@ -330,23 +374,20 @@ export function controlOrigins(data) {
   const seen = new Map();
   for (const c of Object.values(data.records.control ?? {})) {
     const o = String(c.origin ?? '').trim();
-    if (c.category !== 'existing' || c.status === 'deleted' || !o || seen.has(o.toLowerCase())) continue;
+    if (c.status === 'deleted' || !o || seen.has(o.toLowerCase())) continue;
     seen.set(o.toLowerCase(), o);
   }
   return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
 }
 
 /**
- * The control library: each control once, whatever its status, with the hazards it serves (as an
- * additional control, or as an existing control on a platform) and the platforms those reach.
+ * The control library: each control once, whatever its status, with the hazards it is linked to
+ * and the platforms it is on for them.
  * @param {Data} data
  */
 export function controlRows(data) {
   return all(data, 'control').map((control) => {
-    const hazardIds = new Set([
-      ...live(data, 'hazardControl').filter((l) => l.controlId === control.id).map((l) => l.hazardId),
-      ...live(data, 'existingControl').filter((l) => l.controlId === control.id).map((l) => l.hazardId),
-    ]);
+    const hazardIds = new Set(live(data, 'hazardControl').filter((l) => l.controlId === control.id).map((l) => l.hazardId));
     const hazards = [...hazardIds].map((id) => /** @type {Rec} */ (get(data, 'hazard', id))).filter(Boolean).sort(byNumber);
     const platforms = platformsReached(data, 'control', control).map((id) => /** @type {Rec} */ (get(data, 'platform', id))).filter(Boolean)
       .sort((a, b) => String(a.name).localeCompare(String(b.name)));
@@ -450,7 +491,7 @@ export function reviewDueList(data, today) {
 /**
  * What is left to do on the live platforms of one owner (every owner when `ownerId` is null):
  * changes to acknowledge, reviews due or in progress (and platforms with no review schedule),
- * controls awaiting a decision, controls we own there and have planned, and hazards missing a
+ * controls awaiting a status decision, controls we own there and have planned, and hazards missing a
  * rating.
  * @param {Data} data @param {string} today @param {string | null} ownerId
  */
@@ -467,7 +508,7 @@ export function openItems(data, today, ownerId) {
     for (const ph of platformHazards(data, platform.id)) {
       for (const c of ph.controls) {
         if (c.state === 'recommended') out.awaiting.push({ platform, hazard: ph.hazard, control: c.control });
-        if (c.state === 'planned' && controlOwner(data, c.control.id, platform.id)?.owner === 'us') out.toImplement.push({ platform, hazard: ph.hazard, control: c.control });
+        if (c.state === 'planned' && implementedByOf(data, c.control.id, platform.id) === 'highcom') out.toImplement.push({ platform, hazard: ph.hazard, control: c.control });
       }
       const incomplete = (/** @type {any} */ pair) => !pair || pair.consequence == null || pair.likelihood == null;
       const missing = [];
@@ -492,22 +533,52 @@ export function referencesFor(data, targetKind, targetId) {
     .sort((a, b) => byReference(a.reference, b.reference));
 }
 
-/** A hazard's references, then those of its causal factors and consequences. @param {Data} data @param {string} hazardId */
-export function hazardReferences(data, hazardId) {
+/**
+ * A hazard's references, then those of the parts of it a page shows, each saying what it is for:
+ * its causal factors, consequences and lifecycle phases, and on one platform's tab that platform's
+ * own causal factors, element failure modes, systems or elements and affected groups. With no
+ * platform (the Overview), every causal factor, and no per-platform lists.
+ * @param {Data} data @param {string} hazardId @param {string | null} [platformId]
+ */
+export function hazardReferences(data, hazardId, platformId = null) {
   const out = referencesFor(data, 'hazard', hazardId).map((x) => ({ ...x, forText: '' }));
-  for (const [kind, word] of [['causalFactor', 'Causal factor'], ['consequence', 'Consequence']]) {
-    for (const r of childrenOf(data, /** @type {'causalFactor'} */ (kind), hazardId)) {
-      for (const x of referencesFor(data, kind, r.id)) out.push({ ...x, forText: `${word}: ${r.text}` });
-    }
+  /** @param {string} kind @param {string} word @param {Rec[]} recs @param {(r: Rec) => string} [name] */
+  const add = (kind, word, recs, name = (r) => String(r.text)) => {
+    for (const r of recs) for (const x of referencesFor(data, kind, r.id)) out.push({ ...x, forText: `${word}: ${name(r)}` });
+  };
+  add('causalFactor', 'Causal factor', causalFactorsOn(data, hazardId, platformId));
+  add('consequence', 'Consequence', childrenOf(data, 'consequence', hazardId));
+  add('hazardPhase', 'Lifecycle phase', phasesOf(data, hazardId).map((p) => p.link), (l) => String(get(data, 'phase', l.phaseId)?.name ?? ''));
+  if (platformId) {
+    add('failureMode', 'Element failure mode', platformListOn(data, 'failureMode', hazardId, platformId));
+    add('systemElement', 'System/Element', platformListOn(data, 'systemElement', hazardId, platformId));
+    add('affectedGroup', 'Affected group', platformListOn(data, 'affectedGroup', hazardId, platformId));
   }
   return out;
+}
+
+/**
+ * A hazard's references once each, in the order hazardReferences gives, each with everything on the
+ * page it is for (General first, for the hazard itself).
+ * @param {Data} data @param {string} hazardId @param {string | null} [platformId]
+ * @returns {{ reference: Rec, fors: { link: Rec, forText: string }[] }[]}
+ */
+export function hazardReferenceRows(data, hazardId, platformId = null) {
+  /** @type {Map<string, { reference: Rec, fors: { link: Rec, forText: string }[] }>} */
+  const rows = new Map();
+  for (const x of hazardReferences(data, hazardId, platformId)) {
+    const row = rows.get(x.reference.id) ?? { reference: x.reference, fors: [] };
+    row.fors.push({ link: x.link, forText: x.forText });
+    rows.set(x.reference.id, row);
+  }
+  return [...rows.values()];
 }
 
 /** What a reference supports: its live links, each with the record it points at. @param {Data} data @param {string} referenceId */
 export function referenceTargets(data, referenceId) {
   return live(data, 'referenceLink').filter((l) => l.referenceId === referenceId).map((link) => {
     const target = get(data, link.targetKind, link.targetId);
-    const hazard = target && (link.targetKind === 'causalFactor' || link.targetKind === 'consequence') ? get(data, 'hazard', target.hazardId) ?? null : null;
+    const hazard = target && target.hazardId && link.targetKind !== 'hazard' ? get(data, 'hazard', target.hazardId) ?? null : null;
     return { link, target, hazard };
   }).filter((x) => x.target && x.target.status !== 'deleted');
 }
@@ -554,7 +625,7 @@ export function platformCards(data, today, ownerId) {
 
 /**
  * The open items in order of urgency: overdue reviews (longest overdue first), changes to
- * acknowledge (newest first), controls awaiting a decision, controls we have planned, hazards
+ * acknowledge (newest first), controls awaiting a status decision, controls we have planned, hazards
  * missing a rating, then platforms with no review schedule.
  * @param {ReturnType<typeof openItems>} items
  */
@@ -569,18 +640,17 @@ export function attentionItems(items) {
   ];
 }
 
-/** A hazard's existing controls on a platform, by tier (most effective first), then number. @param {Data} data @param {string} hazardId @param {string} platformId */
-export function existingControlsOn(data, hazardId, platformId) {
-  return live(data, 'existingControl').filter((l) => l.hazardId === hazardId && l.platformId === platformId)
-    .map((link) => ({ link, control: /** @type {Rec} */ (get(data, 'control', link.controlId)), kind: /** @type {string} */ (link.kind) }))
-    .sort((a, b) => tierRank(a.control.tier) - tierRank(b.control.tier) || byNumber(a.control, b.control) || String(a.control.title).localeCompare(String(b.control.title)));
-}
-
-/** Where a control is an existing control. @param {Data} data @param {string} controlId */
-export function existingUsage(data, controlId) {
-  return live(data, 'existingControl').filter((l) => l.controlId === controlId).map((l) => ({
-    hazard: /** @type {Rec} */ (get(data, 'hazard', l.hazardId)), platform: /** @type {Rec} */ (get(data, 'platform', l.platformId)), kind: /** @type {string} */ (l.kind),
-  }));
+/**
+ * What a control prevents or mitigates on a platform: those of its causal factors (preventative)
+ * or the hazard's consequences (mitigating) it is linked to, still there, in their own order.
+ * @param {Data} data @param {string} kind @param {unknown} targets the ids kept @param {string} hazardId @param {string} platformId
+ * @returns {Rec[]}
+ */
+export function barrierTargets(data, kind, targets, hazardId, platformId) {
+  const wanted = new Set(Array.isArray(targets) ? targets : []);
+  if (!wanted.size) return [];
+  const pool = kind === 'mitigating' ? childrenOf(data, 'consequence', hazardId) : causalFactorsOn(data, hazardId, platformId);
+  return pool.filter((r) => wanted.has(r.id));
 }
 
 /** The phases that are not deleted, in the order they were added. @param {Data} data */
@@ -603,6 +673,80 @@ export function phasesOf(data, hazardId) {
 /** The hazards a phase is ticked on. @param {Data} data @param {string} phaseId */
 export function phaseUsage(data, phaseId) {
   return live(data, 'hazardPhase').filter((l) => l.phaseId === phaseId).map((l) => /** @type {Rec} */ (get(data, 'hazard', l.hazardId))).sort(byNumber);
+}
+
+/** The platform groups that are not deleted, in the order they were added. @param {Data} data */
+export function listPlatformGroups(data) {
+  return all(data, 'platformGroup').filter((g) => g.status !== 'deleted').sort(byPhaseOrder);
+}
+
+/** A platform's groups, in the list's order. @param {Data} data @param {string} platformId */
+export function groupsOf(data, platformId) {
+  return live(data, 'platformGroupLink').filter((l) => l.platformId === platformId)
+    .map((l) => get(data, 'platformGroup', l.groupId)).filter((g) => g && g.status !== 'deleted')
+    .sort((a, b) => byPhaseOrder(/** @type {Rec} */ (a), /** @type {Rec} */ (b))).map((g) => /** @type {Rec} */ (g));
+}
+
+/** The platforms in a group that are not deleted, by name. @param {Data} data @param {string} groupId */
+export function groupMembers(data, groupId) {
+  return live(data, 'platformGroupLink').filter((l) => l.groupId === groupId)
+    .map((l) => get(data, 'platform', l.platformId)).filter((p) => p && p.status !== 'deleted')
+    .map((p) => /** @type {Rec} */ (p)).sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base', numeric: true }));
+}
+
+/**
+ * A facet's options as Info lists them, in the order added: each with the platform groups it is
+ * assigned to and how many hazards and platforms use it (a phase: ticked; any other: an entry of
+ * the same text, ignoring case).
+ * @param {Data} data @param {string} facet
+ * @returns {{ option: Rec, groupIds: Set<string>, hazards: number, platforms: number }[]}
+ */
+export function facetOptions(data, facet) {
+  const options = facet === 'phase' ? listPhases(data)
+    : all(data, 'facetOption').filter((o) => o.status !== 'deleted' && o.facet === facet).sort(byPhaseOrder);
+  const used = facet === 'phase' ? null : new Map(facetEntries(data, /** @type {'causalFactor'} */ (facet)).map((e) => [e.text.toLowerCase(), e]));
+  const links = live(data, 'optionGroup');
+  return options.map((option) => {
+    const groupIds = new Set(links.filter((l) => l.optionId === option.id).map((l) => /** @type {string} */ (l.groupId)));
+    const u = used ? used.get(String(option.name).toLowerCase()) : phaseStats(data, option.id);
+    return { option, groupIds, hazards: u?.hazards ?? 0, platforms: u?.platforms ?? 0 };
+  });
+}
+
+/**
+ * Entries given on hazards for a facet (not lifecycle phases) that are not among its options,
+ * on most platforms first: offered on Info to add to the list.
+ * @param {Data} data @param {'causalFactor' | 'consequence' | 'failureMode' | 'systemElement' | 'affectedGroup'} facet
+ */
+export function unlistedEntries(data, facet) {
+  const listed = new Set(facetOptions(data, facet).map((o) => String(o.option.name).toLowerCase()));
+  return facetEntries(data, facet).filter((e) => !listed.has(e.text.toLowerCase()));
+}
+
+/**
+ * Every entry of a facet given on any hazard, once each (ignoring case, the first spelling kept),
+ * with the hazards it is on, the platforms it reaches, and those platforms' groups; on most platforms first.
+ * @param {Data} data @param {'causalFactor' | 'consequence' | 'failureMode' | 'systemElement' | 'affectedGroup'} kind
+ * @returns {{ text: string, hazards: number, platforms: number, groups: Rec[] }[]}
+ */
+export function facetEntries(data, kind) {
+  /** @type {Map<string, { text: string, hazards: Set<string>, platforms: Set<string> }>} */
+  const seen = new Map();
+  for (const r of live(data, kind)) {
+    const t = String(r.text ?? '').trim();
+    const h = get(data, 'hazard', r.hazardId);
+    if (!t || !h || h.status === 'deleted') continue;
+    const key = t.toLowerCase();
+    if (!seen.has(key)) seen.set(key, { text: t, hazards: new Set(), platforms: new Set() });
+    const e = /** @type {{ text: string, hazards: Set<string>, platforms: Set<string> }} */ (seen.get(key));
+    e.hazards.add(r.hazardId);
+    for (const p of platformsReached(data, kind, r)) e.platforms.add(p);
+  }
+  const groups = listPlatformGroups(data);
+  return [...seen.values()].map((e) => {
+    const inGroup = new Set(live(data, 'platformGroupLink').filter((l) => e.platforms.has(l.platformId)).map((l) => l.groupId));
+    return { text: e.text, hazards: e.hazards.size, platforms: e.platforms.size, groups: groups.filter((g) => inGroup.has(g.id)) };
+  }).sort((a, b) => b.platforms - a.platforms || b.hazards - a.hazards || a.text.localeCompare(b.text, undefined, { sensitivity: 'base', numeric: true }));
 }
 
 /**
@@ -635,30 +779,27 @@ export function safetyReportsOn(data, hazardId, platformId) {
   });
 }
 
-/** A control's owner on a platform, or null when not set. @param {Data} data @param {string} controlId @param {string} platformId */
-export function controlOwner(data, controlId, platformId) {
-  const r = get(data, 'controlPlatform', ids.controlPlatform(controlId, platformId));
-  return r && r.status === 'live' && r.owner ? { owner: /** @type {string} */ (r.owner), ownerName: /** @type {string} */ (r.ownerName ?? '') } : null;
+/** Who implements a control on a platform (oem, highcom or customer), or null when not set. @param {Data} data @param {string} controlId @param {string} platformId */
+export function implementedByOf(data, controlId, platformId) {
+  const r = get(data, 'implementer', ids.implementer(controlId, platformId));
+  return r && r.status === 'live' && r.implementedBy ? /** @type {string} */ (r.implementedBy) : null;
 }
 
-/** An owner as a person reads it: Us, Customer, or the other party's name. @param {{ owner: string, ownerName: string } | null} o */
-export function ownerText(o) {
-  if (!o) return '';
-  return o.owner === 'us' ? 'Us' : o.owner === 'customer' ? 'Customer' : o.ownerName || 'Other';
+/** Who implements a control, as a person reads it: OEM, HighCom or Customer; empty when not set. @param {string | null} by */
+export function implementedByText(by) {
+  return by ? IMPLEMENTER_WORD[/** @type {'oem'} */ (by)] ?? '' : '';
 }
 
 /**
- * Every hazard on a platform that uses a control: as an additional control (with its kind and
- * status there) or as an existing control (with its kind), by hazard number.
+ * Every hazard on a platform the control is on for, with its kind and status there, by hazard number.
  * @param {Data} data @param {string} controlId @param {string} platformId
  */
 export function controlOnPlatform(data, controlId, platformId) {
   const onPlatform = new Set(live(data, 'hazardPlatform').filter((l) => l.platformId === platformId).map((l) => l.hazardId));
-  const additional = live(data, 'hazardControl').filter((l) => l.controlId === controlId && onPlatform.has(l.hazardId)).map((l) => ({
-    hazard: /** @type {Rec} */ (get(data, 'hazard', l.hazardId)), role: 'additional', kind: /** @type {string} */ (l.kind), ...controlState(data, l.hazardId, controlId, platformId),
-  }));
-  const existing = live(data, 'existingControl').filter((l) => l.controlId === controlId && l.platformId === platformId).map((l) => ({
-    hazard: /** @type {Rec} */ (get(data, 'hazard', l.hazardId)), role: 'existing', kind: /** @type {string} */ (l.kind), state: null, ruling: null,
-  }));
-  return [...additional, ...existing].sort((a, b) => byNumber(a.hazard, b.hazard) || (a.role < b.role ? -1 : 1));
+  return live(data, 'hazardControl').filter((l) => l.controlId === controlId && onPlatform.has(l.hazardId) && !controlOff(data, l.hazardId, controlId, platformId))
+    .map((l) => {
+      const row = /** @type {ReturnType<typeof controlsOnPlatform>[number]} */ (controlsOnPlatform(data, l.hazardId, platformId).find((c) => c.control.id === controlId));
+      return { hazard: /** @type {Rec} */ (get(data, 'hazard', l.hazardId)), kind: row.kind, state: row.state, ruling: row.ruling };
+    })
+    .sort((a, b) => byNumber(a.hazard, b.hazard));
 }

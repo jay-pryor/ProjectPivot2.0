@@ -4,6 +4,7 @@ import { systemClock } from './core/time.js';
 import { viewableType } from './ui/files.js';
 import { playSplash } from './ui/splash.js';
 import { rememberFolder, recallFolder } from './ui/folder-memory.js';
+import { prepareImage } from './ui/image.js';
 
 /** localStorage can be missing or refused by policy; the mirror reports that as a warning. */
 function browserStorage() {
@@ -24,6 +25,7 @@ const controller = createController({
   storage: browserStorage(),
   pickFolder: () => w.showDirectoryPicker({ mode: 'readwrite', id: 'pivot-data' }),
   pickSaveFile: (suggestedName) => w.showSaveFilePicker({ suggestedName }),
+  prepareImage,
   pickOpenFile: async () => {
     const [h] = await w.showOpenFilePicker({ types: [{ description: 'Pivot data file', accept: { 'application/json': ['.json'] } }] });
     return (await h.getFile()).text();

@@ -5,10 +5,10 @@ import * as store from '../storage/store.js';
 import { writeMirror, readMirror, clearMirror, hasUnsaved, hasUnsavedRecords, restoreReportDocuments } from '../storage/mirror.js';
 import { PivotError } from '../core/errors.js';
 import { newId } from '../core/ids.js';
-import { deleteName } from './screens/common.js';
-import { emptyData, NUMBERED } from '../core/data.js';
+import { deleteName, bundlePage } from './screens/common.js';
+import { emptyData, NUMBERED, need, normalizeData } from '../core/data.js';
 import { epochOf, aestDate, systemClock } from '../core/time.js';
-import { entries, unseenOverrides, markNoticesSeen, addComment } from '../core/history.js';
+import { entries, unseenOverrides, markNoticesSeen, addComment, createBundle, unbundle, renameBundle, deleteHistory, restoreHistory } from '../core/history.js';
 import * as hazards from '../core/ops/hazards.js';
 import * as controls from '../core/ops/controls.js';
 import * as platforms from '../core/ops/platforms.js';
@@ -17,6 +17,8 @@ import * as reviews from '../core/ops/reviews.js';
 import * as acks from '../core/acks.js';
 import * as references from '../core/ops/references.js';
 import * as phases from '../core/ops/phases.js';
+import * as platformGroups from '../core/ops/platform-groups.js';
+import * as facets from '../core/ops/facets.js';
 import * as safetyReports from '../core/ops/safety-reports.js';
 import * as bowtieViews from '../core/ops/bowtie-views.js';
 import { bowtieOf, canSee, normalizeFilters, DEFAULT_FILTERS, hazardName } from '../core/bowtie.js';
@@ -26,8 +28,9 @@ import { setReportDesign } from '../core/ops/reports.js';
 import { createDocHost } from '../reports/docgen-host.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
 import { recordName, profileName, KIND_LABEL } from './names.js';
-import { THEMES, MIN_COLUMN_WIDTH, activeProfile } from './prefs.js';
+import { THEMES, MIN_COLUMN_WIDTH, activeProfile, favouritesOf, samePage, FAVOURITE_LAYOUTS, COMING_UP_WINDOWS } from './prefs.js';
 import { mergeData } from '../core/merge.js';
+import { unlistedEntries, listPlatformGroups } from '../core/queries.js';
 
 /** Every edit is an op called with the working data, the act, and the action's own fields. */
 const EDITS = {
@@ -35,36 +38,43 @@ const EDITS = {
   deleteHazard: hazards.deleteHazard, restoreRecord: hazards.restoreRecord,
   addCausalFactor: hazards.addCausalFactor, updateCausalFactor: hazards.updateCausalFactor, deleteCausalFactor: hazards.deleteCausalFactor,
   addConsequence: hazards.addConsequence, updateConsequence: hazards.updateConsequence, deleteConsequence: hazards.deleteConsequence,
+  addFailureMode: hazards.addFailureMode, updateFailureMode: hazards.updateFailureMode, deleteFailureMode: hazards.deleteFailureMode,
   addSystemElement: hazards.addSystemElement, updateSystemElement: hazards.updateSystemElement, deleteSystemElement: hazards.deleteSystemElement,
   addAffectedGroup: hazards.addAffectedGroup, updateAffectedGroup: hazards.updateAffectedGroup, deleteAffectedGroup: hazards.deleteAffectedGroup,
-  createControl: controls.createControl, copyControlAs: controls.copyControlAs, updateControl: controls.updateControl, retireControl: controls.retireControl,
+  createControl: controls.createControl, updateControl: controls.updateControl, retireControl: controls.retireControl,
   deleteControl: controls.deleteControl, linkControl: controls.linkControl, setControlKind: controls.setControlKind,
-  unlinkControl: controls.unlinkControl, setControlAnalysis: controls.setControlAnalysis, setControlOwner: controls.setControlOwner,
-  linkExistingControl: controls.linkExistingControl, unlinkExistingControl: controls.unlinkExistingControl, setExistingControlKind: controls.setExistingControlKind,
+  unlinkControl: controls.unlinkControl, setControlAnalysis: controls.setControlAnalysis, setImplementedBy: controls.setImplementedBy,
+  addControlHere: controls.addControlHere, removeControlHere: controls.removeControlHere, createControlOn: controls.createControlOn,
+  setControlKindOnPlatform: controls.setControlKindOnPlatform, setControlTargets: controls.setControlTargets,
   createPlatform: platforms.createPlatform, updatePlatform: platforms.updatePlatform, setOwner: platforms.setOwner,
   retirePlatform: platforms.retirePlatform, deletePlatform: platforms.deletePlatform, linkHazard: platforms.linkHazard,
-  unlinkHazard: platforms.unlinkHazard, setReportId: platforms.setReportId,
+  unlinkHazard: platforms.unlinkHazard, setReportId: platforms.setReportId, setPlatformImage: platforms.setPlatformImage,
   setControlStatus: assessment.setControlStatus, setRating: assessment.setRating,
   setAssessment: assessment.setAssessment, copyStageRisk: assessment.copyStageRisk, setSfarp: assessment.setSfarp,
+  setImplementationStatus: assessment.setImplementationStatus, copyControls: assessment.copyControls, copySfarp: assessment.copySfarp,
   setSchedule: reviews.setSchedule, startReview: reviews.startReview, markRow: reviews.markRow,
   setReviewOutcome: reviews.setReviewOutcome, setReviewNotes: reviews.setReviewNotes, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
-  retireReference: references.retireReference, deleteReference: references.deleteReference,
+  retireReference: references.retireReference, setReferenceArchived: references.setReferenceArchived, deleteReference: references.deleteReference,
   createPhase: phases.createPhase, renamePhase: phases.renamePhase, retirePhase: phases.retirePhase, deletePhase: phases.deletePhase,
   linkPhase: phases.linkPhase, unlinkPhase: phases.unlinkPhase,
-  createSafetyReport: safetyReports.createSafetyReport, updateSafetyReport: safetyReports.updateSafetyReport, deleteSafetyReport: safetyReports.deleteSafetyReport,
-  linkReference: references.linkReference, unlinkReference: references.unlinkReference,
+  createPlatformGroup: platformGroups.createPlatformGroup, renamePlatformGroup: platformGroups.renamePlatformGroup, deletePlatformGroup: platformGroups.deletePlatformGroup,
+  tagPlatform: platformGroups.tagPlatform, untagPlatform: platformGroups.untagPlatform,
+  createFacetOption: facets.createFacetOption, renameFacetOption: facets.renameFacetOption, deleteFacetOption: facets.deleteFacetOption,
+  setOptionGroup: facets.setOptionGroup, restoreDeletion: facets.restoreDeletion, assignOptionsToGroup: facets.assignToGroup,
+  createSafetyReport: safetyReports.createSafetyReport, updateSafetyReport: safetyReports.updateSafetyReport, deleteSafetyReport: safetyReports.deleteSafetyReport, moveSafetyReport: safetyReports.moveSafetyReport,
+  linkReference: references.linkReference, unlinkReference: references.unlinkReference, unlinkReferenceFrom: references.unlinkReferenceFrom,
   createBowtieView: bowtieViews.createBowtieView, updateBowtieView: bowtieViews.updateBowtieView,
   setBowtieSharing: bowtieViews.setBowtieSharing, deleteBowtieView: bowtieViews.deleteBowtieView,
-  addComment, deleteReport,
+  addComment, createBundle, unbundle, renameBundle, deleteHistory, restoreHistory, deleteReport,
 };
 
 /** After creating one of these, show it. */
-const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', copyControlAs: 'control', createPlatform: 'platform', createReference: 'reference' };
+const SHOW_CREATED = { createHazard: 'hazard', createControl: 'control', createPlatform: 'platform', createReference: 'reference' };
 
 /** The section a page's rail opens until another is chosen; it matches the page's own fallback. */
-const DEFAULT_SECTION = { ssra: 'initial', hazard: 'controls', openItems: 'acks', control: 'usage', existingControl: 'existing', platform: 'hazards' };
+const DEFAULT_SECTION = { info: 'groups', ssra: 'initial', hazard: 'controls', openItems: 'acks', control: 'usage', platform: 'hazards' };
 
 /** How many pages Back can step through. */
 const HISTORY_LIMIT = 50;
@@ -75,8 +85,9 @@ const sameView = (a, b) => ['name', 'id', 'tab', 'reviewId', 'hazardId', 'platfo
 const BACKUP_CHECK_MS = 60_000;
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
-const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
-  'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneSet', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'showSection', 'goBack', 'viewBowtie', 'askConfirm', 'confirmCancel', 'confirmContinue',
+const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
+  'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'setBowtieLayout', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
+  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup',
 ]);
 
 export function initialState() {
@@ -87,7 +98,8 @@ export function initialState() {
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
-    workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], sections: {}, viewHistory: [], confirm: null,
+    workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null,
+    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null },
   };
 }
 
@@ -96,6 +108,7 @@ export function initialState() {
  *   pickFolder: () => Promise<FileSystemDirectoryHandle>,
  *   pickSaveFile: (name: string) => Promise<FileSystemFileHandle>,
  *   pickOpenFile: () => Promise<string>, minSaveMs?: number,
+ *   prepareImage?: (file: File) => Promise<{ blob: Blob, name: string, type: string }>,
  *   openFile?: (file: File, name: string) => void, copyText?: (text: string) => Promise<void>,
  *   rememberFolder?: (handle: FileSystemDirectoryHandle) => Promise<void>, recallFolder?: () => Promise<any> }} env  minSaveMs: shortest time a save shows as saving (default 900)
  */
@@ -243,6 +256,16 @@ export function createController(env) {
     return p;
   }
 
+  /** Turn one of a window's switches (each off when present) on or off. @param {unknown} side @param {'hideTags' | 'hideGaps'} flag */
+  function togglePane(side, flag) {
+    const p = paneAt(side);
+    const i = paneIndex(side);
+    const { [flag]: on, ...rest } = p;
+    const panes = /** @type {[import('./workspace.js').Pane | null, import('./workspace.js').Pane | null]} */ ([...state.workspace.panes]);
+    panes[i] = on ? rest : { ...rest, [flag]: true };
+    setWorkspace({ panes, lastUsed: i });
+  }
+
   /**
    * Put a window on the Bow-ties stage; if it would replace a window with unsaved choices, ask first.
    * @param {0 | 1 | 'last'} side @param {import('./workspace.js').Pane} pane
@@ -329,7 +352,8 @@ export function createController(env) {
     async recover() {
       if (!state.recoverable) return;
       const m = restoreReportDocuments(state.recoverable, state.session.base);
-      set({ session: { base: m.base, working: m.working, loadedStamp: m.loadedStamp }, recoverable: null });
+      // Kept by an earlier version, it is brought up to date as data opened from the folder is.
+      set({ session: { base: normalizeData(m.base), working: normalizeData(m.working), loadedStamp: m.loadedStamp }, recoverable: null });
       await afterChange();
       finishOpening();
     },
@@ -367,8 +391,16 @@ export function createController(env) {
     async dismissMessage() {
       set({ message: null });
     },
+    // Closing the Undo offer: what was deleted stays deleted.
+    async dismissUndo() {
+      set({ undo: null });
+    },
+    async dismissWarning({ index }) {
+      set({ warnings: (state.warnings ?? []).filter((/** @type {string} */ _w, /** @type {number} */ i) => i !== Number(index)) });
+    },
     async go({ view, id, hazardId, platformId, tab, reviewId }) {
-      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null, confirmDelete: null });
+      // Leaving a control being made, untitled, makes nothing.
+      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null, confirmDelete: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
       if (view === 'references') await handlers.checkReferenceFiles();
       if (view === 'reference') await handlers.checkReferenceFiles({ id });
@@ -404,6 +436,15 @@ export function createController(env) {
           records[kind] = recs;
           working = { ...working, [counter]: /** @type {any} */ (r.data)[counter] };
         }
+        // So do the platform letters and safety report IDs it gave.
+        for (const [kind, field] of [['hazardPlatform', 'letter'], ['safetyReport', 'reportNos']]) {
+          const recs = { ...records[kind] };
+          for (const rec of Object.values(recs)) {
+            const saved = r.data.records[kind]?.[rec.id]?.[field];
+            if (saved !== undefined && JSON.stringify(saved) !== JSON.stringify(rec[field]) && (rec[field] == null || (Array.isArray(saved) && saved.length > (rec[field]?.length ?? 0)))) recs[rec.id] = { ...rec, [field]: saved };
+          }
+          records[kind] = recs;
+        }
         working = { ...working, records };
       }
       set({ session: { base: r.data, working, loadedStamp: r.stamp } });
@@ -422,6 +463,38 @@ export function createController(env) {
     async setTheme({ theme }) {
       if (!THEMES.includes(theme)) throw new PivotError('prefs.theme', `There is no ${theme} theme.`);
       await savePrefs({ theme });
+    },
+    // Star a page, or take its star away: kept on the profile, so each person has their own.
+    async toggleFavourite({ page, id, tab }) {
+      if (!page) return;
+      const key = { name: String(page), id: id ? String(id) : null, tab: tab && tab !== 'details' ? String(tab) : null };
+      const list = favouritesOf(state);
+      const starred = list.some((f) => samePage(f, key));
+      await savePrefs({ favourites: starred ? list.filter((f) => !samePage(f, key)) : [...list, key] });
+    },
+    // Favourite pages in a new order: the one at `from` moved to where `to` is.
+    async moveFavourite({ from, to }) {
+      const list = favouritesOf(state);
+      const i = Number(from);
+      const j = Number(to);
+      if (!Number.isInteger(i) || !Number.isInteger(j) || i === j || !list[i] || j < 0 || j >= list.length) return;
+      const next = [...list];
+      const [moved] = next.splice(i, 1);
+      next.splice(j, 0, moved);
+      await savePrefs({ favourites: next });
+    },
+    async setComingUpDays({ days }) {
+      const n = Number(days);
+      if (!COMING_UP_WINDOWS.some(([d]) => d === n)) return;
+      await savePrefs({ comingUpDays: n });
+    },
+    async setFavouriteLayout({ layout }) {
+      if (!FAVOURITE_LAYOUTS.includes(layout)) return;
+      await savePrefs({ favouriteLayout: layout });
+    },
+    // Edit turns on dragging to reorder; it is only on screen, so it ends on leaving Home.
+    async toggleFavouriteEdit() {
+      set({ favouritesEditing: !state.favouritesEditing });
     },
     async setColumnWidth({ table, column, width }) {
       const px = Math.max(MIN_COLUMN_WIDTH, Math.round(Number(width)));
@@ -447,8 +520,8 @@ export function createController(env) {
       if (value) filters[key] = value; else delete filters[key];
       set({ tables: { ...state.tables, [table]: { ...t, filters } } });
     },
-    async openPicker({ picker, hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field, controlId }) {
-      const extra = { hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field, controlId };
+    async openPicker({ picker, hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field, controlId, part, existing }) {
+      const extra = { hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field, controlId, part, existing };
       set({ picker: { picker, ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v)) } });
     },
     async addReference({ title, url, path, file }) {
@@ -465,6 +538,17 @@ export function createController(env) {
       if (!f) throw new PivotError('reference.file', 'Choose a file to upload.');
       await applyEdit('attachFile', { id, file: await storeFile(id, 1 + (r.file ? 1 : 0) + r.pastFiles.length, f) });
       await handlers.checkReferenceFiles({ id });
+    },
+    // A platform's image: its background taken away and squared (in the browser), then copied into
+    // the folder, and the platform pointed at it.
+    async addPlatformImage({ id, file }) {
+      if (!handle) throw new PivotError('no-data', 'Open the data folder first.');
+      need(/** @type {any} */ (state.session?.working), 'platform', id);
+      const f = chosenFile(file);
+      if (!f) throw new PivotError('image.type', 'Choose a PNG or SVG image.');
+      const img = env.prepareImage ? await env.prepareImage(f) : { blob: f, name: f.name, type: f.type };
+      const stored = await store.storePlatformImage(handle, id, img.blob, img.name);
+      await applyEdit('setPlatformImage', { id, image: { stored, name: img.name, type: img.type, addedBy: /** @type {string} */ (state.profileId), addedAt: env.clock.now() } });
     },
     async openReferenceFile({ stored }) {
       if (!handle) throw new PivotError('no-data', 'Open the data folder first.');
@@ -507,29 +591,34 @@ export function createController(env) {
       }
       set({ picker: null });
     },
-    /** From a control's side: link an additional control to the hazards ticked, each with its kind. */
+    /** From a control's side: link the control to the hazards ticked, each with its kind. */
     async linkControlToHazards(args) {
       for (const hazardId of list(args.hazardId)) {
         await applyEdit('linkControl', { hazardId, controlId: args.controlId, kind: args[`kind:${hazardId}`] || 'preventative' });
       }
       set({ picker: null });
     },
-    /** From a control's side: put an existing control in place for the hazards ticked, each on its platform. */
-    async placeExistingControl(args) {
-      for (const pair of list(args.pair)) {
-        const [hazardId, platformId] = String(pair).split('|');
-        await applyEdit('linkExistingControl', { hazardId, platformId, controlId: args.controlId, kind: args[`kind:${pair}`] || 'preventative' });
-      }
-      set({ picker: null });
-    },
-    async linkExistingControls(args) {
+    /** From a hazard's platform tab: add the controls ticked there, each with its kind, and any new one typed under Add new. */
+    async addControlsHere(args) {
       for (const controlId of list(args.controlId)) {
-        await applyEdit('linkExistingControl', { hazardId: args.hazardId, platformId: args.platformId, controlId, kind: args[`kind:${controlId}`] || 'preventative' });
+        await applyEdit('addControlHere', { hazardId: args.hazardId, platformId: args.platformId, controlId, kind: args[`kind:${controlId}`] || 'preventative' });
       }
+      const title = String(args.newTitle ?? '').trim();
+      if (title) await applyEdit('createControlOn', { title, hazardId: args.hazardId, platformId: args.platformId, kind: args.newKind || 'preventative' });
       set({ picker: null });
     },
     async linkPhases(args) {
       for (const phaseId of list(args.phaseId)) await applyEdit('linkPhase', { hazardId: args.hazardId, phaseId });
+      set({ picker: null });
+    },
+    /** Make every entry given on hazards for a facet, not yet among its options, an option. */
+    async addUnlistedOptions({ facet }) {
+      const d = state.session?.working;
+      if (!d) return;
+      for (const e of unlistedEntries(d, facet)) await applyEdit('createFacetOption', { facet, name: e.text });
+    },
+    async tagPlatforms(args) {
+      for (const groupId of list(args.groupId)) await applyEdit('tagPlatform', { platformId: args.platformId, groupId });
       set({ picker: null });
     },
     async linkPlatforms(args) {
@@ -543,8 +632,21 @@ export function createController(env) {
       await applyEdit('setAssessment', { hazardId, platformId, stage, receptor, [field]: source[field] });
       set({ picker: null });
     },
-    async copyStage({ hazardId, platformId, stage, from }) {
-      await applyEdit('copyStageRisk', { hazardId, platformId, stage, from });
+    // What a control prevents or mitigates, from its picker: none ticked clears them.
+    async saveControlTargets({ hazardId, platformId, controlId, targets }) {
+      await applyEdit('setControlTargets', { hazardId, platformId, controlId, targets: list(targets) });
+      set({ picker: null });
+    },
+    // Copy from another platform of the hazard: its controls (with their statuses) or SFARP.
+    async copyPlatformPart({ part, hazardId, platformId, from }) {
+      const op = { controls: 'copyControls', sfarp: 'copySfarp' }[/** @type {'controls'} */ (part)];
+      if (!op) return;
+      await applyEdit(op, { hazardId, platformId, from });
+      set({ picker: null });
+    },
+    async copyStage({ hazardId, platformId, stage, from, withWhy }) {
+      // A tick sends its value only when ticked: not there means leave the justifications.
+      await applyEdit('copyStageRisk', { hazardId, platformId, stage, from, withWhy: withWhy === 'true' });
       set({ picker: null });
     },
     async linkHazards(args) {
@@ -692,6 +794,61 @@ export function createController(env) {
       set({ confirm: null });
       if (action) await dispatch(action);
     },
+    // Bundle mode on a history tab: rows can be chosen and confirmed as one bundle. It belongs to
+    // the page it was turned on for, so leaving the page ends it.
+    async toggleBundling() {
+      const here = bundlePage(state.view);
+      set({ bundling: state.bundling === here ? null : here });
+    },
+    // Info's tools. Assign to platform group: choose a group, then rows (see assignSelect in
+    // mount.js), then Confirm. View setup: which platform groups are shown, and whether the table
+    // is displayed by platform group. Both are this session's alone.
+    async startAssignToGroup({ facet, groupId }) {
+      if (!groupId) throw new PivotError('empty', 'Choose a platform group first.');
+      set({ infoTools: { ...state.infoTools, assigning: { facet, groupId }, groupId } });
+    },
+    /** The group chosen in Assign to platform group stays chosen until another is. */
+    async chooseAssignGroup({ groupId }) {
+      set({ infoTools: { ...state.infoTools, groupId: groupId || null } });
+    },
+    async cancelAssignToGroup() {
+      set({ infoTools: { ...state.infoTools, assigning: null } });
+    },
+    async assignToGroup({ facet, groupId, optionIds }) {
+      await applyEdit('assignOptionsToGroup', { facet, groupId, optionIds });
+      set({ infoTools: { ...state.infoTools, assigning: null } });
+    },
+    async toggleInfoGroup({ groupId, on }) {
+      const hidden = (state.infoTools.hidden ?? []).filter((/** @type {string} */ g) => g !== groupId);
+      set({ infoTools: { ...state.infoTools, hidden: on === 'true' ? hidden : [...hidden, groupId] } });
+    },
+    async showInfoGroups({ all }) {
+      const groups = ['all', ...(state.session ? listPlatformGroups(state.session.working).map((g) => g.id) : [])];
+      set({ infoTools: { ...state.infoTools, hidden: all === 'true' ? [] : groups } });
+    },
+    async toggleInfoByGroup() {
+      set({ infoTools: { ...state.infoTools, byGroup: !state.infoTools.byGroup } });
+    },
+    async toggleBundleOpen({ id }) {
+      const open = state.openBundles ?? [];
+      set({ openBundles: open.includes(id) ? open.filter((x) => x !== id) : [...open, id] });
+    },
+    // + on the Controls page: a new control's page, as a draft until it has a title.
+    async newControl() {
+      await handlers.go({ view: 'newControl' });
+      set({ draftControl: { title: '', description: '', tier: '', kind: 'preventative', origin: '' } });
+    },
+    async setControlDraft({ field, value, kind }) {
+      const d = state.draftControl;
+      if (!d || !['tier', 'kind', 'origin', 'description'].includes(field)) return;
+      set({ draftControl: { ...d, [field]: field === 'kind' ? kind ?? value : value } });
+    },
+    async createDraftControl({ title }) {
+      const d = state.draftControl;
+      if (!d || !String(title ?? '').trim()) return;
+      await applyEdit('createControl', { title, description: d.description, tier: d.tier || null, kind: d.kind, origin: d.origin });
+      set({ draftControl: null });
+    },
     async toggleBowtieDetails({ id }) {
       const shown = state.bowtieDetails ?? [];
       set({ bowtieDetails: shown.includes(id) ? shown.filter((x) => x !== id) : [...shown, id] });
@@ -711,6 +868,23 @@ export function createController(env) {
       setWorkspace(closePane(state.workspace, paneIndex(side)));
     },
     // Where a window's drawing is zoomed and moved to, once the wheel or a drag settles.
+    // Show tags: the badges on a window's control boxes, on or off for that window.
+    async toggleBowtieTags({ side }) {
+      togglePane(side, 'hideTags');
+    },
+    // Show gaps: the mark on causal factors and consequences no control stands against.
+    async toggleBowtieGaps({ side }) {
+      togglePane(side, 'hideGaps');
+    },
+    // The window's view: focus (each control once, joined to what it stands against) or traditional
+    // (a row for each causal factor and consequence); a newly opened window is always focus.
+    async setBowtieLayout({ side, layout }) {
+      const i = paneIndex(side);
+      const { layout: _was, ...rest } = paneAt(side);
+      const panes = /** @type {[import('./workspace.js').Pane | null, import('./workspace.js').Pane | null]} */ ([...state.workspace.panes]);
+      panes[i] = layout === 'traditional' ? { ...rest, layout: 'traditional' } : rest;
+      setWorkspace({ panes, lastUsed: i });
+    },
     async viewBowtie({ side, zoom, x, y }) {
       const i = paneIndex(side);
       const p = state.workspace.panes[i];
@@ -719,10 +893,6 @@ export function createController(env) {
       const panes = /** @type {[import('./workspace.js').Pane | null, import('./workspace.js').Pane | null]} */ ([...state.workspace.panes]);
       panes[i] = { ...rest, ...paneView(zoom, x, y) };
       setWorkspace({ panes, lastUsed: i });
-    },
-    async setPaneSet({ side, value }) {
-      const p = paneAt(side);
-      setWorkspace(updatePane(state.workspace, paneIndex(side), { filters: normalizeFilters({ ...p.filters, set: value }) }));
     },
     async setPaneStatus({ side, status, on }) {
       const p = paneAt(side);
@@ -776,7 +946,7 @@ export function createController(env) {
       if (!b.ok) throw new PivotError('bowtie.cannot-draw', /** @type {import('../core/bowtie.js').Cannot} */ (b).message);
       const base = `${hazardName(b.hazard)} ${b.platform.name} bow-tie`.replace(/[^A-Za-z0-9._-]+/g, '-');
       const file = await env.pickSaveFile(`${base}.svg`);
-      await store.writeExport(file, bowtieSvg(b));
+      await store.writeExport(file, bowtieSvg(b, { tags: !p.hideTags, gaps: !p.hideGaps, layout: p.layout ?? 'focus' }));
       set({ message: { kind: 'info', text: `Saved ${file.name}.` } });
     },
   };
@@ -810,7 +980,7 @@ export function createController(env) {
     const from = openedAt && acks.ackStart(current) === null ? acks.startAcks(current, { by: /** @type {string} */ (state.profileId), at: openedAt }) : current;
     const next = EDITS[/** @type {keyof typeof EDITS} */ (type)](from, act(), /** @type {any} */ (args));
     const working = next === from ? current : next;
-    set({ session: { ...state.session, working }, message: null, editing: null });
+    set({ session: { ...state.session, working }, message: null, editing: null, ...(type === 'createBundle' ? { bundling: null } : {}) });
     if (shows) set({ view: { name: shows, id: args.id } });
     await afterChange();
   }
@@ -844,6 +1014,11 @@ export function createController(env) {
   return {
     getState: () => state,
     dispatch,
+    /** A file stored in the data folder (a platform's image), for showing on screen. @param {string} stored */
+    async readStoredFile(stored) {
+      if (!handle) throw new PivotError('no-data', 'Open the data folder first.');
+      return store.openReferenceFile(handle, stored);
+    },
     /** @param {(s: any) => void} fn */
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   };

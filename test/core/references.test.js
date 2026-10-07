@@ -93,7 +93,7 @@ test('a new file replaces the current one, which is kept as a past file', () => 
 });
 
 test('linking to each kind of record, once; unlinking; deleting a reference only when nothing is linked', () => {
-  assert.deepEqual(TARGET_KINDS, ['hazard', 'causalFactor', 'consequence', 'control', 'platform']);
+  assert.deepEqual(TARGET_KINDS, ['hazard', 'causalFactor', 'consequence', 'hazardPhase', 'failureMode', 'systemElement', 'affectedGroup', 'control', 'platform']);
   let d = made();
   for (const [k, t] of [['hazard', 'h1'], ['causalFactor', 'cf1'], ['consequence', 'cq1'], ['control', 'c1'], ['platform', 'p1']]) d = linkReference(d, act, { referenceId: 'r1', targetKind: k, targetId: t });
   assert.equal(Object.values(d.records.referenceLink).filter((l) => l.status === 'live').length, 5);

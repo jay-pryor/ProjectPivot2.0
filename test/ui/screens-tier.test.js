@@ -28,14 +28,14 @@ test('a control page shows only its tier until clicked, then every tier slides o
 });
 
 test('control, hazard and platform pages head with their number and the page you are on', () => {
-  assert.match(controlView(state, data(), 'c1').toString(), /<h1 class="doc-page"><span class="doc-id">C-001<\/span> <span class="doc-page-sep" aria-hidden="true">—<\/span> Overview<\/h1>[\s\S]*?<span class="field-label">Additional control<\/span>/);
+  assert.match(controlView(state, data(), 'c1').toString(), /<h1 class="doc-page"><span class="doc-id">C-001<\/span> <span class="doc-page-sep" aria-hidden="true">—<\/span> Overview<\/h1>[\s\S]*?<span class="field-label">Control<\/span>/);
   assert.match(controlView({ ...state, view: { name: 'control', id: 'c1', tab: 'history' } }, data(), 'c1').toString(), /C-001<\/span> <span[^>]*>—<\/span> History<\/h1>/);
   const h = hazardView({ ...state, view: { name: 'hazard', id: 'h1', tab: 'p:p1' } }, data(), 'h1').toString();
   assert.match(h, /HAZ-001<\/span> <span[^>]*>—<\/span> Alpha<\/h1>[\s\S]*?<span class="field-label">Hazard<\/span>/);
   assert.match(platformView({ ...state, view: { name: 'platform', id: 'p1', tab: 'reviews' } }, data(), 'p1').toString(), /<span class="doc-id">[^<]+<\/span> <span[^>]*>—<\/span> Reviews<\/h1>[\s\S]*?<span class="field-label">Platform<\/span>/);
   assert.doesNotMatch(h, /class="back"/, 'the page leaves Back to the shell');
   const back = shell({ ...state, view: { name: 'hazard', id: 'h1' }, viewHistory: [{ name: 'platform', id: 'p1' }], session: { base: data(), working: data(), loadedStamp: null } }, html``).toString();
-  assert.match(back, /<button type="button" class="back" data-action="goBack" title="Back to Alpha"><span aria-hidden="true">←<\/span> Back<span class="back-to"> to Alpha<\/span><\/button>/);
+  assert.match(back, /<button type="button" class="back" data-action="goBack" title="Back to P-001 — Details"><span aria-hidden="true">←<\/span> Back<span class="back-to"> to P-001 — Details<\/span><\/button>/, 'a numbered record\'s page by its own title');
   assert.match(shell({ ...state, view: { name: 'hazards' } }, html``).toString(), /class="back" data-action="goBack" disabled/, 'nothing to go back to yet');
 });
 

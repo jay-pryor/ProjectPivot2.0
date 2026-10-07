@@ -1,11 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PivotError } from '../../src/core/errors.js';
-import { KINDS, emptyData, normalizeData, put, created } from '../../src/core/data.js';
+import { KINDS, put, created } from '../../src/core/data.js';
 import { ids } from '../../src/core/ids.js';
 import { entries } from '../../src/core/history.js';
 import { checkRules } from '../../src/core/rules.js';
-import { mergeData } from '../../src/core/merge.js';
 import { RECEPTORS, STAGES, setAssessment, setRating, setSfarp } from '../../src/core/ops/assessment.js';
 import { unlinkHazard, linkHazard } from '../../src/core/ops/platforms.js';
 import { assessmentOf, ratingsOf, ratingOf, sfarpOf, platformsReached, bandOf, platformHazards, hazardRows, openItems, platformCards, worseBand, filterHazards } from '../../src/core/queries.js';
@@ -72,28 +71,6 @@ test('unlinking clears assessments and SFARP; linking back starts empty; the rul
   assert.deepEqual(sfarpOf(d, 'h1', 'p1').conclusion, '');
   const orphan = put(seed(), 'assessment', created(act, 'ra:h2:p1:initial:personnel', { hazardId: 'h2', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihood: 'A', consequence: 1, likelihoodWhy: '', consequenceWhy: '' }));
   assert.deepEqual(checkRules(orphan).map((v) => v.rule), ['assessment-without-platform-link']);
-});
-
-test('old ratings become four assessments on load, the same each time, and the rating is retired', () => {
-  const old = seed();
-  old.records.rating['rt:h1:p1'] = created(act, 'rt:h1:p1', { hazardId: 'h1', platformId: 'p1', initial: { consequence: 1, likelihood: 'B' }, residual: { consequence: 3, likelihood: 'D' } });
-  const d = normalizeData(old);
-  assert.deepEqual(ratingsOf(d, 'h1', 'p1'), {
-    initial: { personnel: { consequence: 1, likelihood: 'B' }, environment: { consequence: 1, likelihood: 'B' }, capability: null },
-    residual: { personnel: { consequence: 3, likelihood: 'D' }, environment: { consequence: 3, likelihood: 'D' }, capability: null },
-  });
-  const a = d.records.assessment['ra:h1:p1:initial:personnel'];
-  assert.deepEqual([a.createdBy, a.createdAt, a.likelihoodWhy, a.consequenceWhy], [act.by, act.at, '', '']);
-  assert.equal(d.records.rating['rt:h1:p1'].status, 'deleted');
-  assert.deepEqual(normalizeData(structuredClone(old)), d, 'converting again gives identical data');
-  assert.deepEqual(normalizeData(d), d, 'converting converted data changes nothing');
-  assert.deepEqual(checkRules(d), []);
-  const mine = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihoodWhy: 'Mine' });
-  const theirs = setAssessment(normalizeData(structuredClone(old)), later, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'environment', likelihoodWhy: 'Theirs' });
-  const { data, conflicts } = mergeData(d, mine, theirs, { by: 'u1', at: '2026-09-28T13:00:00+10:00' });
-  assert.deepEqual(conflicts, []);
-  assert.equal(data.records.assessment['ra:h1:p1:initial:personnel'].likelihoodWhy, 'Mine');
-  assert.equal(data.records.assessment['ra:h1:p1:initial:environment'].likelihoodWhy, 'Theirs');
 });
 
 test('derived views carry personnel and environment separately; one-value views take the worse', () => {

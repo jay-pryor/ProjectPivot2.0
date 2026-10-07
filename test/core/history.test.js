@@ -119,3 +119,56 @@ test('comments on a history entry: kept with who and when, listed for that entry
   assert.throws(() => addComment(d, later, { entryId: entry.id, text: ' ' }), (e) => e.code === 'empty');
   assert.throws(() => addComment(d, later, { entryId: 'nope', text: 'x' }), (e) => e.code === 'not-found');
 });
+
+/** Three edits to h1's title: a history with three changes to bundle. */
+async function threeEdits() {
+  let d = seeded();
+  for (const t of ['A', 'B', 'C']) d = commit(d, act, 'Edit hazard', [{ kind: 'hazard', rec: changed(d.records.hazard.h1, act, { title: t }) }]);
+  return { d, ids: historyOf(d, 'hazard', 'h1').map((e) => e.id) };
+}
+
+test('bundles: two or more changes, each in one bundle at a time, with an optional comment; undone with a record kept', async () => {
+  const { createBundle, unbundle, bundlesOf, commentsOn, addComment } = await import('../../src/core/history.js');
+  const { d: start, ids: [a, b, c] } = await threeEdits();
+  assert.throws(() => createBundle(start, later, { entryIds: [a] }), (e) => e.code === 'bundle', 'one is not a bundle');
+  let d = createBundle(start, later, { entryIds: [a, b], text: '  Renamed in one go ' });
+  const [bundle] = bundlesOf(d);
+  assert.deepEqual(bundle.entryIds, [a, b]);
+  assert.deepEqual(commentsOn(d, bundle.id).map((x) => x.text), ['Renamed in one go']);
+  assert.equal(historyOf(d, 'hazard', 'h1').length, 3, 'the changes stay as they are');
+  assert.throws(() => createBundle(d, later, { entryIds: [b, c] }), (e) => e.code === 'bundle', 'already in one');
+  d = addComment(d, act, { entryId: bundle.id, text: 'More' });
+  assert.equal(commentsOn(d, bundle.id).length, 2, 'a bundle takes comments later too');
+  d = unbundle(d, later, { id: bundle.id });
+  assert.deepEqual(bundlesOf(d), []);
+  assert.ok(Object.values(d.history).some((e) => e.type === 'unbundle' && e.entryId === bundle.id), 'undoing is recorded');
+  assert.equal(bundlesOf(createBundle(d, later, { entryIds: `${b},${c}` }))[0].entryIds.length, 2, 'free to bundle again');
+  // Two people bundling the same change before seeing each other's: the older bundle keeps it.
+  const mine = createBundle(start, act, { entryIds: [a, b] });
+  const theirs = createBundle(start, later, { entryIds: [b, c] });
+  const both = { ...mine, history: { ...mine.history, ...theirs.history } };
+  assert.deepEqual(bundlesOf(both).map((x) => x.entryIds), [[a, b], [c]]);
+});
+
+test('deleting from the history: a change, or a bundle with its changes, leaves the history until restored, and every deletion stays listed with who did it', async () => {
+  const { createBundle, bundlesOf, deleteHistory, restoreHistory, historyDeletions } = await import('../../src/core/history.js');
+  const { d: start, ids: [a, b, c] } = await threeEdits();
+  let d = createBundle(start, act, { entryIds: [a, b] });
+  const bundle = bundlesOf(d)[0];
+  d = deleteHistory(d, later, { entryId: c });
+  assert.deepEqual(historyOf(d, 'hazard', 'h1').map((e) => e.id), [a, b]);
+  assert.throws(() => deleteHistory(d, later, { entryId: c }), (e) => e.code === 'not-found', 'already deleted');
+  d = deleteHistory(d, act, { entryId: bundle.id });
+  assert.deepEqual(historyOf(d, 'hazard', 'h1'), [], 'the bundle goes with its changes');
+  assert.deepEqual(bundlesOf(d), []);
+  const first = historyDeletions(d).find((x) => x.entryIds.length === 1);
+  const last = historyDeletions(d).find((x) => x.entryIds.length === 3);
+  assert.deepEqual([first.by, first.entryIds, first.restored], ['u2', [c], null]);
+  assert.deepEqual([last.by, last.entryIds], ['u1', [bundle.id, a, b]]);
+  d = restoreHistory(d, later, { id: last.id });
+  assert.deepEqual(historyOf(d, 'hazard', 'h1').map((e) => e.id), [a, b]);
+  assert.deepEqual(bundlesOf(d).map((x) => x.entryIds), [[a, b]], 'the bundle is back too');
+  assert.deepEqual(historyDeletions(d).find((x) => x.id === last.id).restored, { at: later.at, by: 'u2' }, 'still listed, marked restored');
+  assert.throws(() => restoreHistory(d, later, { id: last.id }), (e) => e.code === 'not-found');
+  assert.equal(historyDeletions(d).length, 2, 'deletions are never deleted');
+});

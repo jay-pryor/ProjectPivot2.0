@@ -44,12 +44,14 @@ test('the Reviews tab states the schedule, changed in place, with a Start review
   assert.match(out, /data-action="beginReview" data-platform-id="p1"/);
   assert.match(out, /data-action="setSchedule" data-platform-id="p1"/, 'the schedule can be removed');
   assert.match(out, /class="tab[^"]*"[^>]*data-tab="reviews"/);
+  // As three cards: the schedule, the next review due (how overdue), the last review with Start review.
+  assert.match(out, /<div class="dash-grid three-even review-cards">[\s\S]*?aria-label="Review schedule"[\s\S]*?class="dash-card rv-card rv-overdue" aria-label="Next review due"[\s\S]*?\d+ days? overdue[\s\S]*?aria-label="Last reviewed"[\s\S]*?Never[\s\S]*?class="primary rv-action" data-action="beginReview" data-platform-id="p1">Start review/);
 });
 
-test('without a schedule: a Set schedule link, which opens a small form', () => {
+test('without a schedule: a Set schedule button on the Review schedule card, which opens a small form', () => {
   const out = platformView(onTab(), seed(), 'p1').toString();
-  assert.match(out, /No review schedule/);
-  assert.match(out, /data-action="startEdit" data-kind="schedule" data-id="p1"/);
+  assert.match(out, /aria-label="Review schedule"><h3 class="dash-card-h">Review schedule<\/h3><div class="rv-big muted">No schedule<\/div>/);
+  assert.match(out, /<button type="button" class="primary rv-action" data-action="startEdit" data-kind="schedule" data-id="p1">Set schedule<\/button>/);
   const editing = platformView({ ...onTab(), editing: { kind: 'schedule', id: 'p1' } }, seed(), 'p1').toString();
   assert.match(editing, /<form data-action="setSchedule" data-platform-id="p1"[\s\S]*?name="months"[\s\S]*?name="due"/);
 });

@@ -1,4 +1,5 @@
 import { hazardLabel } from '../core/ids.js';
+import { safetyReportId } from '../core/ops/report-ids.js';
 
 /** @param {string} s */
 const cap = (s) => `${s[0].toUpperCase()}${s.slice(1)}`;
@@ -8,9 +9,10 @@ export const KIND_LABEL = Object.freeze({
   platform: 'Platform', hazardControl: 'Control link', hazardPlatform: 'Platform link',
   ruling: 'Control decision', rating: 'Rating', report: 'Report', reportDesign: 'Report design',
   review: 'Review', reviewRow: 'Review row', reference: 'Reference', referenceLink: 'Reference link',
-  assessment: 'Risk assessment', sfarp: 'SFARP considerations', existingControl: 'Existing control',
-  phase: 'Lifecycle phase', hazardPhase: 'Lifecycle phase link', safetyReport: 'Safety report', controlPlatform: 'Control owner',
-  bowtieView: 'Bow-tie view', systemElement: 'System/Element', affectedGroup: 'Affected group',
+  assessment: 'Risk assessment', sfarp: 'SFARP considerations',
+  phase: 'Lifecycle phase', hazardPhase: 'Lifecycle phase link', safetyReport: 'Safety report', implementer: 'Control owner', implementationStatus: 'Implementation status', controlOn: 'Control on platform',
+  bowtieView: 'Bow-tie view', systemElement: 'System/Element', affectedGroup: 'Affected group', failureMode: 'Element failure mode',
+  platformGroup: 'Platform group', platformGroupLink: 'Platform group tag', facetOption: 'Facet option', optionGroup: 'Option in platform group',
 });
 
 /**
@@ -28,13 +30,20 @@ export function recordName(kind, rec, data) {
     const platform = data.records.platform?.[rec.platformId]?.name ?? '';
     switch (kind) {
       case 'hazardControl': return `${control} for ${hazard}`;
-      case 'ruling':
-      case 'existingControl': return `${control} for ${hazard} on ${platform}`;
+      case 'implementationStatus': return `Implementation status of ${control} for ${hazard} on ${platform}`;
+      case 'controlOn': return `${control} for ${hazard} on ${platform}`;
+      case 'ruling': return `${control} for ${hazard} on ${platform}`;
       case 'assessment': return `${cap(rec.stage)} ${rec.receptor} risk of ${hazard} on ${platform}`;
       case 'sfarp': return `SFARP of ${hazard} on ${platform}`;
-      case 'controlPlatform': return `${control} on ${platform}`;
+      case 'implementer': return `${control} on ${platform}`;
       case 'hazardPhase': return `${data.records.phase?.[rec.phaseId]?.name ?? ''} for ${hazard}`;
-      case 'safetyReport': return `${rec.number || rec.summary} for ${hazard} on ${platform}`;
+      case 'optionGroup': return `${data.records[rec.optionKind]?.[rec.optionId]?.name ?? ''} in ${rec.groupId === 'all' ? 'All platforms' : data.records.platformGroup?.[rec.groupId]?.name ?? ''}`;
+      case 'platformGroupLink': return `${platform} in ${data.records.platformGroup?.[rec.groupId]?.name ?? ''}`;
+      case 'safetyReport': {
+        const sid = safetyReportId(data, rec).id;
+        return `${sid !== 'TBC' ? sid : rec.summary} for ${hazard} on ${platform}`;
+      }
+      case 'failureMode':
       case 'systemElement':
       case 'affectedGroup': return `${rec.text} for ${hazard} on ${platform}`;
       default: break;
@@ -47,10 +56,13 @@ export function recordName(kind, rec, data) {
     case 'report': return rec.title;
     case 'platform':
     case 'phase':
+    case 'platformGroup':
+    case 'facetOption':
     case 'bowtieView': return rec.name;
-    case 'safetyReport': return rec.number || rec.summary;
+    case 'safetyReport': return rec.summary;
     case 'causalFactor':
     case 'consequence':
+    case 'failureMode':
     case 'systemElement':
     case 'affectedGroup': return rec.text;
     default: return KIND_LABEL[kind] ?? kind;

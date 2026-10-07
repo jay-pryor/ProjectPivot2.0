@@ -17,11 +17,11 @@ function base() {
   return d;
 }
 
-test('createControl stores one library control with no hazard, platform or kind', () => {
+test('createControl stores one library control with no hazard or platform; its usual kind is preventative unless chosen', () => {
   const c = base().records.control.c1;
   assert.equal(c.title, 'Sprinklers');
   assert.equal(c.description, 'wet pipe');
-  assert.equal('kind' in c, false);
+  assert.equal(c.kind, 'preventative', 'its usual kind; each hazard link keeps its own');
   assert.equal('hazardId' in c, false);
 });
 

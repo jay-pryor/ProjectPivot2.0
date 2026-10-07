@@ -4,7 +4,7 @@ import { hazardsView, hazardView } from '../../src/ui/screens/hazards.js';
 import { controlsView } from '../../src/ui/screens/controls.js';
 import { platformsView, platformView } from '../../src/ui/screens/platforms.js';
 import { pickerView } from '../../src/ui/screens/picker.js';
-import { historyTable } from '../../src/ui/screens/common.js';
+import { historyTable, backButton } from '../../src/ui/screens/common.js';
 import { initialState } from '../../src/ui/controller.js';
 import { assignNumbers } from '../../src/core/ops/hazards.js';
 import { confirmControl, excludeControl, setRating } from '../../src/core/ops/assessment.js';
@@ -25,12 +25,22 @@ test('lists open with an ID column: hazards H-, controls C-, platforms P-; new r
   const controls = controlsView(state, data()).toString();
   assert.match(controls, /<th data-col="id"/);
   assert.match(controls, /C-001/);
-  assert.match(controls, /data-action="startEdit" data-kind="new-additional-control"/);
+  assert.match(controls, /<h1>Controls<\/h1><button type="button" class="plus" data-action="newControl" title="New control"/);
+  assert.doesNotMatch(controls, /data-category|<nav class="tabs">|Create as/, 'one kind of control: no sub-tabs');
   const platforms = platformsView(state, data()).toString();
   assert.match(platforms, /P-001/);
   assert.doesNotMatch(platforms, /<form data-action="createPlatform"/, 'no form until + is pressed');
   const adding = platformsView({ ...state, editing: { kind: 'newPlatform', id: 'new' } }, data()).toString();
   assert.match(adding, /<form data-action="createPlatform"[\s\S]*?name="name"[^>]*autofocus/);
+});
+
+test('Back names a numbered record\'s page by its own title, not the record\'s long name', () => {
+  const d = data();
+  const back = (prev) => backButton({ ...state, session: { base: d, working: d }, viewHistory: [prev] }).toString();
+  assert.match(back({ name: 'control', id: 'c1' }), /title="Back to C-001 — Overview"[\s\S]*?<span class="back-to"> to C-001 — Overview<\/span>/);
+  assert.doesNotMatch(back({ name: 'control', id: 'c1' }), /Sprinklers/);
+  assert.match(back({ name: 'hazard', id: 'h1', tab: 'p:p1' }), /<span class="back-to"> to HAZ-001 — Alpha<\/span>/);
+  assert.match(back({ name: 'controls' }), /<span class="back-to"> to Controls<\/span>/);
 });
 
 test('a platform page: report IDs as text, changed by double-click; calculated risk levels; control states as dropdowns', () => {

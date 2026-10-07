@@ -45,15 +45,25 @@ export function checkRules(data) {
       }
     }
   }
-  for (const kind of ['systemElement', 'affectedGroup']) {
+  for (const kind of ['failureMode', 'systemElement', 'affectedGroup']) {
     for (const r of live(data, kind)) {
       const hp = ids.hazardPlatform(r.hazardId, r.platformId);
-      if (!liveRec('hazardPlatform', hp)) out.push({ rule: `${kind}-without-platform-link`, message: `${kind === 'systemElement' ? 'A system or element' : 'An affected group'} is for a platform the hazard is not on.`, records: [{ kind, id: r.id }, { kind: 'hazardPlatform', id: hp }] });
+      if (!liveRec('hazardPlatform', hp)) out.push({ rule: `${kind}-without-platform-link`, message: `${{ failureMode: 'An element failure mode', systemElement: 'A system or element', affectedGroup: 'An affected group' }[kind]} is for a platform the hazard is not on.`, records: [{ kind, id: r.id }, { kind: 'hazardPlatform', id: hp }] });
     }
   }
   for (const r of live(data, 'causalFactor')) {
     const hp = r.platformId ? ids.hazardPlatform(r.hazardId, r.platformId) : null;
     if (hp && !liveRec('hazardPlatform', hp)) out.push({ rule: 'causalFactor-without-platform-link', message: 'A causal factor is for a platform the hazard is not on.', records: [{ kind: 'causalFactor', id: r.id }, { kind: 'hazardPlatform', id: hp }] });
+  }
+  for (const r of live(data, 'controlOn')) {
+    if (!liveRec('hazardControl', ids.hazardControl(r.hazardId, r.controlId)) || !liveRec('hazardPlatform', ids.hazardPlatform(r.hazardId, r.platformId))) {
+      out.push({ rule: 'controlOn-orphaned', message: 'A control\'s kind or links on a platform are for a control or platform the hazard no longer has.', records: [{ kind: 'controlOn', id: r.id }] });
+    }
+  }
+  for (const r of live(data, 'implementationStatus')) {
+    const hc = ids.hazardControl(r.hazardId, r.controlId);
+    const hp = ids.hazardPlatform(r.hazardId, r.platformId);
+    if (!liveRec('hazardControl', hc) || !liveRec('hazardPlatform', hp)) out.push({ rule: 'implementationStatus-orphaned', message: 'An implementation status is for a control or platform the hazard no longer has.', records: [{ kind: 'implementationStatus', id: r.id }] });
   }
   for (const r of live(data, 'ruling')) {
     const hc = ids.hazardControl(r.hazardId, r.controlId);
@@ -68,17 +78,23 @@ export function checkRules(data) {
       if (!liveRec('hazardPlatform', hp)) out.push({ rule: `${kind}-without-platform-link`, message: `A ${kind === 'sfarp' ? 'SFARP record' : 'risk assessment'} exists for a platform the hazard is not on.`, records: [{ kind, id: r.id }, { kind: 'hazardPlatform', id: hp }] });
     }
   }
-  for (const r of live(data, 'existingControl')) {
-    const hp = ids.hazardPlatform(r.hazardId, r.platformId);
-    if (!liveRec('hazardPlatform', hp)) out.push({ rule: 'existingControl-without-platform-link', message: 'An existing control is listed for a platform the hazard is not on.', records: [{ kind: 'existingControl', id: r.id }, { kind: 'hazardPlatform', id: hp }] });
-    const c = get(data, 'control', r.controlId);
-    if (!c || c.status === 'deleted') out.push({ rule: 'existingControl-control-deleted', message: 'An existing control is a control that has been deleted.', records: [{ kind: 'existingControl', id: r.id }, { kind: 'control', id: r.controlId }] });
-  }
   for (const l of live(data, 'hazardPhase')) {
     const h = get(data, 'hazard', l.hazardId);
     if (!h || h.status === 'deleted') out.push({ rule: 'hazardPhase-hazard-deleted', message: 'A lifecycle phase is ticked on a hazard that has been deleted.', records: [{ kind: 'hazardPhase', id: l.id }, { kind: 'hazard', id: l.hazardId }] });
     const p = get(data, 'phase', l.phaseId);
     if (!p || p.status === 'deleted') out.push({ rule: 'hazardPhase-phase-deleted', message: 'A hazard has a lifecycle phase that has been deleted.', records: [{ kind: 'hazardPhase', id: l.id }, { kind: 'phase', id: l.phaseId }] });
+  }
+  for (const l of live(data, 'platformGroupLink')) {
+    const p = get(data, 'platform', l.platformId);
+    if (!p || p.status === 'deleted') out.push({ rule: 'platformGroupLink-platform-deleted', message: 'A deleted platform is still in a platform group.', records: [{ kind: 'platformGroupLink', id: l.id }, { kind: 'platform', id: l.platformId }] });
+    const g = get(data, 'platformGroup', l.groupId);
+    if (!g || g.status === 'deleted') out.push({ rule: 'platformGroupLink-group-deleted', message: 'A platform is in a platform group that has been deleted.', records: [{ kind: 'platformGroupLink', id: l.id }, { kind: 'platformGroup', id: l.groupId }] });
+  }
+  for (const l of live(data, 'optionGroup')) {
+    const o = get(data, l.optionKind, l.optionId);
+    if (!o || o.status === 'deleted') out.push({ rule: 'optionGroup-option-deleted', message: 'A deleted facet option is still in a platform group.', records: [{ kind: 'optionGroup', id: l.id }, { kind: l.optionKind, id: l.optionId }] });
+    const g = l.groupId === 'all' ? { status: 'live' } : get(data, 'platformGroup', l.groupId);
+    if (!g || g.status === 'deleted') out.push({ rule: 'optionGroup-group-deleted', message: 'A facet option is in a platform group that has been deleted.', records: [{ kind: 'optionGroup', id: l.id }, { kind: 'platformGroup', id: l.groupId }] });
   }
   for (const r of live(data, 'safetyReport')) {
     const h = get(data, 'hazard', r.hazardId);
@@ -86,11 +102,11 @@ export function checkRules(data) {
     const p = get(data, 'platform', r.platformId);
     if (!p || p.status === 'deleted') out.push({ rule: 'safetyReport-platform-deleted', message: 'A safety report belongs to a platform that has been deleted.', records: [{ kind: 'safetyReport', id: r.id }, { kind: 'platform', id: r.platformId }] });
   }
-  for (const r of live(data, 'controlPlatform')) {
+  for (const r of live(data, 'implementer')) {
     const c = get(data, 'control', r.controlId);
-    if (!c || c.status === 'deleted') out.push({ rule: 'controlPlatform-control-deleted', message: 'A control owner is recorded for a control that has been deleted.', records: [{ kind: 'controlPlatform', id: r.id }, { kind: 'control', id: r.controlId }] });
+    if (!c || c.status === 'deleted') out.push({ rule: 'implementer-control-deleted', message: 'A control owner is recorded for a control that has been deleted.', records: [{ kind: 'implementer', id: r.id }, { kind: 'control', id: r.controlId }] });
     const p = get(data, 'platform', r.platformId);
-    if (!p || p.status === 'deleted') out.push({ rule: 'controlPlatform-platform-deleted', message: 'A control owner is recorded for a platform that has been deleted.', records: [{ kind: 'controlPlatform', id: r.id }, { kind: 'platform', id: r.platformId }] });
+    if (!p || p.status === 'deleted') out.push({ rule: 'implementer-platform-deleted', message: 'A control owner is recorded for a platform that has been deleted.', records: [{ kind: 'implementer', id: r.id }, { kind: 'platform', id: r.platformId }] });
   }
   // Reviews: an open review needs a live platform, and there is one at a time per platform.
   /** @type {Map<string, any>} */

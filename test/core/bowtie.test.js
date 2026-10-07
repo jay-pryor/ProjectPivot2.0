@@ -2,16 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PivotError } from '../../src/core/errors.js';
 import { assignNumbers, retireHazard, deleteHazard } from '../../src/core/ops/hazards.js';
-import { createControl, linkControl, linkExistingControl, updateControl } from '../../src/core/ops/controls.js';
+import { createControl, linkControl, addControlHere, updateControl } from '../../src/core/ops/controls.js';
 import { setControlStatus } from '../../src/core/ops/assessment.js';
 import { unlinkHazard } from '../../src/core/ops/platforms.js';
 import { DEFAULT_FILTERS, normalizeFilters, needFilters, sameFilters, filterWords, bowtieOf, hazardName } from '../../src/core/bowtie.js';
-import { seed, act, asExisting } from '../helpers.js';
+import { seed, act } from '../helpers.js';
 
 /**
  * seed(): h1 Fire (cf1, cq1, c1 Sprinklers preventative, c2 Fire drills mitigating) on p1 Alpha and p2 Bravo.
- * Here: c1 implemented on p1; c3 Hot-work permit additional preventative, rejected on p1;
- * c4 Fire doors existing preventative (Engineering) on p1; c1 is also an existing preventative control on p1.
+ * Here: c1 implemented on p1; c3 Hot-work permit preventative, rejected on p1;
+ * c4 Fire doors preventative (Engineering), added on p1 alone and implemented there.
  */
 function data() {
   let d = seed();
@@ -21,51 +21,50 @@ function data() {
   d = linkControl(d, act, { hazardId: 'h1', controlId: 'c3', kind: 'preventative' });
   d = setControlStatus(d, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'implemented' });
   d = setControlStatus(d, act, { hazardId: 'h1', controlId: 'c3', platformId: 'p1', status: 'rejected', reason: 'Not needed' });
-  d = linkExistingControl(asExisting(d, 'c4'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c4', kind: 'preventative' });
-  d = linkExistingControl(asExisting(d, 'c1'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c1', kind: 'preventative' });
+  d = addControlHere(d, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c4', kind: 'preventative' });
+  d = setControlStatus(d, act, { hazardId: 'h1', controlId: 'c4', platformId: 'p1', status: 'implemented' });
   return assignNumbers(d);
 }
 const lines = (items) => items.map((i) => `${i.control.id} ${i.tags.map((t) => t.text).join(' · ')}`.trim());
 
 test('filters: defaults, lenient normalising, strict checking, comparison and words', () => {
-  assert.deepEqual(DEFAULT_FILTERS, { set: 'all', statuses: ['recommended', 'planned', 'implemented'] });
-  assert.deepEqual(normalizeFilters(null), { set: 'all', statuses: ['recommended', 'planned', 'implemented'] });
-  assert.deepEqual(normalizeFilters({ set: 'nope', statuses: ['rejected', 'bogus', 'planned'] }), { set: 'all', statuses: ['planned', 'rejected'] });
-  assert.deepEqual(needFilters({ set: 'existing', statuses: [] }), { set: 'existing', statuses: [] });
-  assert.throws(() => needFilters({ set: 'nope', statuses: [] }), (e) => e instanceof PivotError && e.code === 'bowtie.filters');
-  assert.throws(() => needFilters({ set: 'all', statuses: ['bogus'] }), (e) => e instanceof PivotError && e.code === 'bowtie.filters');
-  assert.ok(sameFilters({ set: 'all', statuses: ['planned', 'recommended'] }, { set: 'all', statuses: ['recommended', 'planned'] }));
-  assert.ok(!sameFilters({ set: 'all', statuses: [] }, { set: 'existing', statuses: [] }));
-  assert.equal(filterWords({ set: 'existing', statuses: ['planned'] }), 'Existing');
-  assert.equal(filterWords({ set: 'additional', statuses: ['implemented', 'planned'] }), 'Additional (Planned, Implemented)');
-  assert.equal(filterWords({ set: 'all', statuses: [] }), 'Existing + Additional (none)');
+  assert.deepEqual(DEFAULT_FILTERS, { statuses: ['recommended', 'planned', 'implemented'] });
+  assert.deepEqual(normalizeFilters(null), { statuses: ['recommended', 'planned', 'implemented'] });
+  assert.deepEqual(normalizeFilters({ statuses: ['rejected', 'bogus', 'planned'] }), { statuses: ['planned', 'rejected'] });
+  assert.deepEqual(normalizeFilters({ set: 'existing', statuses: ['implemented'] }), { statuses: ['implemented'] }, 'a view saved with existing or additional drops it');
+  assert.deepEqual(needFilters({ statuses: [] }), { statuses: [] });
+  assert.throws(() => needFilters({ statuses: 'planned' }), (e) => e instanceof PivotError && e.code === 'bowtie.filters');
+  assert.throws(() => needFilters({ statuses: ['bogus'] }), (e) => e instanceof PivotError && e.code === 'bowtie.filters');
+  assert.ok(sameFilters({ statuses: ['planned', 'recommended'] }, { statuses: ['recommended', 'planned'] }));
+  assert.ok(sameFilters({ set: 'all', statuses: [] }, { set: 'existing', statuses: [] }), 'the old set no longer counts');
+  assert.ok(!sameFilters({ statuses: [] }, { statuses: ['planned'] }));
+  assert.equal(filterWords({ statuses: ['implemented', 'planned'] }), 'Planned, Implemented');
+  assert.equal(filterWords({ statuses: [] }), 'No controls');
 });
 
-test('the default view: existing controls first, then additional ones, rejected hidden; causal factors and consequences whole', () => {
+test('the default view: every control but the rejected, by tier, each with its status; causal factors and consequences whole', () => {
   const b = bowtieOf(data(), 'h1', 'p1', DEFAULT_FILTERS);
   assert.equal(b.ok, true);
   assert.equal(b.hazard.id, 'h1');
   assert.equal(b.platform.id, 'p1');
-  assert.equal(b.caption, 'Alpha · Existing + Additional (Recommended, Planned, Implemented)');
+  assert.equal(b.caption, 'Alpha · Recommended, Planned, Implemented');
   assert.deepEqual(b.causalFactors.map((r) => r.text), ['Hot works']);
   assert.deepEqual(b.consequences.map((r) => r.text), ['Burns']);
-  assert.deepEqual(lines(b.preventative), ['c4 Existing · Engineering', 'c1 Existing', 'c1 Additional · Implemented']);
-  assert.deepEqual(lines(b.mitigating), ['c2 Additional · Recommended']);
-  assert.deepEqual(b.preventative.map((i) => i.source), ['existing', 'existing', 'additional']);
-  assert.deepEqual(b.preventative.map((i) => i.tags.map((t) => t.tone)), [['existing', 'tier'], ['existing'], ['additional', 'implemented']], 'each tag has its colour');
+  assert.deepEqual(lines(b.preventative), ['c4 Implemented · Engineering', 'c1 Implemented']);
+  assert.deepEqual(lines(b.mitigating), ['c2 Recommended']);
+  assert.deepEqual(b.preventative.map((i) => i.state), ['implemented', 'implemented']);
+  assert.deepEqual(b.preventative.map((i) => i.tags.map((t) => t.tone)), [['implemented', 'tier'], ['implemented']], 'each tag has its colour');
 });
 
-test('each set and status filter selects exactly its controls', () => {
+test('each status filter selects exactly its controls; a control taken off a platform is not drawn there', () => {
   const d = data();
-  const pick = (filters) => [...lines(bowtieOf(d, 'h1', 'p1', filters).preventative), ...lines(bowtieOf(d, 'h1', 'p1', filters).mitigating)];
-  // With one kind of control drawn, Existing or Additional goes without saying.
-  assert.deepEqual(pick({ set: 'existing', statuses: ['rejected'] }), ['c4 Engineering', 'c1']);
-  assert.deepEqual(pick({ set: 'additional', statuses: ['rejected'] }), ['c3 Rejected']);
-  assert.deepEqual(pick({ set: 'additional', statuses: ['implemented', 'recommended'] }), ['c1 Implemented', 'c2 Recommended']);
-  assert.deepEqual(pick({ set: 'all', statuses: [] }), ['c4 Engineering', 'c1'], 'both asked for, but only existing ones to draw');
-  assert.deepEqual(pick({ set: 'additional', statuses: ['planned'] }), []);
-  // Another platform has its own statuses: nothing is ruled on Bravo, so everything is recommended there.
-  assert.deepEqual(lines(bowtieOf(d, 'h1', 'p2', { set: 'additional', statuses: ['recommended'] }).preventative), ['c1 Recommended', 'c3 Recommended']);
+  const pick = (filters, p = 'p1') => [...lines(bowtieOf(d, 'h1', p, filters).preventative), ...lines(bowtieOf(d, 'h1', p, filters).mitigating)];
+  assert.deepEqual(pick({ statuses: ['rejected'] }), ['c3 Rejected']);
+  assert.deepEqual(pick({ statuses: ['implemented', 'recommended'] }), ['c4 Implemented · Engineering', 'c1 Implemented', 'c2 Recommended']);
+  assert.deepEqual(pick({ statuses: [] }), []);
+  assert.deepEqual(pick({ statuses: ['planned'] }), []);
+  // Another platform has its own statuses: nothing is ruled on Bravo, and Fire doors was added on Alpha alone.
+  assert.deepEqual(pick({ statuses: ['recommended'] }, 'p2'), ['c1 Recommended', 'c3 Recommended', 'c2 Recommended']);
 });
 
 test('a diagram that cannot be drawn says why', () => {

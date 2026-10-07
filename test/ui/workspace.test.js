@@ -5,7 +5,7 @@ import { emptyWorkspace, paneCount, replacedBy, placePane, movePane, swapPanes, 
 import { createBowtieView, deleteBowtieView } from '../../src/core/ops/bowtie-views.js';
 import { seed, act } from '../helpers.js';
 
-const F = { set: 'all', statuses: ['recommended', 'planned', 'implemented'] };
+const F = { statuses: ['recommended', 'planned', 'implemented'] };
 const A = { viewId: null, hazardId: 'h1', platformId: 'p1', filters: F };
 const B = { viewId: null, hazardId: 'h1', platformId: 'p2', filters: F };
 const C = { viewId: 'v1', hazardId: 'h1', platformId: 'p1', filters: F };
@@ -36,7 +36,7 @@ test('with two windows, a drop replaces its half and a click replaces the window
   assert.deepEqual(ids(placePane(two, 0, C)), ['p1v1', 'p2']);
   assert.equal(replacedBy(two, 'last'), 1);
   assert.deepEqual(ids(placePane(two, 'last', C)), ['p1', 'p1v1']);
-  assert.deepEqual(ids(updatePane(two, 0, { filters: { set: 'existing', statuses: [] } })), ['p1', 'p2']);
+  assert.deepEqual(ids(updatePane(two, 0, { filters: { statuses: ['implemented'] } })), ['p1', 'p2']);
   assert.equal(updatePane(two, 0, { platformId: 'p9' }).lastUsed, 0);
 });
 
@@ -54,13 +54,13 @@ test('moving, swapping and closing windows', () => {
 });
 
 test('a window is unsaved when its filters differ from its view, or from the defaults with no view', () => {
-  let d = createBowtieView(seed(), act, { id: 'v1', name: 'Fire', hazardId: 'h1', platformId: 'p1', filters: { set: 'existing', statuses: [] } });
-  assert.equal(paneDirty({ ...C, filters: { set: 'existing', statuses: [] } }, d), false);
+  let d = createBowtieView(seed(), act, { id: 'v1', name: 'Fire', hazardId: 'h1', platformId: 'p1', filters: { statuses: ['implemented'] } });
+  assert.equal(paneDirty({ ...C, filters: { statuses: ['implemented'] } }, d), false);
   assert.equal(paneDirty(C, d), true);
   assert.equal(paneDirty(A, d), false);
-  assert.equal(paneDirty({ ...A, filters: { set: 'additional', statuses: [] } }, d), true);
+  assert.equal(paneDirty({ ...A, filters: { statuses: [] } }, d), true);
   d = deleteBowtieView(d, act, { id: 'v1' });
-  assert.equal(paneDirty({ ...C, filters: { set: 'existing', statuses: [] } }, d), true, 'its view is gone');
+  assert.equal(paneDirty({ ...C, filters: { statuses: ['implemented'] } }, d), true, 'its view is gone');
 });
 
 test('the workspace is remembered per folder and profile, and anything unreadable starts empty', () => {
@@ -75,7 +75,7 @@ test('the workspace is remembered per folder and profile, and anything unreadabl
   assert.deepEqual(readWorkspace(s, key), emptyWorkspace());
   s.setItem(key, JSON.stringify({ panes: [{ hazardId: 3 }, null], lastUsed: 0 }));
   assert.deepEqual(readWorkspace(s, key), emptyWorkspace());
-  s.setItem(key, JSON.stringify({ panes: [null, { ...A, filters: { set: 'bogus' } }], lastUsed: 7 }));
+  s.setItem(key, JSON.stringify({ panes: [null, { ...A, filters: { statuses: 'bogus' } }], lastUsed: 7 }));
   assert.deepEqual(readWorkspace(s, key), { panes: [{ ...A, filters: F }, null], lastUsed: 0 }, 'a lone window moves to the first slot');
   s.setItem(key, JSON.stringify({ panes: [{ ...A, zoom: 2.5, pan: { x: -40, y: 12 } }, { ...C, zoom: 'big', pan: { x: 'left' } }], lastUsed: 0 }));
   assert.deepEqual(readWorkspace(s, key).panes.map((p) => [p?.zoom, p?.pan]), [[2.5, { x: -40, y: 12 }], [undefined, undefined]], 'a view is kept; a bad one is fitted');

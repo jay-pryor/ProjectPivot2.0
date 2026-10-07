@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { SCHEMA_VERSION } from '../../src/core/data.js';
 import { seal, serialize, openEnvelope, newStamp, sameStamp, backupName, backupTime, BACKUP_RE, supersededName, sha256Hex } from '../../src/storage/envelope.js';
 import { epochOf } from '../../src/core/time.js';
 
@@ -12,7 +13,7 @@ test('seal then open gives the body back', async () => {
   assert.equal(opened.ok, true);
   assert.deepEqual(opened.envelope.body, { b: 1, a: [2, 1] });
   assert.deepEqual(opened.envelope.stamp, stamp);
-  assert.equal(opened.envelope.schemaVersion, 2);
+  assert.equal(opened.envelope.schemaVersion, SCHEMA_VERSION);
 });
 
 test('a file changed outside Pivot fails its integrity check', async () => {
@@ -27,11 +28,11 @@ test('every other bad file is named for what is wrong with it', async () => {
   const profiles = serialize(await seal('profiles', { profiles: {} }, null, at));
   assert.equal((await openEnvelope(profiles, 'data')).reason, 'wrong-kind');
   const old = JSON.parse(serialize(await seal('data', {}, null, at)));
-  old.schemaVersion = 1;
+  old.schemaVersion = SCHEMA_VERSION - 1;
   const r = await openEnvelope(JSON.stringify(old), 'data');
   assert.equal(r.reason, 'wrong-version');
   assert.match(r.detail, /earlier Pivot/);
-  old.schemaVersion = 3;
+  old.schemaVersion = SCHEMA_VERSION + 1;
   assert.match((await openEnvelope(JSON.stringify(old), 'data')).detail, /newer Pivot/);
 });
 

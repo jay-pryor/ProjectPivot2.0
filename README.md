@@ -14,6 +14,9 @@ npm run build      # -> dist/pivot.html
 npm run typecheck
 ```
 
+Always run `npm run build` after any change to the source, so `dist/pivot.html` is never
+behind the code.
+
 ## The data folder
 
 Everything Pivot stores is in the folder you choose when it opens:

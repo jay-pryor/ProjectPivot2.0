@@ -39,7 +39,7 @@ test('the references list: ID, title, doc number, revision, what it points at, h
   assert.match(out, /data-action="startEdit" data-kind="newReference"/);
   assert.match(out, /REF-001/);
   assert.match(out, />Safety case<\/button> <span class="tag tag-missing">File missing<\/span>/);
-  assert.match(out, /<span class="chip">File<\/span><span class="chip">Link<\/span><span class="chip">Path<\/span>/);
+  assert.match(out, /<button type="button" class="chip chip-open" title="Open [^"]+" data-action="openReferenceFile" data-stored="[^"]+">File<\/button><a class="chip chip-open" href="https:\/\/[^"]+" target="_blank" rel="noopener"[^>]*>Link<\/a><button type="button" class="chip chip-open" title="Copy [^"]+" data-action="copyPath" data-path="[^"]+">Path<\/button>/, 'each opens what it points at');
   assert.match(out, /Standard &lt;b&gt;x&lt;\/b&gt;/);
   const adding = referencesView({ ...state, editing: { kind: 'newReference', id: 'new' } }, data()).toString();
   assert.match(adding, /<form data-action="addReference"[\s\S]*?name="title" required[\s\S]*?type="file" name="file"[\s\S]*?name="url"[\s\S]*?name="path"/);
@@ -97,4 +97,93 @@ test('References is in the nav and routed', () => {
   assert.match(main({ name: 'references' }), /class="nav on" data-action="go" data-view="references">References/);
   assert.match(main({ name: 'reference', id: 'r1' }), /class="nav on" data-action="go" data-view="references">/);
   assert.match(main({ name: 'reference', id: 'r1' }), /Safety case/);
+});
+
+test('References has Active and Archived sub-tabs; each row\'s Options moves it to the other, and an archived one is not offered for linking', async () => {
+  const { referencesView, referenceView } = await import('../../src/ui/screens/references.js');
+  const { createReference, setReferenceArchived } = await import('../../src/core/ops/references.js');
+  const { pickerView } = await import('../../src/ui/screens/picker.js');
+  const { initialState } = await import('../../src/ui/controller.js');
+  const { seed, act } = await import('../helpers.js');
+  const st = { ...initialState(), screen: 'main', profileId: 'u1', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }] };
+  let d = createReference(seed(), act, { id: 'r1', title: 'Safety case', url: 'https://example.com/sc' });
+  d = createReference(d, act, { id: 'r2', title: 'Old manual', url: 'https://example.com/old' });
+  d = setReferenceArchived(d, act, { id: 'r2', archived: 'true' });
+  assert.equal(Object.values(d.history).at(-1).action, 'Archive reference');
+  assert.equal(setReferenceArchived(d, act, { id: 'r2', archived: true }), d, 'already archived: nothing recorded');
+  const active = referencesView({ ...st, view: { name: 'references' } }, d).toString();
+  assert.match(active, /class="tab on" data-action="go" data-view="references" data-tab="active">Active <span class="count">1<\/span>[\s\S]*?data-tab="archived">Archived <span class="count">1<\/span>/);
+  assert.match(active, /Safety case/);
+  assert.doesNotMatch(active, /Old manual/);
+  assert.match(active, /<details class="row-menu"><summary aria-label="Options for Safety case"[\s\S]*?data-action="setReferenceArchived" data-id="r1" data-archived="true">Move to Archived<\/button>/);
+  const archive = referencesView({ ...st, view: { name: 'references', tab: 'archived' } }, d).toString();
+  assert.match(archive, /Old manual[\s\S]*?data-action="setReferenceArchived" data-id="r2" data-archived="false">Move to Active<\/button>/);
+  assert.doesNotMatch(archive, /Safety case|newReference/, 'no new reference from the archive');
+  const page = referenceView({ ...st, view: { name: 'reference', id: 'r2' } }, d, 'r2').toString();
+  assert.match(page, /<span class="tag">Archived<\/span>[\s\S]*?data-action="setReferenceArchived" data-id="r2" data-archived="false">[\s\S]*?Move to Active/);
+  const pick = pickerView({ ...st, picker: { picker: 'linkReferences', targetKind: 'hazard', targetId: 'h1' } }, d).toString();
+  assert.match(pick, /Safety case/);
+  assert.doesNotMatch(pick, /Old manual/);
+  d = setReferenceArchived(d, act, { id: 'r2', archived: 'false' });
+  assert.equal(Object.values(d.history).at(-1).action, 'Return reference from archive');
+});
+
+test('a hazard\'s References: a + beside For links that reference to more of the page, offering what the page shows; a References row opens on a double-click', async () => {
+  const { referencesCard, referencesView } = await import('../../src/ui/screens/references.js');
+  const { createReference, linkReference } = await import('../../src/core/ops/references.js');
+  const { addSystemElement } = await import('../../src/core/ops/hazards.js');
+  const { pickerView } = await import('../../src/ui/screens/picker.js');
+  const { initialState } = await import('../../src/ui/controller.js');
+  const { seed, act } = await import('../helpers.js');
+  const st = { ...initialState(), screen: 'main', profileId: 'u1', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }] };
+  let d = createReference(seed(), act, { id: 'r1', title: 'Manual', url: 'https://example.com/m' });
+  d = addSystemElement(d, act, { id: 's1', hazardId: 'h1', platformId: 'p1', text: 'Engine room' });
+  d = linkReference(d, act, { referenceId: 'r1', targetKind: 'causalFactor', targetId: 'cf1' });
+  const card = referencesCard(st, d, { kind: 'hazard', id: 'h1', platformId: 'p1' }).toString();
+  assert.match(card, /<div class="for-cell"><ul class="plain for-list"><li><span class="for-text">Causal factor: Hot works<\/span><\/li><\/ul>\s*<button type="button" class="plus" data-action="openPicker" data-picker="linkReferenceFor" data-reference-id="r1" data-hazard-id="h1" data-platform-id="p1"/);
+  const pick = pickerView({ ...st, picker: { picker: 'linkReferenceFor', referenceId: 'r1', hazardId: 'h1', platformId: 'p1' } }, d).toString();
+  assert.match(pick, /<form data-action="linkTargets" data-reference-id="r1"/);
+  assert.match(pick, /<li class="pick-group">Hazard<\/li>[\s\S]*?value="hazard\|h1"[\s\S]*?<li class="pick-group">Consequences<\/li>[\s\S]*?value="consequence\|cq1"> Burns[\s\S]*?<li class="pick-group">System\/Element<\/li>[\s\S]*?value="systemElement\|s1"> Engine room/);
+  assert.doesNotMatch(pick, /causalFactor\|cf1/, 'already linked: not offered');
+  assert.doesNotMatch(pickerView({ ...st, picker: { picker: 'linkReferenceFor', referenceId: 'r1', hazardId: 'h1' } }, d).toString(), /systemElement/, 'the Overview has no per-platform lists');
+  assert.match(referencesView({ ...st, view: { name: 'references' } }, d).toString(), /<tr data-row="r1" data-dblclick="go" data-view="reference" data-id="r1">/);
+});
+
+test('a hazard\'s References: one row a reference, General for the hazard itself, every other part it is for listed in its For cell', async () => {
+  const { referencesCard } = await import('../../src/ui/screens/references.js');
+  const { createReference, linkReference, unlinkReferenceFrom } = await import('../../src/core/ops/references.js');
+  const { initialState } = await import('../../src/ui/controller.js');
+  const { seed, act } = await import('../helpers.js');
+  const st = { ...initialState(), screen: 'main', profileId: 'u1', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }] };
+  let d = createReference(seed(), act, { id: 'r1', title: 'Manual', url: 'https://example.com/m' });
+  for (const [targetKind, targetId] of [['hazard', 'h1'], ['causalFactor', 'cf1'], ['consequence', 'cq1']]) d = linkReference(d, act, { referenceId: 'r1', targetKind, targetId });
+  const card = referencesCard(st, d, { kind: 'hazard', id: 'h1', platformId: 'p1' }).toString();
+  assert.equal((card.match(/<tr data-row="r1"/g) ?? []).length, 1, 'one row');
+  assert.match(card, /<ul class="plain for-list"><li><span class="for-text"><span class="muted">General<\/span><\/span><button[^>]*class="icon-x for-x"[^>]*data-target-kind="hazard"[\s\S]*?Causal factor: Hot works[\s\S]*?Consequence: Burns/);
+  assert.match(card, /data-run="unlinkReferenceFrom" data-reference-id="r1" data-targets="hazard\|h1,causalFactor\|cf1,consequence\|cq1"/, 'the row\'s ✕ unlinks it from all three');
+  const off = unlinkReferenceFrom(d, act, { referenceId: 'r1', targets: 'hazard|h1,causalFactor|cf1,consequence|cq1' });
+  assert.equal(Object.values(off.records.referenceLink).filter((l) => l.status === 'live').length, 0);
+  assert.equal(Object.values(off.history).filter((e) => e.action === 'Unlink reference').length, 1, 'one change');
+});
+
+test('a hazard\'s References names the column of what each reference is for Informs', async () => {
+  const { referencesCard } = await import('../../src/ui/screens/references.js');
+  const { initialState } = await import('../../src/ui/controller.js');
+  const { seed } = await import('../helpers.js');
+  const out = referencesCard({ ...initialState(), screen: 'main', profileId: 'u1', profiles: [] }, seed(), { kind: 'hazard', id: 'h1', platformId: 'p1' }).toString();
+  assert.match(out, /<th data-col="for">[\s\S]*?>Informs</);
+});
+
+test('in a hazard\'s References, Link opens the web link in a new tab, but never a link that is not http, https or mailto', async () => {
+  const { referencesCard } = await import('../../src/ui/screens/references.js');
+  const { createReference, linkReference } = await import('../../src/core/ops/references.js');
+  const { initialState } = await import('../../src/ui/controller.js');
+  const { seed, act } = await import('../helpers.js');
+  let d = createReference(seed(), act, { id: 'r1', title: 'Good', url: 'https://example.com/a' });
+  d = createReference(d, act, { id: 'r2', title: 'Bad', url: 'javascript:alert(1)' });
+  for (const r of ['r1', 'r2']) d = linkReference(d, act, { referenceId: r, targetKind: 'hazard', targetId: 'h1' });
+  const out = referencesCard({ ...initialState(), screen: 'main', profileId: 'u1', profiles: [] }, d, { kind: 'hazard', id: 'h1', platformId: 'p1' }).toString();
+  assert.match(out, /<a class="chip chip-open" href="https:\/\/example.com\/a" target="_blank" rel="noopener"/);
+  assert.match(out, /<span class="chip" title="Not a web link that can be opened">Link<\/span>/);
+  assert.doesNotMatch(out, /href="javascript:/);
 });

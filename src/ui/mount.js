@@ -38,7 +38,9 @@ export function wire(el, dispatch, submitting = new Set()) {
     e.preventDefault();
     const identity = formIdentity({ ...f.dataset });
     submitting.add(identity);
-    void dispatch({ type: f.dataset.action, ...f.dataset, ...formValues(new FormData(f)) }).finally(() => submitting.delete(identity));
+    // The button pressed is sent too (a picker's choices are its buttons, each with its own value).
+    const submitter = /** @type {SubmitEvent} */ (e).submitter;
+    void dispatch({ type: f.dataset.action, ...f.dataset, ...formValues(new FormData(f, submitter?.getAttribute('name') ? submitter : null)) }).finally(() => submitting.delete(identity));
   });
   // Header filters apply as you type, a moment after the last key.
   /** @type {ReturnType<typeof setTimeout> | undefined} */
@@ -56,9 +58,21 @@ export function wire(el, dispatch, submitting = new Set()) {
     const r = /** @type {HTMLElement} */ (d.querySelector('summary')).getBoundingClientRect();
     const body = /** @type {HTMLElement | null} */ (d.querySelector('.row-menu-body'));
     if (!body) return;
-    body.style.left = `${r.left}px`;
-    body.style.width = `${r.width}px`;
-    body.style.top = `${r.bottom + 2}px`;
+    // A ⋯ menu is wider than its button, so it opens leftwards from the button's right edge.
+    const dots = d.classList.contains('dots');
+    if (!dots) body.style.width = `${r.width}px`;
+    else body.style.width = '';
+    const left = dots ? Math.max(4, r.right - body.offsetWidth) : r.left;
+    const top = r.bottom + 2;
+    body.style.left = `${left}px`;
+    body.style.top = `${top}px`;
+    // Inside a panel still moving into place (a transform), "fixed" is measured from the panel, not
+    // the window: where it landed says how far off that is, and it is moved by as much.
+    const at = body.getBoundingClientRect();
+    if (Math.abs(at.left - left) > 0.5 || Math.abs(at.top - top) > 0.5) {
+      body.style.left = `${left - (at.left - left)}px`;
+      body.style.top = `${top - (at.top - top)}px`;
+    }
   };
   el.addEventListener('toggle', (e) => {
     const d = /** @type {HTMLDetailsElement} */ (e.target);
@@ -67,7 +81,7 @@ export function wire(el, dispatch, submitting = new Set()) {
     placeMenu(d);
   }, true);
   document.addEventListener('click', (e) => {
-    for (const d of /** @type {NodeListOf<HTMLDetailsElement>} */ (el.querySelectorAll('details.row-menu[open], details.settings-menu[open]'))) if (!d.contains(/** @type {Node} */ (e.target))) d.open = false;
+    for (const d of /** @type {NodeListOf<HTMLDetailsElement>} */ (el.querySelectorAll('details.row-menu[open], details.settings-menu[open], details.dots-menu[open]'))) if (!d.contains(/** @type {Node} */ (e.target))) d.open = false;
   });
   // Escape closes the settings menu and puts focus back on its three lines.
   document.addEventListener('keydown', (e) => {
@@ -92,17 +106,21 @@ export function wire(el, dispatch, submitting = new Set()) {
     if (e.key === 'Escape') {
       if (t.closest?.('.confirm-overlay')) { void dispatch({ type: 'confirmCancel' }); return; }
       if (t.closest?.('.picker-overlay')) { void dispatch({ type: 'closePicker' }); return; }
+      // A box being edited in place is put back first: closing it would otherwise report what was
+      // typed as a change, and keep it.
+      if (t.classList?.contains('cell-edit')) restore(t);
       if (t.classList?.contains('cell-edit') || t.closest?.('.new-record, .new-row, .comments + form, form.fill')) void dispatch({ type: 'cancelEdit' });
       return;
     }
-    if (e.key === 'Enter' && t.classList?.contains('cell-edit')) {
+    // In a box of several lines, Shift+Enter starts a new line; Enter alone applies, as in one.
+    if (e.key === 'Enter' && t.classList?.contains('cell-edit') && !(t.tagName === 'TEXTAREA' && e.shiftKey)) {
       e.preventDefault();
-      if (t.value === t.defaultValue) void dispatch({ type: 'cancelEdit' }); else t.blur();
+      if (unchanged(t)) void dispatch({ type: 'cancelEdit' }); else t.blur();
     }
   });
   el.addEventListener('focusout', (e) => {
     const t = /** @type {HTMLInputElement} */ (e.target);
-    if (t.classList?.contains('cell-edit') && t.value === t.defaultValue) setTimeout(() => { if (t.isConnected) void dispatch({ type: 'cancelEdit' }); }, 0);
+    if (t.classList?.contains('cell-edit') && unchanged(t)) setTimeout(() => { if (t.isConnected) void dispatch({ type: 'cancelEdit' }); }, 0);
   });
   // A picker's search narrows its list on screen only, so nothing ticked is lost. The Bow-ties side
   // list works the same way, scoped to its aside.
@@ -114,9 +132,29 @@ export function wire(el, dispatch, submitting = new Set()) {
       li.hidden = q !== '' && !String(li.dataset.pickText).includes(q);
     }
   });
+  // A picker's Add new shows its new-record fields in place (nothing redraws, so ticks stay) and
+  // puts the cursor in them; again, it hides and empties them.
+  el.addEventListener('click', (e) => {
+    const b = /** @type {HTMLButtonElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-show-new]'));
+    const section = /** @type {HTMLElement | null | undefined} */ (b?.closest('form')?.querySelector('[data-new-section]'));
+    if (!b || !section) return;
+    const show = section.hidden;
+    section.hidden = !show;
+    b.setAttribute('aria-expanded', String(show));
+    b.classList.toggle('on', show);
+    const box = /** @type {HTMLInputElement | null} */ (section.querySelector('input'));
+    if (show) box?.focus(); else if (box) box.value = '';
+  });
   // A click on the dimmed page around a picker closes it.
   el.addEventListener('click', (e) => {
     if (/** @type {HTMLElement} */ (e.target).classList?.contains('picker-overlay')) void dispatch({ type: 'closePicker' });
+  });
+  // In an add form offering entries to tick, the box may be left empty while any is ticked.
+  el.addEventListener('change', (e) => {
+    const t = /** @type {HTMLInputElement} */ (e.target);
+    const form = t.name === 'pick' ? t.closest('form[data-picks]') : null;
+    const box = /** @type {HTMLInputElement | null | undefined} */ (form?.querySelector('input[name="text"]'));
+    if (box) box.required = !form?.querySelector('input[name="pick"]:checked');
   });
   el.addEventListener('change', (e) => {
     const t = /** @type {HTMLInputElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-change]'));
@@ -125,6 +163,22 @@ export function wire(el, dispatch, submitting = new Set()) {
     const value = t.type === 'checkbox' ? String(t.checked) : t.value;
     void dispatch({ type: t.dataset.change, ...t.dataset, [t.name || 'value']: value });
   });
+}
+
+/**
+ * A box opened in place still holds what it opened with: its text, or for a list the option it
+ * opened on.
+ * @param {HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement} t
+ */
+function unchanged(t) {
+  if (t instanceof HTMLSelectElement) return [...t.options].every((o) => o.selected === o.defaultSelected);
+  return t.value === t.defaultValue;
+}
+
+/** Put a box opened in place back to what it opened with. @param {HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement} t */
+function restore(t) {
+  if (t instanceof HTMLSelectElement) for (const o of t.options) o.selected = o.defaultSelected;
+  else t.value = t.defaultValue;
 }
 
 /** @param {HTMLElement} root @param {ReturnType<typeof import('./controller.js').createController>} controller */
@@ -193,11 +247,15 @@ export function mount(root, controller) {
     }
     shown = now;
     fitAttention(appEl);
+    reselect();
+    showImages();
+    fitAll(appEl);
     // A box just opened in place (edit, add, a picker's search) takes the cursor.
     const opened = /** @type {HTMLInputElement | null} */ (appEl.querySelector('[autofocus]'));
     if (opened && !appEl.contains(document.activeElement)) {
       opened.focus();
-      if (opened.classList.contains('cell-edit')) opened.select();
+      // A text box opened in place has its words selected, ready to type over; a list has none to select.
+      if (opened.classList.contains('cell-edit') && opened instanceof HTMLInputElement && opened.type === 'text') opened.select();
     }
     // The designer repaints itself as it is edited; the app repaints it only when asked to open it.
     if (state.designerRevision !== designerRevision) {
@@ -205,11 +263,19 @@ export function mount(root, controller) {
       paintDesigner();
     }
   };
-  window.addEventListener('resize', () => fitAttention(appEl));
+  window.addEventListener('resize', () => { fitAttention(appEl); fitAll(appEl); });
+  // A box of several lines grows (and shrinks back) to fit its text as it is typed in.
+  appEl.addEventListener('input', (e) => { const t = /** @type {HTMLElement} */ (e.target); if (t instanceof HTMLTextAreaElement) fit(t); });
   wire(appEl, controller.dispatch, submitting);
   resizableColumns(appEl, controller.dispatch);
   bowtieDrag(appEl, controller.dispatch);
   bowtiePanZoom(appEl, controller.dispatch);
+  bowtieLinkFocus(appEl);
+  favouriteDrag(appEl, controller.dispatch);
+  const reselectHistory = historySelect(appEl, controller.dispatch);
+  const reselectOptions = assignSelect(appEl, controller.dispatch);
+  const reselect = () => { reselectHistory(); reselectOptions(); };
+  const showImages = platformImages(appEl, controller);
   RD.wire({ root: designerEl, refreshMain: paintDesigner, quietEdit: (/** @type {() => void} */ fn) => fn() });
   designerEl.addEventListener('click', (e) => {
     const b = /** @type {HTMLButtonElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-generate-action]'));
@@ -578,5 +644,291 @@ function bowtiePanZoom(el, dispatch) {
     d.addEventListener('pointermove', move);
     d.addEventListener('pointerup', up);
     d.addEventListener('pointercancel', up);
+  });
+}
+
+/**
+ * Choosing rows on screen alone, while a tool that works on rows is on (bundling a history's
+ * changes, assigning facet options to a platform group): press and drag over rows to choose a run
+ * of them, Shift-click to choose from the last row clicked to this one, Ctrl-click (Cmd on a Mac)
+ * to add or take away one row. The tool's Confirm sends the rows chosen. The choice survives a
+ * redraw, and ends when the tool is turned off. A click outside the table and the tool's form lets
+ * go of the rows; Escape does too, and with none chosen, turns the tool off.
+ * @param {HTMLElement} el @param {(action: any) => Promise<void>} dispatch
+ * @param {{ scope: string, form: string, count: string, confirm: string, min: number, cancel: any,
+ *   submit: (form: HTMLFormElement, rows: HTMLElement[]) => any }} o
+ *   scope: the element present while choosing; submit: the action to send for the rows chosen (null for none)
+ * @returns {() => void} call after each redraw, to show the rows still chosen
+ */
+function rowSelect(el, dispatch, { scope, form: formSel, count: countSel, confirm: confirmSel, min, cancel, submit }) {
+  const rowSel = `${scope} tr[data-selectable]`;
+  /** @type {Set<string>} */
+  let chosen = new Set();
+  /** @type {string | null} */
+  let anchor = null;
+  const rows = () => /** @type {HTMLElement[]} */ ([...el.querySelectorAll(rowSel)]);
+  const show = () => {
+    const all = rows();
+    if (!el.querySelector(scope)) { chosen = new Set(); anchor = null; return; }
+    for (const tr of all) {
+      const on = chosen.has(String(tr.dataset.row));
+      tr.classList.toggle('chosen', on);
+      tr.setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    const n = all.filter((tr) => chosen.has(String(tr.dataset.row))).length;
+    const count = el.querySelector(countSel);
+    if (count) count.textContent = n ? `${n} chosen` : 'None chosen';
+    const confirm = /** @type {HTMLButtonElement | null} */ (el.querySelector(confirmSel));
+    if (confirm) confirm.disabled = n < min;
+  };
+  /** The rows from one to another, in the order shown. @param {string} a @param {string} b */
+  const between = (a, b) => {
+    const keys = rows().map((tr) => String(tr.dataset.row));
+    const [i, j] = [keys.indexOf(a), keys.indexOf(b)].sort((x, y) => x - y);
+    return i < 0 ? [b] : keys.slice(i, j + 1);
+  };
+  el.addEventListener('pointerdown', (e) => {
+    const tr = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest(rowSel));
+    if (!tr || e.button !== 0 || /** @type {HTMLElement} */ (e.target).closest('button, a, input, textarea, select, form')) return;
+    e.preventDefault();
+    const key = String(tr.dataset.row);
+    const add = e.ctrlKey || e.metaKey;
+    if (e.shiftKey && anchor) {
+      // Shift: from the last row clicked to this one; with Ctrl too, added to what is chosen.
+      const run = between(anchor, key);
+      chosen = add ? new Set([...chosen, ...run]) : new Set(run);
+      show();
+      return;
+    }
+    if (add) {
+      if (chosen.has(key)) chosen.delete(key); else chosen.add(key);
+      anchor = key;
+      show();
+      return;
+    }
+    // A plain press starts afresh from this row; dragging stretches the run to the row under the pointer.
+    anchor = key;
+    chosen = new Set([key]);
+    show();
+    const move = (/** @type {PointerEvent} */ m) => {
+      const over = /** @type {HTMLElement | null} */ (document.elementFromPoint(m.clientX, m.clientY)?.closest(rowSel) ?? null);
+      if (!over || !anchor) return;
+      chosen = new Set(between(anchor, String(over.dataset.row)));
+      show();
+    };
+    const up = () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      document.body.classList.remove('choosing');
+    };
+    document.body.classList.add('choosing');
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  });
+  const clear = () => {
+    if (!chosen.size) return false;
+    chosen = new Set();
+    anchor = null;
+    show();
+    return true;
+  };
+  document.addEventListener('pointerdown', (e) => {
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (!el.querySelector(scope) || t.closest?.(`${scope} table, ${formSel}`)) return;
+    clear();
+  });
+  // A box being edited in the table keeps Escape to itself.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !el.querySelector(scope) || document.querySelector('.confirm-overlay, .picker-overlay')) return;
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (t.closest?.(`${scope} table input, ${scope} table textarea, ${scope} table form`)) return;
+    e.preventDefault();
+    if (!clear()) void dispatch(cancel);
+  });
+  el.addEventListener('submit', (e) => {
+    const form = /** @type {HTMLFormElement | null} */ (/** @type {HTMLElement} */ (e.target).closest(formSel));
+    if (!form) return;
+    e.preventDefault();
+    const picked = rows().filter((tr) => chosen.has(String(tr.dataset.row)));
+    if (picked.length < min) return;
+    const action = submit(form, picked);
+    if (action) void dispatch(action);
+  });
+  return show;
+}
+
+/**
+ * Choosing history rows in bundle mode: two or more changes, sent with the bundle's What and comment.
+ * @param {HTMLElement} el @param {(action: any) => Promise<void>} dispatch
+ */
+function historySelect(el, dispatch) {
+  return rowSelect(el, dispatch, {
+    scope: '.history.bundling', form: 'form[data-bundle-form]', count: '[data-bundle-count]', confirm: '[data-bundle-confirm]', min: 2,
+    cancel: { type: 'toggleBundling' },
+    submit: (form, picked) => {
+      const field = (/** @type {string} */ name) => /** @type {HTMLInputElement | null} */ (form.querySelector(`input[name="${name}"]`))?.value ?? '';
+      return { type: 'createBundle', entryIds: picked.map((tr) => String(tr.dataset.row)), text: field('bundleComment'), title: field('bundleTitle') };
+    },
+  });
+}
+
+/**
+ * Choosing a facet's options on Info to assign to a platform group: one or more rows (a row shown
+ * once per group it is in counts once), sent with the group and facet the tool is on.
+ * @param {HTMLElement} el @param {(action: any) => Promise<void>} dispatch
+ */
+function assignSelect(el, dispatch) {
+  return rowSelect(el, dispatch, {
+    scope: '.info-assigning', form: 'form[data-assign-form]', count: '[data-assign-count]', confirm: '[data-assign-confirm]', min: 1,
+    cancel: { type: 'cancelAssignToGroup' },
+    submit: (form, picked) => ({ type: 'assignToGroup', facet: form.dataset.facet, groupId: form.dataset.groupId, optionIds: [...new Set(picked.map((tr) => String(tr.dataset.optionId)))] }),
+  });
+}
+
+/**
+ * Favourite pages in edit mode: drag a row or block onto another to put it there. A favourite
+ * that opens its page (role="link") opens with Enter too.
+ * @param {HTMLElement} el @param {(action: any) => Promise<void>} dispatch
+ */
+function favouriteDrag(el, dispatch) {
+  /** @type {string | null} */
+  let from = null;
+  const clear = () => { for (const o of el.querySelectorAll('.drop-before, .drop-after, .dragging-fav')) o.classList.remove('drop-before', 'drop-after', 'dragging-fav'); };
+  el.addEventListener('dragstart', (e) => {
+    const t = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest?.('[data-fav-index]'));
+    if (!t) return;
+    from = String(t.dataset.favIndex);
+    t.classList.add('dragging-fav');
+    if (e.dataTransfer) { e.dataTransfer.setData('text/plain', `favourite ${Number(from) + 1}`); e.dataTransfer.effectAllowed = 'move'; }
+  });
+  el.addEventListener('dragover', (e) => {
+    const t = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest?.('[data-fav-index]'));
+    if (!t || from === null) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    for (const o of el.querySelectorAll('.drop-before, .drop-after')) if (o !== t) o.classList.remove('drop-before', 'drop-after');
+    // Moving down, it lands after the one dropped on; moving up, before it.
+    const later = Number(t.dataset.favIndex) > Number(from);
+    t.classList.toggle('drop-after', later);
+    t.classList.toggle('drop-before', !later && t.dataset.favIndex !== from);
+  });
+  el.addEventListener('drop', (e) => {
+    const t = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest?.('[data-fav-index]'));
+    if (!t || from === null) return;
+    e.preventDefault();
+    const to = String(t.dataset.favIndex);
+    const was = from;
+    from = null;
+    clear();
+    if (to !== was) void dispatch({ type: 'moveFavourite', from: was, to });
+  });
+  el.addEventListener('dragend', () => { from = null; clear(); });
+  el.addEventListener('keydown', (e) => {
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (e.key === 'Enter' && t.matches?.('[role="link"][data-action]')) { e.preventDefault(); t.click(); }
+  });
+}
+
+/**
+ * Platform images: each <img data-stored> drawn is filled from the data folder, read once and kept
+ * as an object URL, so a redraw shows it at once. A file missing from the folder says so in its box.
+ * Choosing a file in a platform's Add image picker hands it to the controller.
+ * @param {HTMLElement} el @param {{ dispatch: (action: any) => Promise<void>, readStoredFile: (stored: string) => Promise<File> }} controller
+ * @returns {() => void} call after each redraw
+ */
+function platformImages(el, controller) {
+  /** @type {Map<string, Promise<string | null>>} */
+  const urls = new Map();
+  const url = (/** @type {string} */ stored) => {
+    let u = urls.get(stored);
+    if (!u) {
+      u = controller.readStoredFile(stored).then((f) => URL.createObjectURL(f), () => null);
+      urls.set(stored, u);
+    }
+    return u;
+  };
+  el.addEventListener('change', (e) => {
+    const t = /** @type {HTMLInputElement} */ (e.target);
+    if (t.type !== 'file' || !t.dataset.imageFor) return;
+    const file = t.files?.[0];
+    t.closest('details')?.removeAttribute('open');
+    if (file) void controller.dispatch({ type: 'addPlatformImage', id: t.dataset.imageFor, file });
+    t.value = '';
+  });
+  return () => {
+    for (const img of /** @type {NodeListOf<HTMLImageElement>} */ (el.querySelectorAll('img[data-stored]'))) {
+      const stored = String(img.dataset.stored);
+      void url(stored).then((u) => {
+        if (!img.isConnected) return;
+        if (u) img.src = u;
+        else img.closest('.image-box')?.classList.add('missing');
+      });
+    }
+  };
+}
+
+/**
+ * A box of several lines (justifications, SFARP, descriptions, notes) as tall as its text, so all of
+ * it shows without scrolling inside it; never shorter than its rows ask for. Not a one-line title.
+ * @param {HTMLTextAreaElement} t
+ */
+function fit(t) {
+  // One not drawn (in a closed part of the page) has no height to measure: left as it is.
+  if (t.classList.contains('doc-title') || !t.isConnected || t.offsetParent === null) return;
+  t.style.height = 'auto';
+  const cs = getComputedStyle(t);
+  const edge = cs.boxSizing === 'border-box' ? parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth) : -(parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom));
+  t.style.height = `${t.scrollHeight + edge}px`;
+}
+
+/** Every box of several lines on the screen fitted to its text. @param {HTMLElement} root */
+function fitAll(root) {
+  for (const t of /** @type {NodeListOf<HTMLTextAreaElement>} */ (root.querySelectorAll('textarea'))) fit(t);
+}
+
+/**
+ * Pointing at a box on a bow-tie brings forward its links and what they reach, and fades the rest:
+ * a control, the causal factors it prevents or the consequences it mitigates, and its line to the
+ * hazard; a causal factor or a consequence, the controls that stand against it and their lines.
+ * @param {HTMLElement} el
+ */
+function bowtieLinkFocus(el) {
+  const clear = (/** @type {Element} */ svg) => {
+    svg.classList.remove('bt-focus');
+    for (const o of svg.querySelectorAll('.bt-on')) o.classList.remove('bt-on');
+  };
+  const NODES = 'g[data-bowtie-node$="-control"], g[data-bowtie-node="causal-factor"], g[data-bowtie-node="consequence"]';
+  el.addEventListener('pointerover', (e) => {
+    const g = /** @type {SVGGElement | null} */ (/** @type {Element} */ (e.target).closest?.(NODES));
+    const svg = g?.closest('svg');
+    if (!g || !svg) return;
+    clear(svg);
+    const id = g.getAttribute('data-record-id') ?? '';
+    svg.classList.add('bt-focus');
+    // The traditional view: the rows the box stands on (every row a control is repeated on) and all on them.
+    if (svg.getAttribute('data-bowtie-layout') === 'traditional') {
+      const rows = new Set([...svg.querySelectorAll('g[data-record-id]')].filter((b) => b.getAttribute('data-record-id') === id).map((b) => b.getAttribute('data-bowtie-row')));
+      for (const o of svg.querySelectorAll('[data-bowtie-row]')) if (rows.has(o.getAttribute('data-bowtie-row'))) o.classList.add('bt-on');
+      return;
+    }
+    const control = String(g.getAttribute('data-bowtie-node')).endsWith('-control');
+    // From a control, its links go out by its id; to a causal factor or consequence, they come in by its.
+    const links = [...svg.querySelectorAll('[data-bowtie-link]')].filter((p) => p.getAttribute(control ? 'data-bowtie-link' : 'data-bowtie-target') === id);
+    // The controls concerned: this one, or those standing against this causal factor or consequence.
+    const controls = new Set(control ? [id] : links.map((p) => String(p.getAttribute('data-bowtie-link'))));
+    // One no control stands against fades every line: nothing leads to it.
+    g.classList.add('bt-on');
+    for (const p of links) {
+      p.classList.add('bt-on');
+      const other = p.getAttribute(control ? 'data-bowtie-target' : 'data-bowtie-link');
+      for (const box of svg.querySelectorAll('g[data-record-id]')) if (box.getAttribute('data-record-id') === other) box.classList.add('bt-on');
+    }
+    // And each one's line to the hazard.
+    for (const edge of svg.querySelectorAll('[data-bowtie-edge]')) if (controls.has(String(edge.getAttribute('data-bowtie-edge')))) edge.classList.add('bt-on');
+  });
+  el.addEventListener('pointerout', (e) => {
+    const g = /** @type {Element} */ (e.target).closest?.(NODES);
+    const svg = g?.closest('svg');
+    if (g && svg && !g.contains(/** @type {Node | null} */ (e.relatedTarget))) clear(svg);
   });
 }

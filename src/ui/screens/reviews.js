@@ -12,33 +12,44 @@ import { day, when, profileName } from '../names.js';
 /** @typedef {import('../../core/data.js').Data} Data */
 
 /**
- * The platform's review schedule as a line at the top of its Reviews tab, changed in place, with
- * the button that starts a review when none is open.
+ * The top of a platform's Reviews tab as three cards: the schedule (set with a button, then its
+ * months changed in place, and removable), the next review due (its date changed in place, how
+ * long until it or how overdue), and the last review, with Start review.
  * @param {any} state @param {Data} data @param {any} p the platform
  */
 export function reviewLine(state, data, p) {
   const s = reviewState(p, state.today);
   const last = lastReviewed(data, p.id);
-  const lastText = last ? html`<span class="muted">· last reviewed ${day(last)}</span>` : html`<span class="muted">· never reviewed</span>`;
-  const start = p.status !== 'live' || openReview(data, p.id) ? ''
-    : html`<button type="button" ${dataAttrs({ action: 'beginReview', 'platform-id': p.id })}>Start review</button>`;
-  if (s === 'none') {
-    if (state.editing?.kind === 'schedule' && state.editing.id === p.id) {
-      return html`<form data-action="setSchedule" ${dataAttrs({ 'platform-id': p.id })} class="doc-meta review-line fill">
-        Reviewed every <input type="number" class="months" name="months" min="1" max="${MAX_REVIEW_MONTHS}" required aria-label="Months between reviews" autofocus> months, next due
-        <input type="date" name="due" required aria-label="Next review due">
-        <button type="submit">Set</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></form>`;
-    }
-    return html`<div class="doc-meta review-line">No review schedule
-      <button type="button" class="link" ${dataAttrs({ action: 'startEdit', kind: 'schedule', id: p.id })}>Set schedule</button> ${lastText} ${start}</div>`;
-  }
+  const inProgress = openReview(data, p.id);
   const field = { change: 'setScheduleField', 'platform-id': p.id };
-  return html`<div class="doc-meta review-line">Reviewed every
-    <input type="number" class="quiet months" name="months" min="1" max="${MAX_REVIEW_MONTHS}" value="${p.reviewMonths}" aria-label="Months between reviews" ${dataAttrs(field)}> months · next due
-    <input type="date" class="quiet" name="due" value="${p.reviewDue}" aria-label="Next review due" ${dataAttrs(field)}>${reviewTag(s)}
-    ${lastText}
-    ${confirmButton('✕', 'Remove the review schedule', dataAttrs({ action: 'setSchedule', 'platform-id': p.id }))}
-    ${start}</div>`;
+  const setting = state.editing?.kind === 'schedule' && state.editing.id === p.id;
+  const schedule = s !== 'none'
+    ? html`<div class="rv-big">Every <input type="number" class="quiet months" name="months" min="1" max="${MAX_REVIEW_MONTHS}" value="${p.reviewMonths}" aria-label="Months between reviews" ${dataAttrs(field)}> months</div>
+      <div class="rv-foot">${confirmButton('Remove schedule', 'Remove the review schedule', dataAttrs({ action: 'setSchedule', 'platform-id': p.id }))}</div>`
+    : setting
+      ? html`<form data-action="setSchedule" ${dataAttrs({ 'platform-id': p.id })} class="rv-form">
+        <label>Every <input type="number" class="months" name="months" min="1" max="${MAX_REVIEW_MONTHS}" required aria-label="Months between reviews" autofocus> months</label>
+        <label>Next due <input type="date" name="due" required aria-label="Next review due"></label>
+        <div class="actions"><button type="submit" class="primary">Set schedule</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></div></form>`
+      : html`<div class="rv-big muted">No schedule</div>
+        <div class="rv-foot"><button type="button" class="primary rv-action" ${dataAttrs({ action: 'startEdit', kind: 'schedule', id: p.id })}>Set schedule</button></div>`;
+  const days = p.reviewDue ? Math.round((Date.parse(`${p.reviewDue}T00:00:00Z`) - Date.parse(`${String(state.today).slice(0, 10)}T00:00:00Z`)) / 86_400_000) : null;
+  const until = days === null ? '' : days < 0 ? `${-days} day${days === -1 ? '' : 's'} overdue` : days === 0 ? 'Due today' : `In ${days} day${days === 1 ? '' : 's'}`;
+  const due = p.reviewDue
+    ? html`<div class="rv-big"><input type="date" class="quiet" name="due" value="${p.reviewDue}" aria-label="Next review due" ${dataAttrs(field)}></div>
+      <div class="rv-foot"><span class="rv-until${days !== null && days < 0 ? ' late' : ''}">${until}</span>${reviewTag(s)}</div>`
+    : html`<div class="rv-big muted">—</div><div class="rv-foot muted">Set a schedule to have one</div>`;
+  const start = inProgress
+    ? html`<span class="tag">Review in progress</span>`
+    : p.status !== 'live' ? html`<span class="muted">${p.name} is retired</span>`
+      : html`<button type="button" class="primary rv-action" ${dataAttrs({ action: 'beginReview', 'platform-id': p.id })}>Start review</button>`;
+  return html`<div class="dash-grid three-even review-cards">
+    <section class="dash-card rv-card" aria-label="Review schedule"><h3 class="dash-card-h">Review schedule</h3>${schedule}</section>
+    <section class="dash-card rv-card${s === 'overdue' ? ' rv-overdue' : s === 'dueSoon' ? ' rv-soon' : ''}" aria-label="Next review due"><h3 class="dash-card-h">Next review due</h3>${due}</section>
+    <section class="dash-card rv-card" aria-label="Last reviewed"><h3 class="dash-card-h">Last reviewed</h3>
+      <div class="rv-big${last ? '' : ' muted'}">${last ? day(last) : 'Never'}</div>
+      <div class="rv-foot">${start}</div></section>
+  </div>`;
 }
 
 /** @param {{ recommended: number, planned: number, implemented: number, rejected: number }} c */

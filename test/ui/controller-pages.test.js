@@ -112,3 +112,22 @@ test('copying a whole stage of risk from another platform, and the list closes',
   assert.deepEqual(ratingOf(W(c), 'h1', 'p1').residual, { consequence: 4, likelihood: 'E' });
   assert.equal(c.getState().picker, null);
 });
+
+test('Info\'s Assign to platform group remembers the group through choosing, assigning and confirming', async () => {
+  const f = new MemoryFolder();
+  const c = createController({ clock: fixedClock('2026-09-28T10:00:00+10:00'), minSaveMs: 0, storage: new MemoryStorage(), pickFolder: async () => f.handle,
+    pickSaveFile: async () => { throw new Error('no'); }, pickOpenFile: async () => { throw new Error('no'); } });
+  await c.dispatch({ type: 'chooseFolder' });
+  await c.dispatch({ type: 'createProfile', name: 'Ada' });
+  await c.dispatch({ type: 'selectProfile', id: c.getState().profiles[0].id });
+  await c.dispatch({ type: 'createPlatformGroup', id: 'g1', name: 'UAS' });
+  await c.dispatch({ type: 'createPlatformGroup', id: 'g2', name: 'UGV' });
+  await c.dispatch({ type: 'createFacetOption', id: 'o1', facet: 'systemElement', name: 'Wheel' });
+  await c.dispatch({ type: 'chooseAssignGroup', groupId: 'g2' });
+  assert.equal(c.getState().infoTools.groupId, 'g2');
+  await c.dispatch({ type: 'startAssignToGroup', facet: 'systemElement', groupId: 'g2' });
+  await c.dispatch({ type: 'assignToGroup', facet: 'systemElement', groupId: 'g2', optionIds: ['o1'] });
+  assert.equal(c.getState().infoTools.assigning, null, 'the tool is off after Confirm');
+  assert.equal(c.getState().infoTools.groupId, 'g2', 'the group stays chosen');
+  assert.equal(Object.values(c.getState().session.working.records.optionGroup)[0].groupId, 'g2');
+});

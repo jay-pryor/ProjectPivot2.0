@@ -7,10 +7,11 @@ import { entries } from './history.js';
 
 /**
  * Actions that never wait for acknowledgement: a review's row-level edits (its start and
- * completion do wait) and producing a report. Written out rather than imported from
+ * completion do wait), producing a report, and tagging platforms with their groups. Written out rather than imported from
  * ops/reviews.js, which would make an import cycle through queries.js.
  */
-export const NOT_ACKNOWLEDGED = Object.freeze(['Mark review row', 'Set review outcome', 'Set review notes', 'Produce report']);
+export const NOT_ACKNOWLEDGED = Object.freeze(['Mark review row', 'Set review outcome', 'Set review notes', 'Produce report',
+  'Add to platform group', 'Remove from platform group', 'Delete platform group']);
 
 /** @param {Data} data @param {any} entry @returns {Data} */
 const append = (data, entry) => ({ ...data, history: { ...data.history, [entry.id]: entry } });

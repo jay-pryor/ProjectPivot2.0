@@ -105,3 +105,12 @@ test('shownRows gives exactly the rows the table shows, filtered and sorted', ()
   assert.deepEqual(shownRows(st, { id: 't', columns, rows, rowKey: (r) => r.id }).map((r) => r.id), ['c', 'a']);
   assert.deepEqual(shownRows(state(), { id: 't', columns, rows, rowKey: (r) => r.id }).map((r) => r.id), ['a', 'c'], 'the default filter applies');
 });
+
+test('a merging column joins the cells of neighbouring rows with the same key, as the rows are shown after sorting', () => {
+  const list = [{ id: 'a', g: 'X', n: 1 }, { id: 'b', g: 'X', n: 3 }, { id: 'c', g: 'Y', n: 2 }];
+  const cols = [{ key: 'g', label: 'Group', value: (r) => r.g, merge: (r) => r.g }, { key: 'n', label: 'N', value: (r) => r.n }];
+  const out = (tables) => dataTable(state(tables), { id: 'm', columns: cols, rows: list, rowKey: (r) => r.id }).toString();
+  assert.match(out({}), /<tr data-row="a"><td class="merged" rowspan="2">X<\/td><td>1<\/td><\/tr><tr data-row="b"><td>3<\/td><\/tr><tr data-row="c"><td>Y<\/td><td>2<\/td><\/tr>/);
+  // Sorted by N the X rows are no longer neighbours: each keeps its own cell.
+  assert.doesNotMatch(out({ m: { sort: { key: 'n', dir: 'asc' } } }), /rowspan/);
+});

@@ -4,7 +4,7 @@ import { MemoryFolder } from '../fakes/folder.js';
 import { MemoryStorage } from '../fakes/storage.js';
 import { fixedClock } from '../../src/core/time.js';
 import { createController } from '../../src/ui/controller.js';
-import { themeOf, columnWidth } from '../../src/ui/prefs.js';
+import { themeOf, columnWidth, favouritesOf, isFavourite, favouriteLayout, comingUpDays } from '../../src/ui/prefs.js';
 import { readProfiles } from '../../src/storage/store.js';
 
 function env(folder, extra = {}) {
@@ -117,4 +117,40 @@ test('a dragged column width is applied at once, before profiles.json is written
   await c.dispatch({ type: 'setColumnWidth', table: 'hazards', column: 'title', width: '300' });
   assert.equal(seen[0], 300, 'the very first redraw already has the new width');
   assert.ok(seen.every((w) => w === 300), `never shown at the old width: ${seen}`);
+});
+
+test('favourite pages are each profile\'s own: a page or a page within it, starred in order, reordered, unstarred, laid out, and back on the next open', async () => {
+  const f = new MemoryFolder();
+  const c = createController(env(f));
+  await openAs(c, 'Ada');
+  await c.dispatch({ type: 'toggleFavourite', page: 'hazards', id: '', tab: '' });
+  await c.dispatch({ type: 'toggleFavourite', page: 'hazard', id: 'h1', tab: '' });
+  await c.dispatch({ type: 'toggleFavourite', page: 'hazard', id: 'h1', tab: 'p:p1' });
+  await c.dispatch({ type: 'toggleFavourite', page: 'platform', id: 'p1', tab: 'details' });
+  assert.deepEqual(favouritesOf(c.getState()), [{ name: 'hazards', id: null, tab: null }, { name: 'hazard', id: 'h1', tab: null }, { name: 'hazard', id: 'h1', tab: 'p:p1' }, { name: 'platform', id: 'p1', tab: null }]);
+  assert.ok(isFavourite(c.getState(), { name: 'hazard', id: 'h1', tab: 'p:p1' }), 'a hazard on one platform is a page of its own');
+  assert.ok(!isFavourite(c.getState(), { name: 'hazard', id: 'h1', tab: 'history' }));
+  await c.dispatch({ type: 'moveFavourite', from: '3', to: '0' });
+  assert.deepEqual(favouritesOf(c.getState()).map((x) => x.name), ['platform', 'hazards', 'hazard', 'hazard']);
+  await c.dispatch({ type: 'moveFavourite', from: '0', to: '9' });
+  assert.equal(favouritesOf(c.getState())[0].name, 'platform', 'nowhere to go: left as it is');
+  await c.dispatch({ type: 'toggleFavourite', page: 'hazard', id: 'h1' });
+  assert.deepEqual(favouritesOf(c.getState()).map((x) => `${x.name}${x.tab ? `:${x.tab}` : ''}`), ['platform', 'hazards', 'hazard:p:p1']);
+  assert.equal(favouriteLayout(c.getState()), 'table');
+  await c.dispatch({ type: 'setFavouriteLayout', layout: 'large' });
+  await c.dispatch({ type: 'setFavouriteLayout', layout: 'bogus' });
+  await c.dispatch({ type: 'setComingUpDays', days: '30' });
+  await c.dispatch({ type: 'setComingUpDays', days: '31' });
+  await c.dispatch({ type: 'toggleFavouriteEdit' });
+  assert.equal(c.getState().favouritesEditing, true);
+  await c.dispatch({ type: 'go', view: 'hazards' });
+  assert.equal(c.getState().favouritesEditing, false, 'leaving the page ends editing');
+  const again = createController(env(f));
+  await openAs(again, 'Ada');
+  assert.deepEqual(favouritesOf(again.getState()).map((x) => x.name), ['platform', 'hazards', 'hazard']);
+  assert.equal(favouriteLayout(again.getState()), 'large');
+  assert.equal(comingUpDays(again.getState()), 30, 'the Coming up window is kept on the profile; one not on the menu is ignored');
+  const grace = createController(env(f));
+  await openAs(grace, 'Grace');
+  assert.deepEqual(favouritesOf(grace.getState()), [], 'not Ada\'s');
 });

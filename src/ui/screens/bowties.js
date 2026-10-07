@@ -4,15 +4,13 @@ import { profileName } from '../names.js';
 import { get, live } from '../../core/data.js';
 import { byNumber } from '../../core/queries.js';
 import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
-import { SETS, SET_WORD, STATUS_WORD, bowtieOf, canSee, myViews, sharedWithMe, hazardName } from '../../core/bowtie.js';
+import { STATUS_WORD, bowtieOf, canSee, myViews, sharedWithMe, hazardName } from '../../core/bowtie.js';
 import { bowtieSvg } from '../bowtie-svg.js';
 import { paneCount, paneDirty, ZOOM_MIN, ZOOM_MAX } from '../workspace.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 /** @typedef {import('../../core/data.js').Rec} Rec */
 /** @typedef {import('../workspace.js').Pane} Pane */
-
-const SET_LABEL = { existing: 'Existing only', additional: 'Additional only', all: 'Existing and additional' };
 
 /** @param {Data} data @param {string} id */
 function hazardText(data, id) {
@@ -123,13 +121,12 @@ function paneView(state, data, pane, side, split) {
       ${button('Close', { action: 'closeBowtiePane', side: s })}
     </header>
     <div class="bt-filters">
-      <label>Controls <select name="value" aria-label="Which controls" ${dataAttrs({ change: 'setPaneSet', side: s })}>${SETS.map((x) => option(x, SET_LABEL[/** @type {keyof typeof SET_LABEL} */ (x)], f.set))}</select></label>
-      <fieldset${f.set === 'existing' ? raw(' disabled') : ''}><legend>${SET_WORD.additional}</legend>
+      <fieldset><legend>Controls</legend>
         ${CONTROL_STATUSES.map((st) => html`<label><input type="checkbox" name="on" ${dataAttrs({ change: 'setPaneStatus', side: s, status: st })}${f.statuses.includes(st) ? raw(' checked') : ''}> ${STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (st)]}</label>`)}
       </fieldset>
-      ${b.ok ? zoomControls(pane) : ''}
+      ${b.ok ? html`<span class="bt-tools">${layoutSwitch(s, pane.layout ?? 'focus')}${tagsToggle(s, !pane.hideTags)}${gapsToggle(s, !pane.hideGaps)}${zoomControls(pane)}</span>` : ''}
     </div>
-    <div class="bt-diagram${b.ok ? ' pannable' : ''}" ${dataAttrs({ side: s })}>${b.ok ? diagram(bowtieSvg(b), pane) : html`<p class="bt-cannot">${/** @type {import('../../core/bowtie.js').Cannot} */ (b).message}</p>`}</div>
+    <div class="bt-diagram${b.ok ? ' pannable' : ''}" ${dataAttrs({ side: s })}>${b.ok ? diagram(bowtieSvg(b, { tags: !pane.hideTags, gaps: !pane.hideGaps, layout: pane.layout ?? 'focus' }), pane) : html`<p class="bt-cannot">${/** @type {import('../../core/bowtie.js').Cannot} */ (b).message}</p>`}</div>
     <div class="actions bt-actions">
       ${own ? button(dirty ? 'Save' : 'Saved', { action: 'saveBowtiePane', side: s }, !dirty) : button(view ? 'Save a copy' : 'Save', { action: 'saveBowtiePane', side: s })}
       ${button('Save as…', { action: 'startEdit', kind: 'bowtieName', id: s })}
@@ -146,11 +143,31 @@ function paneView(state, data, pane, side, split) {
  * @param {string} svg @param {Pane} pane
  */
 function diagram(svg, pane) {
-  return html`<div class="bt-canvas" ${dataAttrs({ zoom: pane.zoom ?? 1, x: pane.pan?.x ?? 0, y: pane.pan?.y ?? 0 })} style="transform: ${viewTransform(pane)}">${raw(svg)}</div>`;
+  // Fitted, a drawing shrinks to its window but never grows past its own size: a small bow-tie
+  // stays at its natural size, centred, rather than blown up to fill the space.
+  const [, w, h] = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(svg) ?? [];
+  const size = w && h ? `max-width: ${w}px; max-height: ${h}px; ` : '';
+  return html`<div class="bt-canvas" ${dataAttrs({ zoom: pane.zoom ?? 1, x: pane.pan?.x ?? 0, y: pane.pan?.y ?? 0 })} style="${size}transform: ${viewTransform(pane)}">${raw(svg)}</div>`;
 }
 
 /** @param {Pane} pane */
 const viewTransform = (pane) => `translate(${pane.pan?.x ?? 0}px, ${pane.pan?.y ?? 0}px) scale(${pane.zoom ?? 1})`;
+
+/** Focus or traditional: which way the window draws its bow-tie. @param {string} side @param {string} layout */
+function layoutSwitch(side, layout) {
+  const choice = (/** @type {string} */ value, /** @type {string} */ label, /** @type {string} */ tip) => html`<button type="button" aria-pressed="${layout === value ? 'true' : 'false'}" title="${tip}" ${dataAttrs({ action: 'setBowtieLayout', side, layout: value })}>${label}</button>`;
+  return html`<div class="bt-layout" role="group" aria-label="View">${choice('focus', 'Focus', 'Each control once, joined to what it stands against')}${choice('traditional', 'Traditional', 'A row for each causal factor and consequence, its controls in sequence')}</div>`;
+}
+
+/** Show tags: a switch for the badges on the window's control boxes. @param {string} side @param {boolean} on */
+function tagsToggle(side, on) {
+  return html`<button type="button" class="bt-tags-toggle${on ? ' on' : ''}" role="switch" aria-checked="${on ? 'true' : 'false'}" title="${on ? 'Hide' : 'Show'} the tags on the controls" ${dataAttrs({ action: 'toggleBowtieTags', side })}><span class="bt-tags-track" aria-hidden="true"><span class="bt-tags-knob"></span></span>Show tags</button>`;
+}
+
+/** Show gaps: a switch for the mark on causal factors and consequences no control stands against. @param {string} side @param {boolean} on */
+function gapsToggle(side, on) {
+  return html`<button type="button" class="bt-tags-toggle${on ? ' on' : ''}" role="switch" aria-checked="${on ? 'true' : 'false'}" title="${on ? 'Hide' : 'Show'} the mark on causal factors and consequences with no controls" ${dataAttrs({ action: 'toggleBowtieGaps', side })}><span class="bt-tags-track" aria-hidden="true"><span class="bt-tags-knob"></span></span>Show gaps</button>`;
+}
 
 /** Zoom out, back to fitted, and in; the middle shows how far it is zoomed. @param {Pane} pane */
 function zoomControls(pane) {

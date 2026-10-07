@@ -51,7 +51,7 @@ function sectionsFor(s) {
       rows: rows((x) => x.rows),
     },
     {
-      id: 'controls', label: 'Additional control analysis',
+      id: 'controls', label: 'Controls',
       keyColumn: hazardKey,
       columns: [
         { id: 'number', label: 'ID', w: 2, get: (/** @type {any} */ r) => r.number ?? '' },
@@ -63,12 +63,14 @@ function sectionsFor(s) {
         { id: 'justification', label: 'Justification', w: 5, get: (/** @type {any} */ r) => r.justification ?? '' },
         { id: 'state', label: 'Status', w: 2, get: (/** @type {any} */ r) => STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (r.state)] ?? r.state },
         { id: 'reason', label: 'Reason rejected', w: 4, optional: true, get: (/** @type {any} */ r) => r.reason },
-        { id: 'owner', label: 'Owner', w: 3, optional: true, defaultOff: true, get: (/** @type {any} */ r) => r.owner ?? '' },
+        { id: 'owner', label: 'Implemented by', w: 3, optional: true, defaultOff: true, get: (/** @type {any} */ r) => r.implementedBy ?? '' },
       ],
       rows: rows((x) => x.rows.flatMap((h) => h.controls.map((c) => ({ reportId: h.reportId, ...c })))),
     },
     {
-      id: 'existing', label: 'Existing controls',
+      // The controls implemented on the platform. Kept as 'existing', so designs made when these
+      // were the existing controls still find them.
+      id: 'existing', label: 'Implemented controls',
       keyColumn: hazardKey,
       columns: [
         { id: 'tier', label: 'Tier', w: 3, get: (/** @type {any} */ r) => r.tier || 'Not set' },
@@ -76,9 +78,9 @@ function sectionsFor(s) {
         { id: 'control', label: 'Control', w: 5, get: (/** @type {any} */ r) => r.title },
         { id: 'description', label: 'Description', w: 5, optional: true, get: (/** @type {any} */ r) => r.description },
         { id: 'kind', label: 'Kind', w: 2, get: (/** @type {any} */ r) => r.kind },
-        { id: 'owner', label: 'Owner', w: 3, optional: true, defaultOff: true, get: (/** @type {any} */ r) => r.owner ?? '' },
+        { id: 'owner', label: 'Implemented by', w: 3, optional: true, defaultOff: true, get: (/** @type {any} */ r) => r.implementedBy ?? '' },
       ],
-      rows: rows((x) => x.rows.flatMap((h) => (h.existingControls ?? []).map((c) => ({ reportId: h.reportId, ...c })))),
+      rows: rows((x) => x.rows.flatMap((h) => h.controls.filter((c) => c.state === 'implemented').map((c) => ({ reportId: h.reportId, ...c })))),
     },
     {
       id: 'causes', label: 'Causal factors and consequences',
@@ -131,7 +133,7 @@ function sectionsFor(s) {
       id: 'safetyReports', label: 'Safety reports',
       keyColumn: hazardKey,
       columns: [
-        { id: 'number', label: 'Report', w: 2, get: (/** @type {any} */ r) => r.number },
+        { id: 'number', label: 'Report ID', w: 2, get: (/** @type {any} */ r) => r.number },
         { id: 'date', label: 'Date', w: 2, get: (/** @type {any} */ r) => r.date ?? '' },
         { id: 'type', label: 'Type', w: 2, get: (/** @type {any} */ r) => r.type },
         { id: 'summary', label: 'Summary', w: 5, get: (/** @type {any} */ r) => r.summary },

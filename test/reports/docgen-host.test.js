@@ -6,7 +6,7 @@ import { fixedClock } from '../../src/core/time.js';
 import { assignHazardNumbers, updateHazard } from '../../src/core/ops/hazards.js';
 import { confirmControl, setRating } from '../../src/core/ops/assessment.js';
 import { setReportDesign } from '../../src/core/ops/reports.js';
-import { act, seed, asExisting } from '../helpers.js';
+import { act, seed } from '../helpers.js';
 
 function setup(mutate = (d) => d) {
   let data = assignHazardNumbers(seed());
@@ -96,24 +96,24 @@ test('Hazards has four risk columns; Risk assessments and SFARP sections', async
   assert.equal(sf.columns[1].get(sf.rows()[0]), 'SFARP achieved');
 });
 
-test('Additional control analysis and Existing controls sections', async () => {
-  const { setControlAnalysis, linkExistingControl } = await import('../../src/core/ops/controls.js');
+test('Controls and Implemented controls sections', async () => {
+  const { setControlAnalysis } = await import('../../src/core/ops/controls.js');
   const { setControlStatus } = await import('../../src/core/ops/assessment.js');
   let data = assignHazardNumbers(seed());
   data = setControlAnalysis(data, act, { hazardId: 'h1', controlId: 'c1', recommendation: 'Fit', justification: 'Because' });
   data = setControlStatus(data, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'rejected', reason: 'No water' });
-  data = linkExistingControl(asExisting(data, 'c2'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
+  data = setControlStatus(data, act, { hazardId: 'h1', controlId: 'c2', platformId: 'p1', status: 'implemented' });
   const docs = createDocHost({ getData: () => data, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id });
   const secs = docs.host.sections({ subjectId: 'p1' });
   const ctl = secs.find((s) => s.id === 'controls');
-  assert.equal(ctl.label, 'Additional control analysis');
+  assert.equal(ctl.label, 'Controls');
   assert.deepEqual(ctl.columns.map((c) => c.id), ['number', 'control', 'tier', 'description', 'kind', 'recommendation', 'justification', 'state', 'reason', 'owner']);
   const sprinklers = ctl.rows().find((r) => r.title === 'Sprinklers');
   assert.deepEqual(['recommendation', 'justification', 'state', 'reason'].map((id) => ctl.columns.find((c) => c.id === id).get(sprinklers)), ['Fit', 'Because', 'Rejected', 'No water']);
   const ex = secs.find((s) => s.id === 'existing');
-  assert.equal(ex.label, 'Existing controls');
+  assert.equal(ex.label, 'Implemented controls', 'kept as existing, so saved designs still find it');
   assert.deepEqual(ex.columns.map((c) => c.id), ['tier', 'number', 'control', 'description', 'kind', 'owner']);
-  assert.equal(ex.columns.find((c) => c.id === 'control').get(ex.rows()[0]), 'Fire drills');
+  assert.deepEqual(ex.rows().map((r) => ex.columns.find((c) => c.id === 'control').get(r)), ['Fire drills'], 'only those implemented on the platform');
 });
 
 test('Hazards has a Lifecycle phases column; a Safety reports section; markup stays literal in the output', async () => {
@@ -124,7 +124,7 @@ test('Hazards has a Lifecycle phases column; a Safety reports section; markup st
   data = createPhase(data, act, { id: 'ph2', name: 'Operation' });
   data = linkPhase(data, act, { hazardId: 'h1', phaseId: 'ph1' });
   data = linkPhase(data, act, { hazardId: 'h1', phaseId: 'ph2' });
-  data = createSafetyReport(data, act, { hazardId: 'h1', platformId: 'p1', number: 'SR-7', date: '2026-04-01', summary: 'Spill <b>x</b>' });
+  data = assignHazardNumbers(createSafetyReport(data, act, { hazardId: 'h1', platformId: 'p1', date: '2026-04-01', summary: 'Spill <b>x</b>' }));
   const docs = createDocHost({ getData: () => data, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id });
   const secs = docs.host.sections({ subjectId: 'p1' });
   const hz = secs.find((s) => s.id === 'hazards');
@@ -132,14 +132,14 @@ test('Hazards has a Lifecycle phases column; a Safety reports section; markup st
   const sr = secs.find((s) => s.id === 'safetyReports');
   assert.equal(sr.label, 'Safety reports');
   assert.deepEqual(sr.columns.map((c) => c.id), ['number', 'date', 'type', 'summary', 'location', 'parties', 'description']);
-  assert.deepEqual(['number', 'date', 'type', 'summary'].map((id) => sr.columns.find((c) => c.id === id).get(sr.rows()[0])), ['SR-7', '2026-04-01', 'Occurrence', 'Spill <b>x</b>']);
+  assert.deepEqual(['number', 'date', 'type', 'summary'].map((id) => sr.columns.find((c) => c.id === id).get(sr.rows()[0])), ['HAZ-001-A-1', '2026-04-01', 'Occurrence', 'Spill <b>x</b>']);
 });
 
 test('markup in a safety report or a justification is shown literally in the produced report', async () => {
   const { createSafetyReport } = await import('../../src/core/ops/safety-reports.js');
   const { setAssessment } = await import('../../src/core/ops/assessment.js');
   const { docs } = setup((d) => {
-    let x = createSafetyReport(d, act, { hazardId: 'h1', platformId: 'p1', number: 'SR-1', summary: 'Spill <b>big</b>' });
+    let x = createSafetyReport(d, act, { hazardId: 'h1', platformId: 'p1', summary: 'Spill <b>big</b>' });
     return setAssessment(x, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihoodWhy: 'Seen <i>twice</i>' });
   });
   const { report } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'T' });
@@ -163,28 +163,31 @@ test('capability in Hazards and Risk assessments, and its justifications stay li
   assert.equal(report.html.includes('Mission <lost>'), false);
 });
 
-test('additional and existing controls carry their owner on the platform, as an optional column', async () => {
-  const { setControlOwner, linkExistingControl } = await import('../../src/core/ops/controls.js');
+test('controls carry who implements them on the platform, as an optional column kept as owner', async () => {
+  const { setImplementedBy } = await import('../../src/core/ops/controls.js');
+  const { setControlStatus } = await import('../../src/core/ops/assessment.js');
   const { docs } = setup((d) => {
-    let x = setControlOwner(d, act, { controlId: 'c1', platformId: 'p1', owner: 'customer' });
-    x = linkExistingControl(asExisting(x, 'c2'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
-    return setControlOwner(x, act, { controlId: 'c2', platformId: 'p1', owner: 'other', ownerName: 'Acme' });
+    let x = setImplementedBy(d, act, { controlId: 'c1', platformId: 'p1', implementedBy: 'customer' });
+    x = setControlStatus(x, act, { hazardId: 'h1', controlId: 'c2', platformId: 'p1', status: 'implemented' });
+    return setImplementedBy(x, act, { controlId: 'c2', platformId: 'p1', implementedBy: 'highcom' });
   });
   const secs = docs.host.sections({ subjectId: 'p1' });
   const ctl = secs.find((s) => s.id === 'controls');
-  const owner = ctl.columns.find((c) => c.id === 'owner');
-  assert.equal(owner.optional, true);
-  assert.equal(owner.get(ctl.rows().find((r) => r.title === 'Sprinklers')), 'Customer');
+  const by = ctl.columns.find((c) => c.id === 'owner');
+  assert.equal(by.label, 'Implemented by');
+  assert.equal(by.optional, true);
+  assert.equal(by.get(ctl.rows().find((r) => r.title === 'Sprinklers')), 'Customer');
   const ex = secs.find((s) => s.id === 'existing');
-  assert.equal(ex.columns.find((c) => c.id === 'owner').get(ex.rows()[0]), 'Acme');
+  assert.equal(ex.columns.find((c) => c.id === 'owner').label, 'Implemented by');
+  assert.equal(ex.columns.find((c) => c.id === 'owner').get(ex.rows().find((r) => r.title === 'Fire drills')), 'HighCom');
 });
 
-test('the Owner columns start switched off, so saved designs keep their columns and widths', () => {
+test('the Implemented by columns start switched off, so saved designs keep their columns and widths', () => {
   const { docs } = setup();
   const secs = docs.host.sections({ subjectId: 'p1' });
   for (const id of ['controls', 'existing']) assert.equal(secs.find((s) => s.id === id).columns.find((c) => c.id === 'owner').defaultOff, true, id);
   const { report } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'T' });
-  const controls = report.markdown.slice(report.markdown.indexOf('Additional control analysis {'), report.markdown.indexOf('Causal factors and consequences {'));
-  assert.ok(controls.length > 0);
-  assert.doesNotMatch(controls, /Owner/, 'no Owner column until someone ticks it on');
+  const controls = report.markdown.slice(report.markdown.indexOf('Controls {'), report.markdown.indexOf('Causal factors and consequences {'));
+  assert.ok(report.markdown.indexOf('Controls {') >= 0 && controls.length > 0);
+  assert.doesNotMatch(controls, /Implemented by/, 'no Implemented by column until someone ticks it on');
 });

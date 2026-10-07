@@ -23,6 +23,8 @@ import { columnWidth } from '../prefs.js';
  * @property {string} [className] a class on the column's header and cells (a tint, an alignment);
  *   `row-out` makes it a gutter beside the table, unbordered, for a button at the end of each row
  * @property {boolean} [fixed] keeps its width: no handle to drag
+ * @property {(row: any) => string} [merge] rows next to each other, as shown, with the same key
+ *   share one cell in this column, its content shown once in the middle (rows shown by group)
  */
 
 /** A column's width when neither the table nor the profile gives one. */
@@ -77,12 +79,15 @@ export function shownRows(state, spec) {
 
 /**
  * @param {any} state
- * @param {{ id: string, columns: Column[], rows: any[], rowKey: (row: any) => string, empty?: string, tools?: any, rowAttrs?: (row: any) => Record<string, unknown>, rowEnd?: (row: any) => unknown }} spec
+ * @param {{ id: string, columns: Column[], rows: any[], rowKey: (row: any) => string, empty?: string, tools?: any, rowAttrs?: (row: any) => Record<string, unknown>, rowEnd?: (row: any) => unknown,
+ *   rowClass?: (row: any) => string, children?: (row: any) => any[] }} spec
  *   tools: something small (a + button) shown beside the first column's title; rowAttrs: data
  *   attributes for a row, such as a double-click that opens its record; rowEnd: something small
- *   (an Options button) beside each row, in a gutter outside the table's border
+ *   (an Options button) beside each row, in a gutter outside the table's border; rowClass: a
+ *   class for a row; children: rows shown straight after a row, in their own order, neither
+ *   sorted nor filtered with the rest (a bundle's changes, when it is open)
  */
-export function dataTable(state, { id, columns: own, rows, rowKey, empty = 'Nothing here yet.', tools = '', rowAttrs, rowEnd }) {
+export function dataTable(state, { id, columns: own, rows, rowKey, empty = 'Nothing here yet.', tools = '', rowAttrs, rowEnd, rowClass, children }) {
   /** @type {Column[]} */
   const columns = rowEnd ? [...own, { key: 'options', label: '', width: 100, minWidth: 100, sortable: false, fixed: true, className: 'row-out', render: rowEnd }] : own;
   const minOf = (/** @type {Column} */ c) => c.minWidth ?? DEFAULT_MIN_WIDTH;
@@ -120,10 +125,31 @@ export function dataTable(state, { id, columns: own, rows, rowKey, empty = 'Noth
   const total = widths.reduce((a, b) => a + b, 0);
   const size = stretch ? `width:100%;min-width:${total}px` : `width:${total}px`;
   const gutter = columns.some((c) => c.className === 'row-out');
+  const list = shown.flatMap((row) => [row, ...(children ? children(row) : [])]);
+  // A merging column: the first of a run of rows with the same key spans the run (0: covered by it).
+  const spans = columns.map((c) => {
+    if (!c.merge) return null;
+    const keys = list.map((row) => /** @type {(row: any) => string} */ (c.merge)(row));
+    return keys.map((k, r) => {
+      if (r > 0 && keys[r - 1] === k) return 0;
+      let n = 1;
+      while (r + n < keys.length && keys[r + n] === k) n += 1;
+      return n;
+    });
+  });
   return html`<div class="table-wrap"><table class="grid${gutter ? ' has-gutter' : ''}" data-table="${id}"${stretch ? '' : raw(' data-fit')} style="${raw(size)}">
     <colgroup>${cols}</colgroup>
     <thead><tr>${head}</tr></thead>
-    <tbody>${shown.map((row) => html`<tr data-row="${rowKey(row)}"${rowAttrs ? html` ${dataAttrs(rowAttrs(row))}` : ''}>${columns.map((c) => html`<td${c.className ? html` class="${c.className}"` : ''}>${c.render ? c.render(row) : text(valueOf(c, row))}</td>`)}</tr>`)}</tbody>
+    <tbody>${list.map((row, r) => {
+      const cls = rowClass ? rowClass(row) : '';
+      const attrs = rowAttrs ? rowAttrs(row) : {};
+      return html`<tr data-row="${rowKey(row)}"${cls ? html` class="${cls}"` : ''}${Object.keys(attrs).length ? html` ${dataAttrs(attrs)}` : ''}>${columns.map((c, i) => {
+        const span = spans[i]?.[r] ?? 1;
+        if (span === 0) return '';
+        const classes = [c.className, span > 1 ? 'merged' : ''].filter(Boolean).join(' ');
+        return html`<td${classes ? html` class="${classes}"` : ''}${span > 1 ? html` rowspan="${span}"` : ''}>${c.render ? c.render(row) : text(valueOf(c, row))}</td>`;
+      })}</tr>`;
+    })}</tbody>
   </table></div>
   ${shown.length ? '' : html`<p class="muted">${filtering ? 'No rows match the filters.' : empty}</p>`}`;
 }

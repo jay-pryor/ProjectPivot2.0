@@ -32,7 +32,8 @@ test('a platform page: the name applies when left, the owner in a sentence, reti
   assert.doesNotMatch(out, />Rename</);
   assert.match(out, /<input class="doc-title small" name="name" value="Alpha" required[^>]*data-change="updatePlatform" data-id="p1"/);
   assert.match(out, /Owned by <select[^>]*data-change="setOwner" data-id="p1"/);
-  assert.ok(out.lastIndexOf('data-action="retirePlatform"') > out.lastIndexOf('</table>'));
+  assert.match(out, /<details class="dots-menu doc-menu"><summary aria-label="Platform options"[\s\S]*?data-action="retirePlatform" data-id="p1">[\s\S]*?Retire<\/button>/, 'retire in the ⋯ menu');
+  assert.doesNotMatch(out, /page-actions/);
   assert.match(out, /data-tab="history"/);
   const controls = platformView({ ...state, sections: { platform: 'controls' } }, data(), 'p1').toString();
   assert.match(controls, /No crew &lt;aboard&gt;/, 'reasons are shown escaped');

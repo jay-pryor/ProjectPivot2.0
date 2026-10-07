@@ -1,6 +1,7 @@
 import { get } from '../core/data.js';
 import { PivotError } from '../core/errors.js';
-import { platformHazards, hazardDetail, causalFactorsOn, lastReviewed, referencesFor, assessmentOf, sfarpOf, existingControlsOn, phasesOf, safetyReportsOn, controlOwner, ownerText } from '../core/queries.js';
+import { safetyReportId } from '../core/ops/report-ids.js';
+import { platformHazards, hazardDetail, causalFactorsOn, lastReviewed, referencesFor, assessmentOf, sfarpOf, phasesOf, platformListOn, safetyReportsOn, implementedByOf, implementedByText } from '../core/queries.js';
 import { formatRating } from '../core/matrix.js';
 import { RECEPTORS, stageKey } from '../core/receptors.js';
 import { referenceLabel, controlLabel } from '../core/ids.js';
@@ -13,8 +14,7 @@ import { reviewState, aestDate } from '../core/time.js';
  *   review: { state: string, due: string | null, months: number | null, lastReviewed: string | null },
  *   references: { number: string, title: string, docNumber: string, revision: string, supports: string }[] }} Snapshot
  * @typedef {{ hazardId: string, number: number | null, reportId: string, title: string, description: string,
- *   causalFactors: string[], consequences: string[], controls: { number: string, title: string, description: string, owner: string, kind: string, tier: string, state: string, reason: string, recommendation: string, justification: string }[],
- *   existingControls: { number: string, title: string, description: string, owner: string, kind: string, tier: string }[],
+ *   causalFactors: string[], consequences: string[], controls: { number: string, title: string, description: string, implementedBy: string, kind: string, tier: string, state: string, reason: string, recommendation: string, justification: string }[],
  *   phases: string[],
  *   safetyReports: { number: string, date: string | null, type: string, summary: string, description: string, location: string, parties: string }[],
  *   initial: any, residual: any,
@@ -44,16 +44,13 @@ export function buildSnapshot(data, platformId, o) {
       causalFactors: causalFactorsOn(data, r.hazard.id, platformId).map((x) => x.text),
       consequences: d.consequences.map((x) => x.text),
       controls: r.controls.map((c) => ({
-        number: controlLabel(c.control), title: c.control.title, description: c.control.description ?? '', owner: ownerText(controlOwner(data, c.control.id, platformId)),
+        number: controlLabel(c.control), title: c.control.title, description: c.control.description ?? '', implementedBy: implementedByText(implementedByOf(data, c.control.id, platformId)),
         kind: c.kind, tier: c.control.tier ?? '', state: c.state, reason: c.state === 'rejected' ? c.ruling?.reason ?? '' : '',
         recommendation: c.link?.recommendation ?? '', justification: c.link?.justification ?? '',
       })),
       phases: phasesOf(data, r.hazard.id).map((x) => x.phase.name),
       safetyReports: safetyReportsOn(data, r.hazard.id, platformId).map((s) => ({
-        number: s.number, date: s.date, type: s.type, summary: s.summary, description: s.description, location: s.location, parties: s.parties,
-      })),
-      existingControls: existingControlsOn(data, r.hazard.id, platformId).map((x) => ({
-        number: controlLabel(x.control), title: x.control.title, description: x.control.description ?? '', kind: x.kind, tier: x.control.tier ?? '', owner: ownerText(controlOwner(data, x.control.id, platformId)),
+        number: safetyReportId(data, s).id, date: s.date, type: s.type, summary: s.summary, description: s.description, location: s.location, parties: s.parties,
       })),
       initial: r.rating.initial,
       residual: r.rating.residual,
@@ -86,6 +83,10 @@ export function buildSnapshot(data, platformId, o) {
     const d = /** @type {NonNullable<ReturnType<typeof hazardDetail>>} */ (hazardDetail(data, r.hazard.id));
     for (const cf of causalFactorsOn(data, r.hazard.id, platformId)) add('causalFactor', cf.id, `${r.reportId} causal factor`);
     for (const cq of d.consequences) add('consequence', cq.id, `${r.reportId} consequence`);
+    for (const { link } of phasesOf(data, r.hazard.id)) add('hazardPhase', link.id, `${r.reportId} lifecycle phase`);
+    for (const [kind, word] of [['failureMode', 'element failure mode'], ['systemElement', 'system/element'], ['affectedGroup', 'affected group']]) {
+      for (const x of platformListOn(data, /** @type {'failureMode'} */ (kind), r.hazard.id, platformId)) add(kind, x.id, `${r.reportId} ${word}`);
+    }
     for (const c of r.controls) add('control', c.control.id, c.control.title);
   }
   const references = [...found.values()]

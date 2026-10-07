@@ -5,13 +5,13 @@ import { CLASSIFICATIONS } from '../../src/reports/classifications.js';
 import { createReport, setReportDesign } from '../../src/core/ops/reports.js';
 import { assignHazardNumbers, updateHazard } from '../../src/core/ops/hazards.js';
 import { confirmControl, excludeControl, setRating, setAssessment, setSfarp, setControlStatus } from '../../src/core/ops/assessment.js';
-import { setControlAnalysis, linkExistingControl, updateControl } from '../../src/core/ops/controls.js';
+import { setControlAnalysis, setImplementedBy, removeControlHere, updateControl } from '../../src/core/ops/controls.js';
 import { entries } from '../../src/core/history.js';
 import { createPhase, linkPhase } from '../../src/core/ops/phases.js';
 import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
 import { setSchedule, startReview, completeReview } from '../../src/core/ops/reviews.js';
 import { createReference, linkReference, retireReference } from '../../src/core/ops/references.js';
-import { act, seed, asExisting } from '../helpers.js';
+import { act, seed } from '../helpers.js';
 
 const names = { u1: 'Ada', u2: 'Grace' };
 const opts = { profileName: (id) => names[id] ?? id, at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'Alpha hazards', classification: 'OFFICIAL' };
@@ -42,8 +42,8 @@ test('a snapshot holds the platform, and each of its hazards with everything a r
     { reportId: 'HAZ-001', title: 'Fire', causalFactors: ['Hot works'], consequences: ['Burns'], initial: { consequence: 1, likelihood: 'C' }, residual: { consequence: 2, likelihood: 'C' } },
   );
   assert.deepEqual(r.controls, [
-    { number: 'C-001', title: 'Sprinklers', description: '', owner: '', kind: 'preventative', tier: '', state: 'implemented', reason: '', recommendation: '', justification: '' },
-    { number: 'C-002', title: 'Fire drills', description: '', owner: '', kind: 'mitigating', tier: '', state: 'rejected', reason: 'No crew', recommendation: '', justification: '' },
+    { number: 'C-001', title: 'Sprinklers', description: '', implementedBy: '', kind: 'preventative', tier: '', state: 'implemented', reason: '', recommendation: '', justification: '' },
+    { number: 'C-002', title: 'Fire drills', description: '', implementedBy: '', kind: 'mitigating', tier: '', state: 'rejected', reason: 'No crew', recommendation: '', justification: '' },
   ]);
 });
 
@@ -112,27 +112,31 @@ test('a snapshot carries the four assessments with their justifications, and SFA
   assert.deepEqual(row.sfarp, { justification: 'J', conclusion: 'C', conditions: 'V' });
 });
 
-test('a snapshot carries each additional control\'s analysis and status, and the existing controls', () => {
+test('a snapshot carries each control on the platform with its analysis, status and who implements it; none taken off the platform', () => {
   let d = assignHazardNumbers(assessed());
   d = setControlAnalysis(d, act, { hazardId: 'h1', controlId: 'c1', recommendation: 'Fit in <bay 2>', justification: 'Cuts spread' });
   d = setControlStatus(d, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'planned' });
+  d = setImplementedBy(d, act, { controlId: 'c1', platformId: 'p1', implementedBy: 'oem' });
   d = updateControl(d, act, { id: 'c2', tier: 'Administrative', description: 'Twice a year' });
-  d = linkExistingControl(asExisting(d, 'c2'), act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2', kind: 'mitigating' });
   const row = buildSnapshot(d, 'p1', opts).rows[0];
   const c1 = row.controls.find((c) => c.title === 'Sprinklers');
-  assert.deepEqual([c1.state, c1.recommendation, c1.justification], ['planned', 'Fit in <bay 2>', 'Cuts spread']);
+  assert.deepEqual([c1.state, c1.recommendation, c1.justification, c1.implementedBy], ['planned', 'Fit in <bay 2>', 'Cuts spread', 'OEM']);
   assert.match(c1.number, /^C-\d{3}$/);
-  assert.deepEqual(row.existingControls, [{ number: row.existingControls[0].number, title: 'Fire drills', description: 'Twice a year', kind: 'mitigating', tier: 'Administrative', owner: '' }]);
+  const c2 = row.controls.find((c) => c.title === 'Fire drills');
+  assert.deepEqual([c2.description, c2.tier, c2.kind, c2.implementedBy], ['Twice a year', 'Administrative', 'mitigating', '']);
+  assert.equal('existingControls' in row, false);
+  const off = buildSnapshot(removeControlHere(d, act, { hazardId: 'h1', platformId: 'p1', controlId: 'c2' }), 'p1', opts).rows[0];
+  assert.deepEqual(off.controls.map((c) => c.title), ['Sprinklers']);
 });
 
 test('a snapshot carries the hazard\'s lifecycle phases and its safety reports on the platform', () => {
   let d = createPhase(assessed(), act, { id: 'ph1', name: 'Operation' });
   d = linkPhase(d, act, { hazardId: 'h1', phaseId: 'ph1' });
-  d = createSafetyReport(d, act, { hazardId: 'h1', platformId: 'p1', number: 'SR-1', date: '2026-03-04', reportType: 'Near miss', summary: 'Rotor <strike>', location: 'Hangar', parties: 'Crew' });
-  d = createSafetyReport(d, act, { hazardId: 'h1', platformId: 'p2', summary: 'Elsewhere' });
+  d = createSafetyReport(d, act, { hazardId: 'h1', platformId: 'p1', date: '2026-03-04', reportType: 'Near miss', summary: 'Rotor <strike>', location: 'Hangar', parties: 'Crew' });
+  d = assignHazardNumbers(createSafetyReport(d, act, { hazardId: 'h1', platformId: 'p2', summary: 'Elsewhere' }));
   const row = buildSnapshot(d, 'p1', opts).rows[0];
   assert.deepEqual(row.phases, ['Operation']);
-  assert.deepEqual(row.safetyReports, [{ number: 'SR-1', date: '2026-03-04', type: 'Near miss', summary: 'Rotor <strike>', description: '', location: 'Hangar', parties: 'Crew' }]);
+  assert.deepEqual(row.safetyReports, [{ number: 'HAZ-001-A-1', date: '2026-03-04', type: 'Near miss', summary: 'Rotor <strike>', description: '', location: 'Hangar', parties: 'Crew' }]);
 });
 
 test('a snapshot carries capability like the other receptors', () => {

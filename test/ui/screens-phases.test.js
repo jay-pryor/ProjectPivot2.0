@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { phasesView } from '../../src/ui/screens/phases.js';
+import { infoView } from '../../src/ui/screens/info.js';
 import { hazardView } from '../../src/ui/screens/hazards.js';
 import { pickerView } from '../../src/ui/screens/picker.js';
 import { shell } from '../../src/ui/screens/common.js';
@@ -23,24 +23,26 @@ function data() {
   return retirePhase(d, act, { id: 'ph1' });
 }
 
-test('Stats opens on its Lifecycle phases sub-tab: phases with what they cover, renamed in place, retired, restored, deleted only when unused', () => {
-  const out = phasesView(state, data()).toString();
-  assert.match(out, /<h1>Stats<\/h1><\/div>\s*<nav class="tabs"><button type="button" class="tab on" data-action="go" data-view="stats" data-tab="phases">Lifecycle phases<\/button><\/nav>/);
-  assert.match(out, /data-table="phases"/);
-  for (const col of ['used', 'platforms', 'pairs', 'controls', 'unrated', 'worst']) assert.match(out, new RegExp(`<th data-col="${col}"`));
-  // Operation: h1, on Alpha and Bravo, with two additional controls, unrated on both.
-  assert.match(out, /data-row="ph2"[\s\S]*?Operation<\/span><\/td><td>1<\/td><td>2<\/td><td>2<\/td><td>2<\/td><td><span class="tag tag-warn">2<\/span><\/td><td><span class="band band-uncategorised">Uncategorised<\/span><\/td>[\s\S]*?data-action="retirePhase" data-id="ph2"/);
-  assert.match(out, /data-row="ph3"[\s\S]*?Disposal<\/span><\/td><td>0<\/td>[\s\S]*?<span class="muted">—<\/span>/, 'unused: nothing to rate');
-  assert.match(out, /data-row="ph1"[\s\S]*?retired[\s\S]*?data-action="restoreRecord" data-kind="phase" data-id="ph1"/);
-  assert.match(out, /data-row="ph3"[\s\S]*?data-action="askConfirm" data-run="deletePhase" data-id="ph3"/);
-  assert.doesNotMatch(out.slice(out.indexOf('data-row="ph2"'), out.indexOf('data-row="ph3"')), /deletePhase/, 'in use: no delete');
-  assert.match(out, /&lt;Test&gt;/);
-  const renaming = phasesView({ ...state, editing: { kind: 'phaseName', id: 'ph3' } }, data()).toString();
-  assert.match(renaming, /<input class="cell-edit" name="name" value="Disposal"[^>]*data-change="renamePhase" data-id="ph3"/);
+test('Info sets up Lifecycle phases like every other facet: add, rename, delete, its platform groups, hazards and platforms', () => {
+  const page = infoView({ ...state, sections: { info: 'phase' } }, data()).toString();
+  assert.match(page, /<h1>Info<\/h1>/);
+  assert.match(page, /data-section="systemElement"[\s\S]*?data-section="phase"[\s\S]*?Lifecycle phases<\/span><span class="rail-badge">4<\/span>/);
+  assert.match(page, /<h2>Lifecycle phases<\/h2><button type="button" class="plus" data-action="startEdit" data-kind="newFacetOption:phase" data-id="new"/);
+  assert.doesNotMatch(page, /<p class="muted">/, 'no description under the heading');
+  assert.match(page, /data-table="facet-phase"/);
+  for (const col of ['pairs', 'controls', 'unrated', 'worst', 'status', 'options']) assert.doesNotMatch(page, new RegExp(`<th data-col="${col}"`), `no ${col} column`);
+  assert.doesNotMatch(page, /row-menu|retirePhase/, 'no Options menu');
+  // Operation: on h1, which is on Alpha and Bravo.
+  assert.match(page, /data-row="ph2"[\s\S]*?Operation<\/span><\/div><\/td><td><span class="muted">—<\/span><\/td><td>1<\/td><td>2<\/td>/);
+  assert.match(page, /data-row="ph2"[\s\S]*?data-action="askConfirm" data-run="deleteFacetOption" data-facet="phase" data-id="ph2" data-title="Delete Operation\?" data-text="It is ticked on one hazard and will come off it\. You can restore it from Deletion history/);
+  assert.match(page, /&lt;Test&gt;/);
+  const renaming = infoView({ ...state, sections: { info: 'phase' }, editing: { kind: 'facetOption', id: 'ph3' } }, data()).toString();
+  assert.match(renaming, /<input class="cell-edit" name="name" value="Disposal"[^>]*data-change="renameFacetOption" data-facet="phase" data-id="ph3"/);
 });
 
-test('the nav has Stats where Phases was, lit for Stats and its phases', () => {
-  for (const name of ['stats', 'phases']) assert.match(shell({ ...state, view: { name } }, html``).toString(), /data-view="bowties">Bow-ties<\/button><button type="button" class="nav on" data-action="go" data-view="stats">Stats<\/button>/);
+test('the nav has Info where Stats was, lit for Info', () => {
+  for (const name of ['info']) assert.match(shell({ ...state, view: { name } }, html``).toString(), /data-view="bowties">Bow-ties<\/button><button type="button" class="nav on" data-action="go" data-view="info">Info<\/button>/);
+  assert.doesNotMatch(shell(state, html``).toString(), />Stats</);
   assert.doesNotMatch(shell(state, html``).toString(), />Phases</);
 });
 
