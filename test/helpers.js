@@ -4,6 +4,8 @@ import { createControl, linkControl } from '../src/core/ops/controls.js';
 import { createPlatform, linkHazard } from '../src/core/ops/platforms.js';
 import { setRule } from '../src/core/ops/reviews.js';
 import { addMonths } from '../src/core/time.js';
+import { startWorkflow, setStep, completeWorkflow, takeOverWorkflow } from '../src/core/ops/workflows.js';
+import { CHECKS, workflowHazards } from '../src/core/workflows.js';
 
 export const act = { by: 'u1', at: '2026-09-28T10:00:00+10:00' };
 export const later = { by: 'u2', at: '2026-09-28T11:00:00+10:00' };
@@ -59,4 +61,18 @@ export function scheduleFixed(d, platformId, months, due, by = act) {
   const start = addMonths(due, -months);
   if (addMonths(start, months) !== due) throw new Error(`No start date is ${months} months before ${due}; pick another fixture date.`);
   return setRule(d, by, { platformId, kind: 'fixed', months, unit: 'months', start });
+}
+
+/** Start a Platform Review on a platform. @param {import('../src/core/data.js').Data} d @param {{ by: string, at: string }} by @param {{ id: string, platformId: string }} args */
+export function beginPlatformReview(d, by, { id, platformId }) {
+  return startWorkflow(d, by, { id, type: 'platformReview', platformId });
+}
+
+/** Take the review over if need be, tick every check on every hazard, and complete it. @param {import('../src/core/data.js').Data} d @param {{ by: string, at: string }} by @param {{ workflowId: string }} args */
+export function finishPlatformReview(d, by, { workflowId }) {
+  if (d.records.workflow[workflowId].ownerId !== by.by) d = takeOverWorkflow(d, by, { workflowId });
+  for (const { hazard } of workflowHazards(d, d.records.workflow[workflowId])) {
+    for (const check of CHECKS) d = setStep(d, by, { workflowId, hazardId: hazard.id, check, checked: true });
+  }
+  return completeWorkflow(d, by, { workflowId });
 }

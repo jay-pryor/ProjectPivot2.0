@@ -39,7 +39,7 @@ export function toMonths(n, unit, code) {
  * @param {Data} data @param {Act} act @param {string} platformId @param {string | null} due
  * @returns {{ kind: string, rec: Rec }}
  */
-function seenRec(data, act, platformId, due) {
+export function seenRec(data, act, platformId, due) {
   const r = get(data, 'reviewSeen', platformId);
   return { kind: 'reviewSeen', rec: r ? changed(r, act, { status: 'live', due }) : created(act, platformId, { platformId, due }) };
 }
