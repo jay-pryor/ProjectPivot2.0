@@ -35,7 +35,6 @@ test('a rule and what sets its period, in words', () => {
   assert.equal(ruleWord(data(), data().records.platform.p2), 'None');
   assert.equal(ruleWord(d, d.records.platform.p1), 'Standard (policy)');
   assert.match(driverWord(d, scheduleOf(d, 'p1', '2026-09-28').driver), /^HAZ-\d+ residual personnel: Serious$/);
-  assert.equal(driverWord(d, { kind: 'longest' }), 'Policy’s longest period');
   const unsaved = { ...d, records: { ...d.records, hazard: { ...d.records.hazard, h1: { ...d.records.hazard.h1, number: null } } } };
   assert.equal(driverWord(unsaved, { kind: 'hazard', hazardId: 'h1', receptor: 'personnel', band: 'Serious' }), 'Fire residual personnel: Serious', 'a hazard not yet numbered goes by its title');
   assert.equal(driverWord(d, { kind: 'fixed' }), '');

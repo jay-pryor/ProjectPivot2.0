@@ -8,9 +8,9 @@ import { unlinkHazard } from '../../src/core/ops/platforms.js';
 import { act, seed, seeDue } from '../helpers.js';
 
 const BLANK = { High: null, Serious: null, Medium: null, Low: null, Eliminated: null, 'Not Credible': null, Uncategorised: null };
-/** Serious → 6 months, Medium → 36 months for personnel; environment Serious → 12; capability not considered; longest 60. */
+/** Serious → 6 months, Medium → 36 months for personnel; environment Serious → 12; capability not considered. */
 const policy = (over = {}) => created(act, 'pol1', {
-  name: 'Standard', order: 1, longest: 60,
+  name: 'Standard', order: 1,
   receptors: {
     personnel: { considered: true, periods: { ...BLANK, Serious: 6, Medium: 36 } },
     environment: { considered: true, periods: { ...BLANK, Serious: 12 } },
@@ -58,17 +58,14 @@ test('a policy takes the shortest period any hazard gives for a considered recep
   assert.deepEqual(periodOf(d, 'p1'), { months: 6, driver: { kind: 'hazard', hazardId: 'h1', receptor: 'personnel', band: 'Serious' } });
 });
 
-test('with nothing shorter, a policy gives its longest period', () => {
-  assert.deepEqual(periodOf(onPolicy(), 'p1'), { months: 60, driver: { kind: 'longest' } }, 'unrated, and Uncategorised is blank');
+test('when no hazard falls in a band with a period, a policy gives no period and no review date', () => {
+  assert.equal(periodOf(onPolicy(), 'p1'), null, 'unrated, and Uncategorised is blank');
+  assert.equal(scheduleOf(onPolicy(), 'p1', '2026-10-08').due, null);
+  assert.equal(scheduleOf(onPolicy(), 'p1', '2026-10-08').state, 'none');
   const withUnrated = onPolicy({ receptors: { ...policy().receptors, personnel: { considered: true, periods: { ...BLANK, Uncategorised: 3 } } } });
-  assert.equal(periodOf(withUnrated, 'p1')?.months, 3, 'Uncategorised has its own row');
+  assert.deepEqual(periodOf(withUnrated, 'p1'), { months: 3, driver: { kind: 'hazard', hazardId: 'h1', receptor: 'personnel', band: 'Uncategorised' } }, 'Uncategorised has its own row');
   const noHazards = unlinkHazard(onPolicy(), act, { hazardId: 'h1', platformId: 'p1' });
-  assert.deepEqual(periodOf(noHazards, 'p1'), { months: 60, driver: { kind: 'longest' } });
-});
-
-test('a period longer than the longest is capped at the longest', () => {
-  const d = residual(onPolicy({ longest: 24 }), 'personnel', 3, 'C'); // Medium → 36, capped
-  assert.deepEqual(periodOf(d, 'p1'), { months: 24, driver: { kind: 'longest' } });
+  assert.equal(periodOf(noHazards, 'p1'), null);
 });
 
 test('a rule naming a missing or deleted policy reads as no schedule', () => {

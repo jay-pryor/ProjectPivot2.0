@@ -23,7 +23,6 @@ export function ruleWord(data, p) {
 
 /** What sets a policy's period; nothing for a fixed rule. A hazard not yet numbered goes by its title. @param {Data} data @param {any} driver from periodOf */
 export function driverWord(data, driver) {
-  if (driver?.kind === 'longest') return 'Policy’s longest period';
   if (driver?.kind !== 'hazard') return '';
   const h = get(data, 'hazard', driver.hazardId);
   const name = !h ? 'A hazard' : hazardLabel(h) === UNNUMBERED ? h.title : hazardLabel(h);

@@ -95,7 +95,7 @@ const QUIET_DATES = new Set(['completeReview', 'acknowledgeReviewDate']);
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
   'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'toggleBowtieNumbers', 'setBowtieLayout', 'setPaneTier', 'resetBowtieView', 'openBowtieHazard', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
-  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'showReviewPanel', 'closeReviewPanel', 'dismissReviewMoved',
+  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'showReviewPanel', 'closeReviewPanel', 'dismissReviewMoved', 'showPolicy',
 ]);
 
 export function initialState() {
@@ -107,7 +107,7 @@ export function initialState() {
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
     workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null,
-    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, reviewPanel: null, reviewMoved: null,
+    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, reviewPanel: null, reviewMoved: null, policyUnits: {},
   };
 }
 
@@ -709,22 +709,31 @@ export function createController(env) {
     async newReviewPolicy({ name }) {
       const id = newId();
       await applyEdit('createReviewPolicy', { id, name });
-      set({ view: { name: 'reviews', tab: 'policies', id } });
+      set({ view: { name: 'reviews', tab: 'policies' }, sections: { ...(state.sections ?? {}), reviewPolicies: id } });
+    },
+    // A policy opened in the Policies menu, from elsewhere (a platform's rule).
+    async showPolicy({ id }) {
+      await handlers.go({ view: 'reviews', tab: 'policies' });
+      set({ sections: { ...(state.sections ?? {}), reviewPolicies: id } });
     },
     // A policy cell's number or its unit changed: the half not sent is taken from the record, so
-    // changing the unit keeps the number (and on a blank cell leaves it blank).
+    // changing the unit keeps the number. A unit chosen on an empty cell is only kept on screen,
+    // and used once its number is typed.
     async setPolicyCell({ id, receptor, band, value, unit }) {
       const pol = policyNamed(id);
-      const was = asUnit(pol.receptors[receptor]?.periods[band] ?? null);
-      await applyEdit('updateReviewPolicy', { id, receptor, band, months: value ?? was.n, unit: unit ?? was.unit });
-    },
-    async setPolicyLongest({ id, value, unit }) {
-      const was = asUnit(policyNamed(id).longest);
-      await applyEdit('updateReviewPolicy', { id, longest: value ?? was.n, longestUnit: unit ?? was.unit });
+      const months = pol.receptors[receptor]?.periods[band] ?? null;
+      const key = `${id}|${receptor}|${band}`;
+      if (value === undefined && months == null) {
+        set({ policyUnits: { ...(state.policyUnits ?? {}), [key]: unit } });
+        return;
+      }
+      const was = asUnit(months);
+      await applyEdit('updateReviewPolicy', { id, receptor, band, months: value ?? was.n, unit: unit ?? (months == null ? state.policyUnits?.[key] ?? 'months' : was.unit) });
     },
     async removeReviewPolicy({ id }) {
       await applyEdit('deleteReviewPolicy', { id });
-      set({ view: { name: 'reviews', tab: 'policies' } });
+      const { reviewPolicies: _gone, ...sections } = state.sections ?? {};
+      set({ view: { name: 'reviews', tab: 'policies' }, sections });
     },
     // The Reviews tab's owner and group filters, and the timeline's range: remembered in this browser.
     async setReviewsFilter({ owner, groupId, start, length, past, shift }) {

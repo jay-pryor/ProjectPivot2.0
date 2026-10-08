@@ -11,6 +11,7 @@ import { day, when, profileName, periodWord } from '../names.js';
 import { ruleWord, driverWord } from '../review-words.js';
 import { DEFAULT_REVIEWS_PREFS } from '../reviews-prefs.js';
 import { timelineView } from './timeline.js';
+import { sectionRail } from './dashboard.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -34,7 +35,7 @@ export function reviewLine(state, data, p) {
     ${kind === 'fixed' ? html`<div class="rv-line">Every <input type="number" name="value" value="${n}" min="1" max="${MAX_REVIEW_MONTHS}" aria-label="Period" ${dataAttrs(field)}>
       <select name="unit" aria-label="Period unit" ${dataAttrs(field)}>${option('months', 'months', unit)}${option('years', 'years', unit)}</select></div>` : ''}
     ${kind === 'policy' ? html`<div class="rv-line"><select name="policyId" aria-label="Review policy" ${dataAttrs(field)}>${policies.map((x) => option(x.id, x.name, p.reviewRule.policyId))}</select>
-      ${go('Edit →', 'reviews', { tab: 'policies', id: p.reviewRule.policyId })}</div>` : ''}
+      <button type="button" class="link" ${dataAttrs({ action: 'showPolicy', id: p.reviewRule.policyId })}>Edit →</button></div>` : ''}
     ${kind !== 'none' ? html`<div class="rv-foot"><label>Counted from <input type="date" name="start" value="${p.reviewStart ?? ''}" ${dataAttrs(field)}></label></div>` : ''}`;
   const days = s.due ? Math.round((Date.parse(`${s.due}T00:00:00Z`) - Date.parse(`${String(state.today).slice(0, 10)}T00:00:00Z`)) / 86_400_000) : null;
   const until = days === null ? '' : days < 0 ? `${-days} day${days === -1 ? '' : 's'} overdue` : days === 0 ? 'Due today' : `In ${days} day${days === 1 ? '' : 's'}`;
@@ -236,47 +237,55 @@ export const asUnit = (months) => (months == null ? { n: '', unit: 'months' } : 
 
 /**
  * A period's number and its months/years chooser. Both send the same change, each with its own
- * field (value or unit); the handler takes the other from the record.
- * @param {number | null} months @param {Record<string, string>} attrs the change and what it is for @param {string} label
+ * field (value or unit); the handler takes the other from the record. An empty cell shows the
+ * unit chosen for it on screen, if any, so years can be picked before the number is typed.
+ * @param {number | null} months @param {Record<string, string>} attrs the change and what it is for @param {string} label @param {string} [chosen] the unit picked for an empty cell
  */
-function periodInput(months, attrs, label) {
+function periodInput(months, attrs, label, chosen) {
   const { n, unit } = asUnit(months);
+  const shown = months == null && chosen ? chosen : unit;
   return html`<span class="period-input"><input type="number" name="value" value="${n}" min="1" max="${MAX_REVIEW_MONTHS}" aria-label="${label}" ${dataAttrs(attrs)}>
-    <select name="unit" aria-label="${label}: unit" ${dataAttrs(attrs)}>${option('months', 'months', unit)}${option('years', 'years', unit)}</select></span>`;
+    <select name="unit" aria-label="${label}: unit" ${dataAttrs(attrs)}>${option('months', 'months', shown)}${option('years', 'years', shown)}</select></span>`;
 }
 
 const RECEPTOR_TITLE = { personnel: 'Personnel', environment: 'Environment', capability: 'Capability' };
 
 /**
- * The Policies sub-tab: the policies down the side, and the one chosen as a grid of a period for
- * each residual band and receptor, with the longest period and the platforms using it.
+ * One policy, as its menu opens it: its name, a grid of a period for each residual band and
+ * receptor, the platforms using it, and Delete.
+ * @param {any} state @param {Data} data @param {any} pol @param {any[]} users the platforms (not deleted) it schedules
+ */
+function policyPanel(state, data, pol, users) {
+  const title = (/** @type {string} */ r) => RECEPTOR_TITLE[/** @type {'personnel'} */ (r)];
+  const grid = html`<table class="policy-grid"><thead><tr><th scope="col">Residual band</th>${RECEPTORS.map((r) => html`<th scope="col">
+      <label class="considered"><input type="checkbox" name="considered"${pol.receptors[r].considered ? raw(' checked') : ''} ${dataAttrs({ change: 'updateReviewPolicy', id: pol.id, receptor: r })}> ${title(r)}</label></th>`)}</tr></thead>
+    <tbody>${POLICY_BANDS.map((band) => html`<tr><th scope="row">${bandTag(band)}</th>${RECEPTORS.map((r) => html`<td class="${pol.receptors[r].considered ? '' : 'off'}">
+      ${periodInput(pol.receptors[r].periods[band] ?? null, { change: 'setPolicyCell', id: pol.id, receptor: r, band }, `${title(r)}, ${band}`, state.policyUnits?.[`${pol.id}|${r}|${band}`])}</td>`)}</tr>`)}</tbody></table>`;
+  return html`<label class="doc-subtitle"><span class="field-label">Policy</span>
+      <input class="quiet title" name="name" value="${pol.name}" aria-label="Policy name" ${dataAttrs({ change: 'renameReviewPolicy', id: pol.id })}></label>
+    <p class="muted">Leave a cell blank when that band should not drive a review, and untick a receptor to leave it out. A platform is reviewed at the shortest period any of its hazards gives; when none falls in a band with a period, it has no review date.</p>
+    ${grid}
+    <p>Used by ${users.length ? users.map((p, i) => html`${i ? ', ' : ''}${go(p.name, 'platformReview', { id: p.id })}`) : html`<span class="muted">no platforms</span>`}</p>
+    <div class="actions"><button type="button" class="danger" ${dataAttrs({ action: 'removeReviewPolicy', id: pol.id })}${users.length ? raw(' disabled title="Give its platforms another rule first"') : ''}>Delete policy</button></div>`;
+}
+
+/**
+ * The Policies sub-tab: what a policy is and a way to add one at the top; below the line, the
+ * policies as a menu, the one chosen open beside it.
  * @param {any} state @param {Data} data
  */
 function policiesView(state, data) {
   const policies = live(data, 'reviewPolicy').sort((a, b) => a.order - b.order);
-  const make = html`<form data-action="newReviewPolicy" class="rv-form inline-form">
-    <input name="name" placeholder="New policy name" aria-label="New policy name" required>
-    <button type="submit" class="primary">Add policy</button></form>`;
-  if (!policies.length) {
-    return html`<p>A review policy sets how often a platform is reviewed from its residual risk: a period for each band, for each receptor you care about. The shortest period any hazard gives is used.</p>${make}`;
-  }
-  const pol = policies.find((x) => x.id === state.view?.id) ?? policies[0];
-  const users = all(data, 'platform').filter((p) => p.status !== 'deleted' && p.reviewRule?.kind === 'policy' && p.reviewRule.policyId === pol.id);
-  const title = (/** @type {string} */ r) => RECEPTOR_TITLE[/** @type {'personnel'} */ (r)];
-  const list = html`<ul class="policy-list">${policies.map((x) => html`<li><button type="button" class="link${x.id === pol.id ? ' on' : ''}" ${dataAttrs({ action: 'go', view: 'reviews', tab: 'policies', id: x.id })}>${x.name}</button></li>`)}</ul>`;
-  const grid = html`<table class="policy-grid"><thead><tr><th scope="col">Residual band</th>${RECEPTORS.map((r) => html`<th scope="col">
-      <label class="considered"><input type="checkbox" name="considered"${pol.receptors[r].considered ? raw(' checked') : ''} ${dataAttrs({ change: 'updateReviewPolicy', id: pol.id, receptor: r })}> ${title(r)}</label></th>`)}</tr></thead>
-    <tbody>${POLICY_BANDS.map((band) => html`<tr><th scope="row">${bandTag(band)}</th>${RECEPTORS.map((r) => html`<td class="${pol.receptors[r].considered ? '' : 'off'}">
-      ${periodInput(pol.receptors[r].periods[band] ?? null, { change: 'setPolicyCell', id: pol.id, receptor: r, band }, `${title(r)}, ${band}`)}</td>`)}</tr>`)}</tbody></table>`;
-  return html`<div class="policies">${list}<article class="doc policy">
-    <label class="doc-subtitle"><span class="field-label">Policy</span>
-      <input class="quiet title" name="name" value="${pol.name}" aria-label="Policy name" ${dataAttrs({ change: 'renameReviewPolicy', id: pol.id })}></label>
-    <p class="muted">Leave a cell blank when that band should not drive a review, and untick a receptor to leave it out. The shortest period any hazard on the platform gives is used, and never longer than the longest period.</p>
-    ${grid}
-    <p class="longest">Longest period ${periodInput(pol.longest, { change: 'setPolicyLongest', id: pol.id }, 'Longest period')}</p>
-    <p>Used by ${users.length ? users.map((p, i) => html`${i ? ', ' : ''}${go(p.name, 'platformReview', { id: p.id })}`) : html`<span class="muted">no platforms</span>`}</p>
-    <div class="actions"><button type="button" class="danger" ${dataAttrs({ action: 'removeReviewPolicy', id: pol.id })}${users.length ? raw(' disabled title="Give its platforms another rule first"') : ''}>Delete policy</button></div>
-    <h3>Another policy</h3>${make}</article></div>`;
+  const usersOf = (/** @type {any} */ pol) => all(data, 'platform').filter((p) => p.status !== 'deleted' && p.reviewRule?.kind === 'policy' && p.reviewRule.policyId === pol.id);
+  const top = html`<div class="policy-top">
+    <p class="muted">A review policy sets how often a platform is reviewed from its residual risk: a period for each band, for each receptor you care about. The shortest period any hazard gives is used.</p>
+    <form data-action="newReviewPolicy" class="new-policy"><input name="name" placeholder="New policy name" aria-label="New policy name" required><button type="submit" class="small">Add policy</button></form>
+  </div>`;
+  if (!policies.length) return html`${top}<p class="muted">No review policies yet.</p>`;
+  return html`${top}${sectionRail(state, 'reviewPolicies', policies.map((pol) => {
+    const users = usersOf(pol);
+    return { key: pol.id, label: pol.name, icon: 'calendar', badge: users.length, body: () => policyPanel(state, data, pol, users) };
+  }), policies[0].id, 'Policies')}`;
 }
 
 /**

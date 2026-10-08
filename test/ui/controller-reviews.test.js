@@ -40,11 +40,11 @@ test('the Reviews filters and timeline range change in place, shift by a year, a
   assert.deepEqual(kept, c.getState().reviewsPrefs, 'written for this folder and profile, for the next time it opens');
 });
 
-test('a new policy opens for editing; a cell takes a value and unit; a bad value is refused with a message', async () => {
+test('a new policy opens in the menu; a cell takes a value and unit; a bad value is refused with a message', async () => {
   const c = await ready();
   await c.dispatch({ type: 'newReviewPolicy', name: 'Standard' });
   const id = Object.keys(W(c).records.reviewPolicy)[0];
-  assert.deepEqual([c.getState().view.name, c.getState().view.tab, c.getState().view.id], ['reviews', 'policies', id]);
+  assert.deepEqual([c.getState().view.name, c.getState().view.tab, c.getState().sections.reviewPolicies], ['reviews', 'policies', id]);
   await c.dispatch({ type: 'setPolicyCell', id, receptor: 'personnel', band: 'Serious', value: '2', unit: 'years' });
   assert.equal(W(c).records.reviewPolicy[id].receptors.personnel.periods.Serious, 24);
   await c.dispatch({ type: 'setPolicyCell', id, receptor: 'personnel', band: 'Serious', unit: 'months' });
@@ -52,13 +52,29 @@ test('a new policy opens for editing; a cell takes a value and unit; a bad value
   await c.dispatch({ type: 'setPolicyCell', id, receptor: 'personnel', band: 'Serious', value: '0' });
   assert.equal(c.getState().message.kind, 'error');
   assert.equal(W(c).records.reviewPolicy[id].receptors.personnel.periods.Serious, 2);
-  await c.dispatch({ type: 'setPolicyCell', id, receptor: 'personnel', band: 'High', unit: 'years' });
-  assert.equal(W(c).records.reviewPolicy[id].receptors.personnel.periods.High, null, 'a unit alone on a blank cell leaves it blank');
-  await c.dispatch({ type: 'setPolicyLongest', id, value: '5' });
-  assert.equal(W(c).records.reviewPolicy[id].longest, 60, 'the longest is read in years (it was 3 years)');
   await c.dispatch({ type: 'removeReviewPolicy', id });
   assert.equal(W(c).records.reviewPolicy[id].status, 'deleted');
-  assert.deepEqual([c.getState().view.name, c.getState().view.tab, c.getState().view.id], ['reviews', 'policies', undefined]);
+  assert.deepEqual([c.getState().view.tab, c.getState().sections.reviewPolicies], ['policies', undefined]);
+});
+
+test('years chosen on an empty cell are kept on screen, and used when the number is typed', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'newReviewPolicy', name: 'Standard' });
+  const id = Object.keys(W(c).records.reviewPolicy)[0];
+  const before = W(c);
+  await c.dispatch({ type: 'setPolicyCell', id, receptor: 'personnel', band: 'High', unit: 'years' });
+  assert.equal(W(c), before, 'nothing saved yet: there is no number');
+  assert.equal(c.getState().policyUnits[`${id}|personnel|High`], 'years');
+  await c.dispatch({ type: 'setPolicyCell', id, receptor: 'personnel', band: 'High', value: '2' });
+  assert.equal(W(c).records.reviewPolicy[id].receptors.personnel.periods.High, 24, 'two years, as chosen');
+});
+
+test('Edit on a platform’s rule opens its policy in the Policies menu', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'createReviewPolicy', id: 'pol1', name: 'A' });
+  await c.dispatch({ type: 'createReviewPolicy', id: 'pol2', name: 'B' });
+  await c.dispatch({ type: 'showPolicy', id: 'pol2' });
+  assert.deepEqual([c.getState().view.name, c.getState().view.tab, c.getState().sections.reviewPolicies], ['reviews', 'policies', 'pol2']);
 });
 
 test('opening the data as a profile brings back that profile’s Reviews filters', async () => {

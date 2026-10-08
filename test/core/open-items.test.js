@@ -44,11 +44,11 @@ test('the owner filter: another owner, and everyone', () => {
 
 test('a moved review date is an item for the owner: urgent first when passed or within 30 days', () => {
   let d = scheduleFixed(seed(), 'p1', 36, '2029-01-01');
-  d = put(d, 'reviewPolicy', created(at('10:00', 'u1'), 'pol1', { name: 'S', order: 1, longest: 36, receptors: {
+  d = put(d, 'reviewPolicy', created(at('10:00', 'u1'), 'pol1', { name: 'S', order: 1, receptors: {
     personnel: { considered: true, periods: { High: 1, Serious: 6, Medium: null, Low: null, Eliminated: null, 'Not Credible': null, Uncategorised: null } },
     environment: { considered: false, periods: {} }, capability: { considered: false, periods: {} } } }));
   d = put(d, 'platform', changed(d.records.platform.p1, at('10:00', 'u1'), { reviewRule: { kind: 'policy', policyId: 'pol1' } }));
-  assert.equal(openItems(d, '2026-10-08', 'u1').dateMoved.length, 0, 'the policy gives 36 months too: nothing moved');
+  assert.equal(openItems(d, '2026-10-08', 'u1').dateMoved.length, 0, 'nothing sets a period yet, so there is no date to have moved');
   d = setRating(d, at('11:00', 'u2'), { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'personnel', consequence: 2, likelihood: 'C' }); // Serious → 6
   const items = openItems(d, '2026-10-08', 'u1');
   assert.equal(items.dateMoved.length, 1);

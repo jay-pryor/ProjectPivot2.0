@@ -11,7 +11,7 @@ const env = (f) => ({ clock: fixedClock('2026-09-28T10:00:00+10:00'), storage: n
 
 /**
  * Ada is active. p1 Alpha (owned by Ada, or by Grace when asked) with h1 on it, on policy Standard:
- * personnel Serious every 6 months, at least every 3 years, counted from 2026-01-01.
+ * personnel Serious every 6 months, unrated (Uncategorised) every 3 years, counted from 2026-01-01.
  * @param {'ada' | 'grace'} [owner]
  */
 async function ready(owner = 'ada') {
@@ -26,6 +26,7 @@ async function ready(owner = 'ada') {
   await c.dispatch({ type: 'linkHazard', hazardId: 'h1', platformId: 'p1' });
   await c.dispatch({ type: 'createReviewPolicy', id: 'pol1', name: 'Standard' });
   await c.dispatch({ type: 'updateReviewPolicy', id: 'pol1', receptor: 'personnel', band: 'Serious', months: '6', unit: 'months' });
+  await c.dispatch({ type: 'updateReviewPolicy', id: 'pol1', receptor: 'personnel', band: 'Uncategorised', months: '3', unit: 'years' });
   await c.dispatch({ type: 'setRule', platformId: 'p1', kind: 'policy', policyId: 'pol1', start: '2026-01-01' });
   await c.dispatch({ type: 'dismissReviewMoved' });
   return c;
@@ -47,7 +48,7 @@ test('an edit that moves a review date opens the pop-up, urgent when the new dat
 
 test('a move further off is not urgent; someone else’s platform names its owner', async () => {
   const c = await ready('grace');
-  await c.dispatch({ type: 'updateReviewPolicy', id: 'pol1', longest: '2', longestUnit: 'years' }); // 2029-01-01 → 2028-01-01
+  await c.dispatch({ type: 'updateReviewPolicy', id: 'pol1', receptor: 'personnel', band: 'Uncategorised', months: '2', unit: 'years' }); // 2029-01-01 → 2028-01-01
   const m = c.getState().reviewMoved;
   assert.deepEqual([m[0].to, m[0].urgent], ['2028-01-01', false]);
   const out = renderApp(c.getState());

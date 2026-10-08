@@ -13,9 +13,6 @@ import { RECEPTORS } from '../receptors.js';
 
 export const MAX_REVIEW_MONTHS = 120;
 
-/** A new policy is reviewed at least this often, until someone says otherwise. */
-const DEFAULT_LONGEST = 36;
-
 /** Row-level review actions: kept in the history, but left out of the platform's History tab. */
 export const REVIEW_DETAIL_ACTIONS = Object.freeze(['Mark review row', 'Set review outcome', 'Set review notes']);
 
@@ -102,21 +99,18 @@ const blankPeriods = () => Object.fromEntries(POLICY_BANDS.map((b) => [b, null])
 export function createReviewPolicy(data, act, { id = newId(), name }) {
   const order = Math.max(0, ...all(data, 'reviewPolicy').map((x) => (Number.isInteger(x.order) ? x.order : 0))) + 1;
   const receptors = Object.fromEntries(RECEPTORS.map((r) => [r, { considered: true, periods: blankPeriods() }]));
-  const rec = created(act, id, { name: needPolicyName(data, name, null), order, longest: DEFAULT_LONGEST, receptors });
+  const rec = created(act, id, { name: needPolicyName(data, name, null), order, receptors });
   return commit(data, act, 'Create review policy', [{ kind: 'reviewPolicy', rec }]);
 }
 
 /**
- * One change to a policy: a band's period for a receptor (blank clears it), whether a receptor is
- * considered, or the longest period.
+ * One change to a policy: a band's period for a receptor (blank clears it), or whether a receptor
+ * is considered.
  * @param {Data} data @param {Act} act
- * @param {{ id: string, receptor?: string, band?: string, months?: unknown, unit?: unknown, considered?: unknown, longest?: unknown, longestUnit?: unknown }} args
+ * @param {{ id: string, receptor?: string, band?: string, months?: unknown, unit?: unknown, considered?: unknown }} args
  */
-export function updateReviewPolicy(data, act, { id, receptor, band, months, unit, considered, longest, longestUnit }) {
+export function updateReviewPolicy(data, act, { id, receptor, band, months, unit, considered }) {
   const pol = need(data, 'reviewPolicy', id);
-  if (longest !== undefined) {
-    return commit(data, act, 'Change review policy', [{ kind: 'reviewPolicy', rec: changed(pol, act, { longest: toMonths(longest, longestUnit, 'review.months') }) }]);
-  }
   if (!RECEPTORS.includes(/** @type {any} */ (receptor))) throw new PivotError('reviewPolicy.receptor', 'Choose personnel, environment or capability.');
   const r = /** @type {string} */ (receptor);
   const was = pol.receptors[r];

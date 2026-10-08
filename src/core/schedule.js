@@ -7,7 +7,7 @@ import { ratingsOf, bandOf, lastReviewed } from './queries.js';
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Rec} Rec */
 /** @typedef {'personnel' | 'environment' | 'capability'} Receptor */
-/** @typedef {{ kind: 'fixed' } | { kind: 'longest' } | { kind: 'hazard', hazardId: string, receptor: Receptor, band: string }} Driver */
+/** @typedef {{ kind: 'fixed' } | { kind: 'hazard', hazardId: string, receptor: Receptor, band: string }} Driver */
 /** @typedef {{ months: number, driver: Driver }} Period */
 
 /** A moved review date is urgent when the new date is this many days away or fewer (or passed). */
@@ -25,13 +25,14 @@ export function policyOf(data, p) {
 
 /**
  * The period a policy gives a platform: for every live hazard on it and every receptor the policy
- * considers, the period its residual band has in the policy; the shortest of those and the
- * policy's longest. Ties keep the first found (hazards in link order, receptors in RECEPTORS order).
- * @param {Data} data @param {Rec} pol @param {string} platformId @returns {Period}
+ * considers, the period its residual band has in the policy; the shortest of those, or none when
+ * no hazard falls in a band with a period. Ties keep the first found (hazards in link order,
+ * receptors in RECEPTORS order).
+ * @param {Data} data @param {Rec} pol @param {string} platformId @returns {Period | null}
  */
 function policyPeriod(data, pol, platformId) {
-  /** @type {Period} */
-  let best = { months: pol.longest, driver: { kind: 'longest' } };
+  /** @type {Period | null} */
+  let best = null;
   for (const link of live(data, 'hazardPlatform').filter((l) => l.platformId === platformId)) {
     const hazard = get(data, 'hazard', link.hazardId);
     if (!hazard || hazard.status !== 'live') continue;
@@ -41,7 +42,7 @@ function policyPeriod(data, pol, platformId) {
       if (!r?.considered) continue;
       const band = bandOf(residual[receptor]);
       const months = r.periods?.[band];
-      if (Number.isInteger(months) && months < best.months) best = { months, driver: { kind: 'hazard', hazardId: link.hazardId, receptor, band } };
+      if (Number.isInteger(months) && (!best || months < best.months)) best = { months, driver: { kind: 'hazard', hazardId: link.hazardId, receptor, band } };
     }
   }
   return best;
@@ -52,8 +53,8 @@ const periodCache = new WeakMap();
 
 /**
  * How often a platform is reviewed, and what sets that: its fixed months, or its policy's shortest
- * period (with the hazard, receptor and band giving it) or longest. Null with no rule, or a rule
- * naming a policy that no longer exists. Worked out once per data.
+ * period (with the hazard, receptor and band giving it). Null with no rule, a rule naming a policy
+ * that no longer exists, or a policy none of its hazards falls under. Worked out once per data.
  * @param {Data} data @param {string} platformId @returns {Period | null}
  */
 export function periodOf(data, platformId) {

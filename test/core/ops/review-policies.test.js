@@ -11,10 +11,10 @@ import { act, seed } from '../../helpers.js';
 const code = (c) => (e) => e instanceof PivotError && e.code === c;
 const made = () => createReviewPolicy(seed(), act, { id: 'pol1', name: 'Standard' });
 
-test('a new policy considers every receptor, drives nothing, and is reviewed at least every 3 years', () => {
+test('a new policy considers every receptor and drives nothing', () => {
   const pol = made().records.reviewPolicy.pol1;
   assert.equal(pol.name, 'Standard');
-  assert.equal(pol.longest, 36);
+  assert.ok(!('longest' in pol), 'there is no longest period');
   for (const r of ['personnel', 'environment', 'capability']) {
     assert.equal(pol.receptors[r].considered, true);
     assert.deepEqual(Object.values(pol.receptors[r].periods), [null, null, null, null, null, null, null]);
@@ -24,20 +24,17 @@ test('a new policy considers every receptor, drives nothing, and is reviewed at 
   assert.throws(() => createReviewPolicy(seed(), act, { name: '  ' }), code('empty'));
 });
 
-test('a policy cell takes months or years, or blank; a receptor can be left out; the longest is required', () => {
+test('a policy cell takes months or years, or blank; a receptor can be left out', () => {
   let d = updateReviewPolicy(made(), act, { id: 'pol1', receptor: 'personnel', band: 'Serious', months: '6', unit: 'months' });
   d = updateReviewPolicy(d, act, { id: 'pol1', receptor: 'personnel', band: 'Medium', months: '3', unit: 'years' });
   d = updateReviewPolicy(d, act, { id: 'pol1', receptor: 'capability', considered: false });
-  d = updateReviewPolicy(d, act, { id: 'pol1', longest: '5', longestUnit: 'years' });
   const pol = d.records.reviewPolicy.pol1;
   assert.equal(pol.receptors.personnel.periods.Serious, 6);
   assert.equal(pol.receptors.personnel.periods.Medium, 36);
   assert.equal(pol.receptors.capability.considered, false);
-  assert.equal(pol.longest, 60);
   d = updateReviewPolicy(d, act, { id: 'pol1', receptor: 'personnel', band: 'Serious', months: '' });
   assert.equal(d.records.reviewPolicy.pol1.receptors.personnel.periods.Serious, null, 'blank clears a cell');
   assert.throws(() => updateReviewPolicy(d, act, { id: 'pol1', receptor: 'personnel', band: 'Serious', months: '0', unit: 'months' }), code('review.months'));
-  assert.throws(() => updateReviewPolicy(d, act, { id: 'pol1', longest: '', longestUnit: 'months' }), code('review.months'));
   assert.throws(() => updateReviewPolicy(d, act, { id: 'pol1', receptor: 'people', band: 'Serious', months: '6' }), code('reviewPolicy.receptor'));
   assert.throws(() => updateReviewPolicy(d, act, { id: 'pol1', receptor: 'personnel', band: 'Awful', months: '6' }), code('reviewPolicy.band'));
 });

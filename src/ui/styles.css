@@ -356,15 +356,17 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 .review-moved { background: var(--p-warn-bg); color: var(--p-warn); }
 .review-moved.urgent { background: var(--p-error-bg); color: var(--p-danger); }
 .rv-filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-.policies { display: grid; grid-template-columns: minmax(160px, 220px) minmax(0, 1fr); gap: 20px; align-items: start; }
-.policy-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
-.policy-list .on { font-weight: 600; }
-.policy .policy-grid { border-collapse: collapse; margin: 12px 0; }
+.policy-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; margin: 4px 0 8px; }
+.policy-top > p { margin: 0; max-width: 70ch; }
+.new-policy { display: flex; gap: 6px; align-items: center; }
+.new-policy input { width: 16em; }
+.new-policy button.small { padding: 5px 12px; }
+.policy-grid { border-collapse: collapse; margin: 12px 0; }
 .policy-grid th, .policy-grid td { padding: 6px 10px; border-bottom: 1px solid var(--p-line); text-align: left; }
 .policy-grid td.off { opacity: 0.4; }
+.rail-panel:has(.policy-grid) { overflow-x: auto; }
 .period-input { display: inline-flex; gap: 4px; align-items: center; }
 .period-input input { width: 5em; }
-@media (max-width: 720px) { .policies { grid-template-columns: minmax(0, 1fr); } .policy { overflow-x: auto; } }
 .review-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 16px; }
 .review-line input.months { width: 72px; }
 .review-line input.quiet { border-color: transparent; background: transparent; color: var(--p-fg); }
@@ -1190,7 +1192,8 @@ ul.dots { display: grid; gap: 3px; }
 .timeline .tl-month { font-size: 12px; font-weight: 600; min-width: 36px; }
 .timeline .today { background: color-mix(in srgb, var(--p-accent) 14%, transparent); }
 .timeline tbody tr:not(.tl-group):not(.tl-none):hover td { background: var(--p-row-hover); }
-.tl-cell { position: relative; height: 30px; }
+.tl-cell { position: relative; height: 60px; }
+.tl-none > td { height: 60px; }
 .tl-cell.tl-bar::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px solid var(--p-line); }
 .tl-mark { position: relative; display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; }
 .tl-cell .tl-mark + .tl-mark { margin-left: 2px; }
