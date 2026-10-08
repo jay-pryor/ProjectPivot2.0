@@ -89,3 +89,16 @@ test('derived views carry personnel and environment separately; one-value views 
   assert.deepEqual(openItems(half, '2026-09-28', 'u1').unrated[0].missing, ['initial personnel', 'initial environment', 'initial capability', 'residual capability'], 'a likelihood alone is not complete');
   assert.deepEqual(platformCards(d, '2026-09-28', 'u1')[0].bands, { personnel: { Low: 1 }, environment: { Serious: 1 }, capability: { Uncategorised: 1 } });
 });
+
+test('a risk rated with no justification at all, of either the likelihood or the consequence, is an open item', () => {
+  const at = (d) => openItems(d, '2026-09-28', 'u1').unjustified.map((x) => [x.platform.id, x.hazard.id, x.missing]);
+  let d = setAssessment(seed(), act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', consequence: 4, likelihood: 'D' });
+  d = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'environment', likelihood: 'C' });
+  assert.deepEqual(at(d), [['p1', 'h1', ['initial personnel', 'residual environment']]], 'a likelihood alone counts as rated');
+  d = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', consequenceWhy: 'Burns to one person' });
+  assert.deepEqual(at(d), [['p1', 'h1', ['residual environment']]], 'one justification is enough');
+  d = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor: 'environment', likelihood: '' });
+  assert.deepEqual(at(d), [], 'not rated, nothing to justify');
+  d = setAssessment(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', consequenceWhy: '' });
+  assert.deepEqual(at(d), [['p1', 'h1', ['initial personnel']]], 'a justification cleared');
+});

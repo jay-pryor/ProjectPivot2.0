@@ -394,3 +394,14 @@ test('the Controls section ends with an Implementation Status box for each contr
   assert.match(out, /<textarea class="cell-area" name="text" rows="2" placeholder="Implementation status…" aria-label="Implementation status of Sprinklers on Alpha" data-change="setImplementationStatus" data-hazard-id="h1" data-control-id="c1" data-platform-id="p1">Ordered<\/textarea>/);
   assert.match(out, /<option value="recommended" selected>Recommended<\/option><option value="planned">Planned<\/option>/);
 });
+
+test('the overview\'s Safety Reports section lists every platform\'s safety reports together, with a Platform column after the Report ID', () => {
+  const out = hazardView({ ...state, view: { name: 'hazard', id: 'h1' }, sections: { hazard: 'reports' } }, reported(), 'h1').toString();
+  assert.match(out, /data-section="reports"[^>]*>[\s\S]*?Safety Reports<\/span><span class="rail-badge">2<\/span>/);
+  assert.match(out, /data-table="hazardSafetyReports"[\s\S]*?<th data-col="reportId"[\s\S]*?<th data-col="platform"[\s\S]*?<th data-col="date"/);
+  assert.match(out, /HAZ-001-A-1[\s\S]*?data-action="go" data-view="hazard" data-id="h1" data-tab="p:p1">Alpha<\/button>[\s\S]*?Rotor &lt;b&gt;strike/);
+  assert.match(out, /HAZ-001-B-1[\s\S]*?data-tab="p:p2">Bravo<\/button>[\s\S]*?On Bravo/);
+  assert.doesNotMatch(out, /Add a safety report/, 'added on a platform\'s tab');
+  assert.match(out, /data-action="moveSafetyReport" data-id="sr1" data-platform-id="p2">Move to Bravo/);
+  assert.match(out, /data-action="moveSafetyReport" data-id="sr2" data-platform-id="p1">Move to Alpha/);
+});

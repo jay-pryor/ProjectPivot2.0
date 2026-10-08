@@ -42,17 +42,18 @@ function ownerPicker(state) {
 /**
  * Where an open item's action is done, for a double-click on its row: a review (or a moved review
  * date) on the platform's review page; a control's status (to decide, or to implement) on the
- * control's page for that platform; ratings on the hazard's page for that platform. A change is
+ * control's page for that platform, as are its properties; ratings, their justifications and the SFARP
+ * considerations on the hazard's page for that platform. A change is
  * acknowledged in the list itself, so its row opens the platform's history, where the change sits
  * in context.
- * @param {'change' | 'review' | 'schedule' | 'dateMoved' | 'control' | 'implement' | 'rating'} type
+ * @param {'change' | 'review' | 'schedule' | 'dateMoved' | 'control' | 'implement' | 'controlGap' | 'rating' | 'justify' | 'sfarp'} type
  * @param {{ platform: any, hazard?: any, control?: any }} item
  * @returns {Record<string, string>}
  */
 export function whereToAct(type, item) {
   const on = `p:${item.platform.id}`;
-  if (type === 'control' || type === 'implement') return { view: 'control', id: item.control.id, tab: on };
-  if (type === 'rating') return { view: 'hazard', id: item.hazard.id, tab: on };
+  if (type === 'control' || type === 'implement' || type === 'controlGap') return { view: 'control', id: item.control.id, tab: on };
+  if (type === 'rating' || type === 'justify' || type === 'sfarp') return { view: 'hazard', id: item.hazard.id, tab: on };
   if (type === 'change') return { view: 'platform', id: item.platform.id, tab: 'history' };
   return { view: 'platformReview', id: item.platform.id };
 }
@@ -96,12 +97,15 @@ export function openItemsView(state, data) {
     ${teamLine(state, data)}
     <div class="tiles">
       ${totalTile(attentionItems(items).length)}
-      ${tile('acks', items.acks.length, 'change to acknowledge', 'changes to acknowledge')}
+      ${tile('acks', items.acks.length, 'to acknowledge', 'to acknowledge')}
       ${tile('reviews', overdue, 'review overdue', 'reviews overdue', 'bad')}
-      ${tile('moved', items.dateMoved.length, 'review date moved', 'review dates moved', items.dateMoved.some((m) => m.urgent) ? 'bad' : 'warn')}
-      ${tile('awaiting', items.awaiting.length, 'control awaiting status decision', 'controls awaiting status decision', 'warn')}
-      ${tile('implement', items.toImplement.length, 'control to implement', 'controls to implement')}
-      ${tile('unrated', items.unrated.length, 'hazard unrated', 'hazards unrated')}
+      ${tile('moved', items.dateMoved.length, 'date moved', 'dates moved', items.dateMoved.some((m) => m.urgent) ? 'bad' : 'warn')}
+      ${tile('awaiting', items.awaiting.length, 'awaiting decision', 'awaiting decision', 'warn')}
+      ${tile('implement', items.toImplement.length, 'to implement', 'to implement')}
+      ${tile('unrated', items.unrated.length, 'unrated', 'unrated')}
+      ${tile('unjustified', items.unjustified.length, 'unjustified rating', 'unjustified ratings')}
+      ${tile('controlGaps', items.controlGaps.length, 'control incomplete', 'controls incomplete')}
+      ${tile('sfarpGaps', items.sfarpGaps.length, 'SFARP incomplete', 'SFARP incomplete')}
     </div>
     <p class="muted">Double-click a row to go straight to where it is dealt with.</p>
     ${sectionRail(state, 'openItems', [
@@ -158,6 +162,35 @@ export function openItemsView(state, data) {
             render: (r) => r.missing.join(', ') },
         ],
       })}</section>` },
+      { key: 'unjustified', label: 'Ratings without justification', icon: 'analysis', badge: items.unjustified.length, body: () => html`<h2>Ratings without justification</h2>
+        <p class="muted">Risks rated with neither the likelihood nor the consequence justified.</p><section class="block">${dataTable(state, {
+        id: 'homeUnjustified', rowKey: (r) => `${r.platform.id}|${r.hazard.id}`, rows: items.unjustified, empty: 'Every rating is justified.', rowAttrs: actRow('justify'),
+        columns: [
+          { key: 'platform', label: 'Platform', width: 300, minWidth: 140, value: (r) => r.platform.name, filter: 'text', render: (r) => platformLink(r.platform) },
+          { key: 'hazard', label: 'Hazard', width: 520, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`, filter: 'text', render: hazardCell },
+          { key: 'missing', label: 'Not justified', width: 280, minWidth: 140, value: (r) => r.missing.join(', '),
+            render: (r) => r.missing.join(', ') },
+        ],
+      })}</section>` },
+      { key: 'controlGaps', label: 'Control properties not set', icon: 'controls', badge: items.controlGaps.length, body: () => html`<h2>Control properties not set</h2>
+        <p class="muted">Controls used on the platform with a tier, origin, description or implemented by not set.</p><section class="block">${dataTable(state, {
+        id: 'homeControlGaps', rowKey: (r) => `${r.platform.id}|${r.control.id}`, rows: items.controlGaps, empty: 'Every control has its properties set.', rowAttrs: actRow('controlGap'),
+        columns: [
+          { key: 'platform', label: 'Platform', width: 300, minWidth: 140, value: (r) => r.platform.name, filter: 'text', render: (r) => platformLink(r.platform) },
+          { key: 'control', label: 'Control', width: 520, minWidth: 200, value: (r) => `${controlLabel(r.control)} ${r.control.title}`, filter: 'text',
+            render: (r) => html`<span class="id">${idTag(controlLabel(r.control))}</span> ${go(r.control.title, 'control', { id: r.control.id, tab: `p:${r.platform.id}` })}` },
+          { key: 'missing', label: 'Not set', width: 280, minWidth: 140, value: (r) => r.missing.join(', ') },
+        ],
+      })}</section>` },
+      { key: 'sfarpGaps', label: 'SFARP incomplete', icon: 'sfarp', badge: items.sfarpGaps.length, body: () => html`<h2>SFARP incomplete</h2>
+        <p class="muted">Hazards on a platform with a SFARP justification, conclusion or conditions of validity empty.</p><section class="block">${dataTable(state, {
+        id: 'homeSfarpGaps', rowKey: (r) => `${r.platform.id}|${r.hazard.id}`, rows: items.sfarpGaps, empty: 'Every SFARP consideration is filled in.', rowAttrs: actRow('sfarp'),
+        columns: [
+          { key: 'platform', label: 'Platform', width: 300, minWidth: 140, value: (r) => r.platform.name, filter: 'text', render: (r) => platformLink(r.platform) },
+          { key: 'hazard', label: 'Hazard', width: 520, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`, filter: 'text', render: hazardCell },
+          { key: 'missing', label: 'Empty', width: 280, minWidth: 140, value: (r) => r.missing.join(', ') },
+        ],
+      })}</section>` },
     ], 'acks')}`;
 }
 
@@ -168,7 +201,7 @@ export function openItemsView(state, data) {
  */
 export const ATTENTION_LIMIT = 40;
 
-const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], implement: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'], schedule: ['Review', 'chip-review'], dateMoved: ['Review', 'chip-review'] };
+const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], implement: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'], justify: ['Rating', 'chip-rating'], controlGap: ['Control', 'chip-control'], sfarp: ['SFARP', 'chip-rating'], schedule: ['Review', 'chip-review'], dateMoved: ['Review', 'chip-review'] };
 
 /**
  * Every open item across the team, whoever owns the platform: a quiet line above the counts.
@@ -232,6 +265,9 @@ function attentionRow(state, data, item) {
     return row(html`${item.control.title} planned <span class="muted">· ${hazardLabel(item.hazard)} ${item.hazard.title}</span>`, go('Implement →', place.view, place));
   }
   if (item.type === 'schedule') return row('No review schedule', go('Set schedule →', place.view, place));
+  if (item.type === 'controlGap') return row(html`${controlLabel(item.control)} ${item.control.title} <span class="muted">· no ${item.missing.join(', ')}</span>`, go('Fill in →', place.view, place));
+  if (item.type === 'sfarp') return row(html`${hazardLabel(item.hazard)} ${item.hazard.title} <span class="muted">· no SFARP ${item.missing.join(', ')}</span>`, go('Fill in →', place.view, place));
+  if (item.type === 'justify') return row(html`${hazardLabel(item.hazard)} ${item.hazard.title} <span class="muted">· no justification for the ${item.missing.join(', ')} rating${item.missing.length === 1 ? '' : 's'}</span>`, go('Justify →', place.view, place));
   return row(html`${hazardLabel(item.hazard)} ${item.hazard.title} <span class="muted">· no ${item.missing.join(', ')} rating</span>`, go('Rate →', place.view, place));
 }
 
@@ -338,7 +374,7 @@ function reviewButton(r) {
 
 /** The total of open items, first among the counts on Home and Open items: a figure, not a button. @param {number} n */
 function totalTile(n) {
-  return html`<div class="tile tile-total" role="status" title="Everything that needs doing, all together"><b>${n}</b><span>${n === 1 ? 'open item' : 'open items'} in total</span></div>`;
+  return html`<div class="tile tile-total" role="status" title="Everything that needs doing, all together"><b>${n}</b><span>${n === 1 ? 'open item' : 'open items'}</span></div>`;
 }
 
 /** A bar of a platform's hazards by residual band, highest first. @param {Record<string, number>} bands */
@@ -382,11 +418,14 @@ export function homeView(state, data) {
     ${teamLine(state, data)}
     <div class="tiles">
       ${totalTile(attention.length)}
-      ${tile(items.acks.length, 'change to acknowledge', 'changes to acknowledge')}
+      ${tile(items.acks.length, 'to acknowledge', 'to acknowledge')}
       ${tile(overdue, 'review overdue', 'reviews overdue', 'bad')}
-      ${tile(items.awaiting.length, 'control awaiting status decision', 'controls awaiting status decision')}
-      ${tile(items.toImplement.length, 'control to implement', 'controls to implement')}
-      ${tile(items.unrated.length, 'hazard unrated', 'hazards unrated')}
+      ${tile(items.awaiting.length, 'awaiting decision', 'awaiting decision')}
+      ${tile(items.toImplement.length, 'to implement', 'to implement')}
+      ${tile(items.unrated.length, 'unrated', 'unrated')}
+      ${tile(items.unjustified.length, 'unjustified rating', 'unjustified ratings')}
+      ${tile(items.controlGaps.length, 'control incomplete', 'controls incomplete')}
+      ${tile(items.sfarpGaps.length, 'SFARP incomplete', 'SFARP incomplete')}
     </div>
     <div class="dash-cols">
       <section class="panel attn-panel"><h2>Needs attention</h2>

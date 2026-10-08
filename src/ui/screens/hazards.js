@@ -5,8 +5,8 @@ import { referencesCard } from './references.js';
 import { tierColumn } from './controls.js';
 import { live, get } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
-import { hazardRows, hazardDetail, ratingOf, ratingsOf, bandOf, worseBand, hazardLastReviewed, byNumber, hazardReferences, hazardReferenceRows, causalFactorsOn, controlPlatforms, controlState } from '../../core/queries.js';
-import { platformTab } from './ssra.js';
+import { hazardRows, hazardDetail, ratingOf, ratingsOf, bandOf, worseBand, hazardLastReviewed, byNumber, hazardReferences, hazardReferenceRows, causalFactorsOn, controlPlatforms, controlState, safetyReportsOn } from '../../core/queries.js';
+import { platformTab, safetyReportsSection } from './ssra.js';
 import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
 import { day } from '../names.js';
 import { BANDS } from '../../core/matrix.js';
@@ -121,6 +121,7 @@ export function hazardView(state, data, id) {
       ${sectionRail(state, 'hazard', [
         { key: 'controls', label: 'Controls', icon: 'controls', badge: d.controls.length, body: () => controlsTable(state, data, h, d) },
         { key: 'references', label: 'References', icon: 'references', badge: hazardReferenceRows(data, h.id).length, body: () => referencesCard(state, data, { kind: 'hazard', id: h.id }) },
+        { key: 'reports', label: 'Safety Reports', icon: 'reports', badge: safetyReportsOn(data, h.id, null).length, body: () => safetyReportsSection(state, data, h, null) },
       ], 'controls')}
     </article>`;
 }

@@ -65,6 +65,7 @@ export function deleteHazard(data, act, { id }) {
   for (const l of live(data, 'hazardControl')) if (l.hazardId === id) recs.push({ kind: 'hazardControl', rec: changed(l, act, { status: 'deleted' }) });
   // Implementation statuses go with the platform links above (and so are already listed).
   for (const l of live(data, 'hazardPhase')) if (l.hazardId === id) recs.push({ kind: 'hazardPhase', rec: changed(l, act, { status: 'deleted' }) });
+  for (const l of live(data, 'optionGroup')) if (l.optionKind === 'hazard' && l.optionId === id) recs.push({ kind: 'optionGroup', rec: changed(l, act, { status: 'deleted' }) });
   for (const r of live(data, 'safetyReport')) if (r.hazardId === id) recs.push({ kind: 'safetyReport', rec: changed(r, act, { status: 'deleted' }) });
   // Every reference link to what goes with it goes too, once each.
   const gone = [{ kind: 'hazard', id }, ...recs.filter((r) => LINKABLE_PARTS.includes(r.kind)).map((r) => ({ kind: r.kind, id: r.rec.id }))];

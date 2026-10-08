@@ -23,17 +23,17 @@ function data() {
   return addSystemElement(d, act, { hazardId: 'h1', platformId: 'p1', text: 'Propeller' });
 }
 
-test('Info opens on Platform groups, first in its menu, then a section for each facet; groups are added, renamed and deleted like the facets', () => {
+test('Info opens on Platform groups, first in its menu, then Hazards and Controls, then a section for each facet; groups are added, renamed and deleted like the facets', () => {
   const out = infoView(state, data()).toString();
   assert.match(out, /<h1>Info<\/h1>/);
-  assert.deepEqual([...out.matchAll(/data-page="info" data-section="(\w+)"/g)].map((m) => m[1]), ['groups', 'causalFactor', 'consequence', 'failureMode', 'systemElement', 'phase', 'affectedGroup']);
+  assert.deepEqual([...out.matchAll(/data-page="info" data-section="(\w+)"/g)].map((m) => m[1]), ['groups', 'hazards', 'controls', 'causalFactor', 'consequence', 'failureMode', 'systemElement', 'phase', 'affectedGroup']);
   assert.match(out, /class="rail-item on"[^>]*data-section="groups">[\s\S]*?Platform groups<\/span><span class="rail-badge">3<\/span>/);
   assert.match(out, /<h2>Platform groups<\/h2><button type="button" class="plus" data-action="startEdit" data-kind="newPlatformGroup" data-id="new"/);
   assert.doesNotMatch(out, /<p class="muted">/, 'no description under the heading');
   assert.match(infoView({ ...state, editing: { kind: 'newPlatformGroup', id: 'new' } }, data()).toString(), /<form data-action="createPlatformGroup" class="row inline new-record"><input name="name" required placeholder="New platform group"/);
   assert.match(out, /data-row="g1"[\s\S]*?UAS<\/span><\/td><td>2<\/td><td>[\s\S]*?Alpha[\s\S]*?Bravo/);
   assert.match(out, /data-row="g3"[\s\S]*?&lt;Sea&gt;[\s\S]*?None yet/);
-  assert.match(out, /data-action="askConfirm" data-run="deletePlatformGroup" data-id="g1" data-title="Delete UAS\?" data-text="Its 2 platforms will no longer be in it, and its options will no longer be assigned to it\. You can restore it from Deletion history/);
+  assert.match(out, /data-action="askConfirm" data-run="deletePlatformGroup" data-id="g1" data-title="Delete UAS\?" data-text="Its 2 platforms will no longer be in it, and its options, hazards and controls will no longer be assigned to it\. You can restore it from Deletion history/);
   assert.doesNotMatch(out, /row-menu/, 'no Options menu');
   const renaming = infoView({ ...state, editing: { kind: 'platformGroupName', id: 'g2' } }, data()).toString();
   assert.match(renaming, /<input class="cell-edit" name="name" value="Ground vehicles"[^>]*data-change="renamePlatformGroup" data-id="g2"/);
@@ -138,4 +138,29 @@ test('a platform\'s Home card shows its groups as plain tags at its top right', 
   const out = homeView({ ...state, homeOwner: 'everyone' }, data()).toString();
   assert.match(out, /<span class="pcard-top"><span class="pcard-h"><strong>Alpha<\/strong>[\s\S]*?<\/span><span class="group-tags"><span class="tag group-tag">UAS<\/span><span class="tag group-tag">Ground vehicles<\/span><\/span><\/span>/);
   assert.match(out, /<span class="pcard-top"><span class="pcard-h"><strong>Bravo<\/strong>[\s\S]*?<span class="tag group-tag">UAS<\/span><\/span><\/span>/);
+});
+
+test('Hazards, under Platform groups, lists each hazard with its platform groups, assigned with the same tools as a facet', () => {
+  const d = assignToGroup(data(), act, { facet: 'hazard', optionIds: ['h1'], groupId: 'g1' });
+  const out = infoView({ ...state, sections: { info: 'hazards' } }, d).toString();
+  assert.match(out, /data-section="hazards">[\s\S]*?Hazards<\/span><span class="rail-badge">2<\/span>/);
+  assert.match(out, /<h2>Hazards<\/h2>/);
+  assert.doesNotMatch(out, /data-kind="newFacetOption|deleteFacetOption/, 'hazards are added and deleted on their own pages');
+  assert.match(out, /data-row="h1"[\s\S]*?HAZ-001[\s\S]*?data-action="go" data-view="hazard" data-id="h1">Fire<\/button>[\s\S]*?<li>UAS<button[^>]*data-action="setOptionGroup" data-facet="hazard" data-option-id="h1" data-group-id="g1" data-on="false">✕<\/button><\/li><\/ul><\/td><td>2<\/td>/);
+  assert.match(out, /data-row="h2"[\s\S]*?Flood[\s\S]*?<span class="muted">—<\/span><\/td><td>0<\/td>/);
+  assert.match(out, /<form data-action="startAssignToGroup" data-facet="hazard" class="assign-start">/);
+  const choosing = infoView({ ...state, sections: { info: 'hazards' }, infoTools: { assigning: { facet: 'hazard', groupId: 'g2' }, hidden: [], byGroup: false } }, d).toString();
+  assert.match(choosing, /data-assign-form data-facet="hazard" data-group-id="g2"/);
+  assert.match(choosing, /data-row="h2" data-selectable="" data-option-id="h2"/);
+  const byGroup = infoView({ ...state, sections: { info: 'hazards' }, infoTools: { assigning: null, hidden: [], byGroup: true } }, d).toString();
+  assert.match(byGroup, /UAS<\/span>[\s\S]*?Fire[\s\S]*?No group[\s\S]*?Flood/);
+});
+
+test('Controls, under Hazards, lists each control with its platform groups, assigned with the same tools', () => {
+  const d = assignToGroup(data(), act, { facet: 'control', optionIds: ['c2'], groupId: 'g2' });
+  const out = infoView({ ...state, sections: { info: 'controls' } }, d).toString();
+  assert.match(out, /data-section="controls">[\s\S]*?Controls<\/span><span class="rail-badge">2<\/span>/);
+  assert.match(out, /<h2>Controls<\/h2>/);
+  assert.match(out, /data-row="c2"[\s\S]*?data-action="go" data-view="control" data-id="c2">Fire drills<\/button>[\s\S]*?<li>Ground vehicles<button[^>]*data-action="setOptionGroup" data-facet="control" data-option-id="c2" data-group-id="g2" data-on="false">/);
+  assert.match(out, /<form data-action="startAssignToGroup" data-facet="control" class="assign-start">/);
 });

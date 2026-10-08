@@ -4,7 +4,8 @@ import { openItems, attentionItems } from '../../src/core/queries.js';
 import { put, created, changed } from '../../src/core/data.js';
 import { startAcks } from '../../src/core/acks.js';
 import { updateHazard } from '../../src/core/ops/hazards.js';
-import { confirmControl, setRating } from '../../src/core/ops/assessment.js';
+import { confirmControl, excludeControl, setRating, setSfarp } from '../../src/core/ops/assessment.js';
+import { updateControl, setImplementedBy, CONTROL_TIERS } from '../../src/core/ops/controls.js';
 import { startReview } from '../../src/core/ops/reviews.js';
 import { seed, scheduleFixed, seeDue } from '../helpers.js';
 
@@ -39,7 +40,7 @@ test('the owner filter: another owner, and everyone', () => {
   const all = openItems(data(), '2026-09-28', null);
   assert.equal(all.acks.length, 2);
   assert.equal(all.awaiting.length, 3);
-  assert.deepEqual(openItems(data(), '2026-09-28', 'nobody'), { acks: [], reviews: [], dateMoved: [], awaiting: [], toImplement: [], unrated: [] });
+  assert.deepEqual(openItems(data(), '2026-09-28', 'nobody'), { acks: [], reviews: [], dateMoved: [], awaiting: [], toImplement: [], unrated: [], unjustified: [], controlGaps: [], sfarpGaps: [] });
 });
 
 test('a moved review date is an item for the owner: urgent first when passed or within 30 days', () => {
@@ -66,4 +67,20 @@ test('a moved review date far off comes after the changes to acknowledge', () =>
   const types = attentionItems(items).map((i) => i.type);
   assert.ok(types.includes('change'));
   assert.ok(types.indexOf('dateMoved') > types.lastIndexOf('change'));
+});
+
+test('a control used on a platform with a property not set, and a hazard with any SFARP field empty, are open items', () => {
+  const gaps = (d) => openItems(d, '2026-09-28', 'u1').controlGaps.map((x) => [x.platform.id, x.control.id, x.missing]);
+  const sfarp = (d) => openItems(d, '2026-09-28', 'u1').sfarpGaps.map((x) => [x.platform.id, x.hazard.id, x.missing]);
+  let d = seed();
+  assert.deepEqual(gaps(d), [['p1', 'c1', ['tier', 'origin', 'description', 'implemented by']], ['p1', 'c2', ['tier', 'origin', 'description', 'implemented by']]]);
+  d = updateControl(d, at('10:40', 'u1'), { id: 'c1', tier: CONTROL_TIERS[0], origin: 'Site rules', description: 'Water' });
+  d = setImplementedBy(d, at('10:40', 'u1'), { controlId: 'c1', platformId: 'p1', implementedBy: 'oem' });
+  d = excludeControl(d, at('10:40', 'u1'), { hazardId: 'h1', controlId: 'c2', platformId: 'p1', reason: 'Not crewed' });
+  assert.deepEqual(gaps(d), [], 'every property set; a control rejected for every hazard there is not used');
+  assert.deepEqual(sfarp(d), [['p1', 'h1', ['justification', 'conclusion', 'conditions of validity']]]);
+  d = setSfarp(d, at('10:40', 'u1'), { hazardId: 'h1', platformId: 'p1', justification: 'All done', conclusion: ' ' });
+  assert.deepEqual(sfarp(d), [['p1', 'h1', ['conclusion', 'conditions of validity']]]);
+  d = setSfarp(d, at('10:40', 'u1'), { hazardId: 'h1', platformId: 'p1', conclusion: 'SFARP', conditions: 'While crewed' });
+  assert.deepEqual(sfarp(d), []);
 });

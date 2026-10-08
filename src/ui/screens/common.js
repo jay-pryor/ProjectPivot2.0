@@ -182,7 +182,7 @@ export function shell(state, body) {
       ? html`<button type="button" class="save unsaved" ${dataAttrs({ action: 'save' })} title="You have unsaved changes: click to save">Unsaved</button>`
       : html`<button type="button" class="save saved" ${dataAttrs({ action: 'save' })} title="Everything is saved">Saved</button>`;
   // Home carries a dot while the active profile's platforms need attention: changes to
-  // acknowledge, overdue reviews, controls awaiting a status decision, unrated hazards (Home's own list).
+  // acknowledge, overdue reviews, controls awaiting a status decision, unrated hazards, ratings without justification, control properties not set, SFARP incomplete (Home's own list).
   const data = state.session?.working;
   const attention = Boolean(data && state.profileId && attentionItems(openItems(data, state.today, state.profileId)).length);
   const dot = html`<span class="nav-dot" role="img" aria-label="Things need your attention" title="Things need your attention"></span>`;

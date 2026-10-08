@@ -52,9 +52,9 @@ test('a card per platform: its review, the residual risk of its hazards, and wha
   assert.deepEqual(platformCards(data(), today, null).map((c) => c.platform.id), ['p1', 'p2', 'p3', 'p4']);
 });
 
-test('needs attention: overdue reviews first, then changes (newest first), then controls awaiting, then unrated hazards', () => {
+test('needs attention: overdue reviews first, then changes (newest first), then controls awaiting, then unrated hazards, then ratings without justification, control properties not set and SFARP incomplete', () => {
   const items = attentionItems(openItems(data(), today, null));
-  assert.deepEqual(items.map((i) => i.type), ['review', 'change', 'change', 'control', 'control', 'control', 'rating', 'rating', 'rating']);
+  assert.deepEqual(items.map((i) => i.type), ['review', 'change', 'change', 'control', 'control', 'control', 'rating', 'rating', 'rating', 'justify', 'controlGap', 'controlGap', 'controlGap', 'controlGap', 'sfarp', 'sfarp', 'sfarp']);
   assert.equal(items[0].platform.id, 'p1');
   assert.deepEqual(items.filter((i) => i.type === 'rating').map((i) => [i.platform.id, i.missing]), [['p1', ['initial personnel', 'initial environment', 'initial capability']], ['p2', ['initial personnel', 'initial environment', 'initial capability', 'residual personnel', 'residual environment', 'residual capability']], ['p3', ['initial personnel', 'initial environment', 'initial capability', 'residual personnel', 'residual environment', 'residual capability']]]);
 });

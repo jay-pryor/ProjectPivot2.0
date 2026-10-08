@@ -501,8 +501,8 @@ export function reviewDueList(data, today) {
  * @param {Data} data @param {string} today @param {string | null} ownerId
  */
 export function openItems(data, today, ownerId) {
-  /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], dateMoved: { platform: Rec, due: string, seen: string, urgent: boolean, driver: any }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], toImplement: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string[] }[] }} */
-  const out = { acks: [], reviews: [], dateMoved: [], awaiting: [], toImplement: [], unrated: [] };
+  /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], dateMoved: { platform: Rec, due: string, seen: string, urgent: boolean, driver: any }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], toImplement: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string[] }[], unjustified: { platform: Rec, hazard: Rec, missing: string[] }[], controlGaps: { platform: Rec, control: Rec, missing: string[] }[], sfarpGaps: { platform: Rec, hazard: Rec, missing: string[] }[] }} */
+  const out = { acks: [], reviews: [], dateMoved: [], awaiting: [], toImplement: [], unrated: [], unjustified: [], controlGaps: [], sfarpGaps: [] };
   for (const platform of live(data, 'platform').filter((p) => ownerId == null || p.ownerId === ownerId)) {
     for (const entry of waitingChanges(data, platform.id)) out.acks.push({ entry, platform });
     const s = scheduleOf(data, platform.id, today);
@@ -510,9 +510,12 @@ export function openItems(data, today, ownerId) {
     if (s.state === 'overdue' || s.state === 'dueSoon' || s.state === 'none' || open) {
       out.reviews.push({ platform, state: s.state, due: s.due, lastReviewed: lastReviewed(data, platform.id), open });
     }
+    /** @type {Map<string, Rec>} the controls used on the platform, not rejected for every hazard there */
+    const used = new Map();
     if (s.moved) out.dateMoved.push({ platform, due: /** @type {string} */ (s.due), seen: /** @type {string} */ (s.seen), urgent: s.urgent, driver: s.driver });
     for (const ph of platformHazards(data, platform.id)) {
       for (const c of ph.controls) {
+        if (c.state !== 'rejected') used.set(c.control.id, c.control);
         if (c.state === 'recommended') out.awaiting.push({ platform, hazard: ph.hazard, control: c.control });
         if (c.state === 'planned' && implementedByOf(data, c.control.id, platform.id) === 'highcom') out.toImplement.push({ platform, hazard: ph.hazard, control: c.control });
       }
@@ -522,6 +525,25 @@ export function openItems(data, today, ownerId) {
         if (incomplete(ph.ratings[stage][receptor])) missing.push(`${stage} ${receptor}`);
       }
       if (missing.length) out.unrated.push({ platform, hazard: ph.hazard, missing });
+      // A risk rated (any likelihood or consequence) with no justification at all, of either.
+      const unjustified = [];
+      for (const stage of ['initial', 'residual']) for (const receptor of RECEPTORS) {
+        const a = assessmentOf(data, ph.hazard.id, platform.id, stage, receptor);
+        if (a && (a.likelihood != null || a.consequence != null) && !a.likelihoodWhy && !a.consequenceWhy) unjustified.push(`${stage} ${receptor}`);
+      }
+      if (unjustified.length) out.unjustified.push({ platform, hazard: ph.hazard, missing: unjustified });
+      const sf = sfarpOf(data, ph.hazard.id, platform.id);
+      const sfMissing = SFARP_FIELDS.filter(([f]) => !String(sf[f]).trim()).map(([, word]) => word);
+      if (sfMissing.length) out.sfarpGaps.push({ platform, hazard: ph.hazard, missing: sfMissing });
+    }
+    // A control used on the platform (not rejected for every hazard there) with a property not set:
+    // its tier, origin or description, or who implements it on the platform. Once per control.
+    for (const control of [...used.values()].sort(byNumber)) {
+      const missing = [
+        control.tier ? '' : 'tier', String(control.origin ?? '').trim() ? '' : 'origin', String(control.description ?? '').trim() ? '' : 'description',
+        implementedByOf(data, control.id, platform.id) ? '' : 'implemented by',
+      ].filter(Boolean);
+      if (missing.length) out.controlGaps.push({ platform, control, missing });
     }
   }
   out.acks.sort((a, b) => (a.entry.at < b.entry.at ? 1 : a.entry.at > b.entry.at ? -1 : 0));
@@ -651,6 +673,9 @@ export function attentionItems(items) {
     ...items.awaiting.map((x) => ({ type: 'control', ...x })),
     ...items.toImplement.map((x) => ({ type: 'implement', ...x })),
     ...items.unrated.map((x) => ({ type: 'rating', ...x })),
+    ...(items.unjustified ?? []).map((x) => ({ type: 'justify', ...x })),
+    ...(items.controlGaps ?? []).map((x) => ({ type: 'controlGap', ...x })),
+    ...(items.sfarpGaps ?? []).map((x) => ({ type: 'sfarp', ...x })),
     ...items.reviews.filter((r) => r.state === 'none' && !r.open).map((r) => ({ type: 'schedule', ...r })),
   ];
 }
@@ -728,6 +753,36 @@ export function facetOptions(data, facet) {
   });
 }
 
+/** The SFARP considerations' fields, and what each is called in an open item. */
+const SFARP_FIELDS = /** @type {const} */ ([['justification', 'justification'], ['conclusion', 'conclusion'], ['conditions', 'conditions of validity']]);
+
+/**
+ * Hazards as Info lists them, by number, those retired too: each with the platform groups it is
+ * assigned to and how many platforms it is on.
+ * @param {Data} data
+ * @returns {{ option: Rec, groupIds: Set<string>, platforms: number }[]}
+ */
+export function hazardGroupRows(data) {
+  return listHazards(data, 'any').filter((h) => h.status !== 'deleted')
+    .map((option) => ({ option, groupIds: groupIdsOf(data, 'hazard', option.id), platforms: platformsOfHazard(data, option.id).length }));
+}
+
+/**
+ * Controls as Info lists them, by number, those retired too: each with the platform groups it is
+ * assigned to and how many platforms it is on.
+ * @param {Data} data
+ * @returns {{ option: Rec, groupIds: Set<string>, platforms: number }[]}
+ */
+export function controlGroupRows(data) {
+  return all(data, 'control').filter((c) => c.status !== 'deleted').sort(byNumber)
+    .map((option) => ({ option, groupIds: groupIdsOf(data, 'control', option.id), platforms: platformsReached(data, 'control', option).length }));
+}
+
+/** The platform groups (or All platforms) a hazard or control is assigned to. @param {Data} data @param {'hazard' | 'control'} kind @param {string} id */
+function groupIdsOf(data, kind, id) {
+  return new Set(live(data, 'optionGroup').filter((l) => l.optionKind === kind && l.optionId === id).map((l) => /** @type {string} */ (l.groupId)));
+}
+
 /**
  * Entries given on hazards for a facet (not lifecycle phases) that are not among its options,
  * on most platforms first: offered on Info to add to the list.
@@ -786,9 +841,13 @@ export function phaseStats(data, phaseId) {
   return { hazards: hazards.length, platforms: platforms.size, controls: controls.size, pairs: pairs.length, unrated, worst };
 }
 
-/** A hazard's safety reports on a platform: newest first, undated last, then by number. @param {Data} data @param {string} hazardId @param {string} platformId */
+/**
+ * A hazard's safety reports on a platform, or on every platform (platformId null): newest first,
+ * undated last, then by number.
+ * @param {Data} data @param {string} hazardId @param {string | null} platformId
+ */
 export function safetyReportsOn(data, hazardId, platformId) {
-  return live(data, 'safetyReport').filter((r) => r.hazardId === hazardId && r.platformId === platformId).sort((a, b) => {
+  return live(data, 'safetyReport').filter((r) => r.hazardId === hazardId && (platformId == null || r.platformId === platformId)).sort((a, b) => {
     if (a.date !== b.date) return a.date == null ? 1 : b.date == null ? -1 : a.date < b.date ? 1 : -1;
     return String(a.number).localeCompare(String(b.number));
   });

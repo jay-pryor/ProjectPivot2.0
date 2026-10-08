@@ -117,7 +117,7 @@ test('Home: a quiet count of the team\'s open items above the owner\'s tiles, an
   const { homeView } = await import('../../src/ui/screens/home.js');
   const out = homeView(state, data()).toString();
   assert.match(out, /<p class="team-line">Across the team: <b>\d+<\/b> open items<\/p>\s*<div class="tiles">/);
-  assert.match(out, /<span>controls to implement<\/span>/);
+  assert.match(out, /<span>to implement<\/span>/);
 });
 
 test('the link-to-hazards picker offers a control the hazards it is not linked to, each with its kind', async () => {

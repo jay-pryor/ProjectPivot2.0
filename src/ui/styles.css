@@ -398,20 +398,21 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 
 /* Home dashboard */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 4px 0 16px; }
-.tile { display: grid; gap: 2px; padding: 12px 14px; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; color: var(--p-muted); text-align: left; }
-.tile span { font-size: 15px; font-weight: 600; color: var(--p-fg); }
+.tile { display: grid; align-content: start; gap: 2px; min-width: 0; padding: 10px 10px; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; color: var(--p-muted); text-align: left; }
+.tile span { font-size: 13px; font-weight: 600; line-height: 1.25; color: var(--p-fg); overflow-wrap: anywhere; }
 .tile.on { border-color: var(--p-accent); box-shadow: inset 0 -3px 0 var(--p-accent); }
-.tile b { font-size: 28px; line-height: 1.1; color: var(--p-fg); font-variant-numeric: tabular-nums; }
+.tile b { font-size: 24px; line-height: 1.1; color: var(--p-fg); font-variant-numeric: tabular-nums; }
 .tile.bad b { color: var(--p-danger); }
 .tile.warn b { color: var(--p-warn); }
 .tile:hover:not(:disabled), .pcard:hover:not(:disabled) { border-color: var(--p-accent); }
 .dash-cols { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 900px) { .dash-cols { grid-template-columns: 1fr; } }
-/* Wide, the tiles are six across (the total, then the five counts); the boxes below sit on the
-   same six columns with the same gap, so Needs attention ends where the third tile does and the
-   stack starts where the fourth does. */
+/* From tablet width, the tiles are one row, however many there are, each an equal share (its words
+   wrap inside it). Wide, the boxes below split the width in half. */
+@media (min-width: 700px) {
+  .tiles { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-columns: none; gap: 8px; }
+}
 @media (min-width: 1101px) {
-  .tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .dash-cols { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
   .dash-cols > .attn-panel { grid-column: span 3; }
   .dash-cols > .dash-stack { grid-column: span 3; }

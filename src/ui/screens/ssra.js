@@ -107,8 +107,12 @@ function safetyReportForm(h, platformId, r) {
   </form>`;
 }
 
-/** This platform's safety reports for the hazard. @param {any} state @param {Data} data @param {any} h @param {string} platformId */
-function safetyReportsSection(state, data, h, platformId) {
+/**
+ * This platform's safety reports for the hazard; or, with no platform, every platform's together,
+ * each saying which platform it is for (added on a platform's tab, where a report belongs).
+ * @param {any} state @param {Data} data @param {any} h @param {string | null} platformId
+ */
+export function safetyReportsSection(state, data, h, platformId) {
   const rows = safetyReportsOn(data, h.id, platformId);
   const editing = state.editing?.kind === 'safetyReport' ? state.editing.id : null;
   // A cell is changed in place: double-click it, then Enter (or leave it) to keep, Escape to cancel.
@@ -134,22 +138,26 @@ function safetyReportsSection(state, data, h, platformId) {
   /** @param {any} r */
   const named = (r) => (rid(r).id === 'TBC' ? r.summary : rid(r).id);
   // The ⋯ beside ✕ moves a report to another platform the hazard is on, when it was filed against the wrong one.
-  const others = hazardDetail(data, h.id)?.platforms.map((x) => x.platform).filter((pl) => pl.id !== platformId) ?? [];
+  const onHazard = hazardDetail(data, h.id)?.platforms.map((x) => x.platform) ?? [];
   /** @param {any} r */
-  const moveMenu = (r) => rowDotsMenu(`More for ${named(r)}`, others.length
-    ? others.map((pl) => html`<button type="button" ${dataAttrs({ action: 'moveSafetyReport', id: r.id, 'platform-id': pl.id })}>Move to ${pl.name}</button>`)
+  const others = (r) => onHazard.filter((pl) => pl.id !== r.platformId);
+  /** @param {any} r */
+  const moveMenu = (r) => rowDotsMenu(`More for ${named(r)}`, others(r).length
+    ? others(r).map((pl) => html`<button type="button" ${dataAttrs({ action: 'moveSafetyReport', id: r.id, 'platform-id': pl.id })}>Move to ${pl.name}</button>`)
     : [html`<button type="button" disabled title="The hazard is on no other platform">No other platform to move it to</button>`]);
   return html`${dataTable(state, {
-    id: 'safetyReports',
+    id: platformId ? 'safetyReports' : 'hazardSafetyReports',
     rowKey: (r) => r.id,
     rows,
-    empty: 'No safety reports for this platform yet.',
-    tools: plus({ action: 'startEdit', kind: 'safetyReport', id: `new:${platformId}` }, 'Add a safety report'),
+    empty: platformId ? 'No safety reports for this platform yet.' : 'No safety reports for this hazard yet.',
+    tools: platformId ? plus({ action: 'startEdit', kind: 'safetyReport', id: `new:${platformId}` }, 'Add a safety report') : '',
     columns: [
       { key: 'reportId', label: 'Report ID', width: 200, minWidth: 130, value: (r) => rid(r).id, render: (r) => {
         const { id, past } = rid(r);
         return html`<span class="report-id" title="${id === 'TBC' ? 'Given when you save' : 'Given at save; never changes'}">${idTag(id)}</span>${past.length ? html`<div class="muted small-text">was ${past.join(', ')}</div>` : ''}`;
       } },
+      ...(platformId ? [] : [{ key: 'platform', label: 'Platform', width: 200, minWidth: 120, filter: /** @type {const} */ ('text'), value: (/** @type {any} */ r) => get(data, 'platform', r.platformId)?.name ?? '',
+        render: (/** @type {any} */ r) => go(get(data, 'platform', r.platformId)?.name ?? '—', 'hazard', { id: h.id, tab: `p:${r.platformId}` }) }]),
       { key: 'date', label: 'Date', width: 190, minWidth: 120, value: (r) => r.date ?? '', render: (r) => cell(r, 'date', r.date ? day(r.date) : '—', 'date') },
       { key: 'type', label: 'Type', width: 210, minWidth: 120, value: (r) => r.type, render: (r) => cell(r, 'type', r.type, 'type') },
       { key: 'summary', label: 'Summary', width: 560, minWidth: 200, value: (r) => r.summary, render: (r) => cell(r, 'summary', r.summary) },
@@ -159,7 +167,7 @@ function safetyReportsSection(state, data, h, platformId) {
       { ...removeColumn((r) => html`${moveMenu(r)}${removeButton(`Delete ${named(r)}`, 'Delete this safety report?', `${rid(r).id === 'TBC' ? '' : `${rid(r).id}: `}${r.summary} will be deleted. Its Report ID is not used again.`, { run: 'deleteSafetyReport', id: r.id })}`), width: 84, minWidth: 84 },
     ],
   })}
-  ${editing === `new:${platformId}` ? safetyReportForm(h, platformId, null) : edited ? safetyReportForm(h, platformId, edited) : ''}`;
+  ${platformId && editing === `new:${platformId}` ? safetyReportForm(h, platformId, null) : edited ? safetyReportForm(h, edited.platformId, edited) : ''}`;
 }
 
 const WORD = { initial: 'Initial', residual: 'Residual', ...RECEPTOR_WORD };

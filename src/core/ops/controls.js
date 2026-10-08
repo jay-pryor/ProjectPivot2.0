@@ -96,7 +96,8 @@ export function deleteControl(data, act, { id }) {
     throw new PivotError('control.in-use', `${c.title} is still linked to ${uses.length === 1 ? 'a hazard' : `${uses.length} hazards`}. Unlink it first.`, { hazardIds: uses.map((u) => u.hazardId) });
   }
   const owners = live(data, 'implementer').filter((r) => r.controlId === id).map((r) => ({ kind: 'implementer', rec: changed(r, act, { status: 'deleted' }) }));
-  return commit(data, act, 'Delete control', [{ kind: 'control', rec: changed(c, act, { status: 'deleted' }) }, ...owners, ...linksTo(data, act, [{ kind: 'control', id }])]);
+  const groups = live(data, 'optionGroup').filter((l) => l.optionKind === 'control' && l.optionId === id).map((l) => ({ kind: 'optionGroup', rec: changed(l, act, { status: 'deleted' }) }));
+  return commit(data, act, 'Delete control', [{ kind: 'control', rec: changed(c, act, { status: 'deleted' }) }, ...owners, ...groups, ...linksTo(data, act, [{ kind: 'control', id }])]);
 }
 
 /**

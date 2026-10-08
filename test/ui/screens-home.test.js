@@ -39,13 +39,13 @@ test('homeOwnerId: me is the active profile, everyone is null', () => {
 
 test('Open items: an owner chooser, a summary, and the four full tables', () => {
   const d = data();
-  const out = ['acks', 'reviews', 'awaiting', 'unrated'].map((x) => openItemsView({ ...state, sections: { openItems: x } }, d).toString()).join('\n');
+  const out = ['acks', 'reviews', 'awaiting', 'unrated', 'unjustified', 'controlGaps', 'sfarpGaps'].map((x) => openItemsView({ ...state, sections: { openItems: x } }, d).toString()).join('\n');
   assert.match(out, /<h1>Open items<\/h1>/);
   assert.match(out, /<select name="ownerId" data-change="setHomeOwner"[\s\S]*?<option value="me" selected>Me<\/option>[\s\S]*?<option value="u2">Grace<\/option>[\s\S]*?<option value="everyone">Everyone<\/option>/);
-  assert.match(out, /<b>1<\/b><span>change to acknowledge<\/span>[\s\S]*?<b>1<\/b><span>review overdue<\/span>[\s\S]*?<b>2<\/b><span>controls awaiting status decision<\/span>[\s\S]*?<b>1<\/b><span>hazard unrated<\/span>/);
+  assert.match(out, /<b>1<\/b><span>to acknowledge<\/span>[\s\S]*?<b>1<\/b><span>review overdue<\/span>[\s\S]*?<b>2<\/b><span>awaiting decision<\/span>[\s\S]*?<b>1<\/b><span>unrated<\/span>/);
   assert.match(out, /class="tile warn on" data-action="showSection" data-page="openItems" data-section="acks" data-keep="true"/, 'a tile opens its section, its count highlighted');
-  assert.deepEqual([...openItemsView(state, d).toString().matchAll(/class="rail-item[^"]*"[^>]*data-section="(\w+)"/g)].map((m) => m[1]), ['acks', 'reviews', 'moved', 'awaiting', 'implement', 'unrated']);
-  for (const t of ['homeAcks', 'homeReviews', 'homeAwaiting', 'homeUnrated']) assert.match(out, new RegExp(`data-table="${t}"`));
+  assert.deepEqual([...openItemsView(state, d).toString().matchAll(/class="rail-item[^"]*"[^>]*data-section="(\w+)"/g)].map((m) => m[1]), ['acks', 'reviews', 'moved', 'awaiting', 'implement', 'unrated', 'unjustified', 'controlGaps', 'sfarpGaps']);
+  for (const t of ['homeAcks', 'homeReviews', 'homeAwaiting', 'homeUnrated', 'homeUnjustified', 'homeControlGaps', 'homeSfarpGaps']) assert.match(out, new RegExp(`data-table="${t}"`));
   const [e] = waitingChanges(d, 'p1');
   assert.match(out, new RegExp(`data-action="acknowledge" data-entry-id="${e.id}" data-platform-id="p1"`));
   assert.match(out, new RegExp(`data-action="acknowledgeAll" data-keys="${e.id}\\|p1"`));
@@ -78,7 +78,7 @@ test('empty sections say so; everyone shows every platform', () => {
   assert.match(openItemsView({ ...state, homeOwner: 'u3', sections: { openItems: 'reviews' } }, data()).toString(), /No reviews due\./);
   const everyone = openItemsView({ ...state, homeOwner: 'everyone' }, data()).toString();
   assert.match(everyone, /<option value="everyone" selected>/);
-  assert.match(everyone, /<b>2<\/b><span>changes to acknowledge/);
+  assert.match(everyone, /<b>2<\/b><span>to acknowledge/);
 });
 
 test('before and after values are shown literally', () => {
@@ -106,11 +106,11 @@ test('a platform page says how many changes wait there, linking to Home for its 
 test('the dashboard: four stat tiles, each opening the full lists', () => {
   const out = homeView(state, data()).toString();
   assert.match(out, /<h1>Home<\/h1>[\s\S]*?<select name="ownerId" data-change="setHomeOwner"/);
-  assert.match(out, /<button type="button" class="tile warn" data-action="go" data-view="openItems"><b>1<\/b><span>change to acknowledge<\/span><\/button>/, 'any count above nought is highlighted');
+  assert.match(out, /<button type="button" class="tile warn" data-action="go" data-view="openItems"><b>1<\/b><span>to acknowledge<\/span><\/button>/, 'any count above nought is highlighted');
   assert.match(out, /<button type="button" class="tile bad" data-action="go" data-view="openItems"><b>1<\/b><span>review overdue<\/span>/);
-  assert.match(out, /<button type="button" class="tile warn" data-action="go" data-view="openItems"><b>2<\/b><span>controls awaiting status decision<\/span>/);
-  assert.match(out, /<button type="button" class="tile" data-action="go" data-view="openItems"><b>0<\/b><span>controls to implement<\/span>/, 'nought stays plain');
-  assert.match(out, /<b>1<\/b><span>hazard unrated<\/span>/);
+  assert.match(out, /<button type="button" class="tile warn" data-action="go" data-view="openItems"><b>2<\/b><span>awaiting decision<\/span>/);
+  assert.match(out, /<button type="button" class="tile" data-action="go" data-view="openItems"><b>0<\/b><span>to implement<\/span>/, 'nought stays plain');
+  assert.match(out, /<b>1<\/b><span>unrated<\/span>/);
 });
 
 test('needs attention: most urgent first; changes acknowledged in place; the rest link to where they are dealt with', () => {
@@ -137,10 +137,10 @@ test('needs attention draws its items, each keyed so it can slide when one goes,
   }
   const out = homeView(state, d).toString();
   const list = out.slice(out.indexOf('<table class="attn">'), out.indexOf('</table>', out.indexOf('<table class="attn">')));
-  assert.equal((list.match(/<tr data-key="/g) ?? []).length, 11, 'every item, up to the most it draws');
+  assert.equal((list.match(/<tr data-key="/g) ?? []).length, 20, 'every item, up to the most it draws');
   assert.match(list, /<tr data-key="control\|p1\|h1\|c3" data-dblclick="go" data-view="control" data-id="c3" data-tab="p:p1">/);
   assert.match(out, /<section class="panel attn-panel"><h2>Needs attention<\/h2>\s*<div class="attn-fit"><table class="attn">/);
-  assert.match(out, /<div class="panel-more" data-attn-more="" data-total="11"><button[^>]*>Open items →/, 'the browser says See all 11 when some do not fit');
+  assert.match(out, /<div class="panel-more" data-attn-more="" data-total="20"><button[^>]*>Open items →/, 'the browser says See all 20 when some do not fit');
 });
 
 test('coming up: reviews due in the next 90 days; nothing says so', () => {
@@ -230,16 +230,16 @@ test('a favourite block is titled with the page\'s own heading, its record\'s na
 
 test('Home\'s tiles start with the total of open items: not a button, and the same count as Needs attention', () => {
   const out = homeView(state, data()).toString();
-  const total = /<div class="tile tile-total" role="status"[^>]*><b>(\d+)<\/b><span>open items? in total<\/span><\/div>/.exec(out);
+  const total = /<div class="tile tile-total" role="status"[^>]*><b>(\d+)<\/b><span>open items?<\/span><\/div>/.exec(out);
   assert.ok(total, 'the total, first');
-  assert.ok(out.indexOf('tile-total') < out.indexOf('changes to acknowledge') || out.indexOf('tile-total') < out.indexOf('change to acknowledge'));
+  assert.ok(out.indexOf('tile-total') < out.indexOf('<span>to acknowledge'));
   assert.match(out, new RegExp(`data-total="${total[1]}"`), 'as many as Needs attention lists');
 });
 
 test('Open items starts its counts with the same total of open items as Home', () => {
   const d = data();
   const home = /tile-total"[^>]*><b>(\d+)<\/b>/.exec(homeView(state, d).toString());
-  const open = /<div class="tiles">\s*<div class="tile tile-total" role="status"[^>]*><b>(\d+)<\/b><span>open items? in total<\/span><\/div>/.exec(openItemsView(state, d).toString());
+  const open = /<div class="tiles">\s*<div class="tile tile-total" role="status"[^>]*><b>(\d+)<\/b><span>open items?<\/span><\/div>/.exec(openItemsView(state, d).toString());
   assert.ok(home && open);
   assert.equal(open[1], home[1]);
 });
@@ -272,7 +272,7 @@ test('a moved review date far off is a plain row with Acknowledge', () => {
 test('Open items has a count and a table of moved review dates, red while any is urgent', () => {
   const d = moveSeen(scheduleFixed(assignNumbers(seed()), 'p1', 6, '2026-10-01'), 'p1', '2027-01-01');
   const out = openItemsView({ ...state, sections: { openItems: 'moved' } }, d).toString();
-  assert.match(out, /<button type="button" class="tile bad on" data-action="showSection" data-page="openItems" data-section="moved" data-keep="true"><b>1<\/b><span>review date moved<\/span>/);
+  assert.match(out, /<button type="button" class="tile bad on" data-action="showSection" data-page="openItems" data-section="moved" data-keep="true"><b>1<\/b><span>date moved<\/span>/);
   assert.match(out, /<h2>Review dates moved<\/h2>[\s\S]*data-table="homeMoved"[\s\S]*1 Jan 2027[\s\S]*1 Oct 2026[\s\S]*<span class="chip chip-urgent">Urgent<\/span>[\s\S]*data-action="acknowledgeReviewDate" data-platform-id="p1"/);
   const calm = openItemsView(state, moveSeen(scheduleFixed(assignNumbers(seed()), 'p1', 36, '2029-01-01'), 'p1', '2029-06-01')).toString();
   assert.match(calm, /class="tile warn"[^>]*data-section="moved"/, 'orange when none is urgent');

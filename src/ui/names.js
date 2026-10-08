@@ -37,7 +37,7 @@ export function recordName(kind, rec, data) {
       case 'sfarp': return `SFARP of ${hazard} on ${platform}`;
       case 'implementer': return `${control} on ${platform}`;
       case 'hazardPhase': return `${data.records.phase?.[rec.phaseId]?.name ?? ''} for ${hazard}`;
-      case 'optionGroup': return `${data.records[rec.optionKind]?.[rec.optionId]?.name ?? ''} in ${rec.groupId === 'all' ? 'All platforms' : data.records.platformGroup?.[rec.groupId]?.name ?? ''}`;
+      case 'optionGroup': return `${rec.optionKind === 'hazard' || rec.optionKind === 'control' ? recordName(rec.optionKind, data.records[rec.optionKind]?.[rec.optionId]) : data.records[rec.optionKind]?.[rec.optionId]?.name ?? ''} in ${rec.groupId === 'all' ? 'All platforms' : data.records.platformGroup?.[rec.groupId]?.name ?? ''}`;
       case 'platformGroupLink': return `${platform} in ${data.records.platformGroup?.[rec.groupId]?.name ?? ''}`;
       case 'safetyReport': {
         const sid = safetyReportId(data, rec).id;

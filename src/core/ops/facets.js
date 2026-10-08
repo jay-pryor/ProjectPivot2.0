@@ -1,5 +1,5 @@
 import { PivotError } from '../errors.js';
-import { newId, ids } from '../ids.js';
+import { newId, ids, hazardLabel, controlLabel } from '../ids.js';
 import { get, all, live, created, changed, need, needText } from '../data.js';
 import { commit } from '../apply.js';
 import { entries, markDeletionRestored } from '../history.js';
@@ -38,8 +38,26 @@ function needGroup(data, groupId) {
   return groupId === ALL_PLATFORMS.id ? ALL_PLATFORMS : need(data, 'platformGroup', groupId);
 }
 
-/** The record kind holding a facet's options. @param {string} facet */
-export const optionKind = (facet) => (facet === 'phase' ? 'phase' : 'facetOption');
+/**
+ * Hazards and controls are assigned to platform groups the way a facet's options are, under the
+ * facets 'hazard' and 'control': the same assignment records, holding the hazard's or control's id.
+ */
+export const HAZARDS = 'hazard';
+export const CONTROLS = 'control';
+
+/** The record kind holding a facet's options (or the hazards, or controls). @param {string} facet */
+export const optionKind = (facet) => (facet === 'phase' || facet === HAZARDS || facet === CONTROLS ? facet : 'facetOption');
+
+/** What one, and several, of a facet's options (or hazards, or controls) are called. @param {string} facet @param {number} n */
+const optionWords = (facet, n) => (facet === HAZARDS || facet === CONTROLS ? `${facet}${n === 1 ? '' : 's'}` : n === 1 ? FACET_WORD[/** @type {'phase'} */ (facet)] : FACET_PLURAL[/** @type {'phase'} */ (facet)]);
+
+/** An option's name, or a hazard's or control's id and title. @param {string} kind @param {any} o */
+const optionName = (kind, o) => (kind === 'hazard' ? `${hazardLabel(o)} ${o.title}` : kind === 'control' ? `${controlLabel(o)} ${o.title}` : o.name);
+
+/** A facet whose options (or the hazards, or controls) are assigned to platform groups. @param {unknown} facet @returns {string} */
+function needGroupable(facet) {
+  return facet === HAZARDS || facet === CONTROLS ? facet : needFacet(facet);
+}
 
 /** @param {unknown} facet @returns {string} */
 function needFacet(facet) {
@@ -87,11 +105,11 @@ export function optionGroupsGone(data, act, optionId) {
 }
 
 /**
- * Assign an option to a platform group, or take it off (`on` false).
+ * Assign an option (or a hazard, or a control) to a platform group, or take it off (`on` false).
  * @param {Data} data @param {Act} act @param {{ facet: string, optionId: string, groupId: string, on: boolean | string }} args
  */
 export function setOptionGroup(data, act, { facet, optionId, groupId, on }) {
-  const kind = optionKind(needFacet(facet));
+  const kind = optionKind(needGroupable(facet));
   const o = need(data, kind, optionId);
   const g = needGroup(data, groupId);
   const id = ids.optionGroup(optionId, groupId);
@@ -99,19 +117,19 @@ export function setOptionGroup(data, act, { facet, optionId, groupId, on }) {
   if (on === true || on === 'true') {
     if (existing && existing.status === 'live') return data;
     const rec = existing ? changed(existing, act, { status: 'live' }) : created(act, id, { optionKind: kind, optionId, groupId });
-    return commit(data, act, `Add ${o.name} to ${g.name}`, [{ kind: 'optionGroup', rec }]);
+    return commit(data, act, `Add ${optionName(kind, o)} to ${g.name}`, [{ kind: 'optionGroup', rec }]);
   }
   if (!existing || existing.status !== 'live') return data;
-  return commit(data, act, `Remove ${o.name} from ${g.name}`, [{ kind: 'optionGroup', rec: changed(existing, act, { status: 'deleted' }) }]);
+  return commit(data, act, `Remove ${optionName(kind, o)} from ${g.name}`, [{ kind: 'optionGroup', rec: changed(existing, act, { status: 'deleted' }) }]);
 }
 
 /**
- * Assign several of a facet's options to one platform group, as one change; those already in it
+ * Assign several of a facet's options (or hazards, or controls) to one platform group, as one change; those already in it
  * are left as they are.
  * @param {Data} data @param {Act} act @param {{ facet: string, optionIds: string | string[], groupId: string }} args
  */
 export function assignToGroup(data, act, { facet, optionIds, groupId }) {
-  const kind = optionKind(needFacet(facet));
+  const kind = optionKind(needGroupable(facet));
   const g = needGroup(data, groupId);
   const list = [...new Set(Array.isArray(optionIds) ? optionIds : String(optionIds ?? '').split(',').filter(Boolean))];
   if (!list.length) throw new PivotError('empty', 'Choose at least one row to assign.');
@@ -124,7 +142,7 @@ export function assignToGroup(data, act, { facet, optionIds, groupId }) {
     if (existing && existing.status === 'live') continue;
     recs.push({ kind: 'optionGroup', rec: existing ? changed(existing, act, { status: 'live' }) : created(act, id, { optionKind: kind, optionId, groupId }) });
   }
-  return commit(data, act, `Assign ${recs.length === 1 ? `1 ${FACET_WORD[/** @type {'phase'} */ (facet)]}` : `${recs.length} ${FACET_PLURAL[/** @type {'phase'} */ (facet)]}`} to ${g.name}`, recs);
+  return commit(data, act, `Assign ${recs.length} ${optionWords(String(facet), recs.length)} to ${g.name}`, recs);
 }
 
 /** The actions on Info whose deletions Deletion history lists. */

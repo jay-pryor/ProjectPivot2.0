@@ -8,7 +8,10 @@ import { checkRules } from '../../src/core/rules.js';
 import { createFacetOption, renameFacetOption, deleteFacetOption, setOptionGroup, assignToGroup, infoDeletions, restoreDeletion } from '../../src/core/ops/facets.js';
 import { createPlatformGroup, deletePlatformGroup, tagPlatform } from '../../src/core/ops/platform-groups.js';
 import { linkPhase } from '../../src/core/ops/phases.js';
-import { facetOptions, phasesOf, groupsOf } from '../../src/core/queries.js';
+import { facetOptions, phasesOf, groupsOf, hazardGroupRows, controlGroupRows } from '../../src/core/queries.js';
+import { deleteHazard } from '../../src/core/ops/hazards.js';
+import { deleteControl, unlinkControl } from '../../src/core/ops/controls.js';
+import { recordName } from '../../src/ui/names.js';
 import { act, later, seed } from '../helpers.js';
 
 const code = (c) => (e) => e instanceof PivotError && e.code === c;
@@ -114,4 +117,37 @@ test('Deletion history lists what was deleted on Info; Restore brings it back wi
   let e = deleteFacetOption(createFacetOption(seed(), act, { id: 'o1', facet: 'consequence', name: 'Burns' }), act, { id: 'o1', facet: 'consequence' });
   e = createFacetOption(e, act, { facet: 'consequence', name: 'burns' });
   assert.throws(() => restoreDeletion(e, act, { entryId: infoDeletions(e)[0].id }), code('restore.duplicate'));
+});
+
+test('hazards are assigned to platform groups as options are, and lose their assignments when deleted or when the group is', () => {
+  let d = assignToGroup(withGroups(), act, { facet: 'hazard', optionIds: ['h1', 'h2'], groupId: 'g1' });
+  assert.equal(entries(d).at(-1).action, 'Assign 2 hazards to UAS');
+  d = assignToGroup(d, act, { facet: 'hazard', optionIds: ['h2'], groupId: 'all' });
+  assert.equal(entries(d).at(-1).action, 'Assign 1 hazard to All platforms');
+  assert.deepEqual(hazardGroupRows(d).map((r) => [r.option.id, [...r.groupIds].sort(), r.platforms]), [['h1', ['g1'], 2], ['h2', ['all', 'g1'], 0]]);
+  assert.equal(recordName('optionGroup', d.records.optionGroup[ids.optionGroup('h1', 'g1')], d), 'TBC Fire in UAS');
+  assert.deepEqual(checkRules(d), []);
+  d = setOptionGroup(d, act, { facet: 'hazard', optionId: 'h1', groupId: 'g1', on: false });
+  assert.equal(entries(d).at(-1).action, 'Remove TBC Fire from UAS');
+  d = deleteHazard(d, act, { id: 'h2' });
+  assert.deepEqual(hazardGroupRows(d).map((r) => r.option.id), ['h1'], 'a deleted hazard is not listed');
+  assert.deepEqual(checkRules(d), [], 'its assignments went with it');
+  d = assignToGroup(d, act, { facet: 'hazard', optionIds: ['h1'], groupId: 'g2' });
+  d = deletePlatformGroup(d, act, { id: 'g2' });
+  assert.deepEqual([...hazardGroupRows(d)[0].groupIds], []);
+  d = restoreDeletion(d, act, { entryId: infoDeletions(d)[0].id });
+  assert.deepEqual([...hazardGroupRows(d)[0].groupIds], ['g2'], 'restoring the group brings its hazards back');
+  assert.deepEqual(checkRules(d), []);
+});
+
+test('controls are assigned to platform groups too, and lose their assignments when deleted', () => {
+  let d = assignToGroup(withGroups(), act, { facet: 'control', optionIds: ['c1', 'c2'], groupId: 'g1' });
+  assert.equal(entries(d).at(-1).action, 'Assign 2 controls to UAS');
+  d = setOptionGroup(d, act, { facet: 'control', optionId: 'c1', groupId: 'g1', on: false });
+  assert.equal(entries(d).at(-1).action, 'Remove TBC Sprinklers from UAS');
+  assert.deepEqual(controlGroupRows(d).map((r) => [r.option.id, [...r.groupIds], r.platforms]), [['c1', [], 2], ['c2', ['g1'], 2]]);
+  assert.equal(recordName('optionGroup', d.records.optionGroup[ids.optionGroup('c2', 'g1')], d), 'Fire drills in UAS');
+  d = deleteControl(unlinkControl(d, act, { hazardId: 'h1', controlId: 'c2' }), act, { id: 'c2' });
+  assert.deepEqual(controlGroupRows(d).map((r) => r.option.id), ['c1']);
+  assert.deepEqual(checkRules(d), []);
 });
