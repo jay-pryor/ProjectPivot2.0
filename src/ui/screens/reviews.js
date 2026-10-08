@@ -1,13 +1,16 @@
 import { RECEPTORS, RECEPTOR_LETTER, stageKey } from '../../core/receptors.js';
 import { html, raw } from '../html.js';
-import { dataAttrs, confirmButton, reviewTag, go, bandTag, idTag } from './common.js';
+import { dataAttrs, confirmButton, reviewTag, go, bandTag, idTag, option } from './common.js';
 import { dataTable } from './table.js';
-import { get } from '../../core/data.js';
-import { openReview, lastReviewed, reviewRows, completedReviews, bandOf } from '../../core/queries.js';
+import { get, live } from '../../core/data.js';
+import { openReview, lastReviewed, reviewRows, completedReviews, bandOf, listPlatformGroups, groupsOf } from '../../core/queries.js';
 import { scheduleOf } from '../../core/schedule.js';
 import { MAX_REVIEW_MONTHS } from '../../core/ops/reviews.js';
 import { BANDS } from '../../core/matrix.js';
-import { day, when, profileName } from '../names.js';
+import { day, when, profileName, periodWord } from '../names.js';
+import { ruleWord, driverWord } from '../review-words.js';
+import { DEFAULT_REVIEWS_PREFS } from '../reviews-prefs.js';
+import { timelineView } from './timeline.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -154,4 +157,81 @@ export function reviewsTab(state, data, p) {
     : p.status !== 'live' ? html`<p class="muted">${p.name} is retired, so it cannot be reviewed.</p>`
       : html`<p>No review in progress.</p>${scheduleOf(data, p.id, state.today).due ? '' : needsSchedule}`;
   return html`${reviewLine(state, data, p)}${top}<h2>Past reviews</h2><section class="block">${pastReviews(state, data, p)}</section>`;
+}
+
+/** Whose platforms the Reviews tab shows: the active profile for "me", everyone as null. @param {any} state */
+export function reviewsOwnerId(state) {
+  const o = state.reviewsPrefs?.owner || 'me';
+  return o === 'everyone' ? null : o === 'me' ? state.profileId : o;
+}
+
+/** The live platforms the Reviews filters let through. @param {any} state @param {Data} data */
+export function reviewsPlatforms(state, data) {
+  const owner = reviewsOwnerId(state);
+  const groupId = state.reviewsPrefs?.groupId ?? null;
+  return live(data, 'platform')
+    .filter((p) => owner == null || p.ownerId === owner)
+    .filter((p) => !groupId || groupsOf(data, p.id).some((g) => g.id === groupId));
+}
+
+/** The owner and platform group choosers, shared by Schedule and Timeline. @param {any} state @param {Data} data */
+function reviewsFilters(state, data) {
+  const prefs = state.reviewsPrefs ?? DEFAULT_REVIEWS_PREFS;
+  const groups = listPlatformGroups(data);
+  return html`<div class="rv-filters">
+    <label class="owner-pick">Owner <select name="owner" ${dataAttrs({ change: 'setReviewsFilter' })}>
+      ${option('me', 'Me', prefs.owner)}${state.profiles.filter((/** @type {any} */ p) => p.id !== state.profileId).map((/** @type {any} */ p) => option(p.id, p.name, prefs.owner))}${option('everyone', 'Everyone', prefs.owner)}
+    </select></label>
+    ${groups.length ? html`<label class="owner-pick">Group <select name="groupId" ${dataAttrs({ change: 'setReviewsFilter' })}>
+      ${option('', 'All', prefs.groupId ?? '')}${groups.map((g) => option(g.id, g.name, prefs.groupId ?? ''))}</select></label>` : ''}
+  </div>`;
+}
+
+const STATE_RANK = { overdue: 0, dueSoon: 1, ok: 2, none: 3 };
+
+/** Every platform the filters let through, with its schedule: overdue first, unscheduled last. @param {any} state @param {Data} data */
+function scheduleTable(state, data) {
+  const rows = reviewsPlatforms(state, data).map((platform) => ({
+    platform, s: scheduleOf(data, platform.id, state.today), last: lastReviewed(data, platform.id), open: Boolean(openReview(data, platform.id)),
+  }));
+  const rank = (/** @type {any} */ r) => STATE_RANK[/** @type {'ok'} */ (r.s.state)];
+  rows.sort((a, b) => rank(a) - rank(b) || String(a.s.due ?? '').localeCompare(String(b.s.due ?? '')) || String(a.platform.name).localeCompare(String(b.platform.name)));
+  return dataTable(state, {
+    id: 'reviewSchedule',
+    rowKey: (r) => r.platform.id,
+    rows,
+    empty: 'No platforms match.',
+    rowAttrs: (r) => ({ dblclick: 'go', view: 'platformReview', id: r.platform.id }),
+    columns: [
+      { key: 'platform', label: 'Platform', width: 260, minWidth: 160, value: (r) => r.platform.name, render: (r) => go(r.platform.name, 'platformReview', { id: r.platform.id }) },
+      { key: 'owner', label: 'Owner', width: 160, minWidth: 100, value: (r) => profileName(state, r.platform.ownerId) },
+      { key: 'rule', label: 'Rule', width: 220, minWidth: 140, value: (r) => ruleWord(data, r.platform) },
+      { key: 'period', label: 'Period', width: 140, minWidth: 100, value: (r) => r.s.months, render: (r) => (r.s.months ? periodWord(r.s.months) : '—') },
+      { key: 'driver', label: 'Set by', width: 300, minWidth: 160, value: (r) => driverWord(data, r.s.driver) },
+      { key: 'start', label: 'Counted from', width: 170, minWidth: 120, value: (r) => r.s.start, render: (r) => (r.s.start ? day(r.s.start) : '—') },
+      { key: 'due', label: 'Next due', width: 240, minWidth: 140, value: (r) => r.s.due,
+        render: (r) => (r.s.due ? html`${day(r.s.due)}${reviewTag(r.s.state)}${r.s.moved ? html` <span class="tag review-moved${r.s.urgent ? ' urgent' : ''}">Moved</span>` : ''}` : '—') },
+      { key: 'last', label: 'Last reviewed', width: 170, minWidth: 120, value: (r) => r.last, render: (r) => (r.last ? day(r.last) : html`<span class="muted">Never</span>`) },
+      { key: 'open', label: 'In progress', width: 130, minWidth: 100, value: (r) => (r.open ? 'Yes' : ''), render: (r) => (r.open ? html`<span class="tag">In progress</span>` : '') },
+    ],
+  });
+}
+
+/** The Policies sub-tab (built out in a later change). @param {any} _state @param {Data} _data */
+function policiesView(_state, _data) {
+  return html`<p class="muted">No review policies yet.</p>`;
+}
+
+/**
+ * The Reviews tab: every platform's schedule, the timeline, and the review policies.
+ * @param {any} state @param {Data} data
+ */
+export function reviewsView(state, data) {
+  const tab = state.view?.tab || 'schedule';
+  const on = (/** @type {string} */ t) => (tab === t ? ' on' : '');
+  const tabs = html`<nav class="tabs">${[['schedule', 'Schedule'], ['timeline', 'Timeline'], ['policies', 'Policies']].map(([t, label]) => html`<button type="button" class="tab${on(t)}" ${dataAttrs({ action: 'go', view: 'reviews', tab: t })}>${label}</button>`)}</nav>`;
+  const head = html`<div class="head"><h1>Reviews</h1>${tab === 'policies' ? '' : reviewsFilters(state, data)}</div>${tabs}`;
+  if (tab === 'timeline') return html`${head}${timelineView(state, data, reviewsPlatforms(state, data))}`;
+  if (tab === 'policies') return html`${head}${policiesView(state, data)}`;
+  return html`${head}<section class="block">${scheduleTable(state, data)}</section>`;
 }

@@ -3,6 +3,7 @@ import { shell } from './screens/common.js';
 import { hazardsView, hazardView } from './screens/hazards.js';
 import { controlsView, controlView, newControlView } from './screens/controls.js';
 import { platformsView, platformView } from './screens/platforms.js';
+import { reviewsView } from './screens/reviews.js';
 import { pickerView } from './screens/picker.js';
 import { homeView, openItemsView } from './screens/home.js';
 import { referencesView, referenceView } from './screens/references.js';
@@ -25,6 +26,7 @@ function mainView(state) {
     case 'newControl': return newControlView(state, data);
     case 'platforms': return platformsView(state, data);
     case 'platform': return platformView(state, data, v.id);
+    case 'reviews': return reviewsView(state, data);
     case 'references': return referencesView(state, data);
     case 'reference': return referenceView(state, data, v.id);
     case 'info': return infoView(state, data);

@@ -31,6 +31,7 @@ import { recordName, profileName, KIND_LABEL } from './names.js';
 import { THEMES, MIN_COLUMN_WIDTH, activeProfile, favouritesOf, samePage, FAVOURITE_LAYOUTS, COMING_UP_WINDOWS } from './prefs.js';
 import { mergeData } from '../core/merge.js';
 import { unlistedEntries, listPlatformGroups } from '../core/queries.js';
+import { DEFAULT_REVIEWS_PREFS, TIMELINE_LENGTHS, readReviewsPrefs, writeReviewsPrefs, reviewsPrefsKey } from './reviews-prefs.js';
 
 /** Every edit is an op called with the working data, the act, and the action's own fields. */
 const EDITS = {
@@ -85,10 +86,16 @@ const sameView = (a, b) => ['name', 'id', 'tab', 'reviewId', 'hazardId', 'platfo
 
 const BACKUP_CHECK_MS = 60_000;
 
+/** A YYYY-MM month moved on (or back) by `n` months. @param {string} ym @param {number} n */
+const shiftMonth = (ym, n) => {
+  const t = Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1 + n;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
+};
+
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
   'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'setBowtieLayout', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
-  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup',
+  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter',
 ]);
 
 export function initialState() {
@@ -100,7 +107,7 @@ export function initialState() {
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
     workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null,
-    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null },
+    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS,
   };
 }
 
@@ -176,7 +183,8 @@ export function createController(env) {
     DocGen.docHost.set(docs.host);
     const notices = unseenOverrides(state.session.working, /** @type {string} */ (state.profileId));
     const workspace = readWorkspace(env.storage, workspaceKey(state.folderName, /** @type {string} */ (state.profileId)));
-    set({ notices, screen: notices.length ? 'notices' : 'main', view: { name: 'home' }, workspace, bowtieReplace: null });
+    const reviewsPrefs = readReviewsPrefs(env.storage, reviewsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)));
+    set({ notices, screen: notices.length ? 'notices' : 'main', view: { name: 'home' }, workspace, reviewsPrefs, bowtieReplace: null });
   }
 
 
@@ -660,6 +668,18 @@ export function createController(env) {
     },
     async rejectControl({ hazardId, controlId, platformId, reason }) {
       await applyEdit('setControlStatus', { hazardId, controlId, platformId, status: 'rejected', reason });
+    },
+    // The Reviews tab's owner and group filters, and the timeline's range: remembered in this browser.
+    async setReviewsFilter({ owner, groupId, start, length, past, shift }) {
+      const p = { ...state.reviewsPrefs };
+      if (owner !== undefined) p.owner = owner || 'me';
+      if (groupId !== undefined) p.groupId = groupId || null;
+      if (start !== undefined) p.start = /^\d{4}-\d{2}$/.test(start) ? start : null;
+      if (length !== undefined && TIMELINE_LENGTHS.includes(Number(length))) p.length = Number(length);
+      if (past !== undefined) p.past = past === true || past === 'true';
+      if (shift !== undefined) p.start = shiftMonth(p.start ?? state.today.slice(0, 7), Number(shift));
+      set({ reviewsPrefs: p });
+      writeReviewsPrefs(env.storage, reviewsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
     },
     async setHomeOwner({ ownerId, show }) {
       set({ homeOwner: ownerId || 'me', ...(show === 'home' ? { view: { name: 'home' }, editing: null } : {}) });

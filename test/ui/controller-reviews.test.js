@@ -6,11 +6,11 @@ import { fixedClock } from '../../src/core/time.js';
 import { createController, initialState } from '../../src/ui/controller.js';
 import { ids } from '../../src/core/ids.js';
 
-const env = (f) => ({ clock: fixedClock('2026-09-28T10:00:00+10:00'), storage: new MemoryStorage(), minSaveMs: 0,
+const env = (f, storage = new MemoryStorage()) => ({ clock: fixedClock('2026-09-28T10:00:00+10:00'), storage, minSaveMs: 0,
   pickFolder: async () => f.handle, pickSaveFile: async (n) => f.handle.getFileHandle(n, { create: true }), pickOpenFile: async () => null });
 
-async function ready() {
-  const c = createController(env(new MemoryFolder()));
+async function ready(storage = new MemoryStorage()) {
+  const c = createController(env(new MemoryFolder(), storage));
   await c.dispatch({ type: 'chooseFolder' });
   await c.dispatch({ type: 'createProfile', name: 'Ada' });
   const u = c.getState().profiles[0].id;
@@ -21,6 +21,34 @@ async function ready() {
   return c;
 }
 const W = (c) => c.getState().session.working;
+
+test('the Reviews filters and timeline range change in place, shift by a year, and are remembered for the profile', async () => {
+  const storage = new MemoryStorage();
+  const c = await ready(storage);
+  assert.deepEqual(c.getState().reviewsPrefs, { owner: 'me', groupId: null, start: null, length: 36, past: false });
+  await c.dispatch({ type: 'setReviewsFilter', owner: 'everyone' });
+  await c.dispatch({ type: 'setReviewsFilter', length: '60' });
+  await c.dispatch({ type: 'setReviewsFilter', length: '7' });
+  await c.dispatch({ type: 'setReviewsFilter', past: 'true' });
+  await c.dispatch({ type: 'setReviewsFilter', shift: '12' });
+  assert.deepEqual(c.getState().reviewsPrefs, { owner: 'everyone', groupId: null, start: '2027-09', length: 60, past: true }, 'an odd length is ignored; a shift starts from this month');
+  await c.dispatch({ type: 'setReviewsFilter', shift: '-24' });
+  await c.dispatch({ type: 'setReviewsFilter', start: '2026-01' });
+  assert.equal(c.getState().reviewsPrefs.start, '2026-01');
+  const kept = JSON.parse(/** @type {string} */ (storage.getItem(`pivot.reviews:${c.getState().folderName}:${c.getState().profileId}`)));
+  assert.deepEqual(kept, c.getState().reviewsPrefs, 'written for this folder and profile, for the next time it opens');
+});
+
+test('opening the data as a profile brings back that profile’s Reviews filters', async () => {
+  const storage = new MemoryStorage();
+  const c = createController(env(new MemoryFolder(), storage));
+  await c.dispatch({ type: 'chooseFolder' });
+  await c.dispatch({ type: 'createProfile', name: 'Ada' });
+  const u = c.getState().profiles[0].id;
+  storage.setItem(`pivot.reviews:${c.getState().folderName}:${u}`, JSON.stringify({ owner: 'everyone', groupId: null, start: '2027-01', length: 12, past: false }));
+  await c.dispatch({ type: 'selectProfile', id: u });
+  assert.deepEqual(c.getState().reviewsPrefs, { owner: 'everyone', groupId: null, start: '2027-01', length: 12, past: false });
+});
 
 test('today comes from the clock', async () => {
   assert.match(initialState().today, /^\d{4}-\d{2}-\d{2}$/);

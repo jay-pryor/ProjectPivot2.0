@@ -353,6 +353,9 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 /* Reviews */
 .review-overdue { background: var(--p-error-bg); color: var(--p-danger); }
 .review-due-soon { background: var(--p-warn-bg); color: var(--p-warn); }
+.review-moved { background: var(--p-warn-bg); color: var(--p-warn); }
+.review-moved.urgent { background: var(--p-error-bg); color: var(--p-danger); }
+.rv-filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .review-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 16px; }
 .review-line input.months { width: 72px; }
 .review-line input.quiet { border-color: transparent; background: transparent; color: var(--p-fg); }

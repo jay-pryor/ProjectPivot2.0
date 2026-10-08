@@ -86,3 +86,9 @@ export function day(date) {
   const [y, m, d] = date.slice(0, 10).split('-');
   return `${Number(d)} ${MONTH_NAMES[Number(m) - 1]} ${y}`;
 }
+
+/** A review period as a person says it: whole years in years, otherwise months. @param {number} months */
+export function periodWord(months) {
+  if (months % 12 === 0) return `${months / 12} year${months === 12 ? '' : 's'}`;
+  return `${months} month${months === 1 ? '' : 's'}`;
+}
