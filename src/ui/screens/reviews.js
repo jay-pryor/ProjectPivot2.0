@@ -270,16 +270,16 @@ function policyPanel(state, data, pol, users) {
 }
 
 /**
- * The Policies sub-tab: what a policy is and a way to add one at the top; below the line, the
- * policies as a menu, the one chosen open beside it.
+ * The Policies sub-tab: a way to add one at the top; below the line, the policies as a menu, the
+ * one chosen open beside it.
  * @param {any} state @param {Data} data
  */
 function policiesView(state, data) {
   const policies = live(data, 'reviewPolicy').sort((a, b) => a.order - b.order);
   const usersOf = (/** @type {any} */ pol) => all(data, 'platform').filter((p) => p.status !== 'deleted' && p.reviewRule?.kind === 'policy' && p.reviewRule.policyId === pol.id);
   const top = html`<div class="policy-top">
-    <p class="muted">A review policy sets how often a platform is reviewed from its residual risk: a period for each band, for each receptor you care about. The shortest period any hazard gives is used.</p>
-    <form data-action="newReviewPolicy" class="new-policy"><input name="name" placeholder="New policy name" aria-label="New policy name" required><button type="submit" class="small">Add policy</button></form>
+    <h3 class="policy-top-h">New policy</h3>
+    <form data-action="newReviewPolicy" class="new-policy"><input name="name" placeholder="Policy name" aria-label="New policy name" required><button type="submit" class="small">Add policy</button></form>
   </div>`;
   if (!policies.length) return html`${top}<p class="muted">No review policies yet.</p>`;
   return html`${top}${sectionRail(state, 'reviewPolicies', policies.map((pol) => {

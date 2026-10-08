@@ -18,7 +18,8 @@ function data() {
 
 test('Policies: adding a policy sits in the top part, a plain small button; the policies are a menu below the thick line', () => {
   const out = reviewsView(state, data()).toString();
-  assert.match(out, /<div class="policy-top">[\s\S]*?<form data-action="newReviewPolicy" class="new-policy">[\s\S]*?<button type="submit" class="small">Add policy<\/button><\/form>[\s\S]*?<\/div>\s*<div class="rail-layout">/);
+  assert.match(out, /<div class="policy-top">\s*<h3 class="policy-top-h">New policy<\/h3>\s*<form data-action="newReviewPolicy" class="new-policy">[\s\S]*?<button type="submit" class="small">Add policy<\/button><\/form>\s*<\/div>\s*<div class="rail-layout">/);
+  assert.doesNotMatch(out, /A review policy sets how often/, 'no explanation up top');
   assert.doesNotMatch(out, /class="primary"[^>]*>Add policy/);
   assert.match(out, /<nav class="rail" aria-label="Policies">[\s\S]*?data-action="showSection" data-page="reviewPolicies" data-section="pol1">[\s\S]*?Standard[\s\S]*?data-section="pol2">[\s\S]*?Light/);
 });
@@ -48,9 +49,9 @@ test('a unit chosen on an empty cell is shown until a number is typed', () => {
   assert.match(out, /name="value" value=""[^>]*data-band="High"[^>]*>\s*<select[^>]*data-band="High"[^>]*>[\s\S]*?<option value="years" selected>/);
 });
 
-test('with no policies, the top part explains them and offers to add one', () => {
+test('with no policies, the top part offers to add one', () => {
   const out = reviewsView(state, seed()).toString();
-  assert.match(out, /shortest period any hazard gives/);
+  assert.match(out, /<h3 class="policy-top-h">New policy<\/h3>/);
   assert.match(out, /<form data-action="newReviewPolicy" class="new-policy">/);
   assert.match(out, /No review policies yet/);
 });

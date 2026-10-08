@@ -356,8 +356,8 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 .review-moved { background: var(--p-warn-bg); color: var(--p-warn); }
 .review-moved.urgent { background: var(--p-error-bg); color: var(--p-danger); }
 .rv-filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-.policy-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; margin: 4px 0 8px; }
-.policy-top > p { margin: 0; max-width: 70ch; }
+.policy-top { margin: 4px 0 8px; }
+.policy-top-h { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--p-muted); }
 .new-policy { display: flex; gap: 6px; align-items: center; }
 .new-policy input { width: 16em; }
 .new-policy button.small { padding: 5px 12px; }

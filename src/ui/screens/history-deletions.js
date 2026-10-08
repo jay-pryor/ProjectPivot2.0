@@ -8,8 +8,8 @@ import { profileName, recordName, when } from '../names.js';
 /** @typedef {import('../../core/data.js').Data} Data */
 
 /**
- * Deletion history, from the ☰ menu: every change or bundle deleted from a history tab, and every
- * facet option or platform group deleted on Info, newest first, with who deleted it. A deletion
+ * Deletion history, from the ☰ menu: every change or bundle deleted from a history tab, every
+ * facet option or platform group deleted on Info, and every review policy deleted on Reviews, newest first, with who deleted it. A deletion
  * cannot itself be deleted; Restore brings back what it deleted, and the deletion stays listed,
  * marked with who restored it.
  * @param {any} state @param {Data} data
@@ -47,7 +47,7 @@ export function historyDeletionsView(state, data) {
     return `${who}, ${first === last ? first : `${first} – ${last}`}`;
   };
   return html`<div class="head"><h1>Deletion history</h1></div>
-    <p class="muted">Changes and bundles deleted from a history tab, and options and platform groups deleted on Info. A deletion stays listed here; Restore brings back what it deleted.</p>
+    <p class="muted">Changes and bundles deleted from a history tab, options and platform groups deleted on Info, and review policies deleted on Reviews. A deletion stays listed here; Restore brings back what it deleted.</p>
     ${dataTable(state, {
       id: 'historyDeletions',
       rowKey: (r) => r.d.id,
@@ -59,7 +59,7 @@ export function historyDeletionsView(state, data) {
         { key: 'by', label: 'Deleted by', width: 160, minWidth: 110, value: (r) => profileName(state, r.d.by), filter: 'text' },
         { key: 'what', label: 'What was deleted', width: 420, minWidth: 200, value: what, filter: 'text',
           render: (r) => (r.info
-            ? html`<span class="tag">Info</span> ${what(r)}${infoDetail(r.info) ? html`<div class="muted">${infoDetail(r.info)}</div>` : ''}`
+            ? html`<span class="tag">${r.info.kind === 'reviewPolicy' ? 'Reviews' : 'Info'}</span> ${what(r)}${infoDetail(r.info) ? html`<div class="muted">${infoDetail(r.info)}</div>` : ''}`
             : html`${r.bundle ? html`<span class="tag bundle-tag">Bundle</span> ` : ''}${what(r)}${r.changes.length === 1 && about(r.changes[0]) ? html`<div class="muted">${about(r.changes[0])}</div>` : ''}`) },
         { key: 'made', label: 'Originally made by', width: 320, minWidth: 180, value: made },
         { key: 'state', label: '', width: 260, minWidth: 180, sortable: false, value: (r) => (r.d.restored ? 'restored' : 'deleted'),
@@ -74,7 +74,7 @@ export function historyDeletionsView(state, data) {
 
 /** What an Info deletion was, e.g. "Causal factor", "Platform group". @param {ReturnType<typeof infoDeletions>[number]} x */
 function infoWord(x) {
-  const w = x.kind === 'platformGroup' ? 'platform group' : FACET_WORD[/** @type {'phase'} */ (x.facet)] ?? 'option';
+  const w = x.kind === 'platformGroup' ? 'platform group' : x.kind === 'reviewPolicy' ? 'review policy' : FACET_WORD[/** @type {'phase'} */ (x.facet)] ?? 'option';
   return `${w[0].toUpperCase()}${w.slice(1)}`;
 }
 

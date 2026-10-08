@@ -128,10 +128,10 @@ export function assignToGroup(data, act, { facet, optionIds, groupId }) {
 }
 
 /** The actions on Info whose deletions Deletion history lists. */
-export const INFO_DELETIONS = Object.freeze(['Delete facet option', 'Delete phase', 'Delete platform group']);
+export const INFO_DELETIONS = Object.freeze(['Delete facet option', 'Delete phase', 'Delete platform group', 'Delete review policy']);
 
 /**
- * Every option or platform group deleted on Info, newest first: the change that deleted it, the
+ * Every option or platform group deleted on Info, and review policy deleted on Reviews, newest first: the change that deleted it, the
  * record, what went with it, and whether (and by whom) it was restored.
  * @param {Data} data
  */
