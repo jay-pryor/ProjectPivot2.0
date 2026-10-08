@@ -2,8 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { monthsInRange, timelineMarks, rangeStart } from '../../src/core/timeline.js';
 import { put, created } from '../../src/core/data.js';
-import { startReview } from '../../src/core/ops/reviews.js';
-import { seed, scheduleFixed, act } from '../helpers.js';
+import { seed, scheduleFixed, act, beginPlatformReview, finishPlatformReview } from '../helpers.js';
 
 test('a range is consecutive months across year ends', () => {
   assert.deepEqual(monthsInRange('2026-11', 4), ['2026-11', '2026-12', '2027-01', '2027-02']);
@@ -38,7 +37,7 @@ test('an overdue review is marked in this month with the date it was due, and wh
 });
 
 test('a review in progress is marked in the month it started; a platform with no rule has only what is done', () => {
-  const d = startReview(scheduleFixed(seed(), 'p1', 12, '2027-03-01'), act, { id: 'r1', platformId: 'p1' });
+  const d = beginPlatformReview(scheduleFixed(seed(), 'p1', 12, '2027-03-01'), act, { id: 'r1', platformId: 'p1' });
   assert.deepEqual(timelineMarks(d, 'p1', '2026-10-08', monthsInRange('2026-09', 3))['2026-09'], [{ kind: 'open', date: '2026-09-28' }]);
   assert.deepEqual(timelineMarks(seed(), 'p2', '2026-10-08', monthsInRange('2026-09', 36)), {});
 });

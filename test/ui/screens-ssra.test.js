@@ -282,14 +282,10 @@ test('the platform page shows six calculated levels, picks no cells, and links e
   assert.match(out, /data-action="go" data-view="hazard" data-id="h1" data-tab="p:p1"/);
 });
 
-test('Home has a capability bar; the review checklist a residual capability column', async () => {
+test('Home has a capability bar', async () => {
   const { homeView } = await import('../../src/ui/screens/home.js');
-  const { platformView } = await import('../../src/ui/screens/platforms.js');
-  const { startReview } = await import('../../src/core/ops/reviews.js');
   const d = capability(data(), 'residual', 'C', 2);
   assert.match(homeView(state, d).toString(), /<span class="rx">Capability<\/span><span class="riskbar">[\s\S]*?band-serious/);
-  const r = startReview(d, act, { id: 'r1', platformId: 'p1' });
-  assert.match(platformView({ ...state, view: { name: 'platform', id: 'p1', tab: 'reviews' } }, r, 'p1').toString(), /<th data-col="residualCapability"/);
 });
 
 test('the safety reports table shows each report\'s description', () => {

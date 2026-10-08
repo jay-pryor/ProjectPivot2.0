@@ -5,8 +5,7 @@ import { startAcks } from '../../src/core/acks.js';
 import { updateHazard } from '../../src/core/ops/hazards.js';
 import { createPlatform, linkHazard } from '../../src/core/ops/platforms.js';
 import { confirmControl, setRating } from '../../src/core/ops/assessment.js';
-import { startReview } from '../../src/core/ops/reviews.js';
-import { seed, scheduleFixed } from '../helpers.js';
+import { seed, scheduleFixed, beginPlatformReview, finishPlatformReview } from '../helpers.js';
 
 const at = (hhmm, by) => ({ by, at: `2026-09-28T${hhmm}:00+10:00` });
 const today = '2026-09-28';
@@ -26,7 +25,7 @@ function data() {
   d = scheduleFixed(d, 'p2', 6, '2026-10-20', at('10:34', 'u2'));
   d = scheduleFixed(d, 'p3', 6, '2026-12-20', at('10:34', 'u1'));
   d = scheduleFixed(d, 'p4', 12, '2027-06-01', at('10:34', 'u1'));
-  d = startReview(d, at('10:35', 'u1'), { id: 'r4', platformId: 'p4' });
+  d = beginPlatformReview(d, at('10:35', 'u1'), { id: 'r4', platformId: 'p4' });
   d = confirmControl(d, at('10:36', 'u1'), { hazardId: 'h1', controlId: 'c1', platformId: 'p1' });
   d = setRating(d, at('10:37', 'u1'), { hazardId: 'h1', platformId: 'p1', stage: 'residual', consequence: 2, likelihood: 'C' });
   return updateHazard(d, at('11:00', 'u3'), { id: 'h1', title: 'Fire (u3)' });

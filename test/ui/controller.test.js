@@ -5,6 +5,7 @@ import { MemoryStorage } from '../fakes/storage.js';
 import { fixedClock } from '../../src/core/time.js';
 import { createController } from '../../src/ui/controller.js';
 import { load, FILES } from '../../src/storage/store.js';
+import { CHECKS } from '../../src/core/workflows.js';
 
 /** @param {MemoryFolder} folder @param {MemoryStorage} [storage] */
 function env(folder, storage = new MemoryStorage()) {
@@ -287,17 +288,22 @@ test('Final review C1: ticking a review someone else has completed: the save goe
   await a.dispatch({ type: 'createPlatform', id: 'p1', name: 'Alpha', ownerId: ada });
   await a.dispatch({ type: 'linkHazard', hazardId: 'h1', platformId: 'p1' });
   await a.dispatch({ type: 'setRule', platformId: 'p1', kind: 'fixed', months: '6', unit: 'months', start: '2026-06-30' });
-  await a.dispatch({ type: 'startReview', id: 'r1', platformId: 'p1' });
+  await a.dispatch({ type: 'beginReview', platformId: 'p1' });
+  const w = a.getState().view.id;
   await a.dispatch({ type: 'save' });
   const g = createController(env(f));
   await openAs(g, 'Grace');
-  await a.dispatch({ type: 'completeReview', reviewId: 'r1' });
+  for (const check of CHECKS) await a.dispatch({ type: 'setStep', workflowId: w, hazardId: 'h1', check, checked: 'true' });
+  await a.dispatch({ type: 'completeWorkflow', workflowId: w });
   await a.dispatch({ type: 'save' });
-  await g.dispatch({ type: 'tickReviewRow', reviewId: 'r1', hazardId: 'h1', reviewed: 'true' });
+  await g.dispatch({ type: 'takeOverWorkflow', workflowId: w });
+  await g.dispatch({ type: 'setStep', workflowId: w, hazardId: 'h1', check: 'sfarp', note: 'Late note' });
   await g.dispatch({ type: 'save' });
   const m = g.getState().message;
   assert.notEqual(m.kind, 'error', m.text);
   assert.doesNotMatch(m.text, /replaced by yours/);
-  assert.ok(m.items.some((i) => /already completed by Ada/.test(i)), JSON.stringify(m.items));
-  assert.equal((await load(f.handle)).data.records.review.r1.state, 'completed');
+  assert.ok(m.items.some((i) => /already ended by Ada/.test(i)), JSON.stringify(m.items));
+  const saved = (await load(f.handle)).data;
+  assert.equal(saved.records.workflow[w].state, 'completed');
+  assert.equal(saved.records.workflow[w].ownerId, ada);
 });

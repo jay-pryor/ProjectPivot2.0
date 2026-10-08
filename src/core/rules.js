@@ -108,27 +108,26 @@ export function checkRules(data) {
     const p = get(data, 'platform', r.platformId);
     if (!p || p.status === 'deleted') out.push({ rule: 'implementer-platform-deleted', message: 'A control owner is recorded for a platform that has been deleted.', records: [{ kind: 'implementer', id: r.id }, { kind: 'platform', id: r.platformId }] });
   }
-  // Reviews: an open review needs a live platform, and there is one at a time per platform.
+  // Platform Reviews: an open one needs a live platform, and there is one at a time per platform.
   /** @type {Map<string, any>} */
   const openOn = new Map();
-  for (const r of live(data, 'review')) {
-    if (r.state !== 'open') continue;
-    const p = get(data, 'platform', r.platformId);
+  for (const w of live(data, 'workflow')) {
+    if (w.state !== 'open' || w.type !== 'platformReview') continue;
+    const p = get(data, 'platform', w.platformId);
     if (!p || p.status !== 'live') {
-      out.push({ rule: 'review-on-platform-not-live', message: 'A review is in progress on a platform that is not live.', records: [{ kind: 'review', id: r.id }, { kind: 'platform', id: r.platformId }] });
+      out.push({ rule: 'review-on-platform-not-live', message: 'A review is in progress on a platform that is not live.', records: [{ kind: 'workflow', id: w.id }, { kind: 'platform', id: w.platformId }] });
     }
-    const first = openOn.get(r.platformId);
-    if (first) out.push({ rule: 'two-open-reviews', message: 'A platform has two reviews in progress.', records: [{ kind: 'review', id: first.id }, { kind: 'review', id: r.id }] });
-    else openOn.set(r.platformId, r);
+    const first = openOn.get(w.platformId);
+    if (first) out.push({ rule: 'two-open-reviews', message: 'A platform has two reviews in progress.', records: [{ kind: 'workflow', id: first.id }, { kind: 'workflow', id: w.id }] });
+    else openOn.set(w.platformId, w);
   }
-  // A review's rows go with it, and a completed review is never changed again.
-  for (const row of live(data, 'reviewRow')) {
-    const r = get(data, 'review', row.reviewId);
-    const reviewLive = Boolean(r && r.status === 'live');
-    if (!reviewLive) {
-      out.push({ rule: 'review-row-orphaned', message: 'A review row belongs to a review that no longer exists.', records: [{ kind: 'review', id: row.reviewId }, { kind: 'reviewRow', id: row.id }] });
-    } else if (r && r.state === 'completed' && row.updatedAt > r.completedAt) {
-      out.push({ rule: 'completed-review-changed', message: 'A completed review was changed after it was completed.', records: [{ kind: 'reviewRow', id: row.id }] });
+  // A workflow's checks go with it, and an ended workflow is never changed again.
+  for (const s of live(data, 'workflowStep')) {
+    const w = get(data, 'workflow', s.workflowId);
+    if (!w || w.status !== 'live') {
+      out.push({ rule: 'workflow-step-orphaned', message: 'A workflow check belongs to a workflow that no longer exists.', records: [{ kind: 'workflow', id: s.workflowId }, { kind: 'workflowStep', id: s.id }] });
+    } else if (w.state !== 'open' && s.updatedAt > w.endedAt) {
+      out.push({ rule: 'ended-workflow-changed', message: 'A workflow was changed after it ended.', records: [{ kind: 'workflowStep', id: s.id }] });
     }
   }
   // A platform scheduled by a policy needs that policy (a merge can delete one under it).

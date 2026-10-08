@@ -5,7 +5,7 @@ import { favouritesOf, favouriteLayout, comingUpDays, COMING_UP_WINDOWS } from '
 import { platformImage, statusSelect, rejectionCell } from './platforms.js';
 import { dataTable, shownRows } from './table.js';
 import { sectionRail } from './dashboard.js';
-import { openItems, upcomingReviews, platformCards, attentionItems, groupsOf } from '../../core/queries.js';
+import { openItems, upcomingReviews, platformCards, attentionItems, groupsOf, openReview } from '../../core/queries.js';
 import { BANDS } from '../../core/matrix.js';
 import { get } from '../../core/data.js';
 import { hazardLabel, controlLabel, UNNUMBERED } from '../../core/ids.js';
@@ -117,7 +117,7 @@ export function openItemsView(state, data) {
           { key: 'platform', label: 'Platform', width: 360, minWidth: 160, value: (r) => r.platform.name, render: (r) => go(r.platform.name, 'platformReview', { id: r.platform.id }) },
           { key: 'due', label: 'Next due', width: 300, minWidth: 160, value: (r) => r.due, render: (r) => (r.due ? html`${day(r.due)}${reviewTag(r.state)}` : html`<span class="tag">No schedule</span>`) },
           { key: 'last', label: 'Last reviewed', width: 240, minWidth: 140, value: (r) => r.lastReviewed, render: (r) => (r.lastReviewed ? day(r.lastReviewed) : html`<span class="muted">Never</span>`) },
-          { key: 'open', label: 'Review', width: 220, minWidth: 160, value: (r) => (r.open ? 'In progress' : ''), render: reviewButton },
+          { key: 'open', label: 'Review', width: 220, minWidth: 160, value: (r) => (r.open ? 'In progress' : ''), render: (r) => reviewButton(data, r) },
         ],
       })}</section>` },
       { key: 'moved', label: 'Review dates moved', icon: 'calendar', badge: items.dateMoved.length, body: () => html`<h2>Review dates moved</h2><section class="block">${dataTable(state, {
@@ -352,23 +352,24 @@ export function workingDaysUntil(today, due) {
 /**
  * Coming up as a table: when each review is scheduled, the platform, the working days left, and
  * Start review (or, one under way, Open).
- * @param {any} state @param {any[]} rows from upcomingReviews
+ * @param {any} state @param {Data} data @param {any[]} rows from upcomingReviews
  */
-function comingUp(state, rows) {
+function comingUp(state, data, rows) {
   return html`<table class="attn upcoming-table"><colgroup><col class="c-date"><col><col class="c-days"><col class="c-act"></colgroup>
     <thead><tr><th>Scheduled</th><th>Platform</th><th>Working days left</th><th></th></tr></thead>
     <tbody>${rows.map((r) => html`<tr>
       <td class="date">${r.due ? day(r.due) : html`<span class="muted">—</span>`}</td>
       <td>${go(r.platform.name, 'platformReview', { id: r.platform.id })}</td>
       <td class="days">${r.due ? workingDaysUntil(state.today, r.due) : html`<span class="muted">—</span>`}</td>
-      <td class="act">${reviewButton(r)}</td>
+      <td class="act">${reviewButton(data, r)}</td>
     </tr>`)}</tbody></table>`;
 }
 
-/** Start a platform's review, or carry on with the one under way. @param {{ platform: any, open: boolean }} r */
-function reviewButton(r) {
-  return r.open
-    ? html`<button type="button" class="small" title="A review is under way" ${dataAttrs({ action: 'go', view: 'platformReview', id: r.platform.id })}>Continue review →</button>`
+/** Start a platform's review, or carry on with the one under way. @param {Data} data @param {{ platform: any }} r */
+function reviewButton(data, r) {
+  const open = openReview(data, r.platform.id);
+  return open
+    ? html`<button type="button" class="small" title="A review is under way" ${dataAttrs({ action: 'go', view: 'workflow', id: open.id })}>Continue review →</button>`
     : html`<button type="button" class="small" ${dataAttrs({ action: 'beginReview', 'platform-id': r.platform.id })}>Start review</button>`;
 }
 
@@ -436,7 +437,7 @@ export function homeView(state, data) {
       </section>
       <div class="dash-stack">
       <section class="panel stack-panel"><div class="panel-head coming-up-head"><h2>Coming up</h2>${windowPicker(days)}</div>
-        ${upcoming.length ? comingUp(state, upcoming) : html`<p class="muted">No reviews due in the ${windowWords(days).toLowerCase()}.</p>`}
+        ${upcoming.length ? comingUp(state, data, upcoming) : html`<p class="muted">No reviews due in the ${windowWords(days).toLowerCase()}.</p>`}
       </section>
       ${favouritesPanel(state)}
       </div>

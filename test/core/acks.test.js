@@ -1,13 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { NOT_ACKNOWLEDGED, ackStart, startAcks, ownerAt, waitingChanges, acknowledge, acknowledgeAll } from '../../src/core/acks.js';
-import { REVIEW_DETAIL_ACTIONS } from '../../src/core/ops/reviews.js';
 import { updateHazard } from '../../src/core/ops/hazards.js';
 import { setOwner, retirePlatform, setReportId, createPlatform, linkHazard } from '../../src/core/ops/platforms.js';
-import { startReview, markRow, completeReview } from '../../src/core/ops/reviews.js';
+import { setStep } from '../../src/core/ops/workflows.js';
 import { createReport } from '../../src/core/ops/reports.js';
 import { mergeData } from '../../src/core/merge.js';
-import { seed, scheduleFixed } from '../helpers.js';
+import { seed, scheduleFixed, beginPlatformReview, finishPlatformReview } from '../helpers.js';
 
 /** An act by `by` at `hh:mm` on 2026-09-28. */
 const at = (hhmm, by) => ({ by, at: `2026-09-28T${hhmm}:00+10:00` });
@@ -15,8 +14,7 @@ const at = (hhmm, by) => ({ by, at: `2026-09-28T${hhmm}:00+10:00` });
 const started = () => startAcks(seed(), at('10:30', 'u1'));
 const ids = (list) => list.map((e) => e.action);
 
-test('the actions that never wait cover the review-row actions and producing a report', () => {
-  for (const a of REVIEW_DETAIL_ACTIONS) assert.ok(NOT_ACKNOWLEDGED.includes(a));
+test('the actions that never wait include producing a report', () => {
   assert.ok(NOT_ACKNOWLEDGED.includes('Produce report'));
 });
 
@@ -53,13 +51,13 @@ test('the owner at the time: the new owner inherits what waits, but not the old 
     'u2\'s 11:00 edit (inherited) and the transfer itself; not u1\'s own 11:30 edit, not u2\'s 13:00 edit');
 });
 
-test('review ticks and producing a report do not wait; starting and completing a review do', () => {
+test('a review workflow’s own steps and producing a report do not wait; completing the review does', () => {
   let d = scheduleFixed(started(), 'p1', 6, '2026-12-30', at('11:00', 'u1'));
-  d = startReview(d, at('11:05', 'u2'), { id: 'r1', platformId: 'p1' });
-  d = markRow(d, at('11:10', 'u2'), { reviewId: 'r1', hazardId: 'h1', reviewed: true });
-  d = completeReview(d, at('11:15', 'u2'), { reviewId: 'r1' });
+  d = beginPlatformReview(d, at('11:05', 'u2'), { id: 'r1', platformId: 'p1' });
+  d = setStep(d, at('11:10', 'u2'), { workflowId: 'r1', hazardId: 'h1', check: 'sfarp', checked: true });
+  d = finishPlatformReview(d, at('11:15', 'u2'), { workflowId: 'r1' });
   d = createReport(d, at('11:20', 'u2'), { id: 'rep', report: { platformId: 'p1', title: 'R' } });
-  assert.deepEqual(ids(waitingChanges(d, 'p1')), ['Start review', 'Complete review']);
+  assert.deepEqual(ids(waitingChanges(d, 'p1')), ['Complete review']);
 });
 
 test('a retired platform has nothing waiting', () => {

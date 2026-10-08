@@ -3,9 +3,10 @@ import { html, raw } from '../html.js';
 import { dataAttrs, confirmButton, reviewTag, go, bandTag, idTag, option } from './common.js';
 import { dataTable } from './table.js';
 import { get, live, all } from '../../core/data.js';
-import { openReview, lastReviewed, reviewRows, completedReviews, bandOf, listPlatformGroups, groupsOf } from '../../core/queries.js';
+import { openReview, lastReviewed, completedReviews, bandOf, listPlatformGroups, groupsOf } from '../../core/queries.js';
 import { scheduleOf, POLICY_BANDS } from '../../core/schedule.js';
 import { MAX_REVIEW_MONTHS } from '../../core/ops/reviews.js';
+import { workflowLabel } from '../../core/ids.js';
 import { BANDS } from '../../core/matrix.js';
 import { day, when, profileName, periodWord } from '../names.js';
 import { ruleWord, driverWord } from '../review-words.js';
@@ -74,7 +75,7 @@ export function reviewLine(state, data, p) {
           <button type="button" class="small" ${dataAttrs({ action: 'acknowledgeReviewDate', 'platform-id': p.id })}>Acknowledge</button>` : ''}</div>`
     : html`<div class="rv-big muted">—</div><div class="rv-foot muted">Set a rule to have one</div>`;
   const start = inProgress
-    ? html`<span class="tag">Review in progress</span>`
+    ? html`<span class="tag">${workflowLabel(inProgress) === 'TBC' ? 'Review' : workflowLabel(inProgress)} in progress</span> ${go('Resume →', 'workflow', { id: inProgress.id })}`
     : p.status !== 'live' ? html`<span class="muted">${p.name} is retired</span>`
       : html`<button type="button" class="primary rv-action" ${dataAttrs({ action: 'beginReview', 'platform-id': p.id })}>Start review</button>`;
   return html`<div class="dash-grid three-even review-cards">
@@ -86,72 +87,16 @@ export function reviewLine(state, data, p) {
   </div>`;
 }
 
-/** @param {{ recommended: number, planned: number, implemented: number, rejected: number }} c */
-function controlSummary(c) {
-  const parts = /** @type {[string, number][]} */ ([['implemented', c.implemented], ['planned', c.planned], ['recommended', c.recommended], ['rejected', c.rejected]]).filter(([, n]) => n);
-  return parts.length ? parts.map(([s, n]) => `${n} ${s}`).join(' · ') : html`<span class="muted">No controls</span>`;
-}
-
 const needsSchedule = html`<p class="muted">Completing a review needs a review schedule: set one above.</p>`;
-
-/** @param {any} state @param {Data} data @param {any} p @param {any} review */
-function openReviewBlock(state, data, p, review) {
-  const items = reviewRows(data, review.id);
-  const unticked = items.filter((i) => i.onPlatform && !i.reviewed).length;
-  const noting = (/** @type {any} */ i) => state.editing?.kind === 'reviewNote' && state.editing.id === i.hazard.id;
-  const band = (/** @type {any} */ pair) => bandOf(pair);
-  return html`<p class="muted">Started by ${profileName(state, review.createdBy)}, ${when(review.createdAt)}. Tick each hazard once its ratings and controls are checked on the Details tab.</p>
-    <section class="block">${dataTable(state, {
-      id: 'reviewRows',
-      rowKey: (i) => i.hazard.id,
-      rows: items,
-      empty: 'This platform has no hazards to review.',
-      columns: [
-        { key: 'reportId', label: 'ID', width: 140, minWidth: 100, value: (i) => i.reportId, render: (i) => idTag(i.reportId) },
-        { key: 'hazard', label: 'Hazard', width: 340, minWidth: 200, value: (i) => i.hazard.title, filter: 'text',
-          render: (i) => html`${go(i.hazard.title, 'hazard', { id: i.hazard.id })}${i.onPlatform ? '' : html` <span class="muted">(no longer on this platform)</span>`}` },
-        ...RECEPTORS.map((x) => ({ key: stageKey('residual', x), label: `Residual (${RECEPTOR_LETTER[/** @type {'personnel'} */ (x)]})`, width: 150, minWidth: 120,
-          value: (/** @type {any} */ i) => (i.ratings ? BANDS.indexOf(band(i.ratings.residual[x])) : null),
-          render: (/** @type {any} */ i) => (i.ratings ? bandTag(band(i.ratings.residual[x])) : '—') })),
-        { key: 'controls', label: 'Controls', width: 260, minWidth: 180, sortable: false, render: (i) => (i.counts ? controlSummary(i.counts) : '—') },
-        { key: 'reviewed', label: 'Reviewed', width: 130, minWidth: 110, value: (i) => (i.reviewed ? 'yes' : 'no'), filter: 'select', options: [['yes', 'Yes'], ['no', 'No']],
-          render: (i) => html`<input type="checkbox" name="reviewed" aria-label="Reviewed: ${i.hazard.title}"${i.reviewed ? raw(' checked') : ''}${i.onPlatform ? '' : raw(' disabled')} ${dataAttrs({ change: 'tickReviewRow', 'review-id': review.id, 'hazard-id': i.hazard.id })}>` },
-        { key: 'note', label: 'Review note', width: 420, minWidth: 220, value: (i) => i.note, filter: 'text',
-          render: (i) => (noting(i)
-            ? html`<input class="cell-edit" name="note" value="${i.note}" placeholder="What was checked or found…" aria-label="Note on ${i.hazard.title}" autofocus ${dataAttrs({ change: 'markRow', 'review-id': review.id, 'hazard-id': i.hazard.id })}>`
-            : i.onPlatform
-              ? html`<button type="button" class="cell-text cell-button" ${dataAttrs({ action: 'startEdit', kind: 'reviewNote', id: i.hazard.id })} title="Click to change">${i.note || html`<span class="muted">Add a note…</span>`}</button>`
-              : html`<span class="cell-text">${i.note}</span>`) },
-      ],
-    })}</section>
-    <label class="outcome">Outcome
-      <textarea name="outcome" rows="3" placeholder="What the review found, and anything to follow up…" ${dataAttrs({ change: 'setReviewOutcome', 'review-id': review.id })}>${review.outcome}</textarea></label>
-    <label class="outcome">Additional notes
-      <textarea name="notes" rows="4" placeholder="Anything else worth keeping with this review…" ${dataAttrs({ change: 'setReviewNotes', 'review-id': review.id })}>${review.notes ?? ''}</textarea></label>
-    <div class="actions">
-      <button type="button" class="primary" ${dataAttrs({ action: 'completeReview', 'review-id': review.id })}${scheduleOf(data, p.id, state.today).due ? '' : raw(' disabled')}>${unticked ? `Complete — ${unticked} not ticked` : 'Complete review'}</button>
-      ${confirmButton('Abandon…', 'Abandon this review, discarding its ticks and notes', dataAttrs({ action: 'abandonReview', 'review-id': review.id }))}
-    </div>
-    ${scheduleOf(data, p.id, state.today).due ? '' : needsSchedule}`;
-}
 
 /** @param {any} state @param {Data} data @param {any} p @param {any} review */
 function completedReview(state, data, p, review) {
   return html`<p class="doc-meta">Completed by ${profileName(state, review.completedBy)}, ${when(review.completedAt)}. It cleared the review due ${day(review.dueBefore)}; the next was then due ${day(review.dueAfter)}.</p>
     ${review.outcome ? html`<p class="outcome-text">${review.outcome}</p>` : ''}
     ${review.notes ? html`<h3>Additional notes</h3><p class="outcome-text">${review.notes}</p>` : ''}
-    <section class="block">${dataTable(state, {
-      id: 'reviewRecord',
-      rowKey: (i) => i.hazard.id,
-      rows: reviewRows(data, review.id),
-      empty: 'The platform had no hazards when this review was completed.',
-      columns: [
-        { key: 'reportId', label: 'ID', width: 140, minWidth: 100, value: (i) => i.reportId, render: (i) => idTag(i.reportId) },
-        { key: 'hazard', label: 'Hazard', width: 440, minWidth: 200, value: (i) => i.hazard.title, render: (i) => go(i.hazard.title, 'hazard', { id: i.hazard.id }) },
-        { key: 'reviewed', label: 'Reviewed', width: 150, minWidth: 110, value: (i) => (i.reviewed ? 'Yes' : 'No'), filter: 'select', options: [['Yes', 'Yes'], ['No', 'No']] },
-        { key: 'note', label: 'Review note', width: 600, minWidth: 220, value: (i) => i.note },
-      ],
-    })}</section>`;
+    ${review.workflowId && get(data, 'workflow', review.workflowId)
+      ? go(`Open ${workflowLabel(get(data, 'workflow', review.workflowId))} →`, 'workflow', { id: review.workflowId })
+      : html`<p class="muted">Recorded before workflows.</p>`}`;
 }
 
 /** @param {any} state @param {Data} data @param {any} p */
@@ -168,8 +113,6 @@ function pastReviews(state, data, p) {
       { key: 'cleared', label: 'Review due', width: 180, minWidth: 130, value: (c) => c.review.dueBefore, render: (c) => day(c.review.dueBefore) },
       { key: 'outcome', label: 'Outcome', width: 460, minWidth: 200, value: (c) => c.review.outcome },
       { key: 'notes', label: 'Additional notes', width: 460, minWidth: 200, value: (c) => c.review.notes ?? '' },
-      { key: 'ticked', label: 'Reviewed', width: 140, minWidth: 100, value: (c) => c.ticked },
-      { key: 'notTicked', label: 'Not reviewed', width: 160, minWidth: 110, value: (c) => c.notTicked },
     ],
   });
 }
@@ -183,7 +126,7 @@ function reviewsTab(state, data, p) {
   const chosen = state.view?.reviewId ? get(data, 'review', state.view.reviewId) : null;
   if (chosen && chosen.status === 'live' && chosen.state === 'completed' && chosen.platformId === p.id) return completedReview(state, data, p, chosen);
   const open = openReview(data, p.id);
-  const top = open ? openReviewBlock(state, data, p, open)
+  const top = open ? html`<p>${idTag(workflowLabel(open))} is in progress, owned by ${profileName(state, open.ownerId)}. ${go('Resume →', 'workflow', { id: open.id })}</p>`
     : p.status !== 'live' ? html`<p class="muted">${p.name} is retired, so it cannot be reviewed.</p>`
       : html`<p>No review in progress.</p>${scheduleOf(data, p.id, state.today).due ? '' : needsSchedule}`;
   return html`${reviewLine(state, data, p)}${top}<h2>Past reviews</h2><section class="block">${pastReviews(state, data, p)}</section>`;

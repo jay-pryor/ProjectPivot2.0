@@ -68,8 +68,6 @@ export const ids = Object.freeze({
   optionGroup: (o, g) => `og:${o}:${g}`,
   /** @param {string} c a control id @param {string} p */
   implementer: (c, p) => `im:${c}:${p}`,
-  /** @param {string} r a review id @param {string} h */
-  reviewRow: (r, h) => `rr:${r}:${h}`,
   /** @param {string} w a workflow id @param {string} h a hazard id @param {string} c a check */
   workflowStep: (w, h, c) => `ws:${w}:${h}:${c}`,
   /** The review a Platform Review workflow completes: one id, so two saves completing it write one record. @param {string} w */

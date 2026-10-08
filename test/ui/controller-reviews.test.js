@@ -6,6 +6,7 @@ import { fixedClock } from '../../src/core/time.js';
 import { createController, initialState } from '../../src/ui/controller.js';
 import { ids } from '../../src/core/ids.js';
 import { scheduleOf } from '../../src/core/schedule.js';
+import { CHECKS } from '../../src/core/workflows.js';
 
 const env = (f, storage = new MemoryStorage()) => ({ clock: fixedClock('2026-09-28T10:00:00+10:00'), storage, minSaveMs: 0,
   pickFolder: async () => f.handle, pickSaveFile: async (n) => f.handle.getFileHandle(n, { create: true }), pickOpenFile: async () => null });
@@ -153,22 +154,23 @@ test('a bad draft is refused with a message on Confirm and kept to correct; a po
   assert.equal(c.getState().ruleDraft, null);
 });
 
-test('starting a review shows the review page; a tick arrives as text and is stored as a boolean; completing moves the date', async () => {
+test('Start review opens the workflow, and again resumes it; ticking everything and completing moves the date', async () => {
   const c = await ready();
   await c.dispatch({ type: 'setRule', platformId: 'p1', kind: 'fixed', months: '6', unit: 'months', start: '2026-06-30' });
   await c.dispatch({ type: 'beginReview', platformId: 'p1' });
-  assert.deepEqual([c.getState().view.name, c.getState().view.id], ['platformReview', 'p1']);
-  const review = Object.values(W(c).records.review)[0];
-  await c.dispatch({ type: 'tickReviewRow', reviewId: review.id, hazardId: 'h1', reviewed: 'true' });
-  assert.equal(W(c).records.reviewRow[ids.reviewRow(review.id, 'h1')].reviewed, true);
-  await c.dispatch({ type: 'tickReviewRow', reviewId: review.id, hazardId: 'h1', reviewed: 'false' });
-  assert.equal(W(c).records.reviewRow[ids.reviewRow(review.id, 'h1')].reviewed, false);
-  await c.dispatch({ type: 'markRow', reviewId: review.id, hazardId: 'h1', note: 'Looked at it' });
-  await c.dispatch({ type: 'setReviewOutcome', reviewId: review.id, outcome: 'Done' });
-  await c.dispatch({ type: 'completeReview', reviewId: review.id });
+  const w = c.getState().view.id;
+  assert.equal(c.getState().view.name, 'workflow');
+  await c.dispatch({ type: 'go', view: 'reviews' });
+  await c.dispatch({ type: 'beginReview', platformId: 'p1' });
+  assert.deepEqual([c.getState().view.name, c.getState().view.id], ['workflow', w]);
+  assert.equal(Object.keys(W(c).records.workflow).length, 1);
+  await c.dispatch({ type: 'setStep', workflowId: w, hazardId: 'h1', check: 'sfarp', checked: 'true' });
+  assert.equal(W(c).records.workflowStep[ids.workflowStep(w, 'h1', 'sfarp')].checked, true, 'a tick arrives as text and is stored as a boolean');
+  for (const check of CHECKS) await c.dispatch({ type: 'setStep', workflowId: w, hazardId: 'h1', check, checked: 'true' });
+  await c.dispatch({ type: 'setWorkflowOutcome', workflowId: w, outcome: 'Done' });
+  await c.dispatch({ type: 'completeWorkflow', workflowId: w });
   assert.equal(scheduleOf(W(c), 'p1', '2026-09-28').due, '2027-06-30');
-  await c.dispatch({ type: 'go', view: 'platformReview', id: 'p1', reviewId: review.id });
-  assert.equal(c.getState().view.reviewId, review.id);
+  assert.equal(W(c).records.review[ids.workflowReview(w)].outcome, 'Done');
 });
 
 test('the review schedule panel opens from the platform menu and closes again, or on leaving the page', async () => {

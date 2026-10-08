@@ -3,7 +3,7 @@ import { newId, ids, hazardLabel } from '../ids.js';
 import { get, live, created, changed, need, needText } from '../data.js';
 import { commit } from '../apply.js';
 import { openReview } from '../queries.js';
-import { abandonRecs } from './reviews.js';
+import { cancelRecs } from './workflows.js';
 import { linksTo } from './references.js';
 
 /** @typedef {import('../data.js').Data} Data */
@@ -46,7 +46,7 @@ export function retirePlatform(data, act, { id }) {
   const p = need(data, 'platform', id);
   if (p.status === 'retired') return data;
   const open = openReview(data, id);
-  return commit(data, act, 'Retire platform', [{ kind: 'platform', rec: changed(p, act, { status: 'retired' }) }, ...(open ? abandonRecs(data, act, open) : [])]);
+  return commit(data, act, 'Retire platform', [{ kind: 'platform', rec: changed(p, act, { status: 'retired' }) }, ...(open ? cancelRecs(data, act, open) : [])]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ id: string }} args */
@@ -58,7 +58,7 @@ export function deletePlatform(data, act, { id }) {
   }
   const open = openReview(data, id);
   const reports = ['safetyReport', 'implementer', 'platformGroupLink'].flatMap((kind) => live(data, kind).filter((r) => r.platformId === id).map((r) => ({ kind, rec: changed(r, act, { status: 'deleted' }) })));
-  return commit(data, act, 'Delete platform', [{ kind: 'platform', rec: changed(p, act, { status: 'deleted' }) }, ...reports, ...(open ? abandonRecs(data, act, open) : []), ...linksTo(data, act, [{ kind: 'platform', id }])]);
+  return commit(data, act, 'Delete platform', [{ kind: 'platform', rec: changed(p, act, { status: 'deleted' }) }, ...reports, ...(open ? cancelRecs(data, act, open) : []), ...linksTo(data, act, [{ kind: 'platform', id }])]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string }} args */

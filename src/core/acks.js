@@ -10,7 +10,7 @@ import { entries } from './history.js';
  * completion do wait), producing a report, and tagging platforms with their groups. Written out rather than imported from
  * ops/reviews.js, which would make an import cycle through queries.js.
  */
-export const NOT_ACKNOWLEDGED = Object.freeze(['Mark review row', 'Set review outcome', 'Set review notes', 'Produce report',
+export const NOT_ACKNOWLEDGED = Object.freeze(['Produce report',
   'Add to platform group', 'Remove from platform group', 'Delete platform group', 'Acknowledge review date']);
 
 /** @param {Data} data @param {any} entry @returns {Data} */

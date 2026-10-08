@@ -2,6 +2,7 @@ import { KINDS, NUMBERED, put } from './data.js';
 import { PivotError } from './errors.js';
 import { sameJson } from './json.js';
 import { checkRules } from './rules.js';
+import { ids } from './ids.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Act} Act */
@@ -75,7 +76,7 @@ export function mergeData(base, mine, theirs, act) {
       }
     }
   }
-  keepCompletedReviews(records, mine, theirs, act, conflicts);
+  keepEndedWorkflows(records, mine, theirs, act, conflicts);
 
   /** @type {Record<string, number>} */
   const counters = {};
@@ -120,38 +121,39 @@ export function mergeData(base, mine, theirs, act) {
 }
 
 /**
- * A completed review is never changed again, whichever side saved last: if either side completed
- * it, that side's review and its rows are kept (mine, if both completed), and any row only the
- * other side has is dropped. Each record this replaces is a conflict naming whose edit was lost.
+ * An ended workflow is never changed again, whichever side saved last. If either side completed it,
+ * that side's workflow, its checks and the review it wrote are kept (mine, if both did); failing
+ * that, a side that cancelled it. A check only the other side has is dropped. Each record this
+ * replaces is a conflict naming whose edit was lost.
  * @param {Data['records']} records the merged records, changed in place
  * @param {Data} mine @param {Data} theirs @param {Act} act
  * @param {Map<string, Conflict>} conflicts
  */
-function keepCompletedReviews(records, mine, theirs, act, conflicts) {
-  const completed = (/** @type {any} */ r) => Boolean(r && r.status === 'live' && r.state === 'completed');
-  for (const id of new Set([...Object.keys(mine.records.review), ...Object.keys(theirs.records.review)])) {
-    const src = completed(mine.records.review[id]) ? mine : completed(theirs.records.review[id]) ? theirs : null;
+function keepEndedWorkflows(records, mine, theirs, act, conflicts) {
+  const is = (/** @type {any} */ w, /** @type {string} */ state) => Boolean(w && w.status === 'live' && w.state === state);
+  for (const id of new Set([...Object.keys(mine.records.workflow), ...Object.keys(theirs.records.workflow)])) {
+    const m = mine.records.workflow[id];
+    const t = theirs.records.workflow[id];
+    const src = is(m, 'completed') ? mine : is(t, 'completed') ? theirs : is(m, 'cancelled') ? mine : is(t, 'cancelled') ? theirs : null;
     if (!src) continue;
-    const other = src === mine ? theirs : mine;
-    const loser = src === mine ? other.records.review[id]?.updatedBy ?? null : act.by;
+    const loser = src === mine ? t?.updatedBy ?? null : act.by;
     /** @param {string} kind @param {string} rid @param {any} want */
     const keep = (kind, rid, want) => {
       const cur = records[kind][rid];
       if (sameJson(cur, want)) return;
       records[kind][rid] = want;
-      conflicts.set(`${kind}:${rid}`, {
-        kind, id: rid, reason: 'review-completed', overriddenBy: loser,
-        mine: mine.records[kind][rid] ?? null, theirs: theirs.records[kind][rid] ?? null,
-      });
+      conflicts.set(`${kind}:${rid}`, { kind, id: rid, reason: 'workflow-ended', overriddenBy: loser, mine: mine.records[kind][rid] ?? null, theirs: theirs.records[kind][rid] ?? null });
     };
-    keep('review', id, src.records.review[id]);
-    const rowIds = new Set([...Object.keys(mine.records.reviewRow), ...Object.keys(theirs.records.reviewRow)]
-      .filter((rid) => (mine.records.reviewRow[rid] ?? theirs.records.reviewRow[rid]).reviewId === id));
-    for (const rid of rowIds) {
-      const want = src.records.reviewRow[rid];
-      const cur = records.reviewRow[rid];
-      if (want) keep('reviewRow', rid, want);
-      else if (cur && cur.status !== 'deleted') keep('reviewRow', rid, { ...cur, status: 'deleted', updatedBy: act.by, updatedAt: act.at });
+    keep('workflow', id, src.records.workflow[id]);
+    const rid = ids.workflowReview(id);
+    if (src.records.review[rid]) keep('review', rid, src.records.review[rid]);
+    const stepIds = new Set([...Object.keys(mine.records.workflowStep), ...Object.keys(theirs.records.workflowStep)]
+      .filter((sid) => (mine.records.workflowStep[sid] ?? theirs.records.workflowStep[sid]).workflowId === id));
+    for (const sid of stepIds) {
+      const want = src.records.workflowStep[sid];
+      const cur = records.workflowStep[sid];
+      if (want) keep('workflowStep', sid, want);
+      else if (cur && cur.status !== 'deleted') keep('workflowStep', sid, { ...cur, status: 'deleted', updatedBy: act.by, updatedAt: act.at });
     }
   }
 }

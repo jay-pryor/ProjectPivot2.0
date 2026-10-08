@@ -92,8 +92,8 @@ test('random edits on both sides: the rules hold, one-sided changes survive, con
 
     const { data, conflicts } = mergeData(base, mine, theirs, saveAct);
     assert.deepEqual(checkRules(data), [], `seed ${s}: rules`);
-    // A completed review is kept whichever side completed it: those conflicts may resolve to theirs.
-    const sealed = new Set(conflicts.filter((c) => c.reason === 'review-completed').map((c) => `${c.kind}:${c.id}`));
+    // An ended workflow is kept whichever side ended it: those conflicts may resolve to theirs.
+    const sealed = new Set(conflicts.filter((c) => c.reason === 'workflow-ended').map((c) => `${c.kind}:${c.id}`));
     const conflicted = new Set(conflicts.map((c) => `${c.kind}:${c.id}`));
     for (const kind of KINDS) {
       const ids = new Set([...Object.keys(base.records[kind]), ...Object.keys(mine.records[kind]), ...Object.keys(theirs.records[kind])]);
@@ -102,6 +102,7 @@ test('random edits on both sides: the rules hold, one-sided changes survive, con
         if (sealed.has(`${kind}:${id}`)) {
           assert.ok(sameJson(r, m) || sameJson(r, t) || r.status === 'deleted', `seed ${s}: ${kind} ${id} takes the completed side`);
           if (kind === 'review') assert.equal(r.state, 'completed', `seed ${s}: review ${id} stays completed`);
+          if (kind === 'workflow') assert.notEqual(r.state, 'open', `seed ${s}: workflow ${id} stays ended`);
         } else if (conflicted.has(`${kind}:${id}`)) {
           assert.ok(sameJson(r, m) || (!m && r.status === 'deleted'), `seed ${s}: ${kind} ${id} resolves to mine`);
         } else if (sameJson(b, m)) {

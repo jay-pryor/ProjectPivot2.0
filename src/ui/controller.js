@@ -16,6 +16,7 @@ import * as controls from '../core/ops/controls.js';
 import * as platforms from '../core/ops/platforms.js';
 import * as assessment from '../core/ops/assessment.js';
 import * as reviews from '../core/ops/reviews.js';
+import * as workflows from '../core/ops/workflows.js';
 import * as acks from '../core/acks.js';
 import * as references from '../core/ops/references.js';
 import * as phases from '../core/ops/phases.js';
@@ -32,7 +33,7 @@ import { App as DocGen } from '../../DocGen/doc-designer.js';
 import { recordName, profileName, KIND_LABEL } from './names.js';
 import { THEMES, MIN_COLUMN_WIDTH, activeProfile, favouritesOf, samePage, FAVOURITE_LAYOUTS, COMING_UP_WINDOWS } from './prefs.js';
 import { mergeData } from '../core/merge.js';
-import { unlistedEntries, listPlatformGroups } from '../core/queries.js';
+import { unlistedEntries, listPlatformGroups, openReview } from '../core/queries.js';
 import { DEFAULT_REVIEWS_PREFS, TIMELINE_LENGTHS, readReviewsPrefs, writeReviewsPrefs, reviewsPrefsKey } from './reviews-prefs.js';
 import { asUnit } from './screens/reviews.js';
 
@@ -56,9 +57,10 @@ const EDITS = {
   setControlStatus: assessment.setControlStatus, setRating: assessment.setRating,
   setAssessment: assessment.setAssessment, copyStageRisk: assessment.copyStageRisk, setSfarp: assessment.setSfarp,
   setImplementationStatus: assessment.setImplementationStatus, copyControls: assessment.copyControls, copySfarp: assessment.copySfarp,
-  setRule: reviews.setRule, acknowledgeReviewDate: reviews.acknowledgeReviewDate, startReview: reviews.startReview, markRow: reviews.markRow,
+  setRule: reviews.setRule, acknowledgeReviewDate: reviews.acknowledgeReviewDate,
   createReviewPolicy: reviews.createReviewPolicy, updateReviewPolicy: reviews.updateReviewPolicy, renameReviewPolicy: reviews.renameReviewPolicy, deleteReviewPolicy: reviews.deleteReviewPolicy,
-  setReviewOutcome: reviews.setReviewOutcome, setReviewNotes: reviews.setReviewNotes, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,
+  startWorkflow: workflows.startWorkflow, setStep: workflows.setStep, setWorkflowOutcome: workflows.setWorkflowOutcome, setWorkflowNotes: workflows.setWorkflowNotes,
+  takeOverWorkflow: workflows.takeOverWorkflow, cancelWorkflow: workflows.cancelWorkflow, completeWorkflow: workflows.completeWorkflow,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
   retireReference: references.retireReference, setReferenceArchived: references.setReferenceArchived, deleteReference: references.deleteReference,
@@ -90,7 +92,7 @@ const sameView = (a, b) => ['name', 'id', 'tab', 'reviewId', 'hazardId', 'platfo
 const BACKUP_CHECK_MS = 60_000;
 
 /** Edits whose point is to move a review date, so they never pop up to say it moved. */
-const QUIET_DATES = new Set(['completeReview', 'acknowledgeReviewDate']);
+const QUIET_DATES = new Set(['completeWorkflow', 'acknowledgeReviewDate']);
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
@@ -210,11 +212,11 @@ export function createController(env) {
       const n = r.missingFromDisk;
       kept.unshift(`${n} ${n === 1 ? 'record was' : 'records were'} missing from data.json on disk (the file had been replaced) and ${n === 1 ? 'is' : 'are'} kept.`);
     }
-    // A review the other user completed is kept over this user's own changes to it.
-    const ownLost = r.conflicts.filter((c) => c.reason === 'review-completed' && c.overriddenBy === state.profileId);
+    // A workflow the other user completed or cancelled is kept over this user's own changes to it.
+    const ownLost = r.conflicts.filter((c) => c.reason === 'workflow-ended' && c.overriddenBy === state.profileId);
     if (ownLost.length) {
-      const reviews = new Set(ownLost.map((c) => (c.kind === 'review' ? c.id : (c.theirs ?? c.mine)?.reviewId)));
-      kept.unshift(`${reviews.size === 1 ? 'A review you changed was' : `${reviews.size} reviews you changed were`} already completed by ${who}, so the completed ${reviews.size === 1 ? 'review is' : 'reviews are'} kept and your changes to ${reviews.size === 1 ? 'it' : 'them'} are not.`);
+      const ended = new Set(ownLost.map((c) => (c.kind === 'workflow' ? c.id : c.kind === 'review' ? (c.theirs ?? c.mine)?.workflowId : (c.theirs ?? c.mine)?.workflowId)));
+      kept.unshift(`${ended.size === 1 ? 'A workflow you changed was' : `${ended.size} workflows you changed were`} already ended by ${who}, so ${ended.size === 1 ? 'it is' : 'they are'} kept as ${who} left ${ended.size === 1 ? 'it' : 'them'} and your changes to ${ended.size === 1 ? 'it' : 'them'} are not.`);
       r = { ...r, conflicts: r.conflicts.filter((c) => !ownLost.includes(c)) };
       if (r.conflicts.length === 0) return { kind: 'warning', text: `Saved. ${who} had saved since you opened Pivot; their changes are merged in.`, items: kept };
     }
@@ -758,12 +760,13 @@ export function createController(env) {
     async setHomeOwner({ ownerId, show }) {
       set({ homeOwner: ownerId || 'me', ...(show === 'home' ? { view: { name: 'home' }, editing: null } : {}) });
     },
+    // Start review opens the platform's Platform Review: the one in progress, or a new one.
     async beginReview({ platformId }) {
-      await applyEdit('startReview', { platformId });
-      set({ view: { name: 'platformReview', id: platformId } });
-    },
-    async tickReviewRow({ reviewId, hazardId, reviewed }) {
-      await applyEdit('markRow', { reviewId, hazardId, reviewed: reviewed === 'true' });
+      const open = state.session ? openReview(state.session.working, platformId) : null;
+      if (open) return handlers.go({ view: 'workflow', id: open.id });
+      const id = newId();
+      await applyEdit('startWorkflow', { id, type: 'platformReview', platformId });
+      await handlers.go({ view: 'workflow', id });
     },
     async chooseReportPlatform({ platformId }) {
       set({ reportPlatformId: platformId });

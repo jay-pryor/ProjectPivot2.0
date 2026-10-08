@@ -6,8 +6,7 @@ import { startAcks } from '../../src/core/acks.js';
 import { updateHazard } from '../../src/core/ops/hazards.js';
 import { confirmControl, excludeControl, setRating, setSfarp } from '../../src/core/ops/assessment.js';
 import { updateControl, setImplementedBy, CONTROL_TIERS } from '../../src/core/ops/controls.js';
-import { startReview } from '../../src/core/ops/reviews.js';
-import { seed, scheduleFixed, seeDue } from '../helpers.js';
+import { seed, scheduleFixed, seeDue, beginPlatformReview, finishPlatformReview } from '../helpers.js';
 
 const at = (hhmm, by) => ({ by, at: `2026-09-28T${hhmm}:00+10:00` });
 
@@ -17,7 +16,7 @@ function data() {
   d = scheduleFixed(d, 'p1', 6, '2026-09-01');
   d = confirmControl(d, at('10:40', 'u1'), { hazardId: 'h1', controlId: 'c1', platformId: 'p1' });
   d = setRating(d, at('10:40', 'u1'), { hazardId: 'h1', platformId: 'p1', stage: 'initial', consequence: 2, likelihood: 'C' });
-  d = startReview(d, at('10:40', 'u2'), { id: 'r2', platformId: 'p2' });
+  d = beginPlatformReview(d, at('10:40', 'u2'), { id: 'r2', platformId: 'p2' });
   return updateHazard(d, at('11:00', 'u3'), { id: 'h1', title: 'Fire (u3)' });
 }
 const names = (xs) => xs.map((x) => `${x.platform.id}:${x.hazard?.id ?? ''}:${x.control?.id ?? x.missing?.join?.('+') ?? x.state ?? x.entry?.action ?? ''}`);

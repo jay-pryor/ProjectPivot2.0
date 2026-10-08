@@ -5,6 +5,7 @@ import { MemoryStorage } from '../fakes/storage.js';
 import { fixedClock } from '../../src/core/time.js';
 import { createController } from '../../src/ui/controller.js';
 import { renderApp } from '../../src/ui/render.js';
+import { CHECKS, workflowHazards } from '../../src/core/workflows.js';
 
 const env = (f) => ({ clock: fixedClock('2026-09-28T10:00:00+10:00'), storage: new MemoryStorage(), minSaveMs: 0,
   pickFolder: async () => f.handle, pickSaveFile: async (n) => f.handle.getFileHandle(n, { create: true }), pickOpenFile: async () => null });
@@ -61,7 +62,11 @@ test('an edit that moves nothing opens nothing; completing or acknowledging is n
   await c.dispatch({ type: 'updateHazard', id: 'h1', title: 'Big fire' });
   assert.equal(c.getState().reviewMoved, null);
   await c.dispatch({ type: 'beginReview', platformId: 'p1' });
-  const review = Object.values(c.getState().session.working.records.review)[0];
-  await c.dispatch({ type: 'completeReview', reviewId: review.id });
+  const w = c.getState().view.id;
+  for (const { hazard } of workflowHazards(c.getState().session.working, c.getState().session.working.records.workflow[w])) {
+    for (const check of CHECKS) await c.dispatch({ type: 'setStep', workflowId: w, hazardId: hazard.id, check, checked: 'true' });
+  }
+  await c.dispatch({ type: 'completeWorkflow', workflowId: w });
+  assert.equal(c.getState().session.working.records.workflow[w].state, 'completed');
   assert.equal(c.getState().reviewMoved, null, 'the date moving is the point of completing');
 });

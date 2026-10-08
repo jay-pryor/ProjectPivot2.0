@@ -9,9 +9,8 @@ import { setControlAnalysis, setImplementedBy, removeControlHere, updateControl 
 import { entries } from '../../src/core/history.js';
 import { createPhase, linkPhase } from '../../src/core/ops/phases.js';
 import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
-import { startReview, completeReview } from '../../src/core/ops/reviews.js';
 import { createReference, linkReference, retireReference } from '../../src/core/ops/references.js';
-import { act, seed, scheduleFixed } from '../helpers.js';
+import { act, seed, scheduleFixed, beginPlatformReview, finishPlatformReview } from '../helpers.js';
 
 const names = { u1: 'Ada', u2: 'Grace' };
 const opts = { profileName: (id) => names[id] ?? id, at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'Alpha hazards', classification: 'OFFICIAL' };
@@ -79,8 +78,8 @@ test('a snapshot records whether the platform was due for review when the report
   const overdue = buildSnapshot(d, 'p1', opts);
   assert.deepEqual(overdue.review, { state: 'overdue', due: '2026-09-01', months: 6, lastReviewed: null });
   const stored = createReport(d, act, { id: 'rep1', report: overdue });
-  d = startReview(stored, act, { id: 'r1', platformId: 'p1' });
-  d = completeReview(d, act, { reviewId: 'r1' });
+  d = beginPlatformReview(stored, act, { id: 'r1', platformId: 'p1' });
+  d = finishPlatformReview(d, act, { workflowId: 'r1' });
   assert.equal(d.records.report.rep1.review.state, 'overdue', 'a later review does not change a produced report');
   assert.deepEqual(buildSnapshot(d, 'p1', opts).review, { state: 'ok', due: '2027-03-01', months: 6, lastReviewed: act.at });
 });

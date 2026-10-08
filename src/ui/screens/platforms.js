@@ -1,7 +1,6 @@
 import { html } from '../html.js';
 import { dataAttrs, option, statusTag, stateTag, go, deletePanel, deleteName, levelTag, pageTabs, historyTable, plus, idTag, reviewTag, removeColumn, removeButton, recordMenu, menuItem, stateWord, rowsCounted, groupTags } from './common.js';
 import { ruleWord, driverWord } from '../review-words.js';
-import { REVIEW_DETAIL_ACTIONS } from '../../core/ops/reviews.js';
 import { waitingChanges } from '../../core/acks.js';
 import { scheduleOf } from '../../core/schedule.js';
 import { dataTable } from './table.js';
@@ -133,7 +132,7 @@ export function platformView(state, data, id) {
   const tab = state.view?.tab;
   const sched = scheduleOf(data, id, state.today);
   // Ticks, notes and outcome edits stay in the review itself rather than crowding the History tab.
-  const reaching = historyReaching(data, id).filter((e) => !REVIEW_DETAIL_ACTIONS.includes(e.action));
+  const reaching = historyReaching(data, id);
   const page = tab === 'history' ? 'History' : 'Details';
   const head = html`<div class="doc-head"><h1 class="doc-page"><span class="doc-id">${idTag(platformLabel(p))}</span> <span class="doc-page-sep" aria-hidden="true">—</span> ${page}</h1>${statusTag(p.status)}${platformMenu(data, p)}</div>${state.confirmDelete?.kind === 'platform' && state.confirmDelete.id === id ? deletePanel('platform', id, deleteName('platform', p), 'Its safety reports go with it.') : ''}
     <label class="doc-subtitle"><span class="field-label">Platform</span>

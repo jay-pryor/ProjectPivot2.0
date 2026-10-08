@@ -128,10 +128,6 @@ export function platformsReached(data, kind, rec) {
     case 'reference':
       return sortedUnique(live(data, 'referenceLink').filter((l) => l.referenceId === rec.id).flatMap((l) => targetPlatforms(data, l.targetKind, l.targetId)));
     case 'referenceLink': return sortedUnique(targetPlatforms(data, rec.targetKind, rec.targetId));
-    case 'reviewRow': {
-      const review = get(data, 'review', rec.reviewId);
-      return review ? [review.platformId] : [];
-    }
     case 'reviewSeen': return [rec.platformId];
     case 'reviewPolicy':
       return live(data, 'platform').filter((p) => p.reviewRule?.kind === 'policy' && p.reviewRule.policyId === rec.id).map((p) => p.id).sort();
@@ -418,57 +414,16 @@ export function hazardRows(data) {
   });
 }
 
-/** The review in progress on a platform, if any. @param {Data} data @param {string} platformId @returns {Rec | null} */
+/** The Platform Review in progress on a platform, if any: an open workflow. @param {Data} data @param {string} platformId @returns {Rec | null} */
 export function openReview(data, platformId) {
-  return live(data, 'review').find((r) => r.platformId === platformId && r.state === 'open') ?? null;
+  return live(data, 'workflow').find((w) => w.type === 'platformReview' && w.platformId === platformId && w.state === 'open') ?? null;
 }
 
-/** @param {{ state: string }[]} controls */
-function controlCounts(controls) {
-  const counts = { recommended: 0, planned: 0, implemented: 0, rejected: 0 };
-  for (const c of controls) counts[/** @type {keyof typeof counts} */ (c.state)] += 1;
-  return counts;
-}
-
-/**
- * A review's checklist. Open: every hazard now on the platform, with its current ratings and
- * control decisions, plus any row whose hazard has since left the platform. Completed: exactly
- * the rows it recorded, with no ratings, since the review does not say what they were then.
- * @param {Data} data @param {string} reviewId
- */
-export function reviewRows(data, reviewId) {
-  const review = get(data, 'review', reviewId);
-  if (!review) return [];
-  const rows = live(data, 'reviewRow').filter((r) => r.reviewId === reviewId);
-  const rowOf = new Map(rows.map((r) => [r.hazardId, r]));
-  const onNow = new Map(platformHazards(data, review.platformId).map((ph) => [ph.hazard.id, ph]));
-  /** @param {Rec} hazard */
-  const reportIdOf = (hazard) => onNow.get(hazard.id)?.reportId ?? hazardLabel(hazard);
-  /** @param {Rec} hazard @param {boolean} current */
-  const item = (hazard, current) => {
-    const row = rowOf.get(hazard.id);
-    const ph = current ? onNow.get(hazard.id) : undefined;
-    return {
-      hazard, reportId: reportIdOf(hazard), onPlatform: onNow.has(hazard.id),
-      reviewed: Boolean(row?.reviewed), note: row?.note ?? '',
-      rating: ph ? ph.rating : null, ratings: ph ? ph.ratings : null, counts: ph ? controlCounts(ph.controls) : null,
-    };
-  };
-  const hazardOf = (/** @type {Rec} */ row) => /** @type {Rec} */ (get(data, 'hazard', row.hazardId));
-  if (review.state === 'completed') return rows.map((r) => item(hazardOf(r), false)).sort((a, b) => byNumber(a.hazard, b.hazard));
-  const off = rows.filter((r) => !onNow.has(r.hazardId)).map(hazardOf);
-  return [...[...onNow.values()].map((ph) => item(ph.hazard, true)), ...off.map((h) => item(h, false))].sort((a, b) => byNumber(a.hazard, b.hazard));
-}
-
-/** A platform's completed reviews, newest first, with how many hazards each ticked. @param {Data} data @param {string} platformId */
+/** A platform's completed reviews, newest first, each with the workflow that completed it (none before workflows). @param {Data} data @param {string} platformId */
 export function completedReviews(data, platformId) {
   return live(data, 'review').filter((r) => r.platformId === platformId && r.state === 'completed')
     .sort((a, b) => (a.completedAt < b.completedAt ? 1 : a.completedAt > b.completedAt ? -1 : 0))
-    .map((review) => {
-      const rows = live(data, 'reviewRow').filter((r) => r.reviewId === review.id);
-      const ticked = rows.filter((r) => r.reviewed).length;
-      return { review, ticked, notTicked: rows.length - ticked };
-    });
+    .map((review) => ({ review, workflow: review.workflowId ? get(data, 'workflow', review.workflowId) ?? null : null }));
 }
 
 /** @param {Data} data @param {string} platformId @returns {string | null} when it was last reviewed */
@@ -478,9 +433,10 @@ export function lastReviewed(data, platformId) {
 
 /** @param {Data} data @param {string} hazardId @param {string} platformId @returns {string | null} */
 export function hazardLastReviewed(data, hazardId, platformId) {
+  // Completing is strict, so a hazard the completed review has a ticked check for was reviewed.
   const hit = completedReviews(data, platformId).find(({ review }) => {
-    const row = get(data, 'reviewRow', ids.reviewRow(review.id, hazardId));
-    return row && row.status === 'live' && row.reviewed;
+    const s = review.workflowId ? get(data, 'workflowStep', ids.workflowStep(review.workflowId, hazardId, 'safetyReports')) : null;
+    return Boolean(s && s.status === 'live' && s.checked);
   });
   return hit?.review.completedAt ?? null;
 }

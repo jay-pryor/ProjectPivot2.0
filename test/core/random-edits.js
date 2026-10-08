@@ -5,7 +5,9 @@ import { createPlatform, linkHazard, unlinkHazard, setReportId, retirePlatform }
 import { confirmControl, excludeControl, resetControl, setControlStatus, setRating, setAssessment, setSfarp } from '../../src/core/ops/assessment.js';
 import { createPhase, linkPhase, unlinkPhase, deletePhase } from '../../src/core/ops/phases.js';
 import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
-import { setRule, startReview, markRow, setReviewOutcome, setReviewNotes, completeReview, abandonReview } from '../../src/core/ops/reviews.js';
+import { setRule } from '../../src/core/ops/reviews.js';
+import { startWorkflow, setStep, setWorkflowOutcome, setWorkflowNotes, takeOverWorkflow, cancelWorkflow, completeWorkflow } from '../../src/core/ops/workflows.js';
+import { CHECKS } from '../../src/core/workflows.js';
 
 /** A small, seeded pseudo-random generator (mulberry32), so a failure can be replayed. @param {number} seed */
 export function prng(seed) {
@@ -31,7 +33,7 @@ export function randomEdit(d, rand, act) {
   const ct = Object.keys(d.records.control);
   const pl = Object.keys(d.records.platform);
   const cf = Object.keys(d.records.causalFactor);
-  const rv = Object.keys(d.records.review);
+  const rv = Object.keys(d.records.workflow);
   const n = () => String(Math.floor(rand() * 1000));
   const triple = () => ({ hazardId: pick(rand, hz), controlId: pick(rand, ct), platformId: pick(rand, pl) });
   const actions = [
@@ -69,12 +71,13 @@ export function randomEdit(d, rand, act) {
     () => setAssessment(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), stage: pick(rand, ['initial', 'residual']), receptor: pick(rand, ['personnel', 'environment']), likelihood: pick(rand, [...'ABCDEFG']), likelihoodWhy: `Why ${n()}` }),
     () => setSfarp(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), conclusion: `C ${n()}` }),
     () => setRule(d, act, { platformId: pick(rand, pl), kind: 'fixed', months: 1 + Math.floor(rand() * 12), unit: 'months', start: `2026-${String(1 + Math.floor(rand() * 12)).padStart(2, '0')}-28` }),
-    () => startReview(d, act, { platformId: pick(rand, pl) }),
-    () => markRow(d, act, { reviewId: pick(rand, rv), hazardId: pick(rand, hz), reviewed: rand() < 0.7, note: `Note ${n()}` }),
-    () => setReviewOutcome(d, act, { reviewId: pick(rand, rv), outcome: `Outcome ${n()}` }),
-    () => setReviewNotes(d, act, { reviewId: pick(rand, rv), notes: `Notes ${n()}` }),
-    () => completeReview(d, act, { reviewId: pick(rand, rv) }),
-    () => abandonReview(d, act, { reviewId: pick(rand, rv) }),
+    () => startWorkflow(d, act, { type: 'platformReview', platformId: pick(rand, pl) }),
+    () => setStep(d, act, { workflowId: pick(rand, rv), hazardId: pick(rand, hz), check: pick(rand, CHECKS), checked: rand() < 0.7, note: `Note ${n()}` }),
+    () => setWorkflowOutcome(d, act, { workflowId: pick(rand, rv), outcome: `Outcome ${n()}` }),
+    () => setWorkflowNotes(d, act, { workflowId: pick(rand, rv), notes: `Notes ${n()}` }),
+    () => takeOverWorkflow(d, act, { workflowId: pick(rand, rv) }),
+    () => completeWorkflow(d, act, { workflowId: pick(rand, rv) }),
+    () => cancelWorkflow(d, act, { workflowId: pick(rand, rv) }),
   ];
   try {
     return pick(rand, actions)();
