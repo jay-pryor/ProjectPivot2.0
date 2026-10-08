@@ -50,7 +50,7 @@ test('Open items: an owner chooser, a summary, and the four full tables', () => 
   assert.match(out, new RegExp(`data-action="acknowledge" data-entry-id="${e.id}" data-platform-id="p1"`));
   assert.match(out, new RegExp(`data-action="acknowledgeAll" data-keys="${e.id}\\|p1"`));
   assert.match(out, /<strong>Changed title<\/strong>: Fire → Fire \(Sam\)/);
-  assert.match(out, /data-action="go" data-view="platform" data-id="p1" data-tab="reviews"/);
+  assert.match(out, /data-action="go" data-view="platformReview" data-id="p1"/);
 });
 
 test('Open items: a double-click on a row goes where it is dealt with; reviews start from their table; statuses are chosen in place', () => {
@@ -59,7 +59,7 @@ test('Open items: a double-click on a row goes where it is dealt with; reviews s
   const [e] = waitingChanges(d, 'p1');
   assert.match(show('acks'), new RegExp(`<tr data-row="${e.id}\\|p1" data-dblclick="go" data-view="platform" data-id="p1" data-tab="history">`), 'a change opens the platform\'s history');
   const reviews = show('reviews');
-  assert.match(reviews, /<tr data-row="p1" data-dblclick="go" data-view="platform" data-id="p1" data-tab="reviews">[\s\S]*?data-action="beginReview" data-platform-id="p1">Start review<\/button>/);
+  assert.match(reviews, /<tr data-row="p1" data-dblclick="go" data-view="platformReview" data-id="p1">[\s\S]*?data-action="beginReview" data-platform-id="p1">Start review<\/button>/);
   const awaiting = show('awaiting');
   assert.match(awaiting, /<h2>Controls awaiting a status decision<\/h2>/);
   assert.match(awaiting, /<tr data-row="p1\|h1\|c1" data-dblclick="go" data-view="control" data-id="c1" data-tab="p:p1">[\s\S]*?<select class="quiet state-select state-recommended" name="value"[^>]*data-change="setControlState" data-hazard-id="h1" data-control-id="c1" data-platform-id="p1">/);
@@ -120,10 +120,10 @@ test('needs attention: most urgent first; changes acknowledged in place; the res
   assert.ok(at('chip-review') > 0 && at('chip-review') < at('chip-change') && at('chip-change') < at('chip-control') && at('chip-control') < at('chip-rating'));
   const [e] = waitingChanges(d, 'p1');
   assert.match(out, new RegExp(`data-action="acknowledge" data-entry-id="${e.id}" data-platform-id="p1">Acknowledge<`));
-  assert.match(out, /data-action="go" data-view="platform" data-id="p1" data-tab="reviews">Review →/);
+  assert.match(out, /data-action="go" data-view="platformReview" data-id="p1">Review →/);
   assert.match(out, /<td class="what"><strong>Decide on (C-\d+|Sprinklers) status for (HAZ-\d+|Fire[^<]*)<\/strong> <span class="muted">· Sprinklers · [^<]*<\/span><\/td>\s*<td class="by"><\/td><td class="where"><button[^>]*data-id="p1"[^>]*>Alpha</, 'what is to be done first, each part in its own column');
   assert.match(out, /data-action="go" data-view="control" data-id="c1" data-tab="p:p1">Decide →/, 'Decide opens the control\'s page for that platform, where its status is set');
-  assert.match(out, /<tr data-key="review\|p1" data-dblclick="go" data-view="platform" data-id="p1" data-tab="reviews">/, 'a double-click on a row goes where its button does');
+  assert.match(out, /<tr data-key="review\|p1" data-dblclick="go" data-view="platformReview" data-id="p1">/, 'a double-click on a row goes where its button does');
   assert.match(out, /<tr data-key="rating\|p1\|h1" data-dblclick="go" data-view="hazard" data-id="h1" data-tab="p:p1">[\s\S]*?data-view="hazard" data-id="h1" data-tab="p:p1">Rate →/, 'ratings are set on the hazard\'s page for the platform');
   assert.match(out, /<th>Type<\/th><th>Description<\/th><th>By<\/th><th>Platform<\/th>/);
   assert.match(out, /data-action="go" data-view="openItems">Open items →/);

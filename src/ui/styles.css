@@ -1096,6 +1096,13 @@ mark.diff-in { background: color-mix(in srgb, #2fa864 34%, transparent); color: 
 .rv-big input.quiet { border: 1px solid transparent; background: transparent; color: inherit; }
 .rv-big input.quiet:hover, .rv-big input.quiet:focus { border-color: var(--p-line); background: var(--p-surface-2); }
 .rv-foot { margin-top: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rv-big select { font: inherit; font-size: 18px; padding: 2px 6px; max-width: 100%; }
+.rv-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.rv-line input[type="number"] { width: 4.5em; }
+.review-panel .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 8px 0 16px; }
+.review-panel .facts dt { color: var(--p-muted); }
+.review-panel .facts dd { margin: 0; }
+.review-panel .actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .rv-action { padding: 7px 16px; font-weight: 700; }
 .rv-until { font-weight: 600; }
 .rv-until.late { color: var(--p-danger); }

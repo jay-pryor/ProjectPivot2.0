@@ -1,6 +1,6 @@
 import { html } from '../html.js';
 import { dataAttrs, option, statusTag, stateTag, go, deletePanel, deleteName, levelTag, pageTabs, historyTable, plus, idTag, reviewTag, removeColumn, removeButton, recordMenu, menuItem, stateWord, rowsCounted, groupTags } from './common.js';
-import { reviewsTab } from './reviews.js';
+import { ruleWord, driverWord } from '../review-words.js';
 import { REVIEW_DETAIL_ACTIONS } from '../../core/ops/reviews.js';
 import { waitingChanges } from '../../core/acks.js';
 import { scheduleOf } from '../../core/schedule.js';
@@ -11,11 +11,11 @@ import { CONTROL_TIERS, CONTROL_KINDS, IMPLEMENTERS, IMPLEMENTER_WORD } from '..
 import { notFound, statusColumn, idColumn, newRecord } from './hazards.js';
 import { all, get, live } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
-import { platformHazards, bandOf, worseBand, openReview, implementedByOf, implementedByText, referencesFor, groupsOf, listPlatformGroups } from '../../core/queries.js';
+import { platformHazards, bandOf, worseBand, openReview, lastReviewed, implementedByOf, implementedByText, referencesFor, groupsOf, listPlatformGroups } from '../../core/queries.js';
 import { sectionRail, stateCounts, glance } from './dashboard.js';
 import { historyReaching } from '../../core/history.js';
 import { BANDS } from '../../core/matrix.js';
-import { profileName, when, day } from '../names.js';
+import { profileName, when, day, periodWord } from '../names.js';
 import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
 import { RECEPTORS, stageKey } from '../../core/receptors.js';
 
@@ -69,8 +69,8 @@ export function rejectionCell(state, c, hazardId, platformId, platformName) {
 
 /**
  * The platform page's ⋯ menu: Add image (or Change image) opens a picker for a PNG or SVG,
- * whose background is taken away before it is kept (see addPlatformImage); Remove image; then
- * Retire, Restore, or Delete… (only with no hazards on it).
+ * whose background is taken away before it is kept (see addPlatformImage); Remove image; Review
+ * schedule… (its schedule at a glance); then Retire, Restore, or Delete… (only with no hazards on it).
  * @param {Data} data @param {any} p the platform
  */
 function platformMenu(data, p) {
@@ -79,10 +79,33 @@ function platformMenu(data, p) {
   return recordMenu('Platform options', [
     html`<label class="dots-item" role="menuitem"><span class="dots-check" aria-hidden="true"></span>${p.image ? 'Change image…' : 'Add image…'}<input type="file" accept="image/png,image/svg+xml,.png,.svg" hidden ${dataAttrs({ 'image-for': id })}></label>`,
     p.image ? menuItem('Remove image', { action: 'setPlatformImage', id }) : '',
+    menuItem('Review schedule…', { action: 'showReviewPanel', id }),
     html`<hr>`,
     p.status === 'live' ? menuItem('Retire', { action: 'retirePlatform', id }) : menuItem('Restore', { action: 'restoreRecord', kind: 'platform', id }),
     p.status === 'live' && !platformHazards(data, id).length ? menuItem('Delete…', { action: 'askDelete', kind: 'platform', id }, true) : '',
   ]);
+}
+
+/**
+ * The review schedule at a glance, from the platform's ⋯ menu: the rule, the period and what sets
+ * it, the next review due, the last, and whether one is in progress. It is changed in Reviews.
+ * @param {any} state @param {Data} data @param {any} p the platform
+ */
+function reviewPanel(state, data, p) {
+  const s = scheduleOf(data, p.id, state.today);
+  const last = lastReviewed(data, p.id);
+  const why = driverWord(data, s.driver);
+  return html`<div class="picker-overlay"><div class="picker review-panel" role="dialog" aria-modal="true" aria-label="Review schedule">
+    <h2>Review schedule · ${p.name}</h2>
+    <dl class="facts">
+      <dt>Rule</dt><dd>${ruleWord(data, p)}</dd>
+      <dt>Period</dt><dd>${s.months ? html`${periodWord(s.months)}${why ? html` <span class="muted">· ${why}</span>` : ''}` : '—'}</dd>
+      <dt>Next due</dt><dd>${s.due ? html`${day(s.due)}${reviewTag(s.state)}${s.moved ? html` <span class="tag review-moved${s.urgent ? ' urgent' : ''}">Moved</span>` : ''}` : '—'}</dd>
+      <dt>Last reviewed</dt><dd>${last ? day(last) : 'Never'}</dd>
+      <dt>In progress</dt><dd>${openReview(data, p.id) ? 'Yes' : 'No'}</dd>
+    </dl>
+    <div class="actions">${go('Open in Reviews →', 'platformReview', { id: p.id })}
+      <button type="button" ${dataAttrs({ action: 'closeReviewPanel' })} autofocus>Close</button></div></div></div>`;
 }
 
 /**
@@ -111,13 +134,12 @@ export function platformView(state, data, id) {
   const sched = scheduleOf(data, id, state.today);
   // Ticks, notes and outcome edits stay in the review itself rather than crowding the History tab.
   const reaching = historyReaching(data, id).filter((e) => !REVIEW_DETAIL_ACTIONS.includes(e.action));
-  const page = tab === 'history' ? 'History' : tab === 'reviews' ? 'Reviews' : 'Details';
+  const page = tab === 'history' ? 'History' : 'Details';
   const head = html`<div class="doc-head"><h1 class="doc-page"><span class="doc-id">${idTag(platformLabel(p))}</span> <span class="doc-page-sep" aria-hidden="true">—</span> ${page}</h1>${statusTag(p.status)}${platformMenu(data, p)}</div>${state.confirmDelete?.kind === 'platform' && state.confirmDelete.id === id ? deletePanel('platform', id, deleteName('platform', p), 'Its safety reports go with it.') : ''}
     <label class="doc-subtitle"><span class="field-label">Platform</span>
       <input class="doc-title small" name="name" value="${p.name}" required aria-label="Platform name" ${dataAttrs({ change: 'updatePlatform', id })}></label>
-    ${pageTabs('platform', { id }, tab, rowsCounted(data, reaching), [['reviews', openReview(data, id) ? 'Reviews (in progress)' : 'Reviews']])}`;
+    ${pageTabs('platform', { id }, tab, rowsCounted(data, reaching))}${state.reviewPanel === id ? reviewPanel(state, data, p) : ''}`;
   if (tab === 'history') return html`${head}${historyTable(state, data, 'platform', id, reaching)}`;
-  if (tab === 'reviews') return html`${head}<article class="doc">${reviewsTab(state, data, p)}</article>`;
 
   const rows = platformHazards(data, id);
   const controlRows = rows.flatMap((r) => r.controls.map((c) => ({ ...c, hazard: r.hazard })));
@@ -132,7 +154,7 @@ export function platformView(state, data, id) {
           <p class="glance-line">Owned by <select class="quiet inline-select" name="ownerId" aria-label="Owner" ${dataAttrs({ change: 'setOwner', id })}>${state.profiles.map((/** @type {any} */ pr) => option(pr.id, pr.name, p.ownerId))}</select></p>
           <p class="glance-line plat-groups">Groups ${groupsOf(data, id).map((g) => html`<span class="tag group-tag">${g.name}<button type="button" class="icon-x" title="Take ${p.name} out of ${g.name}" aria-label="Take ${p.name} out of ${g.name}" ${dataAttrs({ action: 'untagPlatform', 'platform-id': id, 'group-id': g.id })}>✕</button></span> `)}${p.status === 'deleted' ? '' : plus({ action: 'openPicker', picker: 'tagPlatforms', 'platform-id': id }, 'Add to platform groups')}</p>
           <p class="glance-line">${sched.due ? html`Next review ${day(sched.due)}${reviewTag(sched.state)}` : 'No review schedule'}
-            ${go('Reviews →', 'platform', { id, tab: 'reviews' })}</p>
+            ${go('Reviews →', 'platformReview', { id })}</p>
           ${waiting ? html`<p class="glance-line"><button type="button" class="link" ${dataAttrs({ action: 'setHomeOwner', 'owner-id': p.ownerId, show: 'home' })}>${waiting} ${waiting === 1 ? 'change' : 'changes'} to acknowledge</button></p>` : ''}
         </section>
         <section class="dash-card" aria-label="Risk">

@@ -5,6 +5,7 @@ import { MemoryStorage } from '../fakes/storage.js';
 import { fixedClock } from '../../src/core/time.js';
 import { createController, initialState } from '../../src/ui/controller.js';
 import { ids } from '../../src/core/ids.js';
+import { scheduleOf } from '../../src/core/schedule.js';
 
 const env = (f, storage = new MemoryStorage()) => ({ clock: fixedClock('2026-09-28T10:00:00+10:00'), storage, minSaveMs: 0,
   pickFolder: async () => f.handle, pickSaveFile: async (n) => f.handle.getFileHandle(n, { create: true }), pickOpenFile: async () => null });
@@ -77,30 +78,38 @@ test('today comes from the clock', async () => {
   assert.equal(c.getState().today, '2026-09-28');
 });
 
-test.skip('a schedule set from the form, then each part changed in place, keeping the other' /* Task 7 rewrites this */, async () => {
+test('a rule set from the page, then each part changed in place, keeping the others', async () => {
   const c = await ready();
-  await c.dispatch({ type: 'setSchedule', platformId: 'p1', months: '6', due: '2026-12-31' });
-  assert.deepEqual([W(c).records.platform.p1.reviewMonths, W(c).records.platform.p1.reviewDue], [6, '2026-12-31']);
-  await c.dispatch({ type: 'setScheduleField', platformId: 'p1', months: '3' });
-  assert.deepEqual([W(c).records.platform.p1.reviewMonths, W(c).records.platform.p1.reviewDue], [3, '2026-12-31']);
-  await c.dispatch({ type: 'setScheduleField', platformId: 'p1', due: '2027-01-15' });
-  assert.deepEqual([W(c).records.platform.p1.reviewMonths, W(c).records.platform.p1.reviewDue], [3, '2027-01-15']);
+  const p = () => W(c).records.platform.p1;
+  await c.dispatch({ type: 'setRuleField', platformId: 'p1', kind: 'fixed' });
+  assert.deepEqual([p().reviewRule, p().reviewStart], [{ kind: 'fixed', months: 12 }, '2026-09-28'], 'a first fixed rule: yearly, counted from today');
+  await c.dispatch({ type: 'setRuleField', platformId: 'p1', value: '2' });
+  assert.deepEqual(p().reviewRule, { kind: 'fixed', months: 24 }, 'the card shows 1 year, so a new number is in years');
+  await c.dispatch({ type: 'setRuleField', platformId: 'p1', unit: 'months' });
+  assert.deepEqual(p().reviewRule, { kind: 'fixed', months: 2 }, 'the number stays, read in months');
+  await c.dispatch({ type: 'setRuleField', platformId: 'p1', value: '6' });
+  await c.dispatch({ type: 'setRuleField', platformId: 'p1', start: '2026-06-30' });
+  assert.deepEqual([p().reviewRule, p().reviewStart], [{ kind: 'fixed', months: 6 }, '2026-06-30']);
+  await c.dispatch({ type: 'setRuleField', platformId: 'p1', kind: 'none' });
+  assert.deepEqual([p().reviewRule, p().reviewStart], [null, null]);
 });
 
-test.skip('clearing the due date in place is refused with a message and leaves the schedule as it was' /* Task 7 rewrites this */, async () => {
+test('choosing a policy uses the first one; clearing the start is refused with a message and changes nothing', async () => {
   const c = await ready();
-  await c.dispatch({ type: 'setSchedule', platformId: 'p1', months: '6', due: '2026-12-31' });
-  await c.dispatch({ type: 'setScheduleField', platformId: 'p1', due: '' });
+  await c.dispatch({ type: 'createReviewPolicy', id: 'pol1', name: 'Standard' });
+  await c.dispatch({ type: 'setRuleField', platformId: 'p1', kind: 'policy' });
+  assert.deepEqual(W(c).records.platform.p1.reviewRule, { kind: 'policy', policyId: 'pol1' });
+  await c.dispatch({ type: 'setRuleField', platformId: 'p1', start: '' });
   assert.equal(c.getState().message.kind, 'error');
   assert.match(c.getState().message.text, /real date/);
-  assert.deepEqual([W(c).records.platform.p1.reviewMonths, W(c).records.platform.p1.reviewDue], [6, '2026-12-31']);
+  assert.equal(W(c).records.platform.p1.reviewStart, '2026-09-28');
 });
 
-test.skip('starting a review shows the Reviews tab; a tick arrives as text and is stored as a boolean; completing moves the date' /* Task 7 rewrites this */, async () => {
+test('starting a review shows the review page; a tick arrives as text and is stored as a boolean; completing moves the date', async () => {
   const c = await ready();
-  await c.dispatch({ type: 'setSchedule', platformId: 'p1', months: '6', due: '2026-12-31' });
+  await c.dispatch({ type: 'setRule', platformId: 'p1', kind: 'fixed', months: '6', unit: 'months', start: '2026-06-30' });
   await c.dispatch({ type: 'beginReview', platformId: 'p1' });
-  assert.deepEqual([c.getState().view.name, c.getState().view.id, c.getState().view.tab], ['platform', 'p1', 'reviews']);
+  assert.deepEqual([c.getState().view.name, c.getState().view.id], ['platformReview', 'p1']);
   const review = Object.values(W(c).records.review)[0];
   await c.dispatch({ type: 'tickReviewRow', reviewId: review.id, hazardId: 'h1', reviewed: 'true' });
   assert.equal(W(c).records.reviewRow[ids.reviewRow(review.id, 'h1')].reviewed, true);
@@ -109,9 +118,21 @@ test.skip('starting a review shows the Reviews tab; a tick arrives as text and i
   await c.dispatch({ type: 'markRow', reviewId: review.id, hazardId: 'h1', note: 'Looked at it' });
   await c.dispatch({ type: 'setReviewOutcome', reviewId: review.id, outcome: 'Done' });
   await c.dispatch({ type: 'completeReview', reviewId: review.id });
-  assert.equal(W(c).records.platform.p1.reviewDue, '2027-06-30');
-  await c.dispatch({ type: 'go', view: 'platform', id: 'p1', tab: 'reviews', reviewId: review.id });
+  assert.equal(scheduleOf(W(c), 'p1', '2026-09-28').due, '2027-06-30');
+  await c.dispatch({ type: 'go', view: 'platformReview', id: 'p1', reviewId: review.id });
   assert.equal(c.getState().view.reviewId, review.id);
+});
+
+test('the review schedule panel opens from the platform menu and closes again, or on leaving the page', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'go', view: 'platform', id: 'p1' });
+  await c.dispatch({ type: 'showReviewPanel', id: 'p1' });
+  assert.equal(c.getState().reviewPanel, 'p1');
+  await c.dispatch({ type: 'closeReviewPanel' });
+  assert.equal(c.getState().reviewPanel, null);
+  await c.dispatch({ type: 'showReviewPanel', id: 'p1' });
+  await c.dispatch({ type: 'go', view: 'platformReview', id: 'p1' });
+  assert.equal(c.getState().reviewPanel, null);
 });
 
 test('choosing a platform in the report form is remembered on screen only', async () => {

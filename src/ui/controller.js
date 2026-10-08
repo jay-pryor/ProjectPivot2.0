@@ -96,7 +96,7 @@ const shiftMonth = (ym, n) => {
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
   'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'setBowtieLayout', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
-  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter',
+  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'showReviewPanel', 'closeReviewPanel',
 ]);
 
 export function initialState() {
@@ -108,7 +108,7 @@ export function initialState() {
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
     workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null,
-    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS,
+    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, reviewPanel: null,
   };
 }
 
@@ -416,7 +416,7 @@ export function createController(env) {
     },
     async go({ view, id, hazardId, platformId, tab, reviewId }) {
       // Leaving a control being made, untitled, makes nothing.
-      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null, confirmDelete: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
+      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null, confirmDelete: null, reviewPanel: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
       if (view === 'references') await handlers.checkReferenceFiles();
       if (view === 'reference') await handlers.checkReferenceFiles({ id });
@@ -676,6 +676,34 @@ export function createController(env) {
     async rejectControl({ hazardId, controlId, platformId, reason }) {
       await applyEdit('setControlStatus', { hazardId, controlId, platformId, status: 'rejected', reason });
     },
+    async showReviewPanel({ id }) {
+      set({ reviewPanel: id });
+    },
+    async closeReviewPanel() {
+      set({ reviewPanel: null });
+    },
+    // One part of a platform's rule changed in place: the parts not sent are taken from its rule
+    // now. A first fixed rule is yearly and a first policy the first one, counted from today; a
+    // cleared date is sent on, to be refused.
+    async setRuleField({ platformId, kind, value, unit, policyId, start }) {
+      const data = state.session?.working;
+      const p = data?.records.platform[platformId];
+      if (!p) throw new PivotError('not-found', 'That platform no longer exists.');
+      const r = p.reviewRule;
+      const k = kind ?? r?.kind ?? 'none';
+      if (k === 'none') {
+        await applyEdit('setRule', { platformId, kind: 'none' });
+        return;
+      }
+      const was = asUnit(r?.kind === 'fixed' ? r.months : 12);
+      const firstPolicy = Object.values(data.records.reviewPolicy).filter((x) => x.status === 'live').sort((a, b) => a.order - b.order)[0]?.id;
+      await applyEdit('setRule', {
+        platformId, kind: k,
+        months: value ?? was.n, unit: unit ?? was.unit,
+        policyId: policyId ?? (r?.kind === 'policy' ? r.policyId : firstPolicy),
+        start: start ?? p.reviewStart ?? state.today,
+      });
+    },
     async newReviewPolicy({ name }) {
       const id = newId();
       await applyEdit('createReviewPolicy', { id, name });
@@ -713,7 +741,7 @@ export function createController(env) {
     },
     async beginReview({ platformId }) {
       await applyEdit('startReview', { platformId });
-      set({ view: { name: 'platform', id: platformId, tab: 'reviews' } });
+      set({ view: { name: 'platformReview', id: platformId } });
     },
     async tickReviewRow({ reviewId, hazardId, reviewed }) {
       await applyEdit('markRow', { reviewId, hazardId, reviewed: reviewed === 'true' });

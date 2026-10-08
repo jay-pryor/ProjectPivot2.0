@@ -27,8 +27,8 @@ function entryDetail(data, entry) {
   return html`<ul class="plain">${entry.items.map((/** @type {any} */ i) => html`<li><strong>${KIND_LABEL[/** @type {keyof typeof KIND_LABEL} */ (i.kind)] ?? i.kind}: ${recordName(i.kind, get(data, i.kind, i.id), data)}</strong> ${changeDetail(i)}</li>`)}</ul>`;
 }
 
-/** @param {any} p a platform @param {string} [tab] */
-const platformLink = (p, tab) => go(p.name, 'platform', { id: p.id, ...(tab ? { tab } : {}) });
+/** @param {any} p a platform */
+const platformLink = (p) => go(p.name, 'platform', { id: p.id });
 
 /** The Owner chooser: me, each other profile, everyone. @param {any} state */
 function ownerPicker(state) {
@@ -39,11 +39,12 @@ function ownerPicker(state) {
 }
 
 /**
- * Where an open item's action is done, for a double-click on its row: a review on the platform's
- * Reviews tab; a control's status (to decide, or to implement) on the control's page for that
- * platform; ratings on the hazard's page for that platform. A change is acknowledged in the list
- * itself, so its row opens the platform's history, where the change sits in context.
- * @param {'change' | 'review' | 'schedule' | 'control' | 'implement' | 'rating'} type
+ * Where an open item's action is done, for a double-click on its row: a review (or a moved review
+ * date) on the platform's review page; a control's status (to decide, or to implement) on the
+ * control's page for that platform; ratings on the hazard's page for that platform. A change is
+ * acknowledged in the list itself, so its row opens the platform's history, where the change sits
+ * in context.
+ * @param {'change' | 'review' | 'schedule' | 'dateMoved' | 'control' | 'implement' | 'rating'} type
  * @param {{ platform: any, hazard?: any, control?: any }} item
  * @returns {Record<string, string>}
  */
@@ -52,7 +53,7 @@ export function whereToAct(type, item) {
   if (type === 'control' || type === 'implement') return { view: 'control', id: item.control.id, tab: on };
   if (type === 'rating') return { view: 'hazard', id: item.hazard.id, tab: on };
   if (type === 'change') return { view: 'platform', id: item.platform.id, tab: 'history' };
-  return { view: 'platform', id: item.platform.id, tab: 'reviews' };
+  return { view: 'platformReview', id: item.platform.id };
 }
 
 /** A row's double-click to where its action is done. @param {Parameters<typeof whereToAct>[0]} type */
@@ -107,7 +108,7 @@ export function openItemsView(state, data) {
       { key: 'reviews', label: 'Reviews', icon: 'calendar', badge: items.reviews.length, body: () => html`<h2>Reviews</h2><section class="block">${dataTable(state, {
         id: 'homeReviews', rowKey: (r) => r.platform.id, rows: items.reviews, empty: 'No reviews due.', rowAttrs: actRow('review'),
         columns: [
-          { key: 'platform', label: 'Platform', width: 360, minWidth: 160, value: (r) => r.platform.name, render: (r) => platformLink(r.platform, 'reviews') },
+          { key: 'platform', label: 'Platform', width: 360, minWidth: 160, value: (r) => r.platform.name, render: (r) => go(r.platform.name, 'platformReview', { id: r.platform.id }) },
           { key: 'due', label: 'Next due', width: 300, minWidth: 160, value: (r) => r.due, render: (r) => (r.due ? html`${day(r.due)}${reviewTag(r.state)}` : html`<span class="tag">No schedule</span>`) },
           { key: 'last', label: 'Last reviewed', width: 240, minWidth: 140, value: (r) => r.lastReviewed, render: (r) => (r.lastReviewed ? day(r.lastReviewed) : html`<span class="muted">Never</span>`) },
           { key: 'open', label: 'Review', width: 220, minWidth: 160, value: (r) => (r.open ? 'In progress' : ''), render: reviewButton },
@@ -302,7 +303,7 @@ function comingUp(state, rows) {
     <thead><tr><th>Scheduled</th><th>Platform</th><th>Working days left</th><th></th></tr></thead>
     <tbody>${rows.map((r) => html`<tr>
       <td class="date">${r.due ? day(r.due) : html`<span class="muted">—</span>`}</td>
-      <td>${platformLink(r.platform, 'reviews')}</td>
+      <td>${go(r.platform.name, 'platformReview', { id: r.platform.id })}</td>
       <td class="days">${r.due ? workingDaysUntil(state.today, r.due) : html`<span class="muted">—</span>`}</td>
       <td class="act">${reviewButton(r)}</td>
     </tr>`)}</tbody></table>`;
@@ -311,7 +312,7 @@ function comingUp(state, rows) {
 /** Start a platform's review, or carry on with the one under way. @param {{ platform: any, open: boolean }} r */
 function reviewButton(r) {
   return r.open
-    ? html`<button type="button" class="small" title="A review is under way" ${dataAttrs({ action: 'go', view: 'platform', id: r.platform.id, tab: 'reviews' })}>Continue review →</button>`
+    ? html`<button type="button" class="small" title="A review is under way" ${dataAttrs({ action: 'go', view: 'platformReview', id: r.platform.id })}>Continue review →</button>`
     : html`<button type="button" class="small" ${dataAttrs({ action: 'beginReview', 'platform-id': r.platform.id })}>Start review</button>`;
 }
 
