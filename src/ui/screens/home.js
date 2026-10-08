@@ -8,7 +8,9 @@ import { sectionRail } from './dashboard.js';
 import { openItems, upcomingReviews, platformCards, attentionItems, groupsOf, openReview } from '../../core/queries.js';
 import { BANDS } from '../../core/matrix.js';
 import { get } from '../../core/data.js';
-import { hazardLabel, controlLabel, UNNUMBERED } from '../../core/ids.js';
+import { hazardLabel, controlLabel, UNNUMBERED, workflowLabel } from '../../core/ids.js';
+import { openWorkflows, workflowProgress, typeName } from '../../core/workflows.js';
+import { progressBar, workflowSubject } from './workflows.js';
 import { profileName, when, day, recordName, KIND_LABEL } from '../names.js';
 import { driverWord } from '../review-words.js';
 
@@ -395,6 +397,25 @@ function windowPicker(days) {
     ${COMING_UP_WINDOWS.map(([d, word]) => option(String(d), word, String(days)))}</select>`;
 }
 
+/** How many workflows Home lists before All workflows. */
+const WORKFLOW_LIMIT = 5;
+
+/** The workflows in progress for Home's owner (everyone's for null). @param {any} state @param {Data} data @param {string | null} ownerId */
+function workflowsPanel(state, data, ownerId) {
+  const rows = openWorkflows(data, ownerId);
+  return html`<section class="panel stack-panel wf-panel"><div class="panel-head"><h2>Workflows in progress</h2></div>
+    ${rows.length
+      ? html`<table class="attn wf-home"><tbody>${rows.slice(0, WORKFLOW_LIMIT).map((w) => {
+        const p = workflowProgress(data, w);
+        return html`<tr>
+          <td>${idTag(workflowLabel(w))}</td><td>${typeName(w.type)} · ${workflowSubject(data, w)}${ownerId == null ? html` <span class="muted">${profileName(state, w.ownerId)}</span>` : ''}</td>
+          <td>${progressBar(p.done, p.total)}</td>
+          <td class="act"><button type="button" class="small" ${dataAttrs({ action: 'go', view: 'workflow', id: w.id })}>Resume →</button></td></tr>`;
+      })}</tbody></table>`
+      : html`<p class="muted">No workflows in progress.</p>`}
+    <div class="panel-more">${go(rows.length > WORKFLOW_LIMIT ? `All ${rows.length} workflows →` : 'All workflows →', 'workflows')}</div></section>`;
+}
+
 /**
  * The Home dashboard: headline counts, what needs attention now, reviews coming up, and a card
  * per platform, for one owner (or everyone).
@@ -436,6 +457,7 @@ export function homeView(state, data) {
           : html`<p class="muted">Nothing needs attention.</p>`}
       </section>
       <div class="dash-stack">
+      ${workflowsPanel(state, data, ownerId)}
       <section class="panel stack-panel"><div class="panel-head coming-up-head"><h2>Coming up</h2>${windowPicker(days)}</div>
         ${upcoming.length ? comingUp(state, data, upcoming) : html`<p class="muted">No reviews due in the ${windowWords(days).toLowerCase()}.</p>`}
       </section>

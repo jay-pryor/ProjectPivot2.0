@@ -11,6 +11,7 @@ import { entries } from '../../src/core/history.js';
 import { reportsView } from '../../src/ui/screens/reports.js';
 import { createReport } from '../../src/core/ops/reports.js';
 import { seed, act, scheduleFixed, seeDue, beginPlatformReview, finishPlatformReview } from '../helpers.js';
+import { ids } from '../../src/core/ids.js';
 
 export const state = { ...initialState(), screen: 'main', today: '2026-09-28', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }, { id: 'u2', name: 'Grace', createdAt: '' }], profileId: 'u1' };
 /** p1 overdue (due 2026-09-01), p2 due soon (2026-10-10). */
@@ -151,3 +152,20 @@ test('checkboxes are the accent orange', async () => {
   assert.match(css, /input\[type="checkbox"\], input\[type="radio"\] \{ accent-color: var\(--p-accent\); \}/);
 });
 
+test('a completed review shows its workflow’s check grid, and past reviews link the WF number', () => {
+  let d = beginPlatformReview(data(), act, { id: 'w1', platformId: 'p1' });
+  d = assignNumbers(finishPlatformReview(d, act, { workflowId: 'w1' }));
+  const page = platformReviewView(onTab(), d, 'p1').toString();
+  assert.match(page, /<th data-col="wf"/);
+  assert.match(page, /WF-001/);
+  const opened = platformReviewView({ ...onTab(), view: { name: 'platformReview', id: 'p1', reviewId: ids.workflowReview('w1') } }, d, 'p1').toString();
+  assert.match(opened, /class="wf-grid"/);
+});
+
+test('a review recorded before workflows says so', () => {
+  const d = data();
+  d.records.review.old = { id: 'old', status: 'live', createdBy: 'u1', createdAt: act.at, updatedBy: 'u1', updatedAt: act.at, platformId: 'p1', workflowId: null, state: 'completed', outcome: 'Fine', notes: '', dueBefore: '2026-03-01', dueAfter: '2026-09-01', completedBy: 'u1', completedAt: act.at };
+  const out = platformReviewView({ ...onTab(), view: { name: 'platformReview', id: 'p1', reviewId: 'old' } }, d, 'p1').toString();
+  assert.match(out, /Recorded before workflows/);
+  assert.match(out, /Fine/);
+});

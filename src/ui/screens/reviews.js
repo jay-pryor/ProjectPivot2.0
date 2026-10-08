@@ -7,6 +7,7 @@ import { openReview, lastReviewed, completedReviews, bandOf, listPlatformGroups,
 import { scheduleOf, POLICY_BANDS } from '../../core/schedule.js';
 import { MAX_REVIEW_MONTHS } from '../../core/ops/reviews.js';
 import { workflowLabel } from '../../core/ids.js';
+import { checkGrid } from './workflow.js';
 import { BANDS } from '../../core/matrix.js';
 import { day, when, profileName, periodWord } from '../names.js';
 import { ruleWord, driverWord } from '../review-words.js';
@@ -95,7 +96,7 @@ function completedReview(state, data, p, review) {
     ${review.outcome ? html`<p class="outcome-text">${review.outcome}</p>` : ''}
     ${review.notes ? html`<h3>Additional notes</h3><p class="outcome-text">${review.notes}</p>` : ''}
     ${review.workflowId && get(data, 'workflow', review.workflowId)
-      ? go(`Open ${workflowLabel(get(data, 'workflow', review.workflowId))} →`, 'workflow', { id: review.workflowId })
+      ? html`<p>${go(`Open ${workflowLabel(get(data, 'workflow', review.workflowId))} →`, 'workflow', { id: review.workflowId })}</p>${checkGrid(data, get(data, 'workflow', review.workflowId))}`
       : html`<p class="muted">Recorded before workflows.</p>`}`;
 }
 
@@ -107,6 +108,8 @@ function pastReviews(state, data, p) {
     rows: completedReviews(data, p.id),
     empty: 'No completed reviews yet.',
     columns: [
+      { key: 'wf', label: 'Workflow', width: 130, minWidth: 100, value: (c) => c.workflow?.number ?? 0,
+        render: (c) => (c.workflow ? go(workflowLabel(c.workflow), 'workflow', { id: c.workflow.id }) : html`<span class="muted">—</span>`) },
       { key: 'completed', label: 'Completed', width: 190, minWidth: 140, value: (c) => c.review.completedAt,
         render: (c) => go(day(c.review.completedAt), 'platformReview', { id: p.id, 'review-id': c.review.id }) },
       { key: 'by', label: 'By', width: 170, minWidth: 100, value: (c) => profileName(state, c.review.completedBy) },

@@ -8,7 +8,7 @@ import { renderApp } from '../../src/ui/render.js';
 import { initialState } from '../../src/ui/controller.js';
 import { startAcks, waitingChanges } from '../../src/core/acks.js';
 import { updateHazard, assignNumbers } from '../../src/core/ops/hazards.js';
-import { seed, scheduleFixed, seeDue } from '../helpers.js';
+import { seed, scheduleFixed, seeDue, act, later, beginPlatformReview } from '../helpers.js';
 
 test('changeDetail: an edit as before → after, escaped; other changes as a word', () => {
   const out = changeDetail({ change: 'edited', fields: [{ field: 'title', before: '<b>x</b>', after: 'Fire' }] }).toString();
@@ -197,7 +197,7 @@ test('Home: Coming up over Favourite pages beside Needs attention; numbered favo
   const favourites = [{ name: 'hazard', id: 'h1' }, { name: 'hazard', id: 'h1', tab: 'p:p2' }, { name: 'controls', id: null }, { name: 'platform', id: 'gone' }];
   const as = (prefs, extra = {}) => ({ ...state, ...extra, session: { base: d, working: d }, profiles: state.profiles.map((p) => (p.id === 'u1' ? { ...p, prefs: { favourites, ...prefs } } : p)) });
   const out = homeView(as({}), d).toString();
-  assert.match(out, /<div class="dash-stack">\s*<section class="panel stack-panel"><div class="panel-head coming-up-head"><h2>Coming up<\/h2><select class="window-pick"[\s\S]*?<section class="panel stack-panel fav-panel" aria-label="Favourite pages">\s*<div class="panel-head"><h2>Favourite pages<\/h2><details class="dots-menu">/);
+  assert.match(out, /<div class="dash-stack">\s*<section class="panel stack-panel wf-panel"><div class="panel-head"><h2>Workflows in progress<\/h2>[\s\S]*?<section class="panel stack-panel"><div class="panel-head coming-up-head"><h2>Coming up<\/h2><select class="window-pick"[\s\S]*?<section class="panel stack-panel fav-panel" aria-label="Favourite pages">\s*<div class="panel-head"><h2>Favourite pages<\/h2><details class="dots-menu">/);
   assert.match(out, /role="menuitemradio" aria-checked="true" data-action="setFavouriteLayout" data-layout="table">[\s\S]*?Table<\/button>[\s\S]*?Small blocks[\s\S]*?Large blocks[\s\S]*?data-action="toggleFavouriteEdit"[^>]*>[\s\S]*?Edit order/);
   assert.match(out, /<li class="fav"><span class="fav-num">1<\/span>\s*<div class="fav-main" role="link" tabindex="0" data-action="go" data-view="hazard" data-id="h1"><span class="fav-name">HAZ-001 Fire \(Sam\)<\/span><span class="fav-kind">Hazard<\/span><\/div><button type="button" class="fav-star on"[^>]*data-action="toggleFavourite" data-page="hazard" data-id="h1" data-tab="">/);
   assert.match(out, /<span class="fav-num">2<\/span>\s*<div class="fav-main" role="link" tabindex="0" data-action="go" data-view="hazard" data-id="h1" data-tab="p:p2"><span class="fav-name">HAZ-001 Fire \(Sam\) · Bravo<\/span><span class="fav-kind">Hazard on a platform<\/span>/, 'a page within a page');
@@ -283,4 +283,16 @@ test('a moved review date within 30 days, or passed, comes first, red and marked
   const out = homeView(state, d).toString();
   const rows = /<tbody>([\s\S]*?)<\/tbody>/.exec(out)?.[1] ?? '';
   assert.match(rows, /^<tr class="urgent" data-key="dateMoved\|p1\|2026-10-01"[^>]*data-view="platformReview" data-id="p1">[\s\S]*?<span class="chip chip-urgent">Urgent<\/span>[\s\S]*?Review date moved: 1 Jan 2027 → 1 Oct 2026/, 'urgent first');
+});
+
+test('Home lists the workflows in progress for the owner chosen, with Resume and All workflows', () => {
+  let d = beginPlatformReview(seed(), act, { id: 'w1', platformId: 'p1' });
+  d = beginPlatformReview(d, later, { id: 'w2', platformId: 'p2' });
+  const mine = homeView({ ...state, homeOwner: 'me' }, d).toString();
+  assert.match(mine, /<h2>Workflows in progress<\/h2>/);
+  assert.match(mine, /data-id="w1"/);
+  assert.doesNotMatch(mine, /data-id="w2"/);
+  assert.match(mine, /All workflows →/);
+  const all = homeView({ ...state, homeOwner: 'everyone' }, d).toString();
+  assert.match(all, /data-id="w2"/);
 });

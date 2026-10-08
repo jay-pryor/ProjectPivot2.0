@@ -7,7 +7,8 @@ import { driverWord } from '../review-words.js';
 import { themeOf, isFavourite } from '../prefs.js';
 import { ratingFor, LIKELIHOODS, CONSEQUENCES } from '../../core/matrix.js';
 import { openItems, attentionItems } from '../../core/queries.js';
-import { UNNUMBERED, hazardLabel, controlLabel, referenceLabel, platformLabel } from '../../core/ids.js';
+import { UNNUMBERED, hazardLabel, controlLabel, referenceLabel, platformLabel, workflowLabel } from '../../core/ids.js';
+import { get } from '../../core/data.js';
 import { FULCRUM_SVG } from '../logo.js';
 import { safetyReportId } from '../../core/ops/report-ids.js';
 import { wordDiff } from '../text-diff.js';
@@ -556,7 +557,7 @@ export function historyTable(state, data, kind, id, list = historyOf(data, kind,
       { key: 'who', label: 'Who', width: 260, minWidth: 100, value: who, filter: 'text' },
       { key: 'what', label: 'What', width: 400, minWidth: 140, value: what, filter: 'text',
         render: (r) => {
-          if (!r.bundle) return what(r);
+          if (!r.bundle) return html`${what(r)}${viaWorkflow(data, r.e)}`;
           // A bundle's What is changed by double-clicking it; left empty, it is its changes' action.
           if (state.editing?.kind === 'bundleTitle' && state.editing.id === r.bundle.id) {
             return html`<input class="cell-edit" name="title" value="${r.bundle.title ?? ''}" placeholder="${actionOf(r)}" aria-label="What the bundle is" autofocus ${dataAttrs({ change: 'renameBundle', id: r.bundle.id })}>`;
@@ -573,6 +574,12 @@ export function historyTable(state, data, kind, id, list = historyOf(data, kind,
         : removeButton('Delete this change', 'Delete this change from the history?', `“${r.e.action}” leaves the history. It can be restored from Deletion history in the ☰ menu.`, { run: 'deleteHistory', 'entry-id': r.e.id }))),
     ],
   })}</div>`;
+}
+
+/** The workflow a change was made through, as a chip opening it. @param {any} data @param {any} e a history entry */
+function viaWorkflow(data, e) {
+  const wf = e.workflow ? get(data, 'workflow', e.workflow) : null;
+  return wf ? html` <button type="button" class="tag wf-chip" title="Made through this workflow" ${dataAttrs({ action: 'go', view: 'workflow', id: wf.id })}>via ${workflowLabel(wf)}</button>` : '';
 }
 
 /** A small, quiet + button, drawn rather than typed so it sits dead centre. @param {Record<string, unknown>} attrs @param {string} label what it does, for its tooltip */
