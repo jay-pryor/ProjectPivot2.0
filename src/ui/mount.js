@@ -895,7 +895,7 @@ function fitAll(root) {
 function bowtieLinkFocus(el) {
   const clear = (/** @type {Element} */ svg) => {
     svg.classList.remove('bt-focus');
-    for (const o of svg.querySelectorAll('.bt-on')) o.classList.remove('bt-on');
+    for (const o of svg.querySelectorAll('.bt-on, .bt-same')) o.classList.remove('bt-on', 'bt-same');
   };
   const NODES = 'g[data-bowtie-node$="-control"], g[data-bowtie-node="causal-factor"], g[data-bowtie-node="consequence"]';
   el.addEventListener('pointerover', (e) => {
@@ -905,10 +905,13 @@ function bowtieLinkFocus(el) {
     clear(svg);
     const id = g.getAttribute('data-record-id') ?? '';
     svg.classList.add('bt-focus');
-    // The traditional view: the rows the box stands on (every row a control is repeated on) and all on them.
+    // The traditional view: the rows the box stands on (every row a control is repeated on) and all
+    // on them; the box itself and its copies on the other rows marked apart from the rest.
     if (svg.getAttribute('data-bowtie-layout') === 'traditional') {
-      const rows = new Set([...svg.querySelectorAll('g[data-record-id]')].filter((b) => b.getAttribute('data-record-id') === id).map((b) => b.getAttribute('data-bowtie-row')));
+      const same = [...svg.querySelectorAll('g[data-record-id]')].filter((b) => b.getAttribute('data-record-id') === id);
+      const rows = new Set(same.map((b) => b.getAttribute('data-bowtie-row')));
       for (const o of svg.querySelectorAll('[data-bowtie-row]')) if (rows.has(o.getAttribute('data-bowtie-row'))) o.classList.add('bt-on');
+      for (const b of same) b.classList.add('bt-same');
       return;
     }
     const control = String(g.getAttribute('data-bowtie-node')).endsWith('-control');

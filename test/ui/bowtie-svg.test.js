@@ -68,7 +68,7 @@ test('a control implemented on the platform is drawn solid, any other dashed, it
   assert.doesNotMatch(svg, /data-bowtie-tag="(existing|additional)"|>(Existing|Additional)</);
   assert.match(svg, /<g data-bowtie-tag="implemented"><rect [^>]*style="fill:var\(--bt-tag-implemented-bg, #e2f4e6\)"\/><text [^>]*>Implemented<\/text><\/g>/, 'badges, coloured by tag, light in a file');
   assert.match(svg, /aria-label="C-001 Sprinklers \(Implemented\)"/);
-  assert.match(svg, />C-001 Sprinklers<\/tspan>/);
+  assert.match(svg, /<tspan x="\d+" y="\d+"><tspan data-bowtie-label="C-001" font-weight="700" style="fill:var\(--bt-accent[^"]*">C-001<\/tspan> Sprinklers<\/tspan>/, 'its number in the accent colour, its name after it on the same line');
   assert.match(svg, /<text data-bowtie-caption="true"[^>]*>Alpha · Recommended, Planned, Implemented<\/text>/);
 });
 
@@ -103,7 +103,7 @@ test('capitals and bold text fit their box: an all-caps hazard title stays insid
 
 test('five labelled swimlanes, full height, side by side, each holding its own column', () => {
   const svg = drawn(assignNumbers(withFireWatch(seed())));
-  const lanes = [...svg.matchAll(/<g data-bowtie-lane="([^"]+)"><rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)"[^>]*\/><text[^>]*>([^<]+)<\/text>/g)]
+  const lanes = [...svg.matchAll(/<g data-bowtie-lane="([^"]+)"><rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)"[^>]*\/><rect data-bowtie-lane-head[^>]*\/><text[^>]*>([^<]+)<\/text>/g)]
     .map((m) => ({ kind: m[1], x: +m[2], y: +m[3], w: +m[4], h: +m[5], heading: m[6] }));
   assert.deepEqual(lanes.map((l) => l.heading), ['Causal factors', 'Preventative controls', 'Hazard', 'Mitigating controls', 'Consequences']);
   assert.deepEqual(lanes.map((l) => l.kind), ORDER);
@@ -163,4 +163,38 @@ test('traditional view: a control linked to nothing has a row of its own, so it 
   assert.match(svg, /data-bowtie-node="unlinked"[^>]*data-bowtie-row="preventative-control-unlinked"/);
   assert.match(svg, /data-record-id="c3"[^>]*data-bowtie-row="preventative-control-unlinked"/);
   assert.match(svg, /Linked to no causal factor/);
+});
+
+test('causal factors and consequences numbered as on the platform tab, in both views, or not at all', () => {
+  let d = seed();
+  d = addCausalFactor(d, act, { id: 'cf2', hazardId: 'h1', text: 'Lightning' });
+  const b = /** @type {any} */ (bowtieOf(assignNumbers(d), 'h1', 'p1', DEFAULT_FILTERS));
+  for (const layout of /** @type {const} */ (['focus', 'traditional'])) {
+    const svg = bowtieSvg(b, { layout });
+    assert.match(svg, /data-record-id="cf1"[^>]*aria-label="1\. [^"]*">[\s\S]*?data-bowtie-num="1"/, layout);
+    assert.match(svg, /data-record-id="cf2"[^>]*aria-label="2\. Lightning[^"]*">[\s\S]*?data-bowtie-num="2"/, layout);
+    assert.match(svg, /data-record-id="cq1"[^>]*aria-label="1\. [^"]*">[\s\S]*?data-bowtie-num="1"/, layout);
+    assert.doesNotMatch(bowtieSvg(b, { layout, numbers: false }), /data-bowtie-num/, `${layout}, numbers off`);
+  }
+});
+
+test('traditional view: a causal factor or consequence sits as far from its lane\'s right edge as from its left', () => {
+  const d = addCausalFactor(withFireWatch(seed()), act, { id: 'cf2', hazardId: 'h1', text: 'Electrical fault in the switchboard room during maintenance' });
+  const svg = bowtieSvg(/** @type {any} */ (bowtieOf(assignNumbers(d), 'h1', 'p1', DEFAULT_FILTERS)), { layout: 'traditional' });
+  for (const kind of ['causal-factor', 'consequence']) {
+    const lane = /<g data-bowtie-lane="([^"]+)"><rect x="(\d+)" y="\d+" width="(\d+)"/g;
+    const m = [...svg.matchAll(lane)].find((x) => x[1] === kind);
+    assert.ok(m, kind);
+    const x0 = +m[2];
+    const x1 = x0 + +m[3];
+    for (const b of boxes(svg).filter((x) => x.kind === kind)) assert.equal(b.x - x0, x1 - (b.x + b.w), `${kind}: left ${b.x - x0}, right ${x1 - (b.x + b.w)}`);
+  }
+});
+
+test('both views head every lane with a shaded title cell', () => {
+  const b = /** @type {any} */ (bowtieOf(assignNumbers(seed()), 'h1', 'p1', DEFAULT_FILTERS));
+  for (const layout of /** @type {const} */ (['focus', 'traditional'])) {
+    const heads = [...bowtieSvg(b, { layout }).matchAll(/data-bowtie-lane-head="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(heads, ORDER, layout);
+  }
 });

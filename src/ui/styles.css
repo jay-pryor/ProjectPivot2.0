@@ -706,13 +706,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--p-accent); }
 .bt-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--p-surface-2); border-bottom: 1px solid var(--p-line); cursor: grab; }
 .bt-bar h2 { font-size: 16px; margin: 0; overflow-wrap: anywhere; }
 .bt-bar .spacer { flex: 1; }
+.bt-bar button { flex: none; white-space: nowrap; }
 .bt-grip { color: var(--p-muted); }
-.bt-filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 8px 10px; }
-.bt-filters fieldset { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; border: 0; margin: 0; padding: 0; }
-.bt-filters fieldset[disabled] { opacity: .5; }
-.bt-filters legend { float: left; margin-right: 4px; color: var(--p-muted); }
-.bt-filters label { display: inline-flex; gap: 6px; align-items: center; }
-.bt-diagram { overflow: auto; padding: 10px; background: var(--p-surface); border-block: 1px solid var(--p-line);
+.bt-diagram { overflow: auto; padding: 10px; background: var(--p-surface);
   /* The drawing's colours follow the theme; an exported file falls back to its own light palette. */
   --bt-paper: var(--p-surface); --bt-box: var(--p-bg); --bt-lane: var(--p-surface-2); --bt-rule: var(--p-line);
   --bt-hazard-lane: color-mix(in srgb, var(--p-accent) 9%, var(--p-surface)); --bt-ink: var(--p-fg); --bt-muted: var(--p-muted);
@@ -745,7 +741,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--p-accent); }
   .bt-canvas { width: 100%; height: 100%; min-width: 0; min-height: 0; }
   .bt-canvas svg { width: 100%; height: 100%; max-width: none; }
 }
-.bt-actions, .bt-name { padding: 0 10px; }
 .bt-drop { position: absolute; top: 0; bottom: 0; width: calc(50% - 8px); z-index: 30; display: none; place-items: center; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; color: var(--p-accent); background: color-mix(in srgb, var(--p-accent) 10%, transparent); border: 2px dashed var(--p-accent); }
 .bt-drop[data-drop-side="0"] { left: 0; }
 .bt-drop[data-drop-side="1"] { right: 0; }
@@ -1099,8 +1094,6 @@ ul.dots > li::before { content: ""; position: absolute; left: 2px; top: .62em; w
 ul.dots { display: grid; gap: 3px; }
 
 /* A bow-tie window's tools at the right of its control bar: Show tags, then zoom. */
-.bt-tools { display: inline-flex; align-items: center; gap: 14px; margin-left: auto; }
-.bt-tools .bt-zoom { margin-left: 0; }
 .bt-tags-toggle { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 4px 2px; color: var(--p-fg); font-weight: 600; }
 .bt-tags-track { position: relative; width: 34px; height: 18px; border: 1px solid var(--p-line); background: var(--p-surface-2); transition: background-color .15s, border-color .15s; }
 .bt-tags-knob { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; background: var(--p-muted); transition: transform .15s, background-color .15s; }
@@ -1133,3 +1126,31 @@ ul.dots { display: grid; gap: 3px; }
 .bt-layout button { font-weight: 600; }
 .bt-layout button + button { margin-left: -1px; }
 .bt-layout button[aria-pressed="true"] { background: var(--p-accent); border-color: var(--p-accent); color: #1b1f24; }
+
+/* A bow-tie window: the drawing on the left, its tool tab on the right. Zoom floats over the
+   drawing's top-right corner; the tab holds View setup at the top and saving and export at its foot. */
+.bt-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 260px; grid-template-rows: minmax(0, 1fr); }
+.bt-view { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.bt-view > .bt-zoom { position: absolute; top: 12px; right: 12px; z-index: 5; margin: 0; background: var(--p-surface); box-shadow: 0 2px 10px rgba(0, 0, 0, .18); }
+/* View setup scrolls when the window is short; saving and export stay in view at the foot. */
+.bt-panel { display: flex; flex-direction: column; min-height: 0; background: var(--p-surface-2); border-left: 1px solid var(--p-line); }
+.bt-panel h3 { margin: 0; font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--p-muted); }
+.bt-panel-setup { flex: 1; min-height: 0; overflow-y: auto; display: grid; gap: 28px; align-content: start; margin: 0; padding: 24px 22px 32px; }
+.bt-panel-group { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.bt-panel-label { display: block; float: none; margin: 0 0 2px; padding: 0; font-size: 13px; font-weight: 700; color: var(--p-fg); }
+.bt-panel-group > label { display: flex; gap: 10px; align-items: center; }
+.bt-panel .bt-tags-toggle { justify-content: flex-start; padding: 2px 0; }
+.bt-panel .bt-layout { display: flex; }
+.bt-panel .bt-layout button { flex: 1; display: inline-flex; justify-content: center; align-items: center; text-align: center; }
+.bt-panel-setup > button { justify-self: start; }
+.bt-panel-actions { flex: none; display: grid; gap: 10px; align-content: center; margin: 0; padding: 22px; border-top: 1px solid var(--p-line); }
+.bt-panel-actions > button { width: 100%; }
+.bt-panel .bt-name { display: grid; gap: 8px; padding: 0; }
+@media (max-width: 760px) {
+  .bt-body { grid-template-columns: minmax(0, 1fr); }
+  .bt-panel { border-left: 0; border-top: 1px solid var(--p-line); }
+}
+
+/* The traditional bow-tie: the control pointed at, and its copies on the other rows, filled with
+   the accent and boldly outlined, apart from the other boxes on those rows. */
+.bt-diagram svg g.bt-same > rect:first-of-type { fill: color-mix(in srgb, var(--p-accent) 18%, var(--bt-box)) !important; stroke: var(--p-accent) !important; stroke-width: 3.5; stroke-dasharray: none; }

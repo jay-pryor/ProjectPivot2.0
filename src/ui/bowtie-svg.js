@@ -7,7 +7,8 @@ import { hazardLabel, controlLabel } from '../core/ids.js';
 /** @typedef {import('../core/data.js').Rec} Rec */
 /**
  * @typedef {{ kind: string, id: string | null, title: string, lines: string[], tags: Tag[], style: 'plain' | 'hazard' | 'implemented' | 'proposed',
- *   item: Item | null, x: number, y: number, width: number, height: number, unguarded?: boolean, row?: string }} Box  unguarded: a causal factor or consequence no control is linked to; row: the traditional view's row it is drawn on
+ *   item: Item | null, x: number, y: number, width: number, height: number, unguarded?: boolean, row?: string, num?: number, label?: string }} Box  unguarded: a causal factor or consequence no control is linked to; row: the traditional view's row it is drawn on; num: a causal factor's or consequence's number, as on the hazard's platform tab;
+ *   label: a control's number, e.g. C-001, which starts its first line in the accent colour
  */
 
 // The grid, in user units. A box is sized from an estimate of its text's width, never measured,
@@ -110,7 +111,9 @@ function controlBox(i, kind, showTags = true) {
   const title = i.tags.length ? `${name} (${i.tags.map((t) => t.text).join(', ')})` : name;
   // With tags hidden the box is only its name (its tags still in its title, for pointing at it).
   // Implemented on the platform: drawn solid; recommended, planned or rejected: dashed.
-  return box(kind, i.control.id, title, wrap(name), i.state === 'implemented' ? 'implemented' : 'proposed', i, showTags ? i.tags : []);
+  const b = box(kind, i.control.id, title, wrap(name), i.state === 'implemented' ? 'implemented' : 'proposed', i, showTags ? i.tags : []);
+  b.label = controlLabel(i.control);
+  return b;
 }
 
 /** The box's tags as a row of badges under its text. @param {Box} b */
@@ -140,20 +143,36 @@ function drawBox(b) {
   const ink = loose || i?.state === 'rejected' ? c('muted') : c('ink');
   const weight = b.style === 'hazard' ? ' font-weight="700"' : '';
   const row = b.row ? ` data-bowtie-row="${esc(b.row)}"` : '';
+  // Its number, in the accent colour, ahead of its first line, as the platform tab lists it.
+  const num = b.num ? `<text data-bowtie-num="${b.num}" x="${b.x + PAD}" y="${b.y + PAD + LINE_HEIGHT - 4}" font-family="${FONT}" font-size="${FONT_SIZE}" font-weight="700" style="fill:${c('accent')}">${b.num}</text>` : '';
   return `<g data-bowtie-node="${b.kind}" data-record-id="${esc(b.id)}"${attrs}${row} role="img" aria-label="${esc(b.title)}">`
-    + `<rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" style="fill:${c('box')};${stroke}"${dash}/>`
+    + `<rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" style="fill:${c('box')};${stroke}"${dash}/>${num}`
     + `<text font-family="${FONT}" font-size="${FONT_SIZE}" style="fill:${ink}"${weight}>${tspans(b)}</text>${badges(b)}${mark}</g>`;
 }
 
 /** @param {Box} b */
 function tspans(b) {
-  return b.lines.map((l, n) => `<tspan x="${b.x + PAD}" y="${b.y + PAD + (n + 1) * LINE_HEIGHT - 4}">${esc(l)}</tspan>`).join('');
+  return b.lines.map((l, n) => {
+    // A control's number, starting its first line, in bold and the accent colour (muted when rejected).
+    const lead = n === 0 && b.label && l.startsWith(b.label) ? b.label : '';
+    const text = lead
+      ? `<tspan data-bowtie-label="${esc(lead)}" font-weight="700" style="fill:${b.item?.state === 'rejected' ? c('muted') : c('accent')}">${esc(lead)}</tspan>${esc(l.slice(lead.length))}`
+      : esc(l);
+    return `<tspan x="${b.x + PAD + numWidth(b)}" y="${b.y + PAD + (n + 1) * LINE_HEIGHT - 4}">${text}</tspan>`;
+  }).join('');
 }
 
 /** @param {Bowtie} w */
 const hazardBox = (w) => box('hazard', w.hazard.id, String(w.hazard.title), [hazardLabel(w.hazard), ...wrap(w.hazard.title)], 'hazard');
 /** @param {Rec} f */
 const factorBox = (f) => box('causal-factor', f.id, String(f.text), wrap(f.text), 'plain');
+/** The room a box's number takes before its text, none when it has none. @param {Box} b */
+const numWidth = (b) => (b.num ? Math.ceil(textWidth(String(b.num), true)) + 8 : 0);
+/** The boxes numbered 1, 2, 3… in their order, as on the hazard's platform tab, when numbers are shown. @param {Box[]} boxes @param {boolean} on */
+const numbered = (boxes, on) => {
+  if (on) boxes.forEach((b, n) => { b.num = n + 1; b.title = `${n + 1}. ${b.title}`; });
+  return boxes;
+};
 /** @param {Rec} q */
 const consequenceBox = (q) => box('consequence', q.id, String(q.text), wrap(q.text), 'plain');
 
@@ -182,33 +201,40 @@ function svgDocument(w, width, height, layout, body) {
 
 /** A lane's heading, centred on x. @param {number} x @param {number} y @param {string} text */
 const heading = (x, y, text) => `<text x="${x}" y="${y}" text-anchor="middle" font-family="${FONT}" font-size="${HEAD_SIZE}" font-weight="700" letter-spacing="0.6" style="fill:${c('muted')}">${esc(text)}</text>`;
+/**
+ * A lane's heading in a cell of its own, a shade darker than the lane and ruled off below it.
+ * @param {string} kind @param {number} x @param {number} y @param {number} width @param {string} text
+ */
+const laneHead = (kind, x, y, width, text) => `<rect data-bowtie-lane-head="${kind}" x="${x}" y="${y}" width="${width}" height="${LANE_HEAD}" style="fill:${c('ink')};stroke:${c('rule')}" fill-opacity="0.07" stroke-width="1"/>`
+  + heading(x + width / 2, y + 19, text);
 /** A heading's width, so the space under it is never narrower. @param {string} text */
 const headingWidth = (text) => Math.ceil(textWidth(text.toUpperCase(), true) * (HEAD_SIZE / FONT_SIZE)) + 8;
 /** The widest of the boxes' contents, between their padding. @param {Box[]} boxes @param {number} [least] */
-const contentWidth = (boxes, least = 7) => Math.ceil(Math.max(least, ...boxes.flatMap((b) => [...b.lines.map((l) => textWidth(l, b.style === 'hazard')), tagsWidth(b.tags)]))) + 2 * PAD;
+const contentWidth = (boxes, least = 7) => Math.ceil(Math.max(least, ...boxes.flatMap((b) => [...b.lines.map((l, n) => numWidth(b) + textWidth(l, b.style === 'hazard') + (n === 0 && b.label ? textWidth(b.label, false) / 10 : 0)), tagsWidth(b.tags)]))) + 2 * PAD;
 
 /**
  * The bow-tie as one self-contained SVG document: the same string is shown and exported.
- * Focus (the default) draws each control once, in columns, joined to what it stands against;
+ * Focus (this function's default; a bow-tie window opens in traditional) draws each control once, in columns, joined to what it stands against;
  * traditional draws a row for each causal factor and each consequence with its controls in
  * sequence along it, a control repeated on every row it stands on.
- * @param {Bowtie} w @param {{ tags?: boolean, gaps?: boolean, layout?: 'focus' | 'traditional' }} [opts] tags: the badges on control boxes; gaps: the
- *   mark on causal factors and consequences no control is linked to (each shown unless false) @returns {string}
+ * @param {Bowtie} w @param {{ tags?: boolean, gaps?: boolean, numbers?: boolean, layout?: 'focus' | 'traditional' }} [opts] tags: the badges on control boxes; gaps: the
+ *   mark on causal factors and consequences no control is linked to; numbers: causal factors and consequences numbered as on
+ *   the hazard's platform tab (each shown unless false) @returns {string}
  */
-export function bowtieSvg(w, { tags = true, gaps = true, layout = 'focus' } = {}) {
-  return layout === 'traditional' ? traditionalSvg(w, tags, gaps) : focusSvg(w, tags, gaps);
+export function bowtieSvg(w, { tags = true, gaps = true, numbers = true, layout = 'focus' } = {}) {
+  return layout === 'traditional' ? traditionalSvg(w, tags, gaps, numbers) : focusSvg(w, tags, gaps, numbers);
 }
 
-/** @param {Bowtie} w @param {boolean} tags @param {boolean} gaps */
-function focusSvg(w, tags, gaps) {
+/** @param {Bowtie} w @param {boolean} tags @param {boolean} gaps @param {boolean} numbers */
+function focusSvg(w, tags, gaps, numbers) {
   const hazard = hazardBox(w);
   /** @type {Box[][]} */
   const columns = [
-    w.causalFactors.map(factorBox),
+    numbered(w.causalFactors.map(factorBox), numbers),
     w.preventative.map((i) => controlBox(i, 'preventative-control', tags)),
     [hazard],
     w.mitigating.map((i) => controlBox(i, 'mitigating-control', tags)),
-    w.consequences.map(consequenceBox),
+    numbered(w.consequences.map(consequenceBox), numbers),
   ];
   // A causal factor or consequence no control on the diagram is linked to is marked.
   if (gaps) markGaps(w, [...columns[0], ...columns[4]]);
@@ -239,7 +265,7 @@ function focusSvg(w, tags, gaps) {
   // Vertical swimlanes, alternately shaded, the hazard's tinted; each headed with what it holds.
   const laneFill = (/** @type {number} */ n) => (n === 2 ? c('hazard-lane') : n % 2 ? c('lane') : c('paper'));
   const laneMarks = lanes.map((l, n) => `<g data-bowtie-lane="${COLUMNS[n]}"><rect x="${l.x}" y="${lanesTop}" width="${l.width}" height="${laneHeight}" style="fill:${laneFill(n)};stroke:${c('rule')}" stroke-width="1"/>`
-    + `${heading(l.x + l.width / 2, lanesTop + 19, HEADINGS[n])}</g>`);
+    + `${laneHead(COLUMNS[n], l.x, lanesTop, l.width, HEADINGS[n])}</g>`);
 
   // One line from each preventative control into the hazard, one from the hazard to each
   // mitigating control: the barriers on either side of it. What each stands against is shown by its
@@ -273,26 +299,26 @@ function focusSvg(w, tags, gaps) {
  * sequence from it to the hazard; on the right a row for each consequence, its mitigating
  * controls in sequence from the hazard to it. A control standing on several rows is drawn on each.
  * A control linked to none of them has a row of its own, so nothing on the diagram goes missing.
- * @param {Bowtie} w @param {boolean} tags @param {boolean} gaps
+ * @param {Bowtie} w @param {boolean} tags @param {boolean} gaps @param {boolean} numbers
  */
-function traditionalSvg(w, tags, gaps) {
+function traditionalSvg(w, tags, gaps, numbers) {
   const hazard = hazardBox(w);
   /** @typedef {{ key: string, end: Box, controls: Box[], y: number, height: number }} Row */
   /**
-   * @param {Rec[]} ends @param {Item[]} items @param {string} kind @param {(r: Rec) => Box} endBox @param {string} none
+   * @param {Box[]} ends @param {Item[]} items @param {string} kind @param {string} none
    * @returns {Row[]}
    */
-  const rowsOf = (ends, items, kind, endBox, none) => {
+  const rowsOf = (ends, items, kind, none) => {
     const ids = new Set(ends.map((e) => String(e.id)));
     /** @type {Row[]} */
-    const rows = ends.map((e) => ({ key: String(e.id), end: endBox(e), controls: items.filter((i) => (i.targets ?? []).includes(String(e.id))).map((i) => controlBox(i, kind, tags)), y: 0, height: 0 }));
+    const rows = ends.map((e) => ({ key: String(e.id), end: e, controls: items.filter((i) => (i.targets ?? []).includes(String(e.id))).map((i) => controlBox(i, kind, tags)), y: 0, height: 0 }));
     const loose = items.filter((i) => !(i.targets ?? []).some((t) => ids.has(t)));
     if (loose.length) rows.push({ key: `${kind}-unlinked`, end: box('unlinked', null, none, wrap(none), 'plain'), controls: loose.map((i) => controlBox(i, kind, tags)), y: 0, height: 0 });
     for (const r of rows) for (const b of [r.end, ...r.controls]) b.row = r.key;
     return rows;
   };
-  const left = rowsOf(w.causalFactors, w.preventative, 'preventative-control', factorBox, 'Linked to no causal factor');
-  const right = rowsOf(w.consequences, w.mitigating, 'mitigating-control', consequenceBox, 'Linked to no consequence');
+  const left = rowsOf(numbered(w.causalFactors.map(factorBox), numbers), w.preventative, 'preventative-control', 'Linked to no causal factor');
+  const right = rowsOf(numbered(w.consequences.map(consequenceBox), numbers), w.mitigating, 'mitigating-control', 'Linked to no consequence');
   if (gaps) markGaps(w, [...left, ...right].map((r) => r.end).filter((b) => b.kind !== 'unlinked'));
 
   // Every box in a column of the grid is as wide as the widest in it, so the rows line up.
@@ -316,12 +342,15 @@ function traditionalSvg(w, tags, gaps) {
   // Across: the causal factors, their controls, the gathering lines, the hazard, and the same mirrored.
   const leftX = MARGIN;
   const endXL = leftX + SIDE_PAD;
-  const controlsEndL = endXL + endWidthL + controlsL;
+  // A causal factor or consequence sits SIDE_PAD inside both edges of its lane, so the gap to the
+  // controls beside it is wider than theirs to each other by what that adds.
+  const laneEdge = 2 * SIDE_PAD - SEQ_GAP;
+  const controlsEndL = endXL + endWidthL + laneEdge + controlsL;
   const hazardLaneX = controlsEndL + FAN;
   const hazardLaneW = hazard.width + 2 * HAZARD_PAD;
   const rightX = hazardLaneX + hazardLaneW;
   const controlsStartR = rightX + FAN;
-  const endXR = controlsStartR + controlsR;
+  const endXR = controlsStartR + controlsR + laneEdge;
   const width = endXR + endWidthR + SIDE_PAD + MARGIN;
   const height = top + contentHeight + MARGIN / 2;
   hazard.x = hazardLaneX + HAZARD_PAD;
@@ -348,7 +377,8 @@ function traditionalSvg(w, tags, gaps) {
       const at = (/** @type {Box} */ b, /** @type {number} */ x, /** @type {number} */ bw) => { b.x = x; b.width = bw; b.y = mid - Math.floor(b.height / 2); };
       const x0 = isLeft ? leftX : rightX;
       const x1 = isLeft ? hazardLaneX : width - MARGIN;
-      bands.push(`<rect data-bowtie-lane="${esc(r.key)}" x="${x0}" y="${y}" width="${x1 - x0}" height="${r.height}" style="fill:${n % 2 ? c('paper') : c('lane')};stroke:${c('rule')}" stroke-width="1"/>`);
+      // Laid over the columns' lanes: every other row faintly shaded, each ruled off from the next.
+      bands.push(`<rect data-bowtie-band="${esc(r.key)}" x="${x0}" y="${y}" width="${x1 - x0}" height="${r.height}" style="fill:${n % 2 ? 'none' : c('ink')};stroke:${c('rule')}" fill-opacity="0.04" stroke-width="1"/>`);
       // The controls sit together nearest the hazard, in their order, the first nearest the causal
       // factor or consequence.
       const k = r.controls.length;
@@ -374,16 +404,18 @@ function traditionalSvg(w, tags, gaps) {
   };
   place(left, true);
   place(right, false);
-  const hazardLane = `<rect data-bowtie-lane="hazard" x="${hazardLaneX}" y="${lanesTop}" width="${hazardLaneW}" height="${LANE_HEAD + contentHeight}" style="fill:${c('hazard-lane')};stroke:${c('rule')}" stroke-width="1"/>`;
-  const headY = lanesTop + 19;
-  const strip = (/** @type {number} */ x0, /** @type {number} */ x1) => `<rect x="${x0}" y="${lanesTop}" width="${x1 - x0}" height="${LANE_HEAD}" style="fill:${c('paper')};stroke:${c('rule')}" stroke-width="1"/>`;
-  const headings = [
-    heading(endXL + endWidthL / 2, headY, HEADINGS[0]),
-    heading(endXL + endWidthL + (controlsL + SEQ_GAP) / 2, headY, HEADINGS[1]),
-    heading(hazardLaneX + hazardLaneW / 2, headY, HEADINGS[2]),
-    heading(controlsStartR + (controlsR - SEQ_GAP) / 2, headY, HEADINGS[3]),
-    heading(endXR + endWidthR / 2, headY, HEADINGS[4]),
-  ];
+  // Vertical lanes for the five columns, as in the focus view, so a control never reads as a
+  // causal factor or consequence.
+  const splitL = endXL + endWidthL + SIDE_PAD;
+  const splitR = endXR - SIDE_PAD;
+  const edges = [leftX, splitL, hazardLaneX, rightX, splitR, width - MARGIN];
+  const laneFill = (/** @type {number} */ n) => (n === 2 ? c('hazard-lane') : n % 2 ? c('lane') : c('paper'));
+  const lanes = COLUMNS.map((kind, n) => {
+    const x0 = edges[n];
+    const lw = edges[n + 1] - x0;
+    return `<g data-bowtie-lane="${kind}"><rect x="${x0}" y="${lanesTop}" width="${lw}" height="${LANE_HEAD + contentHeight}" style="fill:${laneFill(n)};stroke:${c('rule')}" stroke-width="1"/>`
+      + `${laneHead(kind, x0, lanesTop, lw, HEADINGS[n])}</g>`;
+  });
   const boxes = [...left, ...right].flatMap((r) => [r.end, ...r.controls]);
-  return svgDocument(w, width, height, 'traditional', strip(leftX, hazardLaneX) + strip(rightX, width - MARGIN) + bands.join('') + hazardLane + headings.join('') + lines.join('') + [...boxes, hazard].map(drawBox).join(''));
+  return svgDocument(w, width, height, 'traditional', lanes.join('') + bands.join('') + lines.join('') + [...boxes, hazard].map(drawBox).join(''));
 }

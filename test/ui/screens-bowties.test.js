@@ -64,7 +64,12 @@ test('one window fills the stage; two split it; each has its filters, diagram, a
   assert.match(single, /<section class="bt-stage"/);
   assert.match(single, /<header class="bt-bar" draggable="true" data-drag-pane="0">[\s\S]*?<h2>Alpha &amp; now<\/h2>/);
   assert.match(single, /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
-  assert.match(single, /<div class="bt-filters">\s*<fieldset><legend>Controls<\/legend>/, 'which statuses, with no existing or additional choice');
+  assert.match(single, /<div class="bt-view">[\s\S]*?<svg[\s\S]*?<\/div>\s*<aside class="bt-panel" aria-label="View setup">/, 'the tool tab to the right of the drawing');
+  assert.match(single, /<h3>View setup<\/h3>[\s\S]*?data-action="setBowtieLayout"[\s\S]*?<legend class="bt-panel-label">Control status<\/legend>[\s\S]*?<legend class="bt-panel-label">Control tier<\/legend>[\s\S]*?Show tags[\s\S]*?Show gaps[\s\S]*?Show numbers[\s\S]*?>Reset view<\/button>/);
+  assert.match(single, /data-change="setPaneTier" data-side="0" data-tier="PPE" checked> PPE/);
+  assert.match(single, /data-tier="none" checked> No tier/);
+  assert.match(single, /<section class="bt-panel-actions"[\s\S]*?saveBowtiePane[\s\S]*?Save as…[\s\S]*?Share…[\s\S]*?Export SVG[\s\S]*?<\/section>\s*<\/aside>/, 'save, share and export at the foot');
+  assert.match(single, /<div class="bt-view">[\s\S]*?data-bt-zoom="in"[\s\S]*?<aside class="bt-panel"/, 'zoom stays with the drawing');
   assert.doesNotMatch(single, /setPaneSet|Existing only|Additional only/);
   assert.match(single, /name="on" data-change="setPaneStatus" data-side="0" data-status="rejected">/, 'rejected is off');
   assert.match(single, /data-status="planned" checked>/);

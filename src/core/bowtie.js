@@ -3,10 +3,11 @@ import { get, live, isObject } from './data.js';
 import { hazardLabel, ids, UNNUMBERED } from './ids.js';
 import { controlsOnPlatform, causalFactorsOn, childrenOf } from './queries.js';
 import { CONTROL_STATUSES } from './ops/assessment.js';
+import { CONTROL_TIERS } from './ops/controls.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Rec} Rec */
-/** @typedef {{ statuses: string[] }} Filters */
+/** @typedef {{ statuses: string[], tiers: string[] }} Filters  tiers: the tiers whose controls are shown, 'none' for those with no tier */
 /**
  * A tag drawn as a badge under a control's name; its tone picks the badge's colours.
  * @typedef {{ text: string, tone: 'tier' | 'recommended' | 'planned' | 'implemented' | 'rejected' }} Tag
@@ -25,8 +26,15 @@ import { CONTROL_STATUSES } from './ops/assessment.js';
 
 export const STATUS_WORD = Object.freeze({ recommended: 'Recommended', planned: 'Planned', implemented: 'Implemented', rejected: 'Rejected' });
 
-/** Every control but the rejected ones. */
-export const DEFAULT_FILTERS = Object.freeze({ statuses: Object.freeze(['recommended', 'planned', 'implemented']) });
+/** Every tier a control can be filtered by: the hierarchy's, then 'none' for a control with no tier. */
+export const TIER_KEYS = Object.freeze([...CONTROL_TIERS, 'none']);
+/** What a tier key is called. @param {string} t */
+export const tierWord = (t) => (t === 'none' ? 'No tier' : t);
+
+/** Every control but the rejected ones, of every tier. */
+export const DEFAULT_FILTERS = Object.freeze({ statuses: Object.freeze(['recommended', 'planned', 'implemented']), tiers: TIER_KEYS });
+/** No filter at all: every control, whatever its status or tier. */
+export const NO_FILTERS = Object.freeze({ statuses: CONTROL_STATUSES, tiers: TIER_KEYS });
 
 /**
  * Filters as they are kept, whatever was read: a missing list becomes the default's, unknown
@@ -37,13 +45,18 @@ export function normalizeFilters(f) {
   const statuses = isObject(f) && Array.isArray(f.statuses)
     ? CONTROL_STATUSES.filter((s) => f.statuses.includes(s))
     : [...DEFAULT_FILTERS.statuses];
-  return { statuses };
+  // Filters kept before tiers could be chosen show every tier.
+  const tiers = isObject(f) && Array.isArray(f.tiers) ? TIER_KEYS.filter((t) => f.tiers.includes(t)) : [...TIER_KEYS];
+  return { statuses, tiers };
 }
 
 /** Filters an op is asked to store, refused when they are not filters. @param {unknown} f @returns {Filters} */
 export function needFilters(f) {
   if (!isObject(f) || !Array.isArray(f.statuses) || f.statuses.some((s) => !CONTROL_STATUSES.includes(s))) {
     throw new PivotError('bowtie.filters', `A bow-tie's statuses are among ${CONTROL_STATUSES.join(', ')}.`);
+  }
+  if (f.tiers !== undefined && (!Array.isArray(f.tiers) || f.tiers.some((t) => !TIER_KEYS.includes(t)))) {
+    throw new PivotError('bowtie.filters', `A bow-tie's tiers are among ${TIER_KEYS.map(tierWord).join(', ')}.`);
   }
   return normalizeFilters(f);
 }
@@ -52,13 +65,19 @@ export function needFilters(f) {
 export function sameFilters(a, b) {
   const x = normalizeFilters(a);
   const y = normalizeFilters(b);
-  return x.statuses.join('|') === y.statuses.join('|');
+  return x.statuses.join('|') === y.statuses.join('|') && x.tiers.join('|') === y.tiers.join('|');
 }
 
-/** The filters in words, for the caption: e.g. "Planned, Implemented", or "No controls". @param {unknown} f */
+/**
+ * The filters in words, for the caption: e.g. "Planned, Implemented", "No controls", or with
+ * some tiers left out "Implemented · Engineering, PPE".
+ * @param {unknown} f
+ */
 export function filterWords(f) {
-  const { statuses } = normalizeFilters(f);
-  return statuses.length ? statuses.map((s) => STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (s)]).join(', ') : 'No controls';
+  const { statuses, tiers } = normalizeFilters(f);
+  if (!statuses.length || !tiers.length) return 'No controls';
+  const words = statuses.map((s) => STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (s)]).join(', ');
+  return tiers.length === TIER_KEYS.length ? words : `${words} · ${tiers.map(tierWord).join(', ')}`;
 }
 
 /** "HAZ-001 Fire", or just the title until the hazard is numbered. @param {Rec} h */
@@ -84,7 +103,7 @@ export function bowtieOf(data, hazardId, platformId, filters) {
   if (!link || link.status !== 'live') return { ok: false, reason: 'not-on-platform', message: `${hazardName(hazard)} is no longer on ${platform.name}.` };
   /** @type {Item[]} */
   const items = controlsOnPlatform(data, hazardId, platformId)
-    .filter((x) => f.statuses.includes(x.state))
+    .filter((x) => f.statuses.includes(x.state) && f.tiers.includes(x.control.tier ? String(x.control.tier) : 'none'))
     .map((x) => ({
       control: x.control, kind: /** @type {string} */ (x.kind), state: x.state,
       // Its status, then its tier.

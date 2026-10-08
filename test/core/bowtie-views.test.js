@@ -26,7 +26,7 @@ test('a view is a record owned by whoever saved it, holding its choices and nobo
   const d = data();
   const v = d.records.bowtieView.v1;
   assert.deepEqual({ name: v.name, ownerId: v.ownerId, hazardId: v.hazardId, platformId: v.platformId, filters: v.filters, sharedWith: v.sharedWith, status: v.status },
-    { name: 'Fire on Alpha', ownerId: 'u1', hazardId: 'h1', platformId: 'p1', filters: { statuses: ['planned'] }, sharedWith: [], status: 'live' });
+    { name: 'Fire on Alpha', ownerId: 'u1', hazardId: 'h1', platformId: 'p1', filters: { statuses: ['planned'], tiers: ['Elimination', 'Substitution', 'Isolation', 'Engineering', 'Administrative', 'PPE', 'none'] }, sharedWith: [], status: 'live' });
   assert.equal(lastAction(d), 'Save bow-tie view');
   assert.equal(recordName('bowtieView', v), 'Fire on Alpha');
   assert.throws(() => createBowtieView(d, act, { name: ' ', hazardId: 'h1', platformId: 'p1', filters: F }), code('empty'));
@@ -38,7 +38,7 @@ test('only the owner saves, renames, shares or deletes a view', () => {
   let d = data();
   d = updateBowtieView(d, act, { id: 'v1', filters: { statuses: [] } });
   assert.equal(lastAction(d), 'Save bow-tie view');
-  assert.deepEqual(d.records.bowtieView.v1.filters, { statuses: [] });
+  assert.deepEqual(d.records.bowtieView.v1.filters.statuses, []);
   d = updateBowtieView(d, act, { id: 'v1', name: 'Alpha now' });
   assert.equal(lastAction(d), 'Rename bow-tie view');
   assert.equal(d.records.bowtieView.v1.name, 'Alpha now');

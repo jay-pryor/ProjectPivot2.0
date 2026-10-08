@@ -76,6 +76,6 @@ test('on the bow-tie, a causal factor or consequence no control is linked to is 
   const svg = bowtieSvg(/** @type {any} */ (bowtieOf(d, 'h1', 'p1', DEFAULT_FILTERS)));
   const node = (id) => svg.slice(svg.indexOf(`data-record-id="${id}"`), svg.indexOf('</g>', svg.indexOf(`data-record-id="${id}"`) + 1) + 40);
   assert.doesNotMatch(node('cf1'), /data-bowtie-unguarded/, 'Hot works has Sprinklers');
-  assert.match(node('cf8'), /aria-label="Lightning \(no control stands against it\)"[\s\S]*?stroke-dasharray="3 3"[\s\S]*?data-bowtie-unguarded="true"/);
+  assert.match(node('cf8'), /aria-label="2\. Lightning \(no control stands against it\)"[\s\S]*?stroke-dasharray="3 3"[\s\S]*?data-bowtie-unguarded="true"/);
   assert.match(node('cq1'), /data-bowtie-unguarded="true"/, 'Burns: nothing mitigates it yet');
 });

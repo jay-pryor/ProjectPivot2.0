@@ -5,7 +5,7 @@ import { assignNumbers, retireHazard, deleteHazard } from '../../src/core/ops/ha
 import { createControl, linkControl, addControlHere, updateControl } from '../../src/core/ops/controls.js';
 import { setControlStatus } from '../../src/core/ops/assessment.js';
 import { unlinkHazard } from '../../src/core/ops/platforms.js';
-import { DEFAULT_FILTERS, normalizeFilters, needFilters, sameFilters, filterWords, bowtieOf, hazardName } from '../../src/core/bowtie.js';
+import { DEFAULT_FILTERS, TIER_KEYS, normalizeFilters, needFilters, sameFilters, filterWords, bowtieOf, hazardName } from '../../src/core/bowtie.js';
 import { seed, act } from '../helpers.js';
 
 /**
@@ -28,11 +28,16 @@ function data() {
 const lines = (items) => items.map((i) => `${i.control.id} ${i.tags.map((t) => t.text).join(' · ')}`.trim());
 
 test('filters: defaults, lenient normalising, strict checking, comparison and words', () => {
-  assert.deepEqual(DEFAULT_FILTERS, { statuses: ['recommended', 'planned', 'implemented'] });
-  assert.deepEqual(normalizeFilters(null), { statuses: ['recommended', 'planned', 'implemented'] });
-  assert.deepEqual(normalizeFilters({ statuses: ['rejected', 'bogus', 'planned'] }), { statuses: ['planned', 'rejected'] });
-  assert.deepEqual(normalizeFilters({ set: 'existing', statuses: ['implemented'] }), { statuses: ['implemented'] }, 'a view saved with existing or additional drops it');
-  assert.deepEqual(needFilters({ statuses: [] }), { statuses: [] });
+  assert.deepEqual(DEFAULT_FILTERS, { statuses: ['recommended', 'planned', 'implemented'], tiers: TIER_KEYS });
+  assert.deepEqual(TIER_KEYS, ['Elimination', 'Substitution', 'Isolation', 'Engineering', 'Administrative', 'PPE', 'none']);
+  assert.deepEqual(normalizeFilters(null), { statuses: ['recommended', 'planned', 'implemented'], tiers: [...TIER_KEYS] });
+  assert.deepEqual(normalizeFilters({ statuses: ['rejected', 'bogus', 'planned'] }), { statuses: ['planned', 'rejected'], tiers: [...TIER_KEYS] });
+  assert.deepEqual(normalizeFilters({ set: 'existing', statuses: ['implemented'] }), { statuses: ['implemented'], tiers: [...TIER_KEYS] }, 'a view saved with existing or additional drops it');
+  assert.deepEqual(needFilters({ statuses: [] }), { statuses: [], tiers: [...TIER_KEYS] });
+  assert.deepEqual(normalizeFilters({ statuses: [], tiers: ['PPE', 'bogus', 'Engineering'] }).tiers, ['Engineering', 'PPE'], 'tiers in the hierarchy\'s order, unknown ones dropped');
+  assert.throws(() => needFilters({ statuses: [], tiers: ['bogus'] }), (e) => e instanceof PivotError && e.code === 'bowtie.filters');
+  assert.ok(!sameFilters({ statuses: [] }, { statuses: [], tiers: ['PPE'] }), 'tiers count');
+  assert.equal(filterWords({ statuses: ['implemented'], tiers: ['Engineering', 'none'] }), 'Implemented · Engineering, No tier');
   assert.throws(() => needFilters({ statuses: 'planned' }), (e) => e instanceof PivotError && e.code === 'bowtie.filters');
   assert.throws(() => needFilters({ statuses: ['bogus'] }), (e) => e instanceof PivotError && e.code === 'bowtie.filters');
   assert.ok(sameFilters({ statuses: ['planned', 'recommended'] }, { statuses: ['recommended', 'planned'] }));
@@ -63,6 +68,8 @@ test('each status filter selects exactly its controls; a control taken off a pla
   assert.deepEqual(pick({ statuses: ['implemented', 'recommended'] }), ['c4 Implemented · Engineering', 'c1 Implemented', 'c2 Recommended']);
   assert.deepEqual(pick({ statuses: [] }), []);
   assert.deepEqual(pick({ statuses: ['planned'] }), []);
+  assert.deepEqual(pick({ statuses: ['implemented', 'recommended'], tiers: ['Engineering'] }), ['c4 Implemented · Engineering'], 'only the tiers chosen');
+  assert.deepEqual(pick({ statuses: ['implemented', 'recommended'], tiers: ['none'] }), ['c1 Implemented', 'c2 Recommended'], 'no tier is a choice too');
   // Another platform has its own statuses: nothing is ruled on Bravo, and Fire doors was added on Alpha alone.
   assert.deepEqual(pick({ statuses: ['recommended'] }, 'p2'), ['c1 Recommended', 'c3 Recommended', 'c2 Recommended']);
 });

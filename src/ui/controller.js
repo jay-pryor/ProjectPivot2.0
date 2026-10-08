@@ -21,7 +21,7 @@ import * as platformGroups from '../core/ops/platform-groups.js';
 import * as facets from '../core/ops/facets.js';
 import * as safetyReports from '../core/ops/safety-reports.js';
 import * as bowtieViews from '../core/ops/bowtie-views.js';
-import { bowtieOf, canSee, normalizeFilters, DEFAULT_FILTERS, hazardName } from '../core/bowtie.js';
+import { bowtieOf, canSee, normalizeFilters, DEFAULT_FILTERS, NO_FILTERS, hazardName } from '../core/bowtie.js';
 import { bowtieSvg } from './bowtie-svg.js';
 import { emptyWorkspace, placePane, movePane, swapPanes, closePane, updatePane, replacedBy, paneDirty, workspaceKey, readWorkspace, writeWorkspace, paneView } from './workspace.js';
 import { setReportDesign } from '../core/ops/reports.js';
@@ -86,7 +86,7 @@ const BACKUP_CHECK_MS = 60_000;
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
-  'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'setBowtieLayout', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
+  'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'toggleBowtieNumbers', 'setBowtieLayout', 'setPaneTier', 'resetBowtieView', 'openBowtieHazard', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
   'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup',
 ]);
 
@@ -256,7 +256,7 @@ export function createController(env) {
     return p;
   }
 
-  /** Turn one of a window's switches (each off when present) on or off. @param {unknown} side @param {'hideTags' | 'hideGaps'} flag */
+  /** Turn one of a window's switches on or off: its flag is there or not. @param {unknown} side @param {'showTags' | 'showGaps' | 'hideNumbers'} flag */
   function togglePane(side, flag) {
     const p = paneAt(side);
     const i = paneIndex(side);
@@ -755,6 +755,12 @@ export function createController(env) {
     async openBowtie({ hazardId, platformId }) {
       place('last', { viewId: null, hazardId, platformId, filters: normalizeFilters(DEFAULT_FILTERS) });
     },
+    // From a bow-tie window to its hazard's platform page, open at Controls; Back returns to the bow-ties.
+    async openBowtieHazard({ side }) {
+      const p = paneAt(side);
+      await handlers.go({ view: 'hazard', id: p.hazardId, tab: `p:${p.platformId}` });
+      set({ sections: { ...(state.sections ?? {}), ssra: 'controls' } });
+    },
     async newBowtie({ pair }) {
       const [hazardId, platformId] = String(pair ?? '').split('|');
       const d = state.session?.working;
@@ -870,19 +876,23 @@ export function createController(env) {
     // Where a window's drawing is zoomed and moved to, once the wheel or a drag settles.
     // Show tags: the badges on a window's control boxes, on or off for that window.
     async toggleBowtieTags({ side }) {
-      togglePane(side, 'hideTags');
+      togglePane(side, 'showTags');
     },
     // Show gaps: the mark on causal factors and consequences no control stands against.
     async toggleBowtieGaps({ side }) {
-      togglePane(side, 'hideGaps');
+      togglePane(side, 'showGaps');
     },
-    // The window's view: focus (each control once, joined to what it stands against) or traditional
-    // (a row for each causal factor and consequence); a newly opened window is always focus.
+    // Show numbers: causal factors and consequences numbered as on the hazard's platform tab.
+    async toggleBowtieNumbers({ side }) {
+      togglePane(side, 'hideNumbers');
+    },
+    // The window's view: traditional (a row for each causal factor and consequence) or focus (each
+    // control once, joined to what it stands against); a newly opened window is always traditional.
     async setBowtieLayout({ side, layout }) {
       const i = paneIndex(side);
       const { layout: _was, ...rest } = paneAt(side);
       const panes = /** @type {[import('./workspace.js').Pane | null, import('./workspace.js').Pane | null]} */ ([...state.workspace.panes]);
-      panes[i] = layout === 'traditional' ? { ...rest, layout: 'traditional' } : rest;
+      panes[i] = layout === 'focus' ? { ...rest, layout: 'focus' } : rest;
       setWorkspace({ panes, lastUsed: i });
     },
     async viewBowtie({ side, zoom, x, y }) {
@@ -899,6 +909,21 @@ export function createController(env) {
       const rest = p.filters.statuses.filter((s) => s !== status);
       const statuses = on === 'true' ? [...rest, status] : rest;
       setWorkspace(updatePane(state.workspace, paneIndex(side), { filters: normalizeFilters({ ...p.filters, statuses }) }));
+    },
+    async setPaneTier({ side, tier, on }) {
+      const p = paneAt(side);
+      const rest = normalizeFilters(p.filters).tiers.filter((t) => t !== tier);
+      const tiers = on === 'true' ? [...rest, tier] : rest;
+      setWorkspace(updatePane(state.workspace, paneIndex(side), { filters: normalizeFilters({ ...p.filters, tiers }) }));
+    },
+    // Reset view: every filter off, so every control shows whatever its status or tier, and the
+    // drawing back to fitting its window.
+    async resetBowtieView({ side }) {
+      const i = paneIndex(side);
+      const { zoom: _z, pan: _p, ...rest } = paneAt(side);
+      const panes = /** @type {[import('./workspace.js').Pane | null, import('./workspace.js').Pane | null]} */ ([...state.workspace.panes]);
+      panes[i] = { ...rest, filters: normalizeFilters(NO_FILTERS) };
+      setWorkspace({ panes, lastUsed: i });
     },
     async confirmBowtieReplace() {
       const r = state.bowtieReplace;
@@ -946,7 +971,7 @@ export function createController(env) {
       if (!b.ok) throw new PivotError('bowtie.cannot-draw', /** @type {import('../core/bowtie.js').Cannot} */ (b).message);
       const base = `${hazardName(b.hazard)} ${b.platform.name} bow-tie`.replace(/[^A-Za-z0-9._-]+/g, '-');
       const file = await env.pickSaveFile(`${base}.svg`);
-      await store.writeExport(file, bowtieSvg(b, { tags: !p.hideTags, gaps: !p.hideGaps, layout: p.layout ?? 'focus' }));
+      await store.writeExport(file, bowtieSvg(b, { tags: Boolean(p.showTags), gaps: Boolean(p.showGaps), numbers: !p.hideNumbers, layout: p.layout ?? 'traditional' }));
       set({ message: { kind: 'info', text: `Saved ${file.name}.` } });
     },
   };

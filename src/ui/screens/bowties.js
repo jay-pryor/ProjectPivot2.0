@@ -4,7 +4,7 @@ import { profileName } from '../names.js';
 import { get, live } from '../../core/data.js';
 import { byNumber } from '../../core/queries.js';
 import { CONTROL_STATUSES } from '../../core/ops/assessment.js';
-import { STATUS_WORD, bowtieOf, canSee, myViews, sharedWithMe, hazardName } from '../../core/bowtie.js';
+import { STATUS_WORD, TIER_KEYS, tierWord, normalizeFilters, bowtieOf, canSee, myViews, sharedWithMe, hazardName } from '../../core/bowtie.js';
 import { bowtieSvg } from '../bowtie-svg.js';
 import { paneCount, paneDirty, ZOOM_MIN, ZOOM_MAX } from '../workspace.js';
 
@@ -62,7 +62,7 @@ function sideList(state, data) {
         ${pairs.map((x) => option(`${x.h?.id}|${x.p?.id}`, `${hazardName(/** @type {Rec} */ (x.h))} — ${x.p?.name}`))}</select>
       <div class="row inline"><button type="submit" class="primary">Open</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></div></form>`
       : html`<button type="button" class="primary bt-new-button" ${dataAttrs({ action: 'startEdit', kind: 'bowtieNew', id: '' })}>New diagram</button>`}
-    <input class="bt-search" data-filter-list placeholder="Search views…" aria-label="Search views">
+    <input class="bt-search" data-filter-list placeholder="Search bow-ties…" aria-label="Search bow-ties">
     <h2>My bow-ties</h2>${viewList(state, data, myViews(data, me), true, 'You have no saved bow-ties yet.')}
     <h2>Shared with me</h2>${viewList(state, data, sharedWithMe(data, me), false, 'Nothing is shared with you.')}`;
 }
@@ -112,28 +112,21 @@ function paneView(state, data, pane, side, split) {
   const dirty = paneDirty(pane, data);
   const s = String(side);
   const naming = state.editing?.kind === 'bowtieName' && state.editing.id === s;
-  const f = pane.filters;
   return html`<article class="bt-window" aria-label="${title}">
     <header class="bt-bar" draggable="true" ${dataAttrs({ 'drag-pane': s })}>
       <span class="bt-grip" aria-hidden="true">⠿</span><h2>${title}</h2>${view && dirty ? html`<span class="tag">Changed</span>` : ''}
       <span class="spacer"></span>
+      ${b.ok ? html`<button type="button" title="Open the controls for ${hazardText(data, pane.hazardId)} on ${platformText(data, pane.platformId)}" ${dataAttrs({ action: 'openBowtieHazard', side: s })}>Go to hazard platform page</button>` : ''}
       ${split ? button('Swap sides', { action: 'swapBowtiePanes' }) : ''}
       ${button('Close', { action: 'closeBowtiePane', side: s })}
     </header>
-    <div class="bt-filters">
-      <fieldset><legend>Controls</legend>
-        ${CONTROL_STATUSES.map((st) => html`<label><input type="checkbox" name="on" ${dataAttrs({ change: 'setPaneStatus', side: s, status: st })}${f.statuses.includes(st) ? raw(' checked') : ''}> ${STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (st)]}</label>`)}
-      </fieldset>
-      ${b.ok ? html`<span class="bt-tools">${layoutSwitch(s, pane.layout ?? 'focus')}${tagsToggle(s, !pane.hideTags)}${gapsToggle(s, !pane.hideGaps)}${zoomControls(pane)}</span>` : ''}
+    <div class="bt-body">
+      <div class="bt-view">
+        <div class="bt-diagram${b.ok ? ' pannable' : ''}" ${dataAttrs({ side: s })}>${b.ok ? diagram(bowtieSvg(b, { tags: Boolean(pane.showTags), gaps: Boolean(pane.showGaps), numbers: !pane.hideNumbers, layout: pane.layout ?? 'traditional' }), pane) : html`<p class="bt-cannot">${/** @type {import('../../core/bowtie.js').Cannot} */ (b).message}</p>`}</div>
+        ${b.ok ? zoomControls(pane) : ''}
+      </div>
+      ${toolTab(state, pane, s, b.ok, view, own, dirty, naming)}
     </div>
-    <div class="bt-diagram${b.ok ? ' pannable' : ''}" ${dataAttrs({ side: s })}>${b.ok ? diagram(bowtieSvg(b, { tags: !pane.hideTags, gaps: !pane.hideGaps, layout: pane.layout ?? 'focus' }), pane) : html`<p class="bt-cannot">${/** @type {import('../../core/bowtie.js').Cannot} */ (b).message}</p>`}</div>
-    <div class="actions bt-actions">
-      ${own ? button(dirty ? 'Save' : 'Saved', { action: 'saveBowtiePane', side: s }, !dirty) : button(view ? 'Save a copy' : 'Save', { action: 'saveBowtiePane', side: s })}
-      ${button('Save as…', { action: 'startEdit', kind: 'bowtieName', id: s })}
-      ${own && view ? button('Share…', { action: 'startEdit', kind: 'bowtieShare', id: view.id }) : ''}
-      ${b.ok ? button('Export SVG', { action: 'exportBowtie', side: s }) : ''}
-    </div>
-    ${naming ? html`<form data-action="saveBowtiePaneAs" ${dataAttrs({ side: s })} class="row inline fill bt-name"><input name="name" required class="grow" aria-label="View name" placeholder="Name this view…" value="${view ? `${view.name} (copy)` : ''}" autofocus><button type="submit" class="primary">Save</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></form>` : ''}
   </article>`;
 }
 
@@ -153,10 +146,45 @@ function diagram(svg, pane) {
 /** @param {Pane} pane */
 const viewTransform = (pane) => `translate(${pane.pan?.x ?? 0}px, ${pane.pan?.y ?? 0}px) scale(${pane.zoom ?? 1})`;
 
-/** Focus or traditional: which way the window draws its bow-tie. @param {string} side @param {string} layout */
+/**
+ * The window's tool tab, on its right: View setup (how it is drawn, which controls it shows,
+ * what is marked on them) at the top, and saving, sharing and exporting at the foot.
+ * @param {any} state @param {Pane} pane @param {string} s the window's side @param {boolean} ok whether it can be drawn
+ * @param {Rec | null} view @param {boolean} own @param {boolean} dirty @param {boolean} naming
+ */
+function toolTab(state, pane, s, ok, view, own, dirty, naming) {
+  const f = normalizeFilters(pane.filters);
+  const check = (/** @type {string} */ change, /** @type {Record<string, string>} */ attrs, /** @type {boolean} */ on, /** @type {string} */ label) =>
+    html`<label><input type="checkbox" name="on" ${dataAttrs({ change, side: s, ...attrs })}${on ? raw(' checked') : ''}> ${label}</label>`;
+  return html`<aside class="bt-panel" aria-label="View setup">
+    <section class="bt-panel-setup">
+      <h3>View setup</h3>
+      <div class="bt-panel-group"><span class="bt-panel-label">Layout</span>${layoutSwitch(s, pane.layout ?? 'traditional')}</div>
+      <fieldset class="bt-panel-group"><legend class="bt-panel-label">Control status</legend>
+        ${CONTROL_STATUSES.map((st) => check('setPaneStatus', { status: st }, f.statuses.includes(st), STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (st)]))}
+      </fieldset>
+      <fieldset class="bt-panel-group"><legend class="bt-panel-label">Control tier</legend>
+        ${TIER_KEYS.map((t) => check('setPaneTier', { tier: t }, f.tiers.includes(t), tierWord(t)))}
+      </fieldset>
+      <div class="bt-panel-group"><span class="bt-panel-label">Display</span>
+        ${tagsToggle(s, Boolean(pane.showTags))}${gapsToggle(s, Boolean(pane.showGaps))}${numbersToggle(s, !pane.hideNumbers)}
+      </div>
+      ${button('Reset view', { action: 'resetBowtieView', side: s })}
+    </section>
+    <section class="bt-panel-actions" aria-label="Save and export">
+      ${own ? button(dirty ? 'Save' : 'Saved', { action: 'saveBowtiePane', side: s }, !dirty) : button(view ? 'Save a copy' : 'Save', { action: 'saveBowtiePane', side: s })}
+      ${button('Save as…', { action: 'startEdit', kind: 'bowtieName', id: s })}
+      ${naming ? html`<form data-action="saveBowtiePaneAs" ${dataAttrs({ side: s })} class="bt-name"><input name="name" required aria-label="View name" placeholder="Name this view…" value="${view ? `${view.name} (copy)` : ''}" autofocus><div class="row inline"><button type="submit" class="primary">Save</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></div></form>` : ''}
+      ${own && view ? button('Share…', { action: 'startEdit', kind: 'bowtieShare', id: view.id }) : ''}
+      ${ok ? button('Export SVG', { action: 'exportBowtie', side: s }) : ''}
+    </section>
+  </aside>`;
+}
+
+/** Traditional or focus: which way the window draws its bow-tie. @param {string} side @param {string} layout */
 function layoutSwitch(side, layout) {
   const choice = (/** @type {string} */ value, /** @type {string} */ label, /** @type {string} */ tip) => html`<button type="button" aria-pressed="${layout === value ? 'true' : 'false'}" title="${tip}" ${dataAttrs({ action: 'setBowtieLayout', side, layout: value })}>${label}</button>`;
-  return html`<div class="bt-layout" role="group" aria-label="View">${choice('focus', 'Focus', 'Each control once, joined to what it stands against')}${choice('traditional', 'Traditional', 'A row for each causal factor and consequence, its controls in sequence')}</div>`;
+  return html`<div class="bt-layout" role="group" aria-label="View">${choice('traditional', 'Traditional', 'A row for each causal factor and consequence, its controls in sequence')}${choice('focus', 'Focus', 'Each control once, joined to what it stands against')}</div>`;
 }
 
 /** Show tags: a switch for the badges on the window's control boxes. @param {string} side @param {boolean} on */
@@ -167,6 +195,11 @@ function tagsToggle(side, on) {
 /** Show gaps: a switch for the mark on causal factors and consequences no control stands against. @param {string} side @param {boolean} on */
 function gapsToggle(side, on) {
   return html`<button type="button" class="bt-tags-toggle${on ? ' on' : ''}" role="switch" aria-checked="${on ? 'true' : 'false'}" title="${on ? 'Hide' : 'Show'} the mark on causal factors and consequences with no controls" ${dataAttrs({ action: 'toggleBowtieGaps', side })}><span class="bt-tags-track" aria-hidden="true"><span class="bt-tags-knob"></span></span>Show gaps</button>`;
+}
+
+/** Show numbers: a switch for causal factors' and consequences' numbers, as on the hazard's platform tab. @param {string} side @param {boolean} on */
+function numbersToggle(side, on) {
+  return html`<button type="button" class="bt-tags-toggle${on ? ' on' : ''}" role="switch" aria-checked="${on ? 'true' : 'false'}" title="${on ? 'Hide' : 'Show'} the numbers on causal factors and consequences" ${dataAttrs({ action: 'toggleBowtieNumbers', side })}><span class="bt-tags-track" aria-hidden="true"><span class="bt-tags-knob"></span></span>Show numbers</button>`;
 }
 
 /** Zoom out, back to fitted, and in; the middle shows how far it is zoomed. @param {Pane} pane */

@@ -1,7 +1,7 @@
 import { normalizeFilters, sameFilters, DEFAULT_FILTERS } from '../core/bowtie.js';
 
 /** @typedef {import('../core/bowtie.js').Filters} Filters */
-/** @typedef {{ viewId: string | null, hazardId: string, platformId: string, filters: Filters, zoom?: number, pan?: { x: number, y: number }, hideTags?: boolean, hideGaps?: boolean, layout?: 'traditional' }} Pane  zoom: times the fitted size, absent is 1; pan: pixels the drawing is moved by, absent is none; hideTags: the control boxes drawn without their badges; hideGaps: no mark on what no control stands against; layout: drawn as the traditional view, absent is the focus view */
+/** @typedef {{ viewId: string | null, hazardId: string, platformId: string, filters: Filters, zoom?: number, pan?: { x: number, y: number }, showTags?: boolean, showGaps?: boolean, hideNumbers?: boolean, layout?: 'focus' }} Pane  zoom: times the fitted size, absent is 1; pan: pixels the drawing is moved by, absent is none; showTags: the control boxes drawn with their badges (absent, without); showGaps: the mark on what no control stands against (absent, none); hideNumbers: causal factors and consequences drawn unnumbered; layout: drawn as the focus view, absent is the traditional view */
 
 /** How far a window zooms out and in, as multiples of the drawing fitted to its window. */
 export const ZOOM_MIN = 0.5;
@@ -110,7 +110,7 @@ function readPane(p) {
   const o = /** @type {Record<string, unknown>} */ (p);
   if (typeof o.hazardId !== 'string' || typeof o.platformId !== 'string') return null;
   const pan = /** @type {Record<string, unknown> | undefined} */ (o.pan && typeof o.pan === 'object' ? o.pan : undefined);
-  return { viewId: typeof o.viewId === 'string' ? o.viewId : null, hazardId: o.hazardId, platformId: o.platformId, filters: normalizeFilters(o.filters), ...paneView(o.zoom ?? 1, pan?.x, pan?.y), ...(o.hideTags === true ? { hideTags: true } : {}), ...(o.hideGaps === true ? { hideGaps: true } : {}), ...(o.layout === 'traditional' ? { layout: 'traditional' } : {}) };
+  return { viewId: typeof o.viewId === 'string' ? o.viewId : null, hazardId: o.hazardId, platformId: o.platformId, filters: normalizeFilters(o.filters), ...paneView(o.zoom ?? 1, pan?.x, pan?.y), ...(o.showTags === true ? { showTags: true } : {}), ...(o.showGaps === true ? { showGaps: true } : {}), ...(o.hideNumbers === true ? { hideNumbers: true } : {}), ...(o.layout === 'focus' ? { layout: 'focus' } : {}) };
 }
 
 /**

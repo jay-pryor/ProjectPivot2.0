@@ -5,7 +5,7 @@ import { emptyWorkspace, paneCount, replacedBy, placePane, movePane, swapPanes, 
 import { createBowtieView, deleteBowtieView } from '../../src/core/ops/bowtie-views.js';
 import { seed, act } from '../helpers.js';
 
-const F = { statuses: ['recommended', 'planned', 'implemented'] };
+const F = { statuses: ['recommended', 'planned', 'implemented'], tiers: ['Elimination', 'Substitution', 'Isolation', 'Engineering', 'Administrative', 'PPE', 'none'] };
 const A = { viewId: null, hazardId: 'h1', platformId: 'p1', filters: F };
 const B = { viewId: null, hazardId: 'h1', platformId: 'p2', filters: F };
 const C = { viewId: 'v1', hazardId: 'h1', platformId: 'p1', filters: F };
