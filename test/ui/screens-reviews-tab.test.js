@@ -40,9 +40,9 @@ test('a rule and what sets its period, in words', () => {
   assert.equal(driverWord(d, { kind: 'fixed' }), '');
 });
 
-test('Reviews is in the top bar, between Platforms and Bow-ties', () => {
+test('Reviews is in the top bar, between Workflows and Bow-ties; Workflows follows Platforms', () => {
   const out = shell({ ...state, session: { working: data(), base: data() } }, /** @type {any} */ ('')).toString();
-  assert.match(out, /data-view="platforms">Platforms<\/button>\s*<button[^>]*data-view="reviews">Reviews<\/button>\s*<button[^>]*data-view="bowties"/);
+  assert.match(out, /data-view="platforms">Platforms<\/button>\s*<button[^>]*data-view="workflows">Workflows<\/button>\s*<button[^>]*data-view="reviews">Reviews<\/button>\s*<button[^>]*data-view="bowties"/);
   assert.match(out, /class="nav on"[^>]*data-view="reviews"/);
 });
 

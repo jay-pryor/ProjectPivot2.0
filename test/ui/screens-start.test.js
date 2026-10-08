@@ -93,7 +93,7 @@ test('the tabs end with References, and Backups sits in the settings menu after 
   const data = emptyData();
   const base = { ...initialState(), screen: 'main', profiles: [], profileId: 'u1', session: { base: data, working: data, loadedStamp: null } };
   const out = shell({ ...base, view: { name: 'home' } }, html``).toString();
-  assert.deepEqual([...out.matchAll(/class="nav[^"]*" data-action="go" data-view="(\w+)"/g)].map((m) => m[1]), ['home', 'hazards', 'controls', 'platforms', 'reviews', 'bowties', 'info', 'reports', 'references']);
+  assert.deepEqual([...out.matchAll(/class="nav[^"]*" data-action="go" data-view="(\w+)"/g)].map((m) => m[1]), ['home', 'hazards', 'controls', 'platforms', 'workflows', 'reviews', 'bowties', 'info', 'reports', 'references']);
   assert.match(out, /class="profile"[^>]*>[^<]*<\/span>\s*<details class="settings-menu">\s*<summary aria-label="Settings"/);
   assert.match(out, /<button type="button" role="menuitem" class="" data-action="go" data-view="backups">Backups<\/button>/);
   const backups = shell({ ...base, view: { name: 'backups' } }, html``).toString();

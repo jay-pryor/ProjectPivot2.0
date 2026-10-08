@@ -36,6 +36,7 @@ import { mergeData } from '../core/merge.js';
 import { unlistedEntries, listPlatformGroups, openReview } from '../core/queries.js';
 import { DEFAULT_REVIEWS_PREFS, TIMELINE_LENGTHS, readReviewsPrefs, writeReviewsPrefs, reviewsPrefsKey } from './reviews-prefs.js';
 import { asUnit } from './screens/reviews.js';
+import { DEFAULT_WORKFLOWS_PREFS, RECENT_DAYS, readWorkflowsPrefs, writeWorkflowsPrefs, workflowsPrefsKey } from './workflows-prefs.js';
 
 /** Every edit is an op called with the working data, the act, and the action's own fields. */
 const EDITS = {
@@ -60,7 +61,7 @@ const EDITS = {
   setRule: reviews.setRule, acknowledgeReviewDate: reviews.acknowledgeReviewDate,
   createReviewPolicy: reviews.createReviewPolicy, updateReviewPolicy: reviews.updateReviewPolicy, renameReviewPolicy: reviews.renameReviewPolicy, deleteReviewPolicy: reviews.deleteReviewPolicy,
   startWorkflow: workflows.startWorkflow, setStep: workflows.setStep, setWorkflowOutcome: workflows.setWorkflowOutcome, setWorkflowNotes: workflows.setWorkflowNotes,
-  takeOverWorkflow: workflows.takeOverWorkflow, cancelWorkflow: workflows.cancelWorkflow, completeWorkflow: workflows.completeWorkflow,
+  setWorkflowPosition: workflows.setWorkflowPosition, takeOverWorkflow: workflows.takeOverWorkflow, cancelWorkflow: workflows.cancelWorkflow, completeWorkflow: workflows.completeWorkflow,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
   retireReference: references.retireReference, setReferenceArchived: references.setReferenceArchived, deleteReference: references.deleteReference,
@@ -97,7 +98,7 @@ const QUIET_DATES = new Set(['completeWorkflow', 'acknowledgeReviewDate']);
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
   'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'toggleBowtieNumbers', 'setBowtieLayout', 'setPaneTier', 'resetBowtieView', 'openBowtieHazard', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
-  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'showReviewPanel', 'closeReviewPanel', 'dismissReviewMoved', 'showPolicy', 'editRule', 'setRuleDraft', 'cancelRule',
+  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'setWorkflowsFilter', 'showReviewPanel', 'closeReviewPanel', 'dismissReviewMoved', 'showPolicy', 'editRule', 'setRuleDraft', 'cancelRule',
 ]);
 
 export function initialState() {
@@ -109,7 +110,7 @@ export function initialState() {
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
     workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null,
-    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, reviewPanel: null, reviewMoved: null, policyUnits: {}, ruleDraft: null,
+    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, workflowsPrefs: DEFAULT_WORKFLOWS_PREFS, reviewPanel: null, reviewMoved: null, policyUnits: {}, ruleDraft: null,
   };
 }
 
@@ -146,7 +147,14 @@ export function createController(env) {
     state = { ...state, ...patch, today: aestDate(env.clock.now()) };
     for (const f of listeners) f(state);
   }
-  const act = () => ({ by: /** @type {string} */ (state.profileId), at: env.clock.now() });
+  // Edits made on a workflow page the profile owns, while it is open, carry the workflow.
+  const act = () => {
+    const by = /** @type {string} */ (state.profileId);
+    const at = env.clock.now();
+    const v = state.view;
+    const wf = v?.name === 'workflow' && v.id ? state.session?.working.records.workflow?.[v.id] : null;
+    return wf && wf.status === 'live' && wf.state === 'open' && wf.ownerId === by ? { by, at, workflowId: wf.id } : { by, at };
+  };
   const nameOf = (/** @type {string | null} */ id) => profileName(state, id);
   /** A live review policy in the working data, or a message that it has gone. @param {string} id */
   const policyNamed = (id) => {
@@ -192,7 +200,8 @@ export function createController(env) {
     const notices = unseenOverrides(state.session.working, /** @type {string} */ (state.profileId));
     const workspace = readWorkspace(env.storage, workspaceKey(state.folderName, /** @type {string} */ (state.profileId)));
     const reviewsPrefs = readReviewsPrefs(env.storage, reviewsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)));
-    set({ notices, screen: notices.length ? 'notices' : 'main', view: { name: 'home' }, workspace, reviewsPrefs, bowtieReplace: null });
+    const workflowsPrefs = readWorkflowsPrefs(env.storage, workflowsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)));
+    set({ notices, screen: notices.length ? 'notices' : 'main', view: { name: 'home' }, workspace, reviewsPrefs, workflowsPrefs, bowtieReplace: null });
   }
 
 
@@ -756,6 +765,22 @@ export function createController(env) {
       if (shift !== undefined) p.start = shiftMonth(p.start ?? state.today.slice(0, 7), Number(shift));
       set({ reviewsPrefs: p });
       writeReviewsPrefs(env.storage, reviewsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
+    },
+    // A hazard (or '' for the summary) chosen in a workflow's rail: shown; and, for its owner, kept as the place to resume.
+    async showWorkflowHazard({ workflowId, hazardId }) {
+      const wf = state.session?.working.records.workflow[workflowId];
+      set({ view: { name: 'workflow', id: workflowId, hazardId: hazardId || 'summary' }, editing: null, message: null });
+      if (wf && wf.status === 'live' && wf.state === 'open' && wf.ownerId === state.profileId) {
+        await applyEdit('setWorkflowPosition', { workflowId, hazardId: hazardId || null });
+      }
+    },
+    // The Workflows tab's owner and Recently completed range: remembered in this browser.
+    async setWorkflowsFilter({ owner, days }) {
+      const p = { ...state.workflowsPrefs };
+      if (owner !== undefined) p.owner = owner || 'everyone';
+      if (days !== undefined && RECENT_DAYS.includes(Number(days))) p.days = Number(days);
+      set({ workflowsPrefs: p });
+      writeWorkflowsPrefs(env.storage, workflowsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
     },
     async setHomeOwner({ ownerId, show }) {
       set({ homeOwner: ownerId || 'me', ...(show === 'home' ? { view: { name: 'home' }, editing: null } : {}) });
