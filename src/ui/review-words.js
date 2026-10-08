@@ -1,5 +1,5 @@
 import { get } from '../core/data.js';
-import { hazardLabel } from '../core/ids.js';
+import { hazardLabel, UNNUMBERED } from '../core/ids.js';
 import { periodWord } from './names.js';
 
 /** @typedef {import('../core/data.js').Data} Data */
@@ -21,10 +21,11 @@ export function ruleWord(data, p) {
   return 'None';
 }
 
-/** What sets a policy's period; nothing for a fixed rule. @param {Data} data @param {any} driver from periodOf */
+/** What sets a policy's period; nothing for a fixed rule. A hazard not yet numbered goes by its title. @param {Data} data @param {any} driver from periodOf */
 export function driverWord(data, driver) {
   if (driver?.kind === 'longest') return 'Policy’s longest period';
   if (driver?.kind !== 'hazard') return '';
   const h = get(data, 'hazard', driver.hazardId);
-  return `${h ? hazardLabel(h) : 'A hazard'} residual ${driver.receptor}: ${driver.band}`;
+  const name = !h ? 'A hazard' : hazardLabel(h) === UNNUMBERED ? h.title : hazardLabel(h);
+  return `${name} residual ${driver.receptor}: ${driver.band}`;
 }

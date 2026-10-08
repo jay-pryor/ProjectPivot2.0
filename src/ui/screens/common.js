@@ -2,7 +2,8 @@ import { html, raw, esc } from '../html.js';
 import { dataTable } from './table.js';
 import { historyOf, commentsOn, hazardOfItem, bundlesOf } from '../../core/history.js';
 import { hasUnsaved } from '../../storage/mirror.js';
-import { profileName, when } from '../names.js';
+import { profileName, when, day } from '../names.js';
+import { driverWord } from '../review-words.js';
 import { themeOf, isFavourite } from '../prefs.js';
 import { ratingFor, LIKELIHOODS, CONSEQUENCES } from '../../core/matrix.js';
 import { openItems, attentionItems } from '../../core/queries.js';
@@ -203,7 +204,7 @@ export function shell(state, body) {
   </header>
   <div class="messages">${messages(state)}</div>
   <main class="view">${state.view?.name === 'bowties' ? '' : backButton(state)}${body}</main>
-  ${confirmDialog(state)}`;
+  ${confirmDialog(state)}${reviewMovedDialog(state)}`;
 }
 
 /** Back to the page open before this one, whichever it was, and the page's star. @param {any} state */
@@ -290,6 +291,29 @@ export function confirmDialog(state) {
     <h2>${c.title}</h2><p>${c.text}</p>
     <div class="actions"><button type="button" class="danger" ${dataAttrs({ action: 'confirmContinue' })}>Continue</button>
       <button type="button" ${dataAttrs({ action: 'confirmCancel' })} autofocus>Cancel</button></div></div></div>`;
+}
+
+/**
+ * Said at once when an edit moves review dates: each platform from when to when and why, and who
+ * should look (you, as its owner, or its owner by name). Urgent moves are marked, under a banner.
+ * @param {any} state
+ */
+export function reviewMovedDialog(state) {
+  const list = state.reviewMoved;
+  if (!list?.length) return '';
+  const data = state.session?.working;
+  const urgent = list.some((/** @type {any} */ m) => m.urgent);
+  const item = (/** @type {any} */ m) => {
+    const why = data ? driverWord(data, m.driver) : '';
+    const who = m.ownerId === state.profileId ? `You own ${m.name}: check its review date.` : `${m.name} is owned by ${profileName(state, m.ownerId)}: they have been asked to check its review date.`;
+    return html`<li${m.urgent ? raw(' class="urgent"') : ''}><strong>${m.name}</strong>: ${m.from ? day(m.from) : 'no date'} → ${m.to ? day(m.to) : 'no date'}${m.urgent ? html` <span class="chip chip-urgent">${m.to < state.today ? 'Now overdue' : 'Due within 30 days'}</span>` : ''}
+      ${why ? html`<br><span class="muted">${why}</span>` : ''}<br>${who}</li>`;
+  };
+  return html`<div class="picker-overlay confirm-overlay"><div class="picker confirm-box review-moved-box" role="alertdialog" aria-modal="true" aria-label="Review date moved">
+    <h2>Review date moved</h2>
+    ${urgent ? html`<p class="urgent-banner"><strong>Urgent.</strong> A review is now overdue or due within 30 days.</p>` : ''}
+    <ul class="plain">${list.map(item)}</ul>
+    <div class="actions"><button type="button" class="primary" ${dataAttrs({ action: 'dismissReviewMoved' })} autofocus>OK</button></div></div></div>`;
 }
 
 /**

@@ -7,7 +7,8 @@ import { PivotError } from '../core/errors.js';
 import { newId } from '../core/ids.js';
 import { deleteName, bundlePage } from './screens/common.js';
 import { emptyData, NUMBERED, need, normalizeData } from '../core/data.js';
-import { epochOf, aestDate, systemClock } from '../core/time.js';
+import { epochOf, aestDate, systemClock, addDays } from '../core/time.js';
+import { dueOf, periodOf, URGENT_DAYS } from '../core/schedule.js';
 import { entries, unseenOverrides, markNoticesSeen, addComment, createBundle, unbundle, renameBundle, deleteHistory, restoreHistory } from '../core/history.js';
 import * as hazards from '../core/ops/hazards.js';
 import * as controls from '../core/ops/controls.js';
@@ -87,6 +88,9 @@ const sameView = (a, b) => ['name', 'id', 'tab', 'reviewId', 'hazardId', 'platfo
 
 const BACKUP_CHECK_MS = 60_000;
 
+/** Edits whose point is to move a review date, so they never pop up to say it moved. */
+const QUIET_DATES = new Set(['completeReview', 'acknowledgeReviewDate']);
+
 /** A YYYY-MM month moved on (or back) by `n` months. @param {string} ym @param {number} n */
 const shiftMonth = (ym, n) => {
   const t = Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1 + n;
@@ -96,7 +100,7 @@ const shiftMonth = (ym, n) => {
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
   'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'setBowtieLayout', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
-  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'showReviewPanel', 'closeReviewPanel',
+  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'showReviewPanel', 'closeReviewPanel', 'dismissReviewMoved',
 ]);
 
 export function initialState() {
@@ -108,7 +112,7 @@ export function initialState() {
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
     workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null,
-    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, reviewPanel: null,
+    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, reviewPanel: null, reviewMoved: null,
   };
 }
 
@@ -676,6 +680,9 @@ export function createController(env) {
     async rejectControl({ hazardId, controlId, platformId, reason }) {
       await applyEdit('setControlStatus', { hazardId, controlId, platformId, status: 'rejected', reason });
     },
+    async dismissReviewMoved() {
+      set({ reviewMoved: null });
+    },
     async showReviewPanel({ id }) {
       set({ reviewPanel: id });
     },
@@ -1051,9 +1058,26 @@ export function createController(env) {
     const from = openedAt && acks.ackStart(current) === null ? acks.startAcks(current, { by: /** @type {string} */ (state.profileId), at: openedAt }) : current;
     const next = EDITS[/** @type {keyof typeof EDITS} */ (type)](from, act(), /** @type {any} */ (args));
     const working = next === from ? current : next;
-    set({ session: { ...state.session, working }, message: null, editing: null, ...(type === 'createBundle' ? { bundling: null } : {}) });
+    const moved = working === current || QUIET_DATES.has(type) ? [] : movedReviewDates(current, working);
+    set({ session: { ...state.session, working }, message: null, editing: null, ...(type === 'createBundle' ? { bundling: null } : {}), ...(moved.length ? { reviewMoved: moved } : {}) });
     if (shows) set({ view: { name: shows, id: args.id } });
     await afterChange();
+  }
+
+  /**
+   * The platforms whose review date an edit moved (a rating, a hazard on or off, a policy or a
+   * rule), said at once: from when to when, why, who owns it, and whether it is now urgent.
+   * @param {any} before @param {any} after
+   */
+  function movedReviewDates(before, after) {
+    const today = aestDate(env.clock.now());
+    return Object.values(after.records.platform).filter((p) => p.status === 'live' && before.records.platform[p.id])
+      .map((p) => ({ p, from: dueOf(before, p.id), to: dueOf(after, p.id) }))
+      .filter(({ from, to }) => from !== to)
+      .map(({ p, from, to }) => ({
+        platformId: p.id, name: p.name, ownerId: p.ownerId, from, to,
+        urgent: Boolean(to && to <= addDays(today, URGENT_DAYS)), driver: periodOf(after, p.id)?.driver ?? null,
+      }));
   }
 
   /** @param {{ type: string, [k: string]: any }} action */

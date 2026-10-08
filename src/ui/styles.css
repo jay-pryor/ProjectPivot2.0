@@ -452,6 +452,9 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 .chip-review { background: var(--p-error-bg); color: var(--p-danger); }
 .chip-urgent { background: var(--p-danger); color: var(--p-bg); }
 tr.urgent > td { background: var(--p-error-bg); }
+.urgent-banner { background: var(--p-error-bg); color: var(--p-danger); padding: 8px 12px; margin: 0 0 8px; }
+.review-moved-box ul.plain li { margin: 10px 0; line-height: 1.45; }
+.review-moved-box li.urgent > strong { color: var(--p-danger); }
 .chip-change { background: var(--p-info-bg); color: var(--p-info-fg); }
 .chip-control { background: #2e2342; color: #c9a8ff; }
 :root[data-theme="light"] .chip-control { background: #f1eafa; color: #6b3fa0; }
