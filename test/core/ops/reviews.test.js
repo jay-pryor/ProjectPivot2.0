@@ -8,8 +8,8 @@ import { linkHazard, retirePlatform, deletePlatform, createPlatform } from '../.
 import {
   setRule, acknowledgeReviewDate, startReview, markRow, setReviewOutcome, completeReview, abandonReview, MAX_REVIEW_MONTHS, REVIEW_DETAIL_ACTIONS,
 } from '../../../src/core/ops/reviews.js';
-import { act, later, seed, scheduleFixed } from '../../helpers.js';
-import { scheduleOf } from '../../../src/core/schedule.js';
+import { act, later, seed, scheduleFixed, seeDue } from '../../helpers.js';
+import { scheduleOf, seenOf } from '../../../src/core/schedule.js';
 
 const code = (c) => (e) => e instanceof PivotError && e.code === c;
 /** p1 Alpha (h1 on it) reviewed every 6 months, next due 2026-10-30 (counted from 2026-04-30). */
@@ -22,7 +22,7 @@ test('a fixed rule is 1 to 120 months, given in months or years, from a real sta
   assert.deepEqual(d.records.platform.p1.reviewRule, { kind: 'fixed', months: 6 });
   assert.equal(d.records.platform.p1.reviewStart, '2026-04-30');
   assert.equal(dueNow(d), '2026-10-30');
-  assert.equal(d.records.platform.p1.reviewDueSeen, '2026-10-30', 'whoever sets the rule has seen its date');
+  assert.equal(seenOf(d, 'p1'), '2026-10-30', 'whoever sets the rule has seen its date');
   assert.equal(entries(d).at(-1).action, 'Set review rule');
   const years = setRule(seed(), act, { platformId: 'p1', kind: 'fixed', months: '2', unit: 'years', start: '2026-01-01' });
   assert.deepEqual(years.records.platform.p1.reviewRule, { kind: 'fixed', months: 24 });
@@ -32,7 +32,7 @@ test('a fixed rule is 1 to 120 months, given in months or years, from a real sta
   }
   assert.throws(() => setRule(seed(), act, { platformId: 'p1', kind: 'fixed', months: 6, unit: 'months', start: '2026-02-30' }), code('review.start'));
   const cleared = setRule(d, later, { platformId: 'p1', kind: 'none' });
-  assert.deepEqual([cleared.records.platform.p1.reviewRule, cleared.records.platform.p1.reviewStart, cleared.records.platform.p1.reviewDueSeen], [null, null, null]);
+  assert.deepEqual([cleared.records.platform.p1.reviewRule, cleared.records.platform.p1.reviewStart, seenOf(cleared, 'p1')], [null, null, null]);
   assert.equal(entries(cleared).at(-1).action, 'Remove review rule');
 });
 
@@ -47,8 +47,7 @@ test('changing only the rule keeps the start; a cleared start is refused; a poli
 test('acknowledging a moved review date makes the calculated date the seen one', () => {
   let d = setRule(scheduled(), later, { platformId: 'p1', kind: 'fixed', months: 3, unit: 'months' });
   // A rule change is seen by whoever made it; move the date under the owner another way.
-  const p = d.records.platform.p1;
-  d = { ...d, records: { ...d.records, platform: { ...d.records.platform, p1: { ...p, reviewDueSeen: '2026-10-30' } } } };
+  d = seeDue(d, 'p1', '2026-10-30');
   assert.equal(scheduleOf(d, 'p1', '2026-09-28').moved, true);
   d = acknowledgeReviewDate(d, later, { platformId: 'p1' });
   assert.equal(scheduleOf(d, 'p1', '2026-09-28').moved, false);
@@ -91,7 +90,7 @@ test('completing moves the due date on from the old due date by one period, and 
   );
   assert.equal(dueNow(d), '2027-04-30');
   assert.equal(d.records.platform.p1.reviewStart, '2026-10-30', 'counted from the date it answered');
-  assert.equal(d.records.platform.p1.reviewDueSeen, '2027-04-30');
+  assert.equal(seenOf(d, 'p1'), '2027-04-30');
   const row = d.records.reviewRow[ids.reviewRow('r1', 'h1')];
   assert.deepEqual({ reviewed: row.reviewed, note: row.note }, { reviewed: false, note: '' }, 'an unticked hazard is recorded as not reviewed');
   assert.equal(entries(d).at(-1).action, 'Complete review');
@@ -168,6 +167,6 @@ test('completing moves the start to the date answered and steps past the complet
   assert.equal(p.reviewStart, '2026-10-30', 'the date that review answered');
   assert.equal(d.records.review.r1.dueBefore, '2026-10-30');
   assert.equal(d.records.review.r1.dueAfter, '2027-10-30', 'two periods on: the first after 1 Sep 2027');
-  assert.equal(p.reviewDueSeen, '2027-10-30');
+  assert.equal(seenOf(d, 'p1'), '2027-10-30');
   assert.equal(scheduleOf(d, 'p1', '2027-09-01').due, '2027-10-30');
 });

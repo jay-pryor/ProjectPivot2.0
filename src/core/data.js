@@ -5,7 +5,7 @@ export const SCHEMA_VERSION = 4;
 export const KINDS = Object.freeze([
   'hazard', 'causalFactor', 'consequence', 'control', 'platform',
   'hazardControl', 'hazardPlatform', 'ruling', 'rating', 'report',
-  'review', 'reviewRow', 'reviewPolicy',
+  'review', 'reviewRow', 'reviewPolicy', 'reviewSeen',
   'reference', 'referenceLink',
   'assessment', 'sfarp',
   'phase', 'hazardPhase', 'safetyReport', 'implementer',

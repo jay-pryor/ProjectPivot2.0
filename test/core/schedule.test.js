@@ -5,7 +5,7 @@ import { reviewState } from '../../src/core/time.js';
 import { periodOf, dueOf, scheduleOf } from '../../src/core/schedule.js';
 import { setRating } from '../../src/core/ops/assessment.js';
 import { unlinkHazard } from '../../src/core/ops/platforms.js';
-import { act, seed } from '../helpers.js';
+import { act, seed, seeDue } from '../helpers.js';
 
 const BLANK = { High: null, Serious: null, Medium: null, Low: null, Eliminated: null, 'Not Credible': null, Uncategorised: null };
 /** Serious → 6 months, Medium → 36 months for personnel; environment Serious → 12; capability not considered; longest 60. */
@@ -21,7 +21,7 @@ const policy = (over = {}) => created(act, 'pol1', {
 /** p1 on the policy, counted from 2026-01-01. h1 is the only hazard on p1. */
 function onPolicy(over) {
   let d = put(seed(), 'reviewPolicy', policy(over));
-  d = put(d, 'platform', changed(d.records.platform.p1, act, { reviewRule: { kind: 'policy', policyId: 'pol1' }, reviewStart: '2026-01-01', reviewDueSeen: null }));
+  d = put(d, 'platform', changed(d.records.platform.p1, act, { reviewRule: { kind: 'policy', policyId: 'pol1' }, reviewStart: '2026-01-01' }));
   return d;
 }
 const residual = (d, receptor, consequence, likelihood) => setRating(d, act, { hazardId: 'h1', platformId: 'p1', stage: 'residual', receptor, consequence, likelihood });
@@ -87,7 +87,7 @@ test('the next due date steps past the latest completed review, in whole periods
 
 test('scheduleOf says whether the due date moved from what the owner saw, and whether that is urgent', () => {
   let d = residual(onPolicy(), 'personnel', 3, 'C'); // 36 months from 2026-01-01 → 2029-01-01
-  d = put(d, 'platform', changed(d.records.platform.p1, act, { reviewDueSeen: '2029-01-01' }));
+  d = seeDue(d, 'p1', '2029-01-01');
   const s = scheduleOf(d, 'p1', '2026-10-08');
   assert.deepEqual([s.due, s.state, s.moved, s.urgent], ['2029-01-01', 'ok', false, false]);
   d = residual(d, 'personnel', 2, 'C'); // 6 months → 2026-07-01, already passed

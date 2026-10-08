@@ -28,11 +28,13 @@ export function convertBody(body) {
       ...rest,
       reviewRule: scheduled ? { kind: 'fixed', months: reviewMonths } : null,
       reviewStart: scheduled ? addMonths(reviewDue, -reviewMonths) : null,
-      reviewDueSeen: null,
     }];
   }));
-  const out = { ...body, records: { ...body.records, platform, reviewPolicy: body.records.reviewPolicy ?? {} } };
-  for (const p of Object.values(platform)) p.reviewDueSeen = dueOf(out, p.id);
+  const out = { ...body, records: { ...body.records, platform, reviewPolicy: body.records.reviewPolicy ?? {}, reviewSeen: {} } };
+  for (const p of Object.values(platform)) {
+    const due = dueOf(out, p.id);
+    if (due) out.records.reviewSeen[p.id] = { id: p.id, status: 'live', createdBy: p.updatedBy, createdAt: p.updatedAt, updatedBy: p.updatedBy, updatedAt: p.updatedAt, platformId: p.id, due };
+  }
   return out;
 }
 

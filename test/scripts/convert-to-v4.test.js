@@ -21,12 +21,14 @@ test('a schema 3 schedule becomes a fixed rule counted from one period before it
 });
 
 test('the date marked seen is the one the app will calculate, so nothing reads as moved', () => {
-  assert.equal(convertBody(v3()).records.platform.p1.reviewDueSeen, '2026-10-30', '30 Apr + 6 months: a month-end due loses a day');
+  const out = convertBody(v3());
+  assert.deepEqual([out.records.reviewSeen.p1.platformId, out.records.reviewSeen.p1.due, out.records.reviewSeen.p1.status], ['p1', '2026-10-30', 'live'], '30 Apr + 6 months: a month-end due loses a day');
+  assert.ok(!('reviewDueSeen' in out.records.platform.p1));
 });
 
 test('a platform with no schedule gets an empty rule, and the data gains the policy kind', () => {
   const out = convertBody(v3());
   const p2 = out.records.platform.p2;
-  assert.deepEqual([p2.reviewRule, p2.reviewStart, p2.reviewDueSeen], [null, null, null]);
+  assert.deepEqual([p2.reviewRule, p2.reviewStart, out.records.reviewSeen.p2], [null, null, undefined]);
   assert.deepEqual(out.records.reviewPolicy, {});
 });

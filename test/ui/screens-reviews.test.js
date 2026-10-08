@@ -11,7 +11,7 @@ import { startReview, markRow, completeReview, setReviewOutcome } from '../../sr
 import { entries } from '../../src/core/history.js';
 import { reportsView } from '../../src/ui/screens/reports.js';
 import { createReport } from '../../src/core/ops/reports.js';
-import { seed, act, scheduleFixed } from '../helpers.js';
+import { seed, act, scheduleFixed, seeDue } from '../helpers.js';
 
 export const state = { ...initialState(), screen: 'main', today: '2026-09-28', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }, { id: 'u2', name: 'Grace', createdAt: '' }], profileId: 'u1' };
 /** p1 overdue (due 2026-09-01), p2 due soon (2026-10-10). */
@@ -62,7 +62,7 @@ test('a policy rule names its policy and says what sets its period', () => {
 
 test('a moved review date shows on the page with Acknowledge', () => {
   let d = data();
-  d = { ...d, records: { ...d.records, platform: { ...d.records.platform, p1: { ...d.records.platform.p1, reviewDueSeen: '2027-01-01' } } } };
+  d = seeDue(d, 'p1', '2027-01-01');
   const out = platformReviewView(onTab(), d, 'p1').toString();
   assert.match(out, /<span class="tag review-moved urgent">Moved from 1 Jan 2027<\/span>[\s\S]*?data-action="acknowledgeReviewDate" data-platform-id="p1"/);
 });

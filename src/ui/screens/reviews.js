@@ -2,7 +2,7 @@ import { RECEPTORS, RECEPTOR_LETTER, stageKey } from '../../core/receptors.js';
 import { html, raw } from '../html.js';
 import { dataAttrs, confirmButton, reviewTag, go, bandTag, idTag, option } from './common.js';
 import { dataTable } from './table.js';
-import { get, live } from '../../core/data.js';
+import { get, live, all } from '../../core/data.js';
 import { openReview, lastReviewed, reviewRows, completedReviews, bandOf, listPlatformGroups, groupsOf } from '../../core/queries.js';
 import { scheduleOf, POLICY_BANDS } from '../../core/schedule.js';
 import { MAX_REVIEW_MONTHS } from '../../core/ops/reviews.js';
@@ -261,7 +261,7 @@ function policiesView(state, data) {
     return html`<p>A review policy sets how often a platform is reviewed from its residual risk: a period for each band, for each receptor you care about. The shortest period any hazard gives is used.</p>${make}`;
   }
   const pol = policies.find((x) => x.id === state.view?.id) ?? policies[0];
-  const users = live(data, 'platform').filter((p) => p.reviewRule?.kind === 'policy' && p.reviewRule.policyId === pol.id);
+  const users = all(data, 'platform').filter((p) => p.status !== 'deleted' && p.reviewRule?.kind === 'policy' && p.reviewRule.policyId === pol.id);
   const title = (/** @type {string} */ r) => RECEPTOR_TITLE[/** @type {'personnel'} */ (r)];
   const list = html`<ul class="policy-list">${policies.map((x) => html`<li><button type="button" class="link${x.id === pol.id ? ' on' : ''}" ${dataAttrs({ action: 'go', view: 'reviews', tab: 'policies', id: x.id })}>${x.name}</button></li>`)}</ul>`;
   const grid = html`<table class="policy-grid"><thead><tr><th scope="col">Residual band</th>${RECEPTORS.map((r) => html`<th scope="col">

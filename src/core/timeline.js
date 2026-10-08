@@ -1,6 +1,7 @@
 import { addMonths, aestDate } from './time.js';
 import { periodOf, dueOf } from './schedule.js';
 import { completedReviews, openReview } from './queries.js';
+import { get } from './data.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {{ kind: 'due' | 'overdue' | 'dueWas' | 'projected' | 'done' | 'late' | 'open', date: string }} Mark */
@@ -54,11 +55,15 @@ export function timelineMarks(data, platformId, today, months) {
     if (due.slice(0, 7) !== today.slice(0, 7)) add(due.slice(0, 7), { kind: 'dueWas', date: due });
     add(today.slice(0, 7), { kind: 'overdue', date: due });
   } else add(due.slice(0, 7), { kind: 'due', date: due });
+  // Later reviews fall on the schedule's own dates, counted from its start (so a month-end day is
+  // kept); after an overdue one, from the first after today, as completing it today would give.
+  const start = /** @type {string} */ (get(data, 'platform', platformId)?.reviewStart);
+  const after = due < today ? today : due;
   const last = months.at(-1) ?? '';
   for (let k = 1; ; k += 1) {
-    const next = addMonths(due, k * period.months);
+    const next = addMonths(start, k * period.months);
     if (next.slice(0, 7) > last) break;
-    add(next.slice(0, 7), { kind: 'projected', date: next });
+    if (next > after) add(next.slice(0, 7), { kind: 'projected', date: next });
   }
   return out;
 }

@@ -38,6 +38,16 @@ export function asExisting(d, ...controlIds) {
 }
 
 /**
+ * The data with a platform's owner having last seen `due` as its review date, as if the date has
+ * since moved under them.
+ * @param {import('../src/core/data.js').Data} d @param {string} platformId @param {string | null} due
+ */
+export function seeDue(d, platformId, due) {
+  const r = d.records.reviewSeen?.[platformId] ?? { id: platformId, status: 'live', createdBy: act.by, createdAt: act.at, updatedBy: act.by, updatedAt: act.at, platformId };
+  return { ...d, records: { ...d.records, reviewSeen: { ...d.records.reviewSeen, [platformId]: { ...r, due } } } };
+}
+
+/**
  * A fixed review rule whose next due date is `due`: the start is one period before it, and the
  * owner has seen that date. For tests that only care when a review falls due. A due date no
  * start can reach (31 Oct is never 6 months after a day in April) is refused, so a fixture never

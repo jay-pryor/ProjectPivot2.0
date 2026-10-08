@@ -72,13 +72,30 @@ export function periodOf(data, platformId) {
   return out;
 }
 
+/** The due date a platform's owner last saw, or null. @param {Data} data @param {string} platformId */
+export function seenOf(data, platformId) {
+  const r = get(data, 'reviewSeen', platformId);
+  return r && r.status === 'live' ? r.due ?? null : null;
+}
+
+/** @type {WeakMap<Data, Map<string, string | null>>} */
+const dueCache = new WeakMap();
+
 /**
  * The next review due: the start plus one period, stepped on in whole periods (counted from the
  * start, so short months do not wear the day down) to the first date after the latest completed
- * review when that came on or after it. Null with no period or no start.
+ * review when that came on or after it. Null with no period or no start. Worked out once per data.
  * @param {Data} data @param {string} platformId @returns {string | null}
  */
 export function dueOf(data, platformId) {
+  let m = dueCache.get(data);
+  if (!m) dueCache.set(data, (m = new Map()));
+  if (!m.has(platformId)) m.set(platformId, workOutDue(data, platformId));
+  return /** @type {string | null} */ (m.get(platformId));
+}
+
+/** @param {Data} data @param {string} platformId @returns {string | null} */
+function workOutDue(data, platformId) {
   const p = get(data, 'platform', platformId);
   const period = periodOf(data, platformId);
   if (!p || !period || !p.reviewStart) return null;
@@ -103,7 +120,7 @@ export function scheduleOf(data, platformId, today) {
   const p = get(data, 'platform', platformId);
   const period = periodOf(data, platformId);
   const due = dueOf(data, platformId);
-  const seen = p?.reviewDueSeen ?? null;
+  const seen = seenOf(data, platformId);
   const moved = Boolean(due && seen && due !== seen);
   return {
     rule: p?.reviewRule ?? null, policy: p ? policyOf(data, p) : null,

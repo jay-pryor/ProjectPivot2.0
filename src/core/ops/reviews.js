@@ -4,7 +4,7 @@ import { get, all, live, created, changed, need, needText, put } from '../data.j
 import { commit } from '../apply.js';
 import { isDate } from '../time.js';
 import { openReview } from '../queries.js';
-import { dueOf, POLICY_BANDS } from '../schedule.js';
+import { dueOf, seenOf, POLICY_BANDS } from '../schedule.js';
 import { RECEPTORS } from '../receptors.js';
 
 /** @typedef {import('../data.js').Data} Data */
@@ -36,13 +36,15 @@ export function toMonths(n, unit, code) {
 }
 
 /**
- * The platform with `fields` changed, and its due date then marked seen: whoever sets the rule
- * has seen the date it gives.
- * @param {Data} data @param {Act} act @param {Rec} p @param {Record<string, any>} fields
+ * The record of the due date a platform's owner last saw. It is a record of its own, not a
+ * platform field, so acknowledging a date never overwrites someone else's edit to the platform
+ * when their saves are merged.
+ * @param {Data} data @param {Act} act @param {string} platformId @param {string | null} due
+ * @returns {{ kind: string, rec: Rec }}
  */
-function withSeenDue(data, act, p, fields) {
-  const rec = changed(p, act, fields);
-  return changed(rec, act, { reviewDueSeen: dueOf(put(data, 'platform', rec), p.id) });
+function seenRec(data, act, platformId, due) {
+  const r = get(data, 'reviewSeen', platformId);
+  return { kind: 'reviewSeen', rec: r ? changed(r, act, { status: 'live', due }) : created(act, platformId, { platformId, due }) };
 }
 
 /**
@@ -55,7 +57,7 @@ function withSeenDue(data, act, p, fields) {
 export function setRule(data, act, { platformId, kind, months, unit, policyId, start }) {
   const p = need(data, 'platform', platformId);
   if (kind === 'none') {
-    return commit(data, act, 'Remove review rule', [{ kind: 'platform', rec: changed(p, act, { reviewRule: null, reviewStart: null, reviewDueSeen: null }) }]);
+    return commit(data, act, 'Remove review rule', [{ kind: 'platform', rec: changed(p, act, { reviewRule: null, reviewStart: null }) }, seenRec(data, act, p.id, null)]);
   }
   /** @type {any} */
   let rule;
@@ -64,7 +66,9 @@ export function setRule(data, act, { platformId, kind, months, unit, policyId, s
   else throw new PivotError('review.rule', 'Choose no schedule, a fixed period or a review policy.');
   const from = start === undefined || start === null ? p.reviewStart : start;
   if (!isDate(from)) throw new PivotError('review.start', 'Give the date reviews are counted from as a real date.');
-  return commit(data, act, 'Set review rule', [{ kind: 'platform', rec: withSeenDue(data, act, p, { reviewRule: rule, reviewStart: from }) }]);
+  // Whoever sets the rule has seen the date it gives.
+  const rec = changed(p, act, { reviewRule: rule, reviewStart: from });
+  return commit(data, act, 'Set review rule', [{ kind: 'platform', rec }, seenRec(data, act, p.id, dueOf(put(data, 'platform', rec), p.id))]);
 }
 
 /**
@@ -73,10 +77,10 @@ export function setRule(data, act, { platformId, kind, months, unit, policyId, s
  * @param {Data} data @param {Act} act @param {{ platformId: string }} args
  */
 export function acknowledgeReviewDate(data, act, { platformId }) {
-  const p = need(data, 'platform', platformId);
+  need(data, 'platform', platformId);
   const due = dueOf(data, platformId);
-  if (!due || due === p.reviewDueSeen) return data;
-  return commit(data, act, 'Acknowledge review date', [{ kind: 'platform', rec: changed(p, act, { reviewDueSeen: due }) }]);
+  if (!due || due === seenOf(data, platformId)) return data;
+  return commit(data, act, 'Acknowledge review date', [seenRec(data, act, platformId, due)]);
 }
 
 /** A policy name, trimmed, not blank, and not another policy's (ignoring case). @param {Data} data @param {unknown} name @param {string | null} self */
@@ -132,10 +136,14 @@ export function renameReviewPolicy(data, act, { id, name }) {
   return commit(data, act, 'Rename review policy', [{ kind: 'reviewPolicy', rec: changed(pol, act, { name: needPolicyName(data, name, id) }) }]);
 }
 
-/** A policy any live platform uses cannot be deleted; the refusal names them. @param {Data} data @param {Act} act @param {{ id: string }} args */
+/**
+ * A policy any platform not deleted uses cannot be deleted, retired ones too (restoring one would
+ * leave its rule without a policy); the refusal names them.
+ * @param {Data} data @param {Act} act @param {{ id: string }} args
+ */
 export function deleteReviewPolicy(data, act, { id }) {
   const pol = need(data, 'reviewPolicy', id);
-  const users = live(data, 'platform').filter((p) => p.reviewRule?.kind === 'policy' && p.reviewRule.policyId === id);
+  const users = all(data, 'platform').filter((p) => p.status !== 'deleted' && p.reviewRule?.kind === 'policy' && p.reviewRule.policyId === id);
   if (users.length) throw new PivotError('reviewPolicy.inUse', `${pol.name} is used by ${users.map((p) => p.name).join(', ')}. Give them another rule first.`);
   return commit(data, act, 'Delete review policy', [{ kind: 'reviewPolicy', rec: changed(pol, act, { status: 'deleted' }) }]);
 }
@@ -215,7 +223,7 @@ export function completeReview(data, act, { reviewId }) {
   const counted = changed(p, act, { reviewStart: dueBefore });
   const dueAfter = /** @type {string} */ (dueOf(put(put(data, 'review', done), 'platform', counted), p.id));
   recs.push({ kind: 'review', rec: changed(done, act, { dueAfter }) });
-  recs.push({ kind: 'platform', rec: changed(counted, act, { reviewDueSeen: dueAfter }) });
+  recs.push({ kind: 'platform', rec: counted }, seenRec(data, act, p.id, dueAfter));
   return commit(data, act, 'Complete review', recs);
 }
 

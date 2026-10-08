@@ -18,7 +18,7 @@ test('reviews and their rows are record kinds', () => {
 
 test('a new platform has no review schedule', () => {
   const d = createPlatform(emptyData(), act, { id: 'p9', name: 'Spare', ownerId: 'u1' });
-  assert.deepEqual([d.records.platform.p9.reviewRule, d.records.platform.p9.reviewStart, d.records.platform.p9.reviewDueSeen], [null, null, null]);
+  assert.deepEqual([d.records.platform.p9.reviewRule, d.records.platform.p9.reviewStart, d.records.reviewSeen.p9], [null, null, undefined]);
 });
 
 test('an older data file gains the review kinds on load, and still validates', () => {

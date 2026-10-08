@@ -8,7 +8,7 @@ import { renderApp } from '../../src/ui/render.js';
 import { initialState } from '../../src/ui/controller.js';
 import { startAcks, waitingChanges } from '../../src/core/acks.js';
 import { updateHazard, assignNumbers } from '../../src/core/ops/hazards.js';
-import { seed, scheduleFixed } from '../helpers.js';
+import { seed, scheduleFixed, seeDue } from '../helpers.js';
 
 test('changeDetail: an edit as before → after, escaped; other changes as a word', () => {
   const out = changeDetail({ change: 'edited', fields: [{ field: 'title', before: '<b>x</b>', after: 'Fire' }] }).toString();
@@ -259,7 +259,7 @@ test('a platform tile on Home says when its review is due soon, and in how many 
 });
 
 /** The owner last saw a different date than the calculated one. */
-const moveSeen = (d, id, seen) => ({ ...d, records: { ...d.records, platform: { ...d.records.platform, [id]: { ...d.records.platform[id], reviewDueSeen: seen } } } });
+const moveSeen = seeDue;
 
 test('a moved review date far off is a plain row with Acknowledge', () => {
   const d = moveSeen(scheduleFixed(assignNumbers(seed()), 'p1', 36, '2029-01-01'), 'p1', '2029-06-01');

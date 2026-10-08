@@ -6,7 +6,7 @@ import { startAcks } from '../../src/core/acks.js';
 import { updateHazard } from '../../src/core/ops/hazards.js';
 import { confirmControl, setRating } from '../../src/core/ops/assessment.js';
 import { startReview } from '../../src/core/ops/reviews.js';
-import { seed, scheduleFixed } from '../helpers.js';
+import { seed, scheduleFixed, seeDue } from '../helpers.js';
 
 const at = (hhmm, by) => ({ by, at: `2026-09-28T${hhmm}:00+10:00` });
 
@@ -60,7 +60,7 @@ test('a moved review date is an item for the owner: urgent first when passed or 
 test('a moved review date far off comes after the changes to acknowledge', () => {
   let d = startAcks(scheduleFixed(seed(), 'p1', 6, '2026-12-01'), at('10:30', 'u1'));
   d = updateHazard(d, at('10:50', 'u3'), { id: 'h1', title: 'Big fire' });
-  d = put(d, 'platform', changed(d.records.platform.p1, at('10:00', 'u1'), { reviewDueSeen: '2027-06-01' }));
+  d = seeDue(d, 'p1', '2027-06-01');
   const items = openItems(d, '2026-10-08', 'u1');
   assert.deepEqual(items.dateMoved.map((m) => m.urgent), [false]);
   const types = attentionItems(items).map((i) => i.type);

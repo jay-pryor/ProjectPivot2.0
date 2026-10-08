@@ -5,7 +5,7 @@ import { html } from '../../src/ui/html.js';
 import { initialState } from '../../src/ui/controller.js';
 import { emptyData } from '../../src/core/data.js';
 import { createPlatform } from '../../src/core/ops/platforms.js';
-import { seed, act, scheduleFixed } from '../helpers.js';
+import { seed, act, scheduleFixed, seeDue } from '../helpers.js';
 
 const top = (data, profileId) => shell({ ...initialState(), screen: 'main', today: '2026-09-30', profileId,
   profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }, { id: 'u3', name: 'Cy', createdAt: '' }],
@@ -26,6 +26,6 @@ test('Home shows an orange dot, not a count, when the active profile\'s platform
 
 test('a review date moved since its owner last saw it lights the dot', () => {
   const quiet = scheduleFixed(createPlatform(emptyData(), act, { id: 'p1', name: 'Alpha', ownerId: 'u1' }), 'p1', 12, '2027-06-01');
-  const moved = { ...quiet, records: { ...quiet.records, platform: { p1: { ...quiet.records.platform.p1, reviewDueSeen: '2028-06-01' } } } };
+  const moved = seeDue(quiet, 'p1', '2028-06-01');
   assert.match(home(top(moved, 'u1')), /nav-dot/);
 });
