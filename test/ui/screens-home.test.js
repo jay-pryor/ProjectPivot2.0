@@ -44,7 +44,7 @@ test('Open items: an owner chooser, a summary, and the four full tables', () => 
   assert.match(out, /<select name="ownerId" data-change="setHomeOwner"[\s\S]*?<option value="me" selected>Me<\/option>[\s\S]*?<option value="u2">Grace<\/option>[\s\S]*?<option value="everyone">Everyone<\/option>/);
   assert.match(out, /<b>1<\/b><span>change to acknowledge<\/span>[\s\S]*?<b>1<\/b><span>review overdue<\/span>[\s\S]*?<b>2<\/b><span>controls awaiting status decision<\/span>[\s\S]*?<b>1<\/b><span>hazard unrated<\/span>/);
   assert.match(out, /class="tile warn on" data-action="showSection" data-page="openItems" data-section="acks" data-keep="true"/, 'a tile opens its section, its count highlighted');
-  assert.deepEqual([...openItemsView(state, d).toString().matchAll(/class="rail-item[^"]*"[^>]*data-section="(\w+)"/g)].map((m) => m[1]), ['acks', 'reviews', 'awaiting', 'implement', 'unrated']);
+  assert.deepEqual([...openItemsView(state, d).toString().matchAll(/class="rail-item[^"]*"[^>]*data-section="(\w+)"/g)].map((m) => m[1]), ['acks', 'reviews', 'moved', 'awaiting', 'implement', 'unrated']);
   for (const t of ['homeAcks', 'homeReviews', 'homeAwaiting', 'homeUnrated']) assert.match(out, new RegExp(`data-table="${t}"`));
   const [e] = waitingChanges(d, 'p1');
   assert.match(out, new RegExp(`data-action="acknowledge" data-entry-id="${e.id}" data-platform-id="p1"`));
@@ -256,4 +256,31 @@ test('a platform tile on Home says when its review is due soon, and in how many 
   const d = scheduleFixed(data(), 'p2', 6, '2026-10-10', at('10:45', 'u2'));
   const out = homeView({ ...state, homeOwner: 'everyone' }, d).toString();
   assert.match(out, /<strong>Bravo<\/strong> <span class="tag review-due-soon">Review due soon – 12 days<\/span>/);
+});
+
+/** The owner last saw a different date than the calculated one. */
+const moveSeen = (d, id, seen) => ({ ...d, records: { ...d.records, platform: { ...d.records.platform, [id]: { ...d.records.platform[id], reviewDueSeen: seen } } } });
+
+test('a moved review date far off is a plain row with Acknowledge', () => {
+  const d = moveSeen(scheduleFixed(assignNumbers(seed()), 'p1', 36, '2029-01-01'), 'p1', '2029-06-01');
+  const out = homeView(state, d).toString();
+  assert.match(out, /<strong>Review date moved: 1 Jun 2029 → 1 Jan 2029<\/strong>/);
+  assert.match(out, /data-action="acknowledgeReviewDate" data-platform-id="p1">Acknowledge/);
+  assert.doesNotMatch(out, /<tr class="urgent"/, 'two years off is not urgent');
+});
+
+test('Open items has a count and a table of moved review dates, red while any is urgent', () => {
+  const d = moveSeen(scheduleFixed(assignNumbers(seed()), 'p1', 6, '2026-10-01'), 'p1', '2027-01-01');
+  const out = openItemsView({ ...state, sections: { openItems: 'moved' } }, d).toString();
+  assert.match(out, /<button type="button" class="tile bad on" data-action="showSection" data-page="openItems" data-section="moved" data-keep="true"><b>1<\/b><span>review date moved<\/span>/);
+  assert.match(out, /<h2>Review dates moved<\/h2>[\s\S]*data-table="homeMoved"[\s\S]*1 Jan 2027[\s\S]*1 Oct 2026[\s\S]*<span class="chip chip-urgent">Urgent<\/span>[\s\S]*data-action="acknowledgeReviewDate" data-platform-id="p1"/);
+  const calm = openItemsView(state, moveSeen(scheduleFixed(assignNumbers(seed()), 'p1', 36, '2029-01-01'), 'p1', '2029-06-01')).toString();
+  assert.match(calm, /class="tile warn"[^>]*data-section="moved"/, 'orange when none is urgent');
+});
+
+test('a moved review date within 30 days, or passed, comes first, red and marked urgent', () => {
+  const d = moveSeen(scheduleFixed(assignNumbers(seed()), 'p1', 6, '2026-10-01'), 'p1', '2027-01-01');
+  const out = homeView(state, d).toString();
+  const rows = /<tbody>([\s\S]*?)<\/tbody>/.exec(out)?.[1] ?? '';
+  assert.match(rows, /^<tr class="urgent" data-key="dateMoved\|p1\|2026-10-01"[^>]*data-view="platformReview" data-id="p1">[\s\S]*?<span class="chip chip-urgent">Urgent<\/span>[\s\S]*?Review date moved: 1 Jan 2027 → 1 Oct 2026/, 'urgent first');
 });

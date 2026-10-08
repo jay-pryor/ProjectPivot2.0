@@ -1,5 +1,5 @@
 import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
-import { html } from '../html.js';
+import { html, raw } from '../html.js';
 import { dataAttrs, option, go, reviewTag, changeDetail, idTag, favouriteLabel, unfavouriteStar, groupTags } from './common.js';
 import { favouritesOf, favouriteLayout, comingUpDays, COMING_UP_WINDOWS } from '../prefs.js';
 import { platformImage, statusSelect, rejectionCell } from './platforms.js';
@@ -10,6 +10,7 @@ import { BANDS } from '../../core/matrix.js';
 import { get } from '../../core/data.js';
 import { hazardLabel, controlLabel, UNNUMBERED } from '../../core/ids.js';
 import { profileName, when, day, recordName, KIND_LABEL } from '../names.js';
+import { driverWord } from '../review-words.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -97,6 +98,7 @@ export function openItemsView(state, data) {
       ${totalTile(attentionItems(items).length)}
       ${tile('acks', items.acks.length, 'change to acknowledge', 'changes to acknowledge')}
       ${tile('reviews', overdue, 'review overdue', 'reviews overdue', 'bad')}
+      ${tile('moved', items.dateMoved.length, 'review date moved', 'review dates moved', items.dateMoved.some((m) => m.urgent) ? 'bad' : 'warn')}
       ${tile('awaiting', items.awaiting.length, 'control awaiting status decision', 'controls awaiting status decision', 'warn')}
       ${tile('implement', items.toImplement.length, 'control to implement', 'controls to implement')}
       ${tile('unrated', items.unrated.length, 'hazard unrated', 'hazards unrated')}
@@ -112,6 +114,17 @@ export function openItemsView(state, data) {
           { key: 'due', label: 'Next due', width: 300, minWidth: 160, value: (r) => r.due, render: (r) => (r.due ? html`${day(r.due)}${reviewTag(r.state)}` : html`<span class="tag">No schedule</span>`) },
           { key: 'last', label: 'Last reviewed', width: 240, minWidth: 140, value: (r) => r.lastReviewed, render: (r) => (r.lastReviewed ? day(r.lastReviewed) : html`<span class="muted">Never</span>`) },
           { key: 'open', label: 'Review', width: 220, minWidth: 160, value: (r) => (r.open ? 'In progress' : ''), render: reviewButton },
+        ],
+      })}</section>` },
+      { key: 'moved', label: 'Review dates moved', icon: 'calendar', badge: items.dateMoved.length, body: () => html`<h2>Review dates moved</h2><section class="block">${dataTable(state, {
+        id: 'homeMoved', rowKey: (r) => r.platform.id, rows: items.dateMoved, empty: 'No review dates have moved.', rowAttrs: actRow('dateMoved'),
+        columns: [
+          { key: 'platform', label: 'Platform', width: 300, minWidth: 160, value: (r) => r.platform.name, render: (r) => go(r.platform.name, 'platformReview', { id: r.platform.id }) },
+          { key: 'seen', label: 'Was due', width: 200, minWidth: 130, value: (r) => r.seen, render: (r) => day(r.seen) },
+          { key: 'due', label: 'Now due', width: 260, minWidth: 150, value: (r) => r.due, render: (r) => html`${day(r.due)}${r.urgent ? html` <span class="chip chip-urgent">Urgent</span>` : ''}` },
+          { key: 'why', label: 'Set by', width: 380, minWidth: 180, value: (r) => driverWord(data, r.driver) },
+          { key: 'ack', label: '', width: 170, minWidth: 140, sortable: false,
+            render: (r) => html`<button type="button" ${dataAttrs({ action: 'acknowledgeReviewDate', 'platform-id': r.platform.id })}>Acknowledge</button>` },
         ],
       })}</section>` },
       { key: 'awaiting', label: 'Controls awaiting status decision', icon: 'controls', badge: items.awaiting.length, body: () => html`<h2>Controls awaiting a status decision</h2>
@@ -155,7 +168,7 @@ export function openItemsView(state, data) {
  */
 export const ATTENTION_LIMIT = 40;
 
-const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], implement: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'], schedule: ['Review', 'chip-review'] };
+const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], implement: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'], schedule: ['Review', 'chip-review'], dateMoved: ['Review', 'chip-review'] };
 
 /**
  * Every open item across the team, whoever owns the platform: a quiet line above the counts.
@@ -185,11 +198,18 @@ export function changeSummary(action, subject) {
 /** A row of Needs attention: what kind, what it is, who made the change (for a change), the platform and what to do. @param {any} state @param {Data} data @param {any} item from attentionItems */
 function attentionRow(state, data, item) {
   const [word, cls] = CHIP[/** @type {keyof typeof CHIP} */ (item.type)];
-  /** @param {any} what @param {any} action @param {any} [by] */
-  const key = [item.type, item.platform.id, item.entry?.id, item.hazard?.id, item.control?.id].filter(Boolean).join('|');
+  // A moved date is keyed by the date it moved to, so moving again makes it a new row.
+  const key = [item.type, item.platform.id, item.entry?.id, item.hazard?.id, item.control?.id, item.type === 'dateMoved' ? item.due : ''].filter(Boolean).join('|');
   const place = whereToAct(item.type, item);
-  const row = (what, action, by = '') => html`<tr ${dataAttrs({ key, dblclick: 'go', ...place })}><td class="kind"><span class="chip ${cls}">${word}</span></td><td class="what">${what}</td>
+  const urgent = item.type === 'dateMoved' && item.urgent;
+  /** @param {any} what @param {any} action @param {any} [by] */
+  const row = (what, action, by = '') => html`<tr ${urgent ? raw('class="urgent" ') : ''}${dataAttrs({ key, dblclick: 'go', ...place })}><td class="kind">${urgent ? html`<span class="chip chip-urgent">Urgent</span> ` : ''}<span class="chip ${cls}">${word}</span></td><td class="what">${what}</td>
     <td class="by">${by}</td><td class="where">${platformLink(item.platform)}</td><td class="act">${action}</td></tr>`;
+  if (item.type === 'dateMoved') {
+    const why = driverWord(data, item.driver);
+    return row(html`<strong>Review date moved: ${day(item.seen)} → ${day(item.due)}</strong>${why ? html` <span class="muted">· ${why}</span>` : ''}`,
+      html`<button type="button" class="small" ${dataAttrs({ action: 'acknowledgeReviewDate', 'platform-id': item.platform.id })}>Acknowledge</button>`);
+  }
   if (item.type === 'review') return row(`Review overdue since ${day(item.due)}`, go('Review →', place.view, place));
   if (item.type === 'change') {
     const first = item.entry.items[0];

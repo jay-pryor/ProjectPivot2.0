@@ -450,6 +450,8 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
   .attn .c-act { width: 112px; }
 }
 .chip-review { background: var(--p-error-bg); color: var(--p-danger); }
+.chip-urgent { background: var(--p-danger); color: var(--p-bg); }
+tr.urgent > td { background: var(--p-error-bg); }
 .chip-change { background: var(--p-info-bg); color: var(--p-info-fg); }
 .chip-control { background: #2e2342; color: #c9a8ff; }
 :root[data-theme="light"] .chip-control { background: #f1eafa; color: #6b3fa0; }
