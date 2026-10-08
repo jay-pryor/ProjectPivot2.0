@@ -91,6 +91,7 @@ export function mergeData(base, mine, theirs, act) {
     nextControlNumber: counters.nextControlNumber,
     nextPlatformNumber: counters.nextPlatformNumber,
     nextReferenceNumber: counters.nextReferenceNumber,
+    nextWorkflowNumber: counters.nextWorkflowNumber,
     history: { ...theirs.history, ...mine.history },
     reportDesign: reportDesign ?? {},
   };

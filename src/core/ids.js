@@ -29,6 +29,11 @@ export function referenceLabel(reference) {
   return numberLabel('REF', reference);
 }
 
+/** A workflow reads WF-001. @param {{ number?: number | null, [field: string]: any }} workflow */
+export function workflowLabel(workflow) {
+  return numberLabel('WF', workflow);
+}
+
 /** @param {string} prefix @param {{ number?: number | null }} rec */
 function numberLabel(prefix, rec) {
   return rec.number == null ? UNNUMBERED : `${prefix}-${String(rec.number).padStart(3, '0')}`;
@@ -65,6 +70,10 @@ export const ids = Object.freeze({
   implementer: (c, p) => `im:${c}:${p}`,
   /** @param {string} r a review id @param {string} h */
   reviewRow: (r, h) => `rr:${r}:${h}`,
+  /** @param {string} w a workflow id @param {string} h a hazard id @param {string} c a check */
+  workflowStep: (w, h, c) => `ws:${w}:${h}:${c}`,
+  /** The review a Platform Review workflow completes: one id, so two saves completing it write one record. @param {string} w */
+  workflowReview: (w) => `wr:${w}`,
   /** @param {string} r a reference id @param {string} k the target's kind @param {string} t the target's id */
   referenceLink: (r, k, t) => `rl:${r}:${k}:${t}`,
 });

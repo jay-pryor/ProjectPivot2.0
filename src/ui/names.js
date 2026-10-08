@@ -8,7 +8,7 @@ export const KIND_LABEL = Object.freeze({
   hazard: 'Hazard', causalFactor: 'Causal factor', consequence: 'Consequence', control: 'Control',
   platform: 'Platform', hazardControl: 'Control link', hazardPlatform: 'Platform link',
   ruling: 'Control decision', rating: 'Rating', report: 'Report', reportDesign: 'Report design',
-  review: 'Review', reviewRow: 'Review row', reviewPolicy: 'Review policy', reviewSeen: 'Review date seen', reference: 'Reference', referenceLink: 'Reference link',
+  review: 'Review', reviewRow: 'Review row', reviewPolicy: 'Review policy', reviewSeen: 'Review date seen', workflow: 'Workflow', workflowStep: 'Workflow check', reference: 'Reference', referenceLink: 'Reference link',
   assessment: 'Risk assessment', sfarp: 'SFARP considerations',
   phase: 'Lifecycle phase', hazardPhase: 'Lifecycle phase link', safetyReport: 'Safety report', implementer: 'Control owner', implementationStatus: 'Implementation status', controlOn: 'Control on platform',
   bowtieView: 'Bow-tie view', systemElement: 'System/Element', affectedGroup: 'Affected group', failureMode: 'Element failure mode',

@@ -62,6 +62,7 @@ export function recordChange(data, act, action, pairs, platforms) {
   return append(data, {
     id: newId(), type: 'change', at: act.at, by: act.by, action, items,
     platforms: [...new Set(platforms)].sort(),
+    ...(act.workflowId ? { workflow: act.workflowId } : {}),
   });
 }
 
@@ -276,7 +277,7 @@ export function historyDeletions(data) {
 }
 
 /** Every history entry deleted and not restored. @param {Data} data */
-function deletedEntries(data) {
+export function deletedEntries(data) {
   const restored = new Set(Object.values(data.history).filter((e) => e.type === 'historyRestore').map((e) => e.entryId));
   return new Set(Object.values(data.history).filter((e) => e.type === 'historyDeletion' && !restored.has(e.id)).flatMap((e) => e.entryIds));
 }

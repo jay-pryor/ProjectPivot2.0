@@ -28,9 +28,9 @@ const residual = (d, receptor, consequence, likelihood) => setRating(d, act, { h
 /** p1 with a fixed rule. */
 const fixed = (months, start) => put(seed(), 'platform', changed(seed().records.platform.p1, act, { reviewRule: { kind: 'fixed', months }, reviewStart: start }));
 
-test('review policies are a record kind, under schema 4', () => {
+test('review policies are a record kind, under schema 5', () => {
   assert.ok(KINDS.includes('reviewPolicy'));
-  assert.equal(SCHEMA_VERSION, 4);
+  assert.equal(SCHEMA_VERSION, 5);
 });
 
 test('reviewState reads a due date against today', () => {
