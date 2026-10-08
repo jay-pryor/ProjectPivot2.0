@@ -1,4 +1,5 @@
 import { html } from './html.js';
+import { workflowsView } from './screens/workflows.js';
 import * as start from './screens/start.js';
 import { shell } from './screens/common.js';
 import { hazardsView, hazardView } from './screens/hazards.js';
@@ -29,7 +30,7 @@ function mainView(state) {
     case 'platform': return platformView(state, data, v.id);
     case 'reviews': return reviewsView(state, data);
     case 'platformReview': return platformReviewView(state, data, v.id);
-    case 'workflows': return html`<div class="head"><h1>Workflows</h1></div>`;
+    case 'workflows': return workflowsView(state, data);
     case 'workflow': return html`<p class="muted">Workflow page coming in Task 8.</p>`;
     case 'references': return referencesView(state, data);
     case 'reference': return referenceView(state, data, v.id);
