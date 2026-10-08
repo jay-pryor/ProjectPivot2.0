@@ -286,7 +286,7 @@ test('Final review C1: ticking a review someone else has completed: the save goe
   await a.dispatch({ type: 'createHazard', id: 'h1', title: 'Fire' });
   await a.dispatch({ type: 'createPlatform', id: 'p1', name: 'Alpha', ownerId: ada });
   await a.dispatch({ type: 'linkHazard', hazardId: 'h1', platformId: 'p1' });
-  await a.dispatch({ type: 'setSchedule', platformId: 'p1', months: '6', due: '2026-12-31' });
+  await a.dispatch({ type: 'setRule', platformId: 'p1', kind: 'fixed', months: '6', unit: 'months', start: '2026-06-30' });
   await a.dispatch({ type: 'startReview', id: 'r1', platformId: 'p1' });
   await a.dispatch({ type: 'save' });
   const g = createController(env(f));

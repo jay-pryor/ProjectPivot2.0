@@ -43,9 +43,10 @@ export function asExisting(d, ...controlIds) {
  * start can reach (31 Oct is never 6 months after a day in April) is refused, so a fixture never
  * drifts a day without saying so.
  * @param {import('../src/core/data.js').Data} d @param {string} platformId @param {number} months @param {string} due
+ * @param {{ by: string, at: string }} [by] who sets it, and when (the usual act unless given)
  */
-export function scheduleFixed(d, platformId, months, due) {
+export function scheduleFixed(d, platformId, months, due, by = act) {
   const start = addMonths(due, -months);
   if (addMonths(start, months) !== due) throw new Error(`No start date is ${months} months before ${due}; pick another fixture date.`);
-  return setRule(d, act, { platformId, kind: 'fixed', months, unit: 'months', start });
+  return setRule(d, by, { platformId, kind: 'fixed', months, unit: 'months', start });
 }

@@ -32,11 +32,10 @@ test('addMonths clamps to the last day of a short month, and the day does not co
 
 test('reviewState: none without a schedule; due soon within 30 days; overdue from the day after', () => {
   assert.equal(DUE_SOON_DAYS, 30);
-  assert.equal(reviewState({ reviewMonths: null, reviewDue: null }, '2026-09-28'), 'none');
-  assert.equal(reviewState({}, '2026-09-28'), 'none');
-  const p = { reviewMonths: 6, reviewDue: '2026-09-28' };
+  assert.equal(reviewState(null, '2026-09-28'), 'none');
+  const p = '2026-09-28';
   assert.equal(reviewState(p, '2026-09-28'), 'dueSoon', 'due today is not yet overdue');
   assert.equal(reviewState(p, '2026-09-29'), 'overdue');
-  assert.equal(reviewState({ reviewMonths: 6, reviewDue: '2026-10-28' }, '2026-09-28'), 'dueSoon', '30 days out');
-  assert.equal(reviewState({ reviewMonths: 6, reviewDue: '2026-10-29' }, '2026-09-28'), 'ok', '31 days out');
+  assert.equal(reviewState('2026-10-28', '2026-09-28'), 'dueSoon', '30 days out');
+  assert.equal(reviewState('2026-10-29', '2026-09-28'), 'ok', '31 days out');
 });

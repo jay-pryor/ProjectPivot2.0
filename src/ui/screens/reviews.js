@@ -4,7 +4,7 @@ import { dataAttrs, confirmButton, reviewTag, go, bandTag, idTag } from './commo
 import { dataTable } from './table.js';
 import { get } from '../../core/data.js';
 import { openReview, lastReviewed, reviewRows, completedReviews, bandOf } from '../../core/queries.js';
-import { reviewState } from '../../core/time.js';
+import { scheduleOf } from '../../core/schedule.js';
 import { MAX_REVIEW_MONTHS } from '../../core/ops/reviews.js';
 import { BANDS } from '../../core/matrix.js';
 import { day, when, profileName } from '../names.js';
@@ -18,25 +18,26 @@ import { day, when, profileName } from '../names.js';
  * @param {any} state @param {Data} data @param {any} p the platform
  */
 export function reviewLine(state, data, p) {
-  const s = reviewState(p, state.today);
+  const sched = scheduleOf(data, p.id, state.today);
+  const s = sched.state;
   const last = lastReviewed(data, p.id);
   const inProgress = openReview(data, p.id);
-  const field = { change: 'setScheduleField', 'platform-id': p.id };
   const setting = state.editing?.kind === 'schedule' && state.editing.id === p.id;
-  const schedule = s !== 'none'
-    ? html`<div class="rv-big">Every <input type="number" class="quiet months" name="months" min="1" max="${MAX_REVIEW_MONTHS}" value="${p.reviewMonths}" aria-label="Months between reviews" ${dataAttrs(field)}> months</div>
-      <div class="rv-foot">${confirmButton('Remove schedule', 'Remove the review schedule', dataAttrs({ action: 'setSchedule', 'platform-id': p.id }))}</div>`
+  // Interim: a fixed rule only, set from a form; the rule card is rebuilt with policies later.
+  const schedule = p.reviewRule
+    ? html`<div class="rv-big">${p.reviewRule.kind === 'fixed' ? `Every ${p.reviewRule.months} months` : 'Review policy'}</div>
+      <div class="rv-foot">${confirmButton('Remove schedule', 'Remove the review schedule', dataAttrs({ action: 'setRule', 'platform-id': p.id, kind: 'none' }))}</div>`
     : setting
-      ? html`<form data-action="setSchedule" ${dataAttrs({ 'platform-id': p.id })} class="rv-form">
+      ? html`<form data-action="setRule" ${dataAttrs({ 'platform-id': p.id, kind: 'fixed', unit: 'months' })} class="rv-form">
         <label>Every <input type="number" class="months" name="months" min="1" max="${MAX_REVIEW_MONTHS}" required aria-label="Months between reviews" autofocus> months</label>
-        <label>Next due <input type="date" name="due" required aria-label="Next review due"></label>
+        <label>Counted from <input type="date" name="start" required aria-label="Reviews counted from"></label>
         <div class="actions"><button type="submit" class="primary">Set schedule</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></div></form>`
       : html`<div class="rv-big muted">No schedule</div>
         <div class="rv-foot"><button type="button" class="primary rv-action" ${dataAttrs({ action: 'startEdit', kind: 'schedule', id: p.id })}>Set schedule</button></div>`;
-  const days = p.reviewDue ? Math.round((Date.parse(`${p.reviewDue}T00:00:00Z`) - Date.parse(`${String(state.today).slice(0, 10)}T00:00:00Z`)) / 86_400_000) : null;
+  const days = sched.due ? Math.round((Date.parse(`${sched.due}T00:00:00Z`) - Date.parse(`${String(state.today).slice(0, 10)}T00:00:00Z`)) / 86_400_000) : null;
   const until = days === null ? '' : days < 0 ? `${-days} day${days === -1 ? '' : 's'} overdue` : days === 0 ? 'Due today' : `In ${days} day${days === 1 ? '' : 's'}`;
-  const due = p.reviewDue
-    ? html`<div class="rv-big"><input type="date" class="quiet" name="due" value="${p.reviewDue}" aria-label="Next review due" ${dataAttrs(field)}></div>
+  const due = sched.due
+    ? html`<div class="rv-big">${day(sched.due)}</div>
       <div class="rv-foot"><span class="rv-until${days !== null && days < 0 ? ' late' : ''}">${until}</span>${reviewTag(s)}</div>`
     : html`<div class="rv-big muted">—</div><div class="rv-foot muted">Set a schedule to have one</div>`;
   const start = inProgress
@@ -95,10 +96,10 @@ function openReviewBlock(state, data, p, review) {
     <label class="outcome">Additional notes
       <textarea name="notes" rows="4" placeholder="Anything else worth keeping with this review…" ${dataAttrs({ change: 'setReviewNotes', 'review-id': review.id })}>${review.notes ?? ''}</textarea></label>
     <div class="actions">
-      <button type="button" class="primary" ${dataAttrs({ action: 'completeReview', 'review-id': review.id })}${p.reviewMonths ? '' : raw(' disabled')}>${unticked ? `Complete — ${unticked} not ticked` : 'Complete review'}</button>
+      <button type="button" class="primary" ${dataAttrs({ action: 'completeReview', 'review-id': review.id })}${scheduleOf(data, p.id, state.today).due ? '' : raw(' disabled')}>${unticked ? `Complete — ${unticked} not ticked` : 'Complete review'}</button>
       ${confirmButton('Abandon…', 'Abandon this review, discarding its ticks and notes', dataAttrs({ action: 'abandonReview', 'review-id': review.id }))}
     </div>
-    ${p.reviewMonths ? '' : needsSchedule}`;
+    ${scheduleOf(data, p.id, state.today).due ? '' : needsSchedule}`;
 }
 
 /** @param {any} state @param {Data} data @param {any} p @param {any} review */
@@ -151,6 +152,6 @@ export function reviewsTab(state, data, p) {
   const open = openReview(data, p.id);
   const top = open ? openReviewBlock(state, data, p, open)
     : p.status !== 'live' ? html`<p class="muted">${p.name} is retired, so it cannot be reviewed.</p>`
-      : html`<p>No review in progress.</p>${p.reviewMonths ? '' : needsSchedule}`;
+      : html`<p>No review in progress.</p>${scheduleOf(data, p.id, state.today).due ? '' : needsSchedule}`;
   return html`${reviewLine(state, data, p)}${top}<h2>Past reviews</h2><section class="block">${pastReviews(state, data, p)}</section>`;
 }

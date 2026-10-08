@@ -8,8 +8,7 @@ import { renderApp } from '../../src/ui/render.js';
 import { initialState } from '../../src/ui/controller.js';
 import { startAcks, waitingChanges } from '../../src/core/acks.js';
 import { updateHazard, assignNumbers } from '../../src/core/ops/hazards.js';
-import { setSchedule } from '../../src/core/ops/reviews.js';
-import { seed } from '../helpers.js';
+import { seed, scheduleFixed } from '../helpers.js';
 
 test('changeDetail: an edit as before → after, escaped; other changes as a word', () => {
   const out = changeDetail({ change: 'edited', fields: [{ field: 'title', before: '<b>x</b>', after: 'Fire' }] }).toString();
@@ -28,7 +27,7 @@ const state = { ...initialState(), screen: 'main', today: '2026-09-28', profileI
 /** u3 retitles h1 (on p1 of Ada, p2 of Grace); p1 is overdue for review. */
 function data(title = 'Fire (Sam)') {
   let d = startAcks(assignNumbers(seed()), at('10:30', 'u1'));
-  d = setSchedule(d, at('10:40', 'u1'), { platformId: 'p1', months: 6, due: '2026-09-01' });
+  d = scheduleFixed(d, 'p1', 6, '2026-09-01', at('10:40', 'u1'));
   return updateHazard(d, at('11:00', 'u3'), { id: 'h1', title });
 }
 
@@ -146,7 +145,7 @@ test('needs attention draws its items, each keyed so it can slide when one goes,
 
 test('coming up: reviews due in the next 90 days; nothing says so', () => {
   assert.match(homeView(state, data()).toString(), /No reviews due in the next 90 days\./);
-  const d = setSchedule(data(), at('10:45', 'u2'), { platformId: 'p2', months: 6, due: '2026-10-10' });
+  const d = scheduleFixed(data(), 'p2', 6, '2026-10-10', at('10:45', 'u2'));
   const out = homeView({ ...state, homeOwner: 'everyone' }, d).toString();
   const box = out.slice(out.indexOf('<table class="attn upcoming-table">'));
   const table = box.slice(0, box.indexOf('</table>'));
@@ -158,7 +157,7 @@ test('coming up: reviews due in the next 90 days; nothing says so', () => {
 });
 
 test('coming up looks as far ahead as the menu beside its heading says: 90 days unless chosen', () => {
-  const d = setSchedule(data(), at('10:45', 'u2'), { platformId: 'p2', months: 6, due: '2026-10-10' });
+  const d = scheduleFixed(data(), 'p2', 6, '2026-10-10', at('10:45', 'u2'));
   const as = (prefs) => ({ ...state, homeOwner: 'everyone', profiles: state.profiles.map((p) => (p.id === 'u1' ? { ...p, prefs } : p)) });
   const out = homeView(as({}), d).toString();
   assert.match(out, /<h2>Coming up<\/h2><select class="window-pick" name="days" aria-label="How far ahead Coming up looks" data-change="setComingUpDays">[\s\S]*?<option value="90" selected>Next 90 days<\/option>[\s\S]*?Next 12 months<\/option>/);
@@ -254,7 +253,7 @@ test('working days until a date: Monday to Friday, from tomorrow to the day itse
 });
 
 test('a platform tile on Home says when its review is due soon, and in how many days', () => {
-  const d = setSchedule(data(), at('10:45', 'u2'), { platformId: 'p2', months: 6, due: '2026-10-10' });
+  const d = scheduleFixed(data(), 'p2', 6, '2026-10-10', at('10:45', 'u2'));
   const out = homeView({ ...state, homeOwner: 'everyone' }, d).toString();
   assert.match(out, /<strong>Bravo<\/strong> <span class="tag review-due-soon">Review due soon – 12 days<\/span>/);
 });

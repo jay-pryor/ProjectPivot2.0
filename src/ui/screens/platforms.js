@@ -3,7 +3,7 @@ import { dataAttrs, option, statusTag, stateTag, go, deletePanel, deleteName, le
 import { reviewsTab } from './reviews.js';
 import { REVIEW_DETAIL_ACTIONS } from '../../core/ops/reviews.js';
 import { waitingChanges } from '../../core/acks.js';
-import { reviewState } from '../../core/time.js';
+import { scheduleOf } from '../../core/schedule.js';
 import { dataTable } from './table.js';
 import { referencesCard } from './references.js';
 import { tierColumn } from './controls.js';
@@ -41,10 +41,13 @@ export function platformsView(state, data) {
           options: listPlatformGroups(data).map((g) => /** @type {[string, string]} */ ([g.id, g.name])), match: (p, v) => groupsOf(data, p.id).some((g) => g.id === v),
           render: (p) => groupTags(groupsOf(data, p.id)) },
         { key: 'hazards', label: 'Hazard count', width: 220, minWidth: 100, value: (p) => count(p.id) },
-        { key: 'review', label: 'Next review', width: 340, minWidth: 170, value: (p) => p.reviewDue ?? null, filter: 'select',
+        { key: 'review', label: 'Next review', width: 340, minWidth: 170, value: (p) => scheduleOf(data, p.id, state.today).due, filter: 'select',
           options: [['overdue', 'Overdue'], ['dueSoon', 'Due soon'], ['ok', 'Not due yet'], ['none', 'No schedule']],
-          match: (p, v) => reviewState(p, state.today) === v,
-          render: (p) => (p.reviewDue ? html`${day(p.reviewDue)}${reviewTag(reviewState(p, state.today))}` : '—') },
+          match: (p, v) => scheduleOf(data, p.id, state.today).state === v,
+          render: (p) => {
+            const s = scheduleOf(data, p.id, state.today);
+            return s.due ? html`${day(s.due)}${reviewTag(s.state)}` : '—';
+          } },
         statusColumn((p) => p.status),
       ],
     })}`;
@@ -105,6 +108,7 @@ export function platformView(state, data, id) {
   const p = get(data, 'platform', id);
   if (!p) return notFound();
   const tab = state.view?.tab;
+  const sched = scheduleOf(data, id, state.today);
   // Ticks, notes and outcome edits stay in the review itself rather than crowding the History tab.
   const reaching = historyReaching(data, id).filter((e) => !REVIEW_DETAIL_ACTIONS.includes(e.action));
   const page = tab === 'history' ? 'History' : tab === 'reviews' ? 'Reviews' : 'Details';
@@ -127,7 +131,7 @@ export function platformView(state, data, id) {
           <h3 class="dash-card-h">Platform</h3>
           <p class="glance-line">Owned by <select class="quiet inline-select" name="ownerId" aria-label="Owner" ${dataAttrs({ change: 'setOwner', id })}>${state.profiles.map((/** @type {any} */ pr) => option(pr.id, pr.name, p.ownerId))}</select></p>
           <p class="glance-line plat-groups">Groups ${groupsOf(data, id).map((g) => html`<span class="tag group-tag">${g.name}<button type="button" class="icon-x" title="Take ${p.name} out of ${g.name}" aria-label="Take ${p.name} out of ${g.name}" ${dataAttrs({ action: 'untagPlatform', 'platform-id': id, 'group-id': g.id })}>✕</button></span> `)}${p.status === 'deleted' ? '' : plus({ action: 'openPicker', picker: 'tagPlatforms', 'platform-id': id }, 'Add to platform groups')}</p>
-          <p class="glance-line">${p.reviewDue ? html`Next review ${day(p.reviewDue)}${reviewTag(reviewState(p, state.today))}` : 'No review schedule'}
+          <p class="glance-line">${sched.due ? html`Next review ${day(sched.due)}${reviewTag(sched.state)}` : 'No review schedule'}
             ${go('Reviews →', 'platform', { id, tab: 'reviews' })}</p>
           ${waiting ? html`<p class="glance-line"><button type="button" class="link" ${dataAttrs({ action: 'setHomeOwner', 'owner-id': p.ownerId, show: 'home' })}>${waiting} ${waiting === 1 ? 'change' : 'changes'} to acknowledge</button></p>` : ''}
         </section>

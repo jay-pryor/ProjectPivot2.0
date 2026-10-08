@@ -52,7 +52,8 @@ const EDITS = {
   setControlStatus: assessment.setControlStatus, setRating: assessment.setRating,
   setAssessment: assessment.setAssessment, copyStageRisk: assessment.copyStageRisk, setSfarp: assessment.setSfarp,
   setImplementationStatus: assessment.setImplementationStatus, copyControls: assessment.copyControls, copySfarp: assessment.copySfarp,
-  setSchedule: reviews.setSchedule, startReview: reviews.startReview, markRow: reviews.markRow,
+  setRule: reviews.setRule, acknowledgeReviewDate: reviews.acknowledgeReviewDate, startReview: reviews.startReview, markRow: reviews.markRow,
+  createReviewPolicy: reviews.createReviewPolicy, updateReviewPolicy: reviews.updateReviewPolicy, renameReviewPolicy: reviews.renameReviewPolicy, deleteReviewPolicy: reviews.deleteReviewPolicy,
   setReviewOutcome: reviews.setReviewOutcome, setReviewNotes: reviews.setReviewNotes, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
@@ -659,11 +660,6 @@ export function createController(env) {
     },
     async rejectControl({ hazardId, controlId, platformId, reason }) {
       await applyEdit('setControlStatus', { hazardId, controlId, platformId, status: 'rejected', reason });
-    },
-    async setScheduleField({ platformId, months, due }) {
-      const p = state.session?.working.records.platform[platformId];
-      if (!p) throw new PivotError('not-found', 'That platform no longer exists.');
-      await applyEdit('setSchedule', { platformId, months: months ?? p.reviewMonths, due: due ?? p.reviewDue });
     },
     async setHomeOwner({ ownerId, show }) {
       set({ homeOwner: ownerId || 'me', ...(show === 'home' ? { view: { name: 'home' }, editing: null } : {}) });

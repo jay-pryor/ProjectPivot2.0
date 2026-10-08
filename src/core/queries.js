@@ -1,7 +1,8 @@
 import { get, all, live, byCreated } from './data.js';
 import { ids, hazardLabel, referenceLabel } from './ids.js';
 import { ratingFor, BANDS } from './matrix.js';
-import { reviewState, addDays } from './time.js';
+import { addDays } from './time.js';
+import { scheduleOf } from './schedule.js';
 import { waitingChanges } from './acks.js';
 import { RECEPTORS, RECEPTOR_WORD } from './receptors.js';
 import { tierRank, IMPLEMENTER_WORD } from './ops/controls.js';
@@ -485,28 +486,30 @@ export function hazardLastReviewed(data, hazardId, platformId) {
 
 /** Every live platform with a review schedule, soonest due first. @param {Data} data @param {string} today */
 export function reviewDueList(data, today) {
-  return live(data, 'platform').filter((p) => p.reviewMonths && p.reviewDue)
-    .map((platform) => ({ platform, state: reviewState(platform, today), due: /** @type {string} */ (platform.reviewDue) }))
+  return live(data, 'platform').map((platform) => ({ platform, s: scheduleOf(data, platform.id, today) }))
+    .filter(({ s }) => s.due)
+    .map(({ platform, s }) => ({ platform, state: s.state, due: /** @type {string} */ (s.due) }))
     .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
 }
 
 /**
  * What is left to do on the live platforms of one owner (every owner when `ownerId` is null):
  * changes to acknowledge, reviews due or in progress (and platforms with no review schedule),
- * controls awaiting a status decision, controls we own there and have planned, and hazards missing a
- * rating.
+ * review dates moved since the owner last saw them (soonest first), controls awaiting a status
+ * decision, controls we own there and have planned, and hazards missing a rating.
  * @param {Data} data @param {string} today @param {string | null} ownerId
  */
 export function openItems(data, today, ownerId) {
-  /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], toImplement: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string[] }[] }} */
-  const out = { acks: [], reviews: [], awaiting: [], toImplement: [], unrated: [] };
+  /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], dateMoved: { platform: Rec, due: string, seen: string, urgent: boolean, driver: any }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], toImplement: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string[] }[] }} */
+  const out = { acks: [], reviews: [], dateMoved: [], awaiting: [], toImplement: [], unrated: [] };
   for (const platform of live(data, 'platform').filter((p) => ownerId == null || p.ownerId === ownerId)) {
     for (const entry of waitingChanges(data, platform.id)) out.acks.push({ entry, platform });
-    const state = reviewState(platform, today);
+    const s = scheduleOf(data, platform.id, today);
     const open = Boolean(openReview(data, platform.id));
-    if (state === 'overdue' || state === 'dueSoon' || state === 'none' || open) {
-      out.reviews.push({ platform, state, due: platform.reviewDue ?? null, lastReviewed: lastReviewed(data, platform.id), open });
+    if (s.state === 'overdue' || s.state === 'dueSoon' || s.state === 'none' || open) {
+      out.reviews.push({ platform, state: s.state, due: s.due, lastReviewed: lastReviewed(data, platform.id), open });
     }
+    if (s.moved) out.dateMoved.push({ platform, due: /** @type {string} */ (s.due), seen: /** @type {string} */ (s.seen), urgent: s.urgent, driver: s.driver });
     for (const ph of platformHazards(data, platform.id)) {
       for (const c of ph.controls) {
         if (c.state === 'recommended') out.awaiting.push({ platform, hazard: ph.hazard, control: c.control });
@@ -521,6 +524,7 @@ export function openItems(data, today, ownerId) {
     }
   }
   out.acks.sort((a, b) => (a.entry.at < b.entry.at ? 1 : a.entry.at > b.entry.at ? -1 : 0));
+  out.dateMoved.sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
   return out;
 }
 
@@ -595,7 +599,10 @@ const ownedBy = (p, ownerId) => ownerId == null || p.ownerId === ownerId;
 export function upcomingReviews(data, today, ownerId, days = 90) {
   const until = addDays(today, days);
   return live(data, 'platform').filter((p) => ownedBy(p, ownerId))
-    .map((platform) => ({ platform, due: platform.reviewDue ?? null, state: reviewState(platform, today), open: Boolean(openReview(data, platform.id)) }))
+    .map((platform) => {
+      const s = scheduleOf(data, platform.id, today);
+      return { platform, due: s.due, state: s.state, open: Boolean(openReview(data, platform.id)) };
+    })
     .filter((r) => r.open || (r.due && r.state !== 'overdue' && r.due <= until))
     .sort((a, b) => ((a.due ?? '9999') < (b.due ?? '9999') ? -1 : (a.due ?? '9999') > (b.due ?? '9999') ? 1 : 0));
 }
@@ -616,8 +623,9 @@ export function platformCards(data, today, ownerId) {
         bands[receptor][b] = (bands[receptor][b] ?? 0) + 1;
       }
     }
+    const s = scheduleOf(data, platform.id, today);
     return {
-      platform, state: reviewState(platform, today), due: platform.reviewDue ?? null, lastReviewed: lastReviewed(data, platform.id),
+      platform, state: s.state, due: s.due, lastReviewed: lastReviewed(data, platform.id),
       open: Boolean(openReview(data, platform.id)), hazards: hazards.length,
       awaiting: hazards.reduce((n, h) => n + h.controls.filter((c) => c.state === 'recommended').length, 0),
       acks: waitingChanges(data, platform.id).length, bands,
@@ -626,15 +634,19 @@ export function platformCards(data, today, ownerId) {
 }
 
 /**
- * The open items in order of urgency: overdue reviews (longest overdue first), changes to
- * acknowledge (newest first), controls awaiting a status decision, controls we have planned, hazards
- * missing a rating, then platforms with no review schedule.
+ * The open items in order of urgency: review dates moved to within 30 days or past, overdue
+ * reviews (longest overdue first), changes to acknowledge (newest first), other moved review
+ * dates, controls awaiting a status decision, controls we have planned, hazards missing a rating,
+ * then platforms with no review schedule.
  * @param {ReturnType<typeof openItems>} items
  */
 export function attentionItems(items) {
+  const moved = items.dateMoved ?? [];
   return [
+    ...moved.filter((m) => m.urgent).map((m) => ({ type: 'dateMoved', ...m })),
     ...items.reviews.filter((r) => r.state === 'overdue').sort((a, b) => ((a.due ?? '') < (b.due ?? '') ? -1 : 1)).map((r) => ({ type: 'review', ...r })),
     ...items.acks.map((a) => ({ type: 'change', ...a })),
+    ...moved.filter((m) => !m.urgent).map((m) => ({ type: 'dateMoved', ...m })),
     ...items.awaiting.map((x) => ({ type: 'control', ...x })),
     ...items.toImplement.map((x) => ({ type: 'implement', ...x })),
     ...items.unrated.map((x) => ({ type: 'rating', ...x })),

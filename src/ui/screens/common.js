@@ -314,7 +314,7 @@ function show(v) {
 const FIELD_WORD = {
   likelihoodWhy: 'likelihood justification', consequenceWhy: 'consequence justification',
   reportId: 'report ID', ownerId: 'owner', docNumber: 'document number',
-  reviewDue: 'next review date', reviewMonths: 'review interval (months)', dueAfter: 'due after', dueBefore: 'due before',
+  reviewRule: 'review rule', reviewStart: 'reviews counted from', reviewDueSeen: 'review date acknowledged', longest: 'longest period', dueAfter: 'due after', dueBefore: 'due before',
   completedAt: 'completed on', completedBy: 'completed by', pastFiles: 'earlier files', sharedWith: 'shared with',
   filters: 'diagram filters', url: 'web link', path: 'network path', considerations: 'SFARP considerations',
   implementedBy: 'implemented by', off: 'taken off the platform', category: 'type', state: 'status', hazardId: 'hazard', platformId: 'platform', controlId: 'control', phaseId: 'lifecycle phase',
