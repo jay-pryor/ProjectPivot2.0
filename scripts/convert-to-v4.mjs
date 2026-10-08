@@ -54,4 +54,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const sealed = await seal('data', convertBody(env.body), env.stamp, env.writtenAt);
   fs.writeFileSync(file, serialize(sealed));
   console.log(`Converted ${file} to schema 4 (the old copy is data.v3.json).`);
+  // profiles.json is refused under any other schema too; its contents are unchanged, only resealed.
+  const pfile = path.join(folder, 'profiles.json');
+  if (fs.existsSync(pfile)) {
+    const penv = JSON.parse(fs.readFileSync(pfile, 'utf8'));
+    if (penv.schemaVersion === 3) {
+      fs.copyFileSync(pfile, path.join(folder, 'profiles.v3.json'));
+      fs.writeFileSync(pfile, serialize(await seal('profiles', penv.body, penv.stamp, penv.writtenAt)));
+      console.log(`Resealed ${pfile} as schema 4 (the old copy is profiles.v3.json).`);
+    }
+  }
 }
