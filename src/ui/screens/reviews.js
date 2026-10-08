@@ -16,8 +16,44 @@ import { sectionRail } from './dashboard.js';
 /** @typedef {import('../../core/data.js').Data} Data */
 
 /**
+ * A platform's review rule as it stands, with Edit: nothing on the card changes it directly, so
+ * trying a setting never saves (or warns about) one not yet chosen.
+ * @param {Data} data @param {any} p
+ */
+function ruleText(data, p) {
+  const r = p.reviewRule;
+  const pol = r?.kind === 'policy' ? get(data, 'reviewPolicy', r.policyId) : null;
+  const what = !r ? html`<div class="rv-big muted">No schedule</div>`
+    : r.kind === 'fixed' ? html`<div class="rv-big">Fixed · every ${periodWord(r.months)}</div>`
+      : html`<div class="rv-big">${ruleWord(data, p)}</div>`;
+  return html`${what}
+    ${r && p.reviewStart ? html`<div class="rv-line muted">Counted from ${day(p.reviewStart)}</div>` : ''}
+    <div class="rv-foot"><button type="button" class="small" ${dataAttrs({ action: 'editRule', 'platform-id': p.id })}>Edit review rule</button>
+      ${pol && pol.status === 'live' ? html`<button type="button" class="link" ${dataAttrs({ action: 'showPolicy', id: pol.id })}>Edit policy →</button>` : ''}</div>`;
+}
+
+/**
+ * The rule being edited: a draft kept on screen until Confirm saves it in one step (and only then
+ * may the review date move and say so), or Cancel drops it.
+ * @param {Data} data @param {any} p @param {{ kind: string, value: string, unit: string, policyId: string | null, start: string }} draft
+ */
+function ruleForm(data, p, draft) {
+  const field = { change: 'setRuleDraft', 'platform-id': p.id };
+  const policies = live(data, 'reviewPolicy').sort((a, b) => a.order - b.order);
+  const k = draft.kind;
+  return html`<div class="rv-big"><select name="kind" aria-label="Review rule" ${dataAttrs(field)}>
+      ${option('none', 'No schedule', k)}${option('fixed', 'Fixed period', k)}${policies.length || k === 'policy' ? option('policy', 'Review policy', k) : ''}</select></div>
+    ${k === 'fixed' ? html`<div class="rv-line">Every <input type="number" name="value" value="${draft.value}" min="1" max="${MAX_REVIEW_MONTHS}" aria-label="Period" ${dataAttrs(field)}>
+      <select name="unit" aria-label="Period unit" ${dataAttrs(field)}>${option('months', 'months', draft.unit)}${option('years', 'years', draft.unit)}</select></div>` : ''}
+    ${k === 'policy' ? html`<div class="rv-line"><select name="policyId" aria-label="Review policy" ${dataAttrs(field)}>${policies.map((x) => option(x.id, x.name, draft.policyId ?? ''))}</select></div>` : ''}
+    ${k !== 'none' ? html`<div class="rv-line"><label>Counted from <input type="date" name="start" value="${draft.start}" ${dataAttrs(field)}></label></div>` : ''}
+    <div class="rv-foot"><button type="button" class="primary small" ${dataAttrs({ action: 'confirmRule', 'platform-id': p.id })}>Confirm</button>
+      <button type="button" class="small" ${dataAttrs({ action: 'cancelRule' })}>Cancel</button></div>`;
+}
+
+/**
  * The top of a platform's review page as three cards: the rule (none, a fixed period or a review
- * policy, each part changed in place, with the date reviews count from), the next review due (how
+ * policy, with the date reviews count from; changed through Edit and Confirm), the next review due (how
  * long until it or how overdue, what sets the period, and whether it has moved since the owner
  * last saw it), and the last review, with Start review.
  * @param {any} state @param {Data} data @param {any} p the platform
@@ -26,17 +62,7 @@ export function reviewLine(state, data, p) {
   const s = scheduleOf(data, p.id, state.today);
   const last = lastReviewed(data, p.id);
   const inProgress = openReview(data, p.id);
-  const field = { change: 'setRuleField', 'platform-id': p.id };
-  const kind = p.reviewRule?.kind ?? 'none';
-  const policies = live(data, 'reviewPolicy').sort((a, b) => a.order - b.order);
-  const { n, unit } = asUnit(kind === 'fixed' ? p.reviewRule.months : null);
-  const rule = html`<div class="rv-big"><select name="kind" aria-label="Review rule" ${dataAttrs(field)}>
-      ${option('none', 'No schedule', kind)}${option('fixed', 'Fixed period', kind)}${policies.length || kind === 'policy' ? option('policy', 'Review policy', kind) : ''}</select></div>
-    ${kind === 'fixed' ? html`<div class="rv-line">Every <input type="number" name="value" value="${n}" min="1" max="${MAX_REVIEW_MONTHS}" aria-label="Period" ${dataAttrs(field)}>
-      <select name="unit" aria-label="Period unit" ${dataAttrs(field)}>${option('months', 'months', unit)}${option('years', 'years', unit)}</select></div>` : ''}
-    ${kind === 'policy' ? html`<div class="rv-line"><select name="policyId" aria-label="Review policy" ${dataAttrs(field)}>${policies.map((x) => option(x.id, x.name, p.reviewRule.policyId))}</select>
-      <button type="button" class="link" ${dataAttrs({ action: 'showPolicy', id: p.reviewRule.policyId })}>Edit →</button></div>` : ''}
-    ${kind !== 'none' ? html`<div class="rv-foot"><label>Counted from <input type="date" name="start" value="${p.reviewStart ?? ''}" ${dataAttrs(field)}></label></div>` : ''}`;
+  const rule = state.ruleDraft?.platformId === p.id ? ruleForm(data, p, state.ruleDraft) : ruleText(data, p);
   const days = s.due ? Math.round((Date.parse(`${s.due}T00:00:00Z`) - Date.parse(`${String(state.today).slice(0, 10)}T00:00:00Z`)) / 86_400_000) : null;
   const until = days === null ? '' : days < 0 ? `${-days} day${days === -1 ? '' : 's'} overdue` : days === 0 ? 'Due today' : `In ${days} day${days === 1 ? '' : 's'}`;
   const why = driverWord(data, s.driver);

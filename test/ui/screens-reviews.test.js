@@ -39,25 +39,46 @@ test('the platforms list shows the next review with a due-soon or overdue badge,
 test('the platform review page shows the rule, the next due date with how overdue, and the last review with Start review', () => {
   const out = platformReviewView(onTab(), data(), 'p1').toString();
   assert.match(out, /<h1>.*Reviews.*Alpha/);
-  assert.match(out, /aria-label="Review rule"[\s\S]*<select name="kind" aria-label="Review rule" data-change="setRuleField" data-platform-id="p1">[\s\S]*<option value="fixed" selected>/);
-  assert.match(out, /<input type="number" name="value" value="6"[^>]*data-change="setRuleField"[\s\S]*?<option value="months" selected>/);
-  assert.match(out, /<input type="date" name="start" value="2026-03-01" data-change="setRuleField" data-platform-id="p1">/);
-  assert.doesNotMatch(out, /<option value="policy"/, 'no policies yet, so no policy choice');
+  assert.match(out, /aria-label="Review rule"><h3 class="dash-card-h">Review rule<\/h3><div class="rv-big">Fixed · every 6 months<\/div>\s*<div class="rv-line muted">Counted from 1 Mar 2026<\/div>/);
+  assert.match(out, /<button type="button" class="small" data-action="editRule" data-platform-id="p1">Edit review rule<\/button>/);
+  assert.doesNotMatch(out, /name="kind"|data-change="setRuleDraft"/, 'nothing to change until Edit');
   assert.match(out, /<div class="dash-grid three-even review-cards">[\s\S]*?aria-label="Review rule"[\s\S]*?class="dash-card rv-card rv-overdue" aria-label="Next review due"[\s\S]*?1 Sep 2026[\s\S]*?Every 6 months[\s\S]*?\d+ days? overdue[\s\S]*?aria-label="Last reviewed"[\s\S]*?Never[\s\S]*?class="primary rv-action" data-action="beginReview" data-platform-id="p1">Start review/);
 });
 
-test('without a rule, the rule card offers the choice and the due card says why there is no date', () => {
-  const out = platformReviewView(onTab(), seed(), 'p1').toString();
-  assert.match(out, /<option value="none" selected>No schedule<\/option>/);
-  assert.doesNotMatch(out, /name="start"/);
-  assert.match(out, /Set a rule to have one/);
+test('editing the rule shows a form of the draft, with Confirm and Cancel', () => {
+  const draft = { platformId: 'p1', kind: 'fixed', value: '2', unit: 'years', policyId: null, start: '2026-03-01' };
+  const out = platformReviewView({ ...onTab(), ruleDraft: draft }, data(), 'p1').toString();
+  assert.match(out, /<select name="kind" aria-label="Review rule" data-change="setRuleDraft" data-platform-id="p1">[\s\S]*?<option value="fixed" selected>/);
+  assert.match(out, /<input type="number" name="value" value="2"[^>]*data-change="setRuleDraft" data-platform-id="p1">\s*<select name="unit"[^>]*data-change="setRuleDraft"[^>]*>[\s\S]*?<option value="years" selected>/);
+  assert.match(out, /<input type="date" name="start" value="2026-03-01" data-change="setRuleDraft" data-platform-id="p1">/);
+  assert.doesNotMatch(out, /<option value="policy"/, 'no policies yet, so no policy choice');
+  assert.match(out, /<button type="button" class="primary small" data-action="confirmRule" data-platform-id="p1">Confirm<\/button>\s*<button type="button" class="small" data-action="cancelRule">Cancel<\/button>/);
+  assert.doesNotMatch(out, /data-action="editRule"/);
+  const other = platformReviewView({ ...onTab(), ruleDraft: { ...draft, platformId: 'p2' } }, data(), 'p1').toString();
+  assert.doesNotMatch(other, /data-change="setRuleDraft"/, 'a draft for another platform is not shown here');
 });
 
-test('a policy rule names its policy and says what sets its period', () => {
+test('without a rule, the rule card says so, offers Edit, and the due card says why there is no date', () => {
+  const out = platformReviewView(onTab(), seed(), 'p1').toString();
+  assert.match(out, /aria-label="Review rule"><h3 class="dash-card-h">Review rule<\/h3><div class="rv-big muted">No schedule<\/div>/);
+  assert.match(out, /data-action="editRule" data-platform-id="p1">Edit review rule/);
+  assert.match(out, /Set a rule to have one/);
+  const draft = { platformId: 'p1', kind: 'none', value: '1', unit: 'years', policyId: null, start: '2026-09-28' };
+  const editing = platformReviewView({ ...onTab(), ruleDraft: draft }, seed(), 'p1').toString();
+  assert.match(editing, /<option value="none" selected>No schedule<\/option>/);
+  assert.doesNotMatch(editing, /name="start"|name="value"/, 'no schedule, nothing more to give');
+});
+
+test('a policy rule names its policy and says what sets its period; editing it chooses the policy', () => {
   const out = platformReviewView(onTab(), policyData(), 'p1').toString();
-  assert.match(out, /<option value="policy" selected>Review policy<\/option>/);
-  assert.match(out, /<select name="policyId"[^>]*data-change="setRuleField" data-platform-id="p1"><option value="pol1" selected>Standard/);
+  assert.match(out, /<div class="rv-big">Standard \(policy\)<\/div>/);
+  assert.match(out, /data-action="showPolicy" data-id="pol1">Edit policy →/);
   assert.match(out, /Every 6 months, because HAZ-\d+ residual personnel: Serious/);
+  const draft = { platformId: 'p1', kind: 'policy', value: '1', unit: 'years', policyId: 'pol1', start: '2026-06-01' };
+  const editing = platformReviewView({ ...onTab(), ruleDraft: draft }, policyData(), 'p1').toString();
+  assert.match(editing, /<option value="policy" selected>Review policy<\/option>/);
+  assert.match(editing, /<select name="policyId"[^>]*data-change="setRuleDraft" data-platform-id="p1"><option value="pol1" selected>Standard/);
+  assert.doesNotMatch(editing, /name="value"/);
 });
 
 test('a moved review date shows on the page with Acknowledge', () => {
@@ -70,7 +91,7 @@ test('a moved review date shows on the page with Acknowledge', () => {
 test('with a review open, the page shows the rule and the review, and no Start button', () => {
   const d = startReview(data(), act, { id: 'r1', platformId: 'p1' });
   const out = platformReviewView(onTab(), d, 'p1').toString();
-  assert.match(out, /data-change="setRuleField"[\s\S]*?data-table="reviewRows"/, 'the rule above the review');
+  assert.match(out, /data-action="editRule"[\s\S]*?data-table="reviewRows"/, 'the rule above the review');
   assert.doesNotMatch(out, /data-action="beginReview"|Continue review/);
 });
 

@@ -94,31 +94,63 @@ test('today comes from the clock', async () => {
   assert.equal(c.getState().today, '2026-09-28');
 });
 
-test('a rule set from the page, then each part changed in place, keeping the others', async () => {
+test('Edit starts a draft of the rule; changing it saves nothing and pops nothing up; Confirm saves it once', async () => {
   const c = await ready();
-  const p = () => W(c).records.platform.p1;
-  await c.dispatch({ type: 'setRuleField', platformId: 'p1', kind: 'fixed' });
-  assert.deepEqual([p().reviewRule, p().reviewStart], [{ kind: 'fixed', months: 12 }, '2026-09-28'], 'a first fixed rule: yearly, counted from today');
-  await c.dispatch({ type: 'setRuleField', platformId: 'p1', value: '2' });
-  assert.deepEqual(p().reviewRule, { kind: 'fixed', months: 24 }, 'the card shows 1 year, so a new number is in years');
-  await c.dispatch({ type: 'setRuleField', platformId: 'p1', unit: 'months' });
-  assert.deepEqual(p().reviewRule, { kind: 'fixed', months: 2 }, 'the number stays, read in months');
-  await c.dispatch({ type: 'setRuleField', platformId: 'p1', value: '6' });
-  await c.dispatch({ type: 'setRuleField', platformId: 'p1', start: '2026-06-30' });
-  assert.deepEqual([p().reviewRule, p().reviewStart], [{ kind: 'fixed', months: 6 }, '2026-06-30']);
-  await c.dispatch({ type: 'setRuleField', platformId: 'p1', kind: 'none' });
-  assert.deepEqual([p().reviewRule, p().reviewStart], [null, null]);
+  await c.dispatch({ type: 'editRule', platformId: 'p1' });
+  assert.deepEqual(c.getState().ruleDraft, { platformId: 'p1', kind: 'fixed', value: '1', unit: 'years', policyId: null, start: '2026-09-28' }, 'a first rule starts as yearly, from today');
+  const before = W(c);
+  await c.dispatch({ type: 'setRuleDraft', platformId: 'p1', value: '6' });
+  await c.dispatch({ type: 'setRuleDraft', platformId: 'p1', unit: 'months' });
+  await c.dispatch({ type: 'setRuleDraft', platformId: 'p1', start: '2026-06-30' });
+  assert.equal(W(c), before, 'nothing saved while editing');
+  assert.equal(c.getState().reviewMoved, null, 'and nothing pops up');
+  const entries = Object.keys(W(c).history).length;
+  await c.dispatch({ type: 'confirmRule', platformId: 'p1' });
+  assert.deepEqual([W(c).records.platform.p1.reviewRule, W(c).records.platform.p1.reviewStart], [{ kind: 'fixed', months: 6 }, '2026-06-30']);
+  assert.equal(Object.keys(W(c).history).length, entries + 1, 'one change');
+  assert.equal(c.getState().ruleDraft, null);
+  assert.equal(c.getState().reviewMoved, null, 'a first rule is the date its owner just chose: no pop-up');
 });
 
-test('choosing a policy uses the first one; clearing the start is refused with a message and changes nothing', async () => {
+test('changing a rule pops up once, on Confirm; Cancel discards the draft', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'setRule', platformId: 'p1', kind: 'fixed', months: '6', unit: 'months', start: '2026-06-30' });
+  await c.dispatch({ type: 'editRule', platformId: 'p1' });
+  assert.deepEqual(c.getState().ruleDraft, { platformId: 'p1', kind: 'fixed', value: '6', unit: 'months', policyId: null, start: '2026-06-30' }, 'the draft starts as the rule');
+  await c.dispatch({ type: 'setRuleDraft', platformId: 'p1', value: '3' });
+  assert.equal(c.getState().reviewMoved, null);
+  await c.dispatch({ type: 'confirmRule', platformId: 'p1' });
+  assert.deepEqual(W(c).records.platform.p1.reviewRule, { kind: 'fixed', months: 3 });
+  assert.equal(c.getState().reviewMoved.length, 1);
+  assert.deepEqual([c.getState().reviewMoved[0].from, c.getState().reviewMoved[0].to], ['2026-12-30', '2026-09-30']);
+  await c.dispatch({ type: 'dismissReviewMoved' });
+  await c.dispatch({ type: 'editRule', platformId: 'p1' });
+  await c.dispatch({ type: 'setRuleDraft', platformId: 'p1', kind: 'none' });
+  await c.dispatch({ type: 'cancelRule' });
+  assert.equal(c.getState().ruleDraft, null);
+  assert.deepEqual(W(c).records.platform.p1.reviewRule, { kind: 'fixed', months: 3 }, 'unchanged');
+});
+
+test('a bad draft is refused with a message on Confirm and kept to correct; a policy draft uses the first policy; leaving the page drops it', async () => {
   const c = await ready();
   await c.dispatch({ type: 'createReviewPolicy', id: 'pol1', name: 'Standard' });
-  await c.dispatch({ type: 'setRuleField', platformId: 'p1', kind: 'policy' });
-  assert.deepEqual(W(c).records.platform.p1.reviewRule, { kind: 'policy', policyId: 'pol1' });
-  await c.dispatch({ type: 'setRuleField', platformId: 'p1', start: '' });
+  await c.dispatch({ type: 'editRule', platformId: 'p1' });
+  await c.dispatch({ type: 'setRuleDraft', platformId: 'p1', value: '0' });
+  await c.dispatch({ type: 'confirmRule', platformId: 'p1' });
   assert.equal(c.getState().message.kind, 'error');
+  assert.equal(W(c).records.platform.p1.reviewRule, null);
+  assert.equal(c.getState().ruleDraft.value, '0', 'kept to correct');
+  await c.dispatch({ type: 'setRuleDraft', platformId: 'p1', kind: 'policy' });
+  assert.equal(c.getState().ruleDraft.policyId, 'pol1');
+  await c.dispatch({ type: 'setRuleDraft', platformId: 'p1', start: '' });
+  await c.dispatch({ type: 'confirmRule', platformId: 'p1' });
   assert.match(c.getState().message.text, /real date/);
-  assert.equal(W(c).records.platform.p1.reviewStart, '2026-09-28');
+  await c.dispatch({ type: 'setRuleDraft', platformId: 'p1', start: '2026-01-01' });
+  await c.dispatch({ type: 'confirmRule', platformId: 'p1' });
+  assert.deepEqual(W(c).records.platform.p1.reviewRule, { kind: 'policy', policyId: 'pol1' });
+  await c.dispatch({ type: 'editRule', platformId: 'p1' });
+  await c.dispatch({ type: 'go', view: 'home' });
+  assert.equal(c.getState().ruleDraft, null);
 });
 
 test('starting a review shows the review page; a tick arrives as text and is stored as a boolean; completing moves the date', async () => {

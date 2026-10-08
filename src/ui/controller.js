@@ -95,7 +95,7 @@ const QUIET_DATES = new Set(['completeReview', 'acknowledgeReviewDate']);
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
   'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'toggleBowtieNumbers', 'setBowtieLayout', 'setPaneTier', 'resetBowtieView', 'openBowtieHazard', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
-  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'showReviewPanel', 'closeReviewPanel', 'dismissReviewMoved', 'showPolicy',
+  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'showReviewPanel', 'closeReviewPanel', 'dismissReviewMoved', 'showPolicy', 'editRule', 'setRuleDraft', 'cancelRule',
 ]);
 
 export function initialState() {
@@ -107,7 +107,7 @@ export function initialState() {
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
     workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null,
-    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, reviewPanel: null, reviewMoved: null, policyUnits: {},
+    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, reviewPanel: null, reviewMoved: null, policyUnits: {}, ruleDraft: null,
   };
 }
 
@@ -415,7 +415,7 @@ export function createController(env) {
     },
     async go({ view, id, hazardId, platformId, tab, reviewId }) {
       // Leaving a control being made, untitled, makes nothing.
-      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null, confirmDelete: null, reviewPanel: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
+      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null, confirmDelete: null, reviewPanel: null, ruleDraft: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
       if (view === 'references') await handlers.checkReferenceFiles();
       if (view === 'reference') await handlers.checkReferenceFiles({ id });
@@ -684,27 +684,35 @@ export function createController(env) {
     async closeReviewPanel() {
       set({ reviewPanel: null });
     },
-    // One part of a platform's rule changed in place: the parts not sent are taken from its rule
-    // now. A first fixed rule is yearly and a first policy the first one, counted from today; a
-    // cleared date is sent on, to be refused.
-    async setRuleField({ platformId, kind, value, unit, policyId, start }) {
+    // A platform's rule is changed as a draft on screen: nothing is saved, and no review date moves,
+    // until Confirm. A first fixed rule starts yearly, a first policy as the first one, from today.
+    async editRule({ platformId }) {
       const data = state.session?.working;
       const p = data?.records.platform[platformId];
       if (!p) throw new PivotError('not-found', 'That platform no longer exists.');
       const r = p.reviewRule;
-      const k = kind ?? r?.kind ?? 'none';
-      if (k === 'none') {
-        await applyEdit('setRule', { platformId, kind: 'none' });
-        return;
+      const { n, unit } = asUnit(r?.kind === 'fixed' ? r.months : 12);
+      set({ ruleDraft: { platformId, kind: r?.kind ?? 'fixed', value: n, unit, policyId: r?.kind === 'policy' ? r.policyId : null, start: p.reviewStart ?? state.today } });
+    },
+    async setRuleDraft({ platformId, kind, value, unit, policyId, start }) {
+      const d = state.ruleDraft;
+      if (!d || d.platformId !== platformId) return;
+      const next = { ...d, ...(kind !== undefined ? { kind } : {}), ...(value !== undefined ? { value } : {}), ...(unit !== undefined ? { unit } : {}),
+        ...(policyId !== undefined ? { policyId } : {}), ...(start !== undefined ? { start } : {}) };
+      if (next.kind === 'policy' && !next.policyId) {
+        next.policyId = Object.values(state.session?.working.records.reviewPolicy ?? {}).filter((x) => x.status === 'live').sort((a, b) => a.order - b.order)[0]?.id ?? null;
       }
-      const was = asUnit(r?.kind === 'fixed' ? r.months : 12);
-      const firstPolicy = Object.values(data.records.reviewPolicy).filter((x) => x.status === 'live').sort((a, b) => a.order - b.order)[0]?.id;
-      await applyEdit('setRule', {
-        platformId, kind: k,
-        months: value ?? was.n, unit: unit ?? was.unit,
-        policyId: policyId ?? (r?.kind === 'policy' ? r.policyId : firstPolicy),
-        start: start ?? p.reviewStart ?? state.today,
-      });
+      set({ ruleDraft: next });
+    },
+    // A refused draft (a bad number, a cleared date) stays on screen to be put right.
+    async confirmRule({ platformId }) {
+      const d = state.ruleDraft;
+      if (!d || d.platformId !== platformId) return;
+      await applyEdit('setRule', { platformId, kind: d.kind, months: d.value, unit: d.unit, policyId: d.policyId ?? undefined, start: d.start });
+      set({ ruleDraft: null });
+    },
+    async cancelRule() {
+      set({ ruleDraft: null });
     },
     async newReviewPolicy({ name }) {
       const id = newId();
@@ -1102,7 +1110,8 @@ export function createController(env) {
     const today = aestDate(env.clock.now());
     return Object.values(after.records.platform).filter((p) => p.status === 'live' && before.records.platform[p.id])
       .map((p) => ({ p, from: dueOf(before, p.id), to: dueOf(after, p.id) }))
-      .filter(({ from, to }) => from !== to)
+      // A platform's first date is the one just chosen for it, not a move.
+      .filter(({ from, to }) => from !== null && from !== to)
       .map(({ p, from, to }) => ({
         platformId: p.id, name: p.name, ownerId: p.ownerId, from, to,
         urgent: Boolean(to && to <= addDays(today, URGENT_DAYS)), driver: periodOf(after, p.id)?.driver ?? null,
