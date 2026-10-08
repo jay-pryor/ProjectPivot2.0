@@ -39,6 +39,27 @@ test('the Reviews filters and timeline range change in place, shift by a year, a
   assert.deepEqual(kept, c.getState().reviewsPrefs, 'written for this folder and profile, for the next time it opens');
 });
 
+test('a new policy opens for editing; a cell takes a value and unit; a bad value is refused with a message', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'newReviewPolicy', name: 'Standard' });
+  const id = Object.keys(W(c).records.reviewPolicy)[0];
+  assert.deepEqual([c.getState().view.name, c.getState().view.tab, c.getState().view.id], ['reviews', 'policies', id]);
+  await c.dispatch({ type: 'setPolicyCell', id, receptor: 'personnel', band: 'Serious', value: '2', unit: 'years' });
+  assert.equal(W(c).records.reviewPolicy[id].receptors.personnel.periods.Serious, 24);
+  await c.dispatch({ type: 'setPolicyCell', id, receptor: 'personnel', band: 'Serious', unit: 'months' });
+  assert.equal(W(c).records.reviewPolicy[id].receptors.personnel.periods.Serious, 2, 'the number stays; the unit changes');
+  await c.dispatch({ type: 'setPolicyCell', id, receptor: 'personnel', band: 'Serious', value: '0' });
+  assert.equal(c.getState().message.kind, 'error');
+  assert.equal(W(c).records.reviewPolicy[id].receptors.personnel.periods.Serious, 2);
+  await c.dispatch({ type: 'setPolicyCell', id, receptor: 'personnel', band: 'High', unit: 'years' });
+  assert.equal(W(c).records.reviewPolicy[id].receptors.personnel.periods.High, null, 'a unit alone on a blank cell leaves it blank');
+  await c.dispatch({ type: 'setPolicyLongest', id, value: '5' });
+  assert.equal(W(c).records.reviewPolicy[id].longest, 60, 'the longest is read in years (it was 3 years)');
+  await c.dispatch({ type: 'removeReviewPolicy', id });
+  assert.equal(W(c).records.reviewPolicy[id].status, 'deleted');
+  assert.deepEqual([c.getState().view.name, c.getState().view.tab, c.getState().view.id], ['reviews', 'policies', undefined]);
+});
+
 test('opening the data as a profile brings back that profile’s Reviews filters', async () => {
   const storage = new MemoryStorage();
   const c = createController(env(new MemoryFolder(), storage));

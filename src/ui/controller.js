@@ -32,6 +32,7 @@ import { THEMES, MIN_COLUMN_WIDTH, activeProfile, favouritesOf, samePage, FAVOUR
 import { mergeData } from '../core/merge.js';
 import { unlistedEntries, listPlatformGroups } from '../core/queries.js';
 import { DEFAULT_REVIEWS_PREFS, TIMELINE_LENGTHS, readReviewsPrefs, writeReviewsPrefs, reviewsPrefsKey } from './reviews-prefs.js';
+import { asUnit } from './screens/reviews.js';
 
 /** Every edit is an op called with the working data, the act, and the action's own fields. */
 const EDITS = {
@@ -146,6 +147,12 @@ export function createController(env) {
   }
   const act = () => ({ by: /** @type {string} */ (state.profileId), at: env.clock.now() });
   const nameOf = (/** @type {string | null} */ id) => profileName(state, id);
+  /** A live review policy in the working data, or a message that it has gone. @param {string} id */
+  const policyNamed = (id) => {
+    const pol = state.session?.working.records.reviewPolicy[id];
+    if (!pol || pol.status === 'deleted') throw new PivotError('not-found', 'That review policy no longer exists.');
+    return pol;
+  };
 
   const docs = createDocHost({
     getData: () => state.session?.working ?? emptyData(),
@@ -668,6 +675,26 @@ export function createController(env) {
     },
     async rejectControl({ hazardId, controlId, platformId, reason }) {
       await applyEdit('setControlStatus', { hazardId, controlId, platformId, status: 'rejected', reason });
+    },
+    async newReviewPolicy({ name }) {
+      const id = newId();
+      await applyEdit('createReviewPolicy', { id, name });
+      set({ view: { name: 'reviews', tab: 'policies', id } });
+    },
+    // A policy cell's number or its unit changed: the half not sent is taken from the record, so
+    // changing the unit keeps the number (and on a blank cell leaves it blank).
+    async setPolicyCell({ id, receptor, band, value, unit }) {
+      const pol = policyNamed(id);
+      const was = asUnit(pol.receptors[receptor]?.periods[band] ?? null);
+      await applyEdit('updateReviewPolicy', { id, receptor, band, months: value ?? was.n, unit: unit ?? was.unit });
+    },
+    async setPolicyLongest({ id, value, unit }) {
+      const was = asUnit(policyNamed(id).longest);
+      await applyEdit('updateReviewPolicy', { id, longest: value ?? was.n, longestUnit: unit ?? was.unit });
+    },
+    async removeReviewPolicy({ id }) {
+      await applyEdit('deleteReviewPolicy', { id });
+      set({ view: { name: 'reviews', tab: 'policies' } });
     },
     // The Reviews tab's owner and group filters, and the timeline's range: remembered in this browser.
     async setReviewsFilter({ owner, groupId, start, length, past, shift }) {
