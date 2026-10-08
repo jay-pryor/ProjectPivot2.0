@@ -92,13 +92,13 @@ export function addMonths(date, n) {
 export const DUE_SOON_DAYS = 30;
 
 /**
- * @param {{ reviewMonths?: number | null, reviewDue?: string | null, [field: string]: any }} platform
+ * Where a review stands against today: none (no due date), overdue, due soon, or ok.
+ * @param {string | null} due the calculated next due date
  * @param {string} today `YYYY-MM-DD`, AEST
  * @returns {'none' | 'ok' | 'dueSoon' | 'overdue'}
  */
-export function reviewState(platform, today) {
-  const due = platform.reviewDue;
-  if (!platform.reviewMonths || !due) return 'none';
+export function reviewState(due, today) {
+  if (!due) return 'none';
   if (today > due) return 'overdue';
   if (due <= addDays(today, DUE_SOON_DAYS)) return 'dueSoon';
   return 'ok';

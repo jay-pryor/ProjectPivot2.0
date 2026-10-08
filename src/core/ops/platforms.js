@@ -11,7 +11,7 @@ import { linksTo } from './references.js';
 
 /** @param {Data} data @param {Act} act @param {{ id?: string, name: string, ownerId: string }} args */
 export function createPlatform(data, act, { id = newId(), name, ownerId }) {
-  const rec = created(act, id, { number: null, name: needText(name, 'A platform name'), ownerId: needText(ownerId, 'A platform owner'), reviewMonths: null, reviewDue: null });
+  const rec = created(act, id, { number: null, name: needText(name, 'A platform name'), ownerId: needText(ownerId, 'A platform owner'), reviewRule: null, reviewStart: null, reviewDueSeen: null });
   return commit(data, act, 'Create platform', [{ kind: 'platform', rec }]);
 }
 

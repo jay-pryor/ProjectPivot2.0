@@ -1,11 +1,11 @@
 import { PivotError } from './errors.js';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const KINDS = Object.freeze([
   'hazard', 'causalFactor', 'consequence', 'control', 'platform',
   'hazardControl', 'hazardPlatform', 'ruling', 'rating', 'report',
-  'review', 'reviewRow',
+  'review', 'reviewRow', 'reviewPolicy',
   'reference', 'referenceLink',
   'assessment', 'sfarp',
   'phase', 'hazardPhase', 'safetyReport', 'implementer',
