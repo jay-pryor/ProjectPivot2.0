@@ -1,15 +1,20 @@
 import { PivotError } from '../errors.js';
 import { newId, ids } from '../ids.js';
-import { get, live, created, changed, need } from '../data.js';
+import { get, all, live, created, changed, need, needText, put } from '../data.js';
 import { commit } from '../apply.js';
-import { addMonths, aestDate, isDate } from '../time.js';
+import { isDate } from '../time.js';
 import { openReview } from '../queries.js';
+import { dueOf, POLICY_BANDS } from '../schedule.js';
+import { RECEPTORS } from '../receptors.js';
 
 /** @typedef {import('../data.js').Data} Data */
 /** @typedef {import('../data.js').Act} Act */
 /** @typedef {import('../data.js').Rec} Rec */
 
 export const MAX_REVIEW_MONTHS = 120;
+
+/** A new policy is reviewed at least this often, until someone says otherwise. */
+const DEFAULT_LONGEST = 36;
 
 /** Row-level review actions: kept in the history, but left out of the platform's History tab. */
 export const REVIEW_DETAIL_ACTIONS = Object.freeze(['Mark review row', 'Set review outcome', 'Set review notes']);
@@ -18,20 +23,121 @@ export const REVIEW_DETAIL_ACTIONS = Object.freeze(['Mark review row', 'Set revi
 const blank = (v) => v === undefined || v === null || v === '';
 
 /**
- * Set a platform's review period and next due date together, or clear both.
- * @param {Data} data @param {Act} act @param {{ platformId: string, months?: number | string | null, due?: string | null }} args
+ * A period from a form: a whole number of months or years, as months from 1 to MAX_REVIEW_MONTHS.
+ * @param {unknown} n @param {unknown} unit 'years', or months otherwise @param {string} code
  */
-export function setSchedule(data, act, { platformId, months, due }) {
+export function toMonths(n, unit, code) {
+  const v = blank(n) ? NaN : Number(n);
+  const months = unit === 'years' ? v * 12 : v;
+  if (!Number.isInteger(v) || months < 1 || months > MAX_REVIEW_MONTHS) {
+    throw new PivotError(code, `A review period is a whole number of months or years, from 1 month to ${MAX_REVIEW_MONTHS / 12} years.`);
+  }
+  return months;
+}
+
+/**
+ * The platform with `fields` changed, and its due date then marked seen: whoever sets the rule
+ * has seen the date it gives.
+ * @param {Data} data @param {Act} act @param {Rec} p @param {Record<string, any>} fields
+ */
+function withSeenDue(data, act, p, fields) {
+  const rec = changed(p, act, fields);
+  return changed(rec, act, { reviewDueSeen: dueOf(put(data, 'platform', rec), p.id) });
+}
+
+/**
+ * Set how a platform's reviews are scheduled: none, a fixed period, or a review policy. A first
+ * rule needs a start date (the date reviews are counted from); after that the start is kept
+ * unless a new one is given. A start given blank (a cleared date field) is refused.
+ * @param {Data} data @param {Act} act
+ * @param {{ platformId: string, kind: string, months?: unknown, unit?: unknown, policyId?: string, start?: unknown }} args
+ */
+export function setRule(data, act, { platformId, kind, months, unit, policyId, start }) {
   const p = need(data, 'platform', platformId);
-  if (blank(months) && blank(due)) {
-    return commit(data, act, 'Remove review schedule', [{ kind: 'platform', rec: changed(p, act, { reviewMonths: null, reviewDue: null }) }]);
+  if (kind === 'none') {
+    return commit(data, act, 'Remove review rule', [{ kind: 'platform', rec: changed(p, act, { reviewRule: null, reviewStart: null, reviewDueSeen: null }) }]);
   }
-  const n = blank(months) ? NaN : Number(months);
-  if (!Number.isInteger(n) || n < 1 || n > MAX_REVIEW_MONTHS) {
-    throw new PivotError('review.months', `A review period is a whole number of months from 1 to ${MAX_REVIEW_MONTHS}.`);
+  /** @type {any} */
+  let rule;
+  if (kind === 'fixed') rule = { kind: 'fixed', months: toMonths(months, unit, 'review.months') };
+  else if (kind === 'policy') rule = { kind: 'policy', policyId: need(data, 'reviewPolicy', /** @type {string} */ (policyId)).id };
+  else throw new PivotError('review.rule', 'Choose no schedule, a fixed period or a review policy.');
+  const from = start === undefined || start === null ? p.reviewStart : start;
+  if (!isDate(from)) throw new PivotError('review.start', 'Give the date reviews are counted from as a real date.');
+  return commit(data, act, 'Set review rule', [{ kind: 'platform', rec: withSeenDue(data, act, p, { reviewRule: rule, reviewStart: from }) }]);
+}
+
+/**
+ * The owner has seen that the platform's review date moved: the calculated date becomes the
+ * seen one. Nothing happens when nothing moved.
+ * @param {Data} data @param {Act} act @param {{ platformId: string }} args
+ */
+export function acknowledgeReviewDate(data, act, { platformId }) {
+  const p = need(data, 'platform', platformId);
+  const due = dueOf(data, platformId);
+  if (!due || due === p.reviewDueSeen) return data;
+  return commit(data, act, 'Acknowledge review date', [{ kind: 'platform', rec: changed(p, act, { reviewDueSeen: due }) }]);
+}
+
+/** A policy name, trimmed, not blank, and not another policy's (ignoring case). @param {Data} data @param {unknown} name @param {string | null} self */
+function needPolicyName(data, name, self) {
+  const n = needText(name, 'A policy name');
+  const clash = all(data, 'reviewPolicy').find((x) => x.status !== 'deleted' && x.id !== self && String(x.name).toLowerCase() === n.toLowerCase());
+  if (clash) throw new PivotError('reviewPolicy.duplicate', `There is already a policy called ${clash.name}.`);
+  return n;
+}
+
+/** @returns {Record<string, number | null>} */
+const blankPeriods = () => Object.fromEntries(POLICY_BANDS.map((b) => [b, null]));
+
+/**
+ * A review policy sets a platform's review period from its residual risk: a period for each band,
+ * for each receptor it considers, the shortest any hazard gives being used.
+ * @param {Data} data @param {Act} act @param {{ id?: string, name: string }} args
+ */
+export function createReviewPolicy(data, act, { id = newId(), name }) {
+  const order = Math.max(0, ...all(data, 'reviewPolicy').map((x) => (Number.isInteger(x.order) ? x.order : 0))) + 1;
+  const receptors = Object.fromEntries(RECEPTORS.map((r) => [r, { considered: true, periods: blankPeriods() }]));
+  const rec = created(act, id, { name: needPolicyName(data, name, null), order, longest: DEFAULT_LONGEST, receptors });
+  return commit(data, act, 'Create review policy', [{ kind: 'reviewPolicy', rec }]);
+}
+
+/**
+ * One change to a policy: a band's period for a receptor (blank clears it), whether a receptor is
+ * considered, or the longest period.
+ * @param {Data} data @param {Act} act
+ * @param {{ id: string, receptor?: string, band?: string, months?: unknown, unit?: unknown, considered?: unknown, longest?: unknown, longestUnit?: unknown }} args
+ */
+export function updateReviewPolicy(data, act, { id, receptor, band, months, unit, considered, longest, longestUnit }) {
+  const pol = need(data, 'reviewPolicy', id);
+  if (longest !== undefined) {
+    return commit(data, act, 'Change review policy', [{ kind: 'reviewPolicy', rec: changed(pol, act, { longest: toMonths(longest, longestUnit, 'review.months') }) }]);
   }
-  if (!isDate(due)) throw new PivotError('review.due', 'Give the next review date as a real date.');
-  return commit(data, act, 'Set review schedule', [{ kind: 'platform', rec: changed(p, act, { reviewMonths: n, reviewDue: due }) }]);
+  if (!RECEPTORS.includes(/** @type {any} */ (receptor))) throw new PivotError('reviewPolicy.receptor', 'Choose personnel, environment or capability.');
+  const r = /** @type {string} */ (receptor);
+  const was = pol.receptors[r];
+  /** @type {any} */
+  let next;
+  if (considered !== undefined) next = { ...was, considered: considered === true || considered === 'true' };
+  else {
+    if (!POLICY_BANDS.includes(/** @type {any} */ (band))) throw new PivotError('reviewPolicy.band', 'That is not a risk band.');
+    next = { ...was, periods: { ...was.periods, [/** @type {string} */ (band)]: blank(months) ? null : toMonths(months, unit, 'review.months') } };
+  }
+  return commit(data, act, 'Change review policy', [{ kind: 'reviewPolicy', rec: changed(pol, act, { receptors: { ...pol.receptors, [r]: next } }) }]);
+}
+
+/** @param {Data} data @param {Act} act @param {{ id: string, name: string }} args */
+export function renameReviewPolicy(data, act, { id, name }) {
+  const pol = need(data, 'reviewPolicy', id);
+  return commit(data, act, 'Rename review policy', [{ kind: 'reviewPolicy', rec: changed(pol, act, { name: needPolicyName(data, name, id) }) }]);
+}
+
+/** A policy any live platform uses cannot be deleted; the refusal names them. @param {Data} data @param {Act} act @param {{ id: string }} args */
+export function deleteReviewPolicy(data, act, { id }) {
+  const pol = need(data, 'reviewPolicy', id);
+  const users = live(data, 'platform').filter((p) => p.reviewRule?.kind === 'policy' && p.reviewRule.policyId === id);
+  if (users.length) throw new PivotError('reviewPolicy.inUse', `${pol.name} is used by ${users.map((p) => p.name).join(', ')}. Give them another rule first.`);
+  return commit(data, act, 'Delete review policy', [{ kind: 'reviewPolicy', rec: changed(pol, act, { status: 'deleted' }) }]);
 }
 
 /** @param {Data} data @param {string} reviewId */
@@ -83,25 +189,20 @@ export function setReviewNotes(data, act, { reviewId, notes }) {
 }
 
 /**
- * Complete a review. The due date moves on from the old due date in whole periods, to the first
- * date after today: a late review does not pull the schedule forward, an early one does not push
- * it out, and one completed several periods late does not leave the platform still overdue. Every
- * hazard on the platform with no row gets one, not reviewed, so the review records what it covered.
- * Every row is marked final, so a merge sees the completion as a change to each row: another
- * user's abandoning the same review then conflicts with it, and the completed rows are kept.
+ * Complete a review. The schedule then counts from the date this review answered, so a late
+ * review does not drift it and an early one does not push it out; the next date steps on in whole
+ * periods to the first after today, so one completed several periods late does not leave the
+ * platform still overdue. The new date is marked seen. Every hazard on the platform with no row
+ * gets one, not reviewed, so the review records what it covered. Every row is marked final, so a
+ * merge sees the completion as a change to each row: another user's abandoning the same review
+ * then conflicts with it, and the completed rows are kept.
  * @param {Data} data @param {Act} act @param {{ reviewId: string }} args
  */
 export function completeReview(data, act, { reviewId }) {
   const r = needOpen(data, reviewId);
   const p = need(data, 'platform', r.platformId);
-  if (!p.reviewMonths || !p.reviewDue) throw new PivotError('review.no-schedule', `Set a review schedule for ${p.name} first.`);
-  const today = aestDate(act.at);
-  let k = 1;
-  let dueAfter = addMonths(p.reviewDue, p.reviewMonths);
-  while (dueAfter <= today) {
-    k += 1;
-    dueAfter = addMonths(p.reviewDue, k * p.reviewMonths);
-  }
+  const dueBefore = dueOf(data, p.id);
+  if (!dueBefore) throw new PivotError('review.no-schedule', `Set a review schedule for ${p.name} first.`);
   /** @type {{ kind: string, rec: Rec }[]} */
   const recs = [];
   for (const link of live(data, 'hazardPlatform').filter((l) => l.platformId === p.id)) {
@@ -110,8 +211,11 @@ export function completeReview(data, act, { reviewId }) {
     if (!row || row.status !== 'live') recs.push({ kind: 'reviewRow', rec: created(act, id, { reviewId, hazardId: link.hazardId, reviewed: false, note: '', final: true }) });
   }
   for (const row of live(data, 'reviewRow').filter((x) => x.reviewId === reviewId)) recs.push({ kind: 'reviewRow', rec: changed(row, act, { final: true }) });
-  recs.push({ kind: 'review', rec: changed(r, act, { state: 'completed', dueBefore: p.reviewDue, dueAfter, completedBy: act.by, completedAt: act.at }) });
-  recs.push({ kind: 'platform', rec: changed(p, act, { reviewDue: dueAfter }) });
+  const done = changed(r, act, { state: 'completed', dueBefore, completedBy: act.by, completedAt: act.at });
+  const counted = changed(p, act, { reviewStart: dueBefore });
+  const dueAfter = /** @type {string} */ (dueOf(put(put(data, 'review', done), 'platform', counted), p.id));
+  recs.push({ kind: 'review', rec: changed(done, act, { dueAfter }) });
+  recs.push({ kind: 'platform', rec: changed(counted, act, { reviewDueSeen: dueAfter }) });
   return commit(data, act, 'Complete review', recs);
 }
 

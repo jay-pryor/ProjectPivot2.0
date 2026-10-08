@@ -131,6 +131,8 @@ export function platformsReached(data, kind, rec) {
       const review = get(data, 'review', rec.reviewId);
       return review ? [review.platformId] : [];
     }
+    case 'reviewPolicy':
+      return live(data, 'platform').filter((p) => p.reviewRule?.kind === 'policy' && p.reviewRule.policyId === rec.id).map((p) => p.id).sort();
     default: return [];
   }
 }

@@ -131,6 +131,14 @@ export function checkRules(data) {
       out.push({ rule: 'completed-review-changed', message: 'A completed review was changed after it was completed.', records: [{ kind: 'reviewRow', id: row.id }] });
     }
   }
+  // A platform scheduled by a policy needs that policy (a merge can delete one under it).
+  for (const p of live(data, 'platform')) {
+    if (p.reviewRule?.kind !== 'policy') continue;
+    const pol = get(data, 'reviewPolicy', p.reviewRule.policyId);
+    if (!pol || pol.status !== 'live') {
+      out.push({ rule: 'platform-policy-missing', message: 'A platform is scheduled by a review policy that no longer exists.', records: [{ kind: 'platform', id: p.id }, { kind: 'reviewPolicy', id: p.reviewRule.policyId }] });
+    }
+  }
   // A reference link needs its reference and its record; a live reference points at something.
   for (const l of live(data, 'referenceLink')) {
     if (gone(get(data, 'reference', l.referenceId))) {
