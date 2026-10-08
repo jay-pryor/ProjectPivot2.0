@@ -1157,3 +1157,30 @@ ul.dots { display: grid; gap: 3px; }
 .bt-layout button { font-weight: 600; }
 .bt-layout button + button { margin-left: -1px; }
 .bt-layout button[aria-pressed="true"] { background: var(--p-accent); border-color: var(--p-accent); color: #1b1f24; }
+
+/* Reviews timeline: a row per platform, a column per month; the platform column stays put while the months scroll. */
+.tl-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0 12px; }
+.tl-controls > button { min-width: 32px; font-size: 18px; line-height: 1; padding: 4px 8px; }
+.tl-scroll { overflow-x: auto; border: 1px solid var(--p-line); max-width: 100%; }
+.timeline { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+.timeline th, .timeline td { padding: 4px 0; text-align: center; border-bottom: 1px solid var(--p-line); }
+.timeline .tl-name { position: sticky; left: 0; z-index: 1; background: var(--p-bg); text-align: left; padding: 4px 12px; white-space: nowrap; min-width: 200px; border-right: 1px solid var(--p-line); }
+.timeline .tl-year { font-size: 12px; color: var(--p-muted); border-left: 1px solid var(--p-line); }
+.timeline .tl-month { font-size: 12px; font-weight: 600; min-width: 36px; }
+.timeline .today { background: color-mix(in srgb, var(--p-accent) 14%, transparent); }
+.timeline tbody tr:not(.tl-group):not(.tl-none):hover td { background: var(--p-row-hover); }
+.tl-cell { position: relative; height: 30px; }
+.tl-cell.tl-bar::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px solid var(--p-line); }
+.tl-mark { position: relative; display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; }
+.tl-cell .tl-mark + .tl-mark { margin-left: 2px; }
+.tl-mark.due { background: var(--p-accent); }
+.tl-mark.projected { border: 2px solid var(--p-accent); background: var(--p-bg); }
+.tl-mark.overdue { background: var(--p-danger); }
+.tl-mark.dueWas { border: 2px dashed var(--p-danger); background: var(--p-bg); }
+.tl-mark.done { background: var(--p-muted); border-radius: 0; }
+.tl-mark.late { background: var(--p-warn); border-radius: 0; }
+.tl-mark.open { width: 20px; border-radius: 0; background: repeating-linear-gradient(45deg, var(--p-accent), var(--p-accent) 3px, transparent 3px, transparent 6px); }
+.tl-none td { font-style: italic; text-align: left; padding-left: 12px; }
+.tl-group th { text-align: left; padding: 8px 12px; background: var(--p-surface-2); font-weight: 600; position: sticky; left: 0; }
+.tl-key .tl-mark { margin: 0 4px 0 12px; }
+.tl-key .tl-mark:first-child { margin-left: 0; }

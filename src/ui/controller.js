@@ -9,6 +9,7 @@ import { deleteName, bundlePage } from './screens/common.js';
 import { emptyData, NUMBERED, need, normalizeData } from '../core/data.js';
 import { epochOf, aestDate, systemClock, addDays } from '../core/time.js';
 import { dueOf, periodOf, URGENT_DAYS } from '../core/schedule.js';
+import { shiftMonth } from '../core/timeline.js';
 import { entries, unseenOverrides, markNoticesSeen, addComment, createBundle, unbundle, renameBundle, deleteHistory, restoreHistory } from '../core/history.js';
 import * as hazards from '../core/ops/hazards.js';
 import * as controls from '../core/ops/controls.js';
@@ -90,12 +91,6 @@ const BACKUP_CHECK_MS = 60_000;
 
 /** Edits whose point is to move a review date, so they never pop up to say it moved. */
 const QUIET_DATES = new Set(['completeReview', 'acknowledgeReviewDate']);
-
-/** A YYYY-MM month moved on (or back) by `n` months. @param {string} ym @param {number} n */
-const shiftMonth = (ym, n) => {
-  const t = Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1 + n;
-  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
-};
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
