@@ -2,7 +2,7 @@ import { html, raw, esc } from '../html.js';
 import { dataTable } from './table.js';
 import { historyOf, commentsOn, hazardOfItem, bundlesOf } from '../../core/history.js';
 import { hasUnsaved } from '../../storage/mirror.js';
-import { profileName, when, day } from '../names.js';
+import { profileName, when, day, periodWord } from '../names.js';
 import { driverWord } from '../review-words.js';
 import { themeOf, isFavourite } from '../prefs.js';
 import { ratingFor, LIKELIHOODS, CONSEQUENCES } from '../../core/matrix.js';
@@ -331,6 +331,8 @@ function show(v) {
     return r.cell ? `${r.cell} ${r.band}` : '(none)';
   }
   if (typeof v.stored === 'string') return String(v.name ?? v.stored.split('/').at(-1));
+  if (v.kind === 'fixed' && Number.isInteger(v.months)) return `fixed, every ${periodWord(v.months)}`;
+  if (v.kind === 'policy' && typeof v.policyId === 'string') return 'a review policy';
   return Object.entries(v).map(([k, x]) => `${fieldWord(k)} ${show(x)}`).join('; ');
 }
 
