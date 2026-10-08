@@ -33,8 +33,6 @@ test('the rules: an open review needs a live platform, one per platform, steps f
   assert.deepEqual(names(checkRules(put(ticked, 'workflow', { ...ticked.records.workflow.w1, status: 'deleted' }))), ['workflow-step-orphaned']);
   const done = finishPlatformReview(ticked, me, { workflowId: 'w1' });
   assert.deepEqual(checkRules(done), []);
-  const sid = ids.workflowStep('w1', 'h1', 'sfarp');
-  assert.deepEqual(names(checkRules(put(done, 'workflowStep', changed(done.records.workflowStep[sid], them, { note: 'after' })))), ['ended-workflow-changed']);
 });
 
 test('ticks on different hazards in two saves are both kept', () => {
@@ -93,4 +91,16 @@ test('retiring or deleting a platform cancels its open review, which is then in 
   e = deletePlatform(beginPlatformReview(e, setup, { id: 'w9', platformId: 'p9' }), me, { id: 'p9' });
   assert.equal(e.records.workflow.w9.state, 'cancelled');
   assert.deepEqual(checkRules(e), []);
+});
+
+test('a check ticked on a fast clock, then the review ended on a slow one: the rules still hold, and a later merge saves', () => {
+  const fast = { by: 'u1', at: '2026-09-28T12:30:00+10:00' };
+  const slow = { by: 'u2', at: '2026-09-28T12:21:00+10:00' };
+  const ticked = setStep(base(), fast, { workflowId: 'w1', hazardId: 'h1', check: 'sfarp', checked: true });
+  for (const ended of [retirePlatform(ticked, slow, { id: 'p1' }), finishPlatformReview(ticked, slow, { workflowId: 'w1' })]) {
+    assert.deepEqual(checkRules(ended), []);
+    const mine = linkHazard(ended, slow, { hazardId: 'h2', platformId: 'p2' });
+    const theirs = put(ended, 'hazard', changed(ended.records.hazard.h1, them, { title: 'Fire on board' }));
+    assert.doesNotThrow(() => mergeData(ended, mine, theirs, saveAct));
+  }
 });

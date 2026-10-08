@@ -121,13 +121,12 @@ export function checkRules(data) {
     if (first) out.push({ rule: 'two-open-reviews', message: 'A platform has two reviews in progress.', records: [{ kind: 'workflow', id: first.id }, { kind: 'workflow', id: w.id }] });
     else openOn.set(w.platformId, w);
   }
-  // A workflow's checks go with it, and an ended workflow is never changed again.
+  // A workflow's checks go with it. (An ended workflow is never changed again: its ops refuse it,
+  // and a merge keeps it whole. Not judged by timestamps, which differ between machines' clocks.)
   for (const s of live(data, 'workflowStep')) {
     const w = get(data, 'workflow', s.workflowId);
     if (!w || w.status !== 'live') {
       out.push({ rule: 'workflow-step-orphaned', message: 'A workflow check belongs to a workflow that no longer exists.', records: [{ kind: 'workflow', id: s.workflowId }, { kind: 'workflowStep', id: s.id }] });
-    } else if (w.state !== 'open' && s.updatedAt > w.endedAt) {
-      out.push({ rule: 'ended-workflow-changed', message: 'A workflow was changed after it ended.', records: [{ kind: 'workflowStep', id: s.id }] });
     }
   }
   // A platform scheduled by a policy needs that policy (a merge can delete one under it).
