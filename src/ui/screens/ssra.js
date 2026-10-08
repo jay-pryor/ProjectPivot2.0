@@ -56,7 +56,7 @@ const controlIdColumn = () => ({ ...idColumn((/** @type {any} */ c) => c.control
  * hazard's platforms. + adds controls here; ✕ takes one off this platform alone.
  * @param {any} state @param {Data} data @param {any} h @param {string} platformId @param {string} platformName
  */
-function controlsSection(state, data, h, platformId, platformName) {
+export function controlsSection(state, data, h, platformId, platformName) {
   const rows = controlsOnPlatform(data, h.id, platformId);
   return dataTable(state, {
     id: 'controlAnalysis',
@@ -176,8 +176,11 @@ const WORD = { initial: 'Initial', residual: 'Residual', ...RECEPTOR_WORD };
  * Initial or residual risk: a panel per receptor side by side, each with likelihood and
  * consequence dropdowns, their justifications, and the assessed level.
  * @param {any} state @param {Data} data @param {any} h the hazard @param {string} platformId @param {'initial' | 'residual'} stage
+ * @param {'both' | 'ratings' | 'justifications'} [part] which halves to show: the ratings, their justifications, or both
  */
-export function riskPanels(state, data, h, platformId, stage) {
+export function riskPanels(state, data, h, platformId, stage, part = 'both') {
+  const rate = part !== 'justifications';
+  const justify = part !== 'ratings';
   const ratings = ratingsOf(data, h.id, platformId);
   const panel = (/** @type {'personnel' | 'environment' | 'capability'} */ receptor) => {
     const a = assessmentOf(data, h.id, platformId, stage, receptor);
@@ -188,14 +191,25 @@ export function riskPanels(state, data, h, platformId, stage) {
       ? html`<button type="button" class="copy-from" ${dataAttrs({ action: 'openPicker', picker: 'copyJustification', 'hazard-id': h.id, 'platform-id': platformId, stage, receptor, field })} title="Copy from another platform" aria-label="Copy the ${stage} ${receptor} ${field === 'likelihoodWhy' ? 'likelihood' : 'consequence'} justification from another platform"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="9" height="9"/><path d="M3 11V2h9"/></svg></button>`
       : '');
     return html`<div class="risk-panel"><h3>${WORD[receptor]}</h3>
-      <label class="risk-field">Likelihood <select name="likelihood" aria-label="${label} likelihood" ${dataAttrs(at)}>${option('', '—', a?.likelihood ?? '')}${LIKELIHOODS.map((l) => option(l.letter, `${l.letter} · ${l.label}`, a?.likelihood ?? ''))}</select></label>
-      <div class="why">${copy('likelihoodWhy')}<textarea name="likelihoodWhy" rows="3" placeholder="Why this likelihood…" aria-label="${label} likelihood justification" ${dataAttrs(at)}>${a?.likelihoodWhy ?? ''}</textarea></div>
-      <label class="risk-field">Consequence <select name="consequence" aria-label="${label} consequence" ${dataAttrs(at)}>${option('', '—', a?.consequence == null ? '' : String(a.consequence))}${CONSEQUENCES.map((c) => option(String(c.level), `${c.level} · ${c.label}`, a?.consequence == null ? '' : String(a.consequence)))}</select></label>
-      <div class="why">${copy('consequenceWhy')}<textarea name="consequenceWhy" rows="3" placeholder="Why this consequence…" aria-label="${label} consequence justification" ${dataAttrs(at)}>${a?.consequenceWhy ?? ''}</textarea></div>
+      ${rate ? html`<label class="risk-field">Likelihood <select name="likelihood" aria-label="${label} likelihood" ${dataAttrs(at)}>${option('', '—', a?.likelihood ?? '')}${LIKELIHOODS.map((l) => option(l.letter, `${l.letter} · ${l.label}`, a?.likelihood ?? ''))}</select></label>` : html`<p class="risk-field">Likelihood <strong>${a?.likelihood ?? '—'}</strong></p>`}
+      ${justify ? html`<div class="why">${copy('likelihoodWhy')}<textarea name="likelihoodWhy" rows="3" placeholder="Why this likelihood…" aria-label="${label} likelihood justification" ${dataAttrs(at)}>${a?.likelihoodWhy ?? ''}</textarea></div>` : ''}
+      ${rate ? html`<label class="risk-field">Consequence <select name="consequence" aria-label="${label} consequence" ${dataAttrs(at)}>${option('', '—', a?.consequence == null ? '' : String(a.consequence))}${CONSEQUENCES.map((c) => option(String(c.level), `${c.level} · ${c.label}`, a?.consequence == null ? '' : String(a.consequence)))}</select></label>` : html`<p class="risk-field">Consequence <strong>${a?.consequence ?? '—'}</strong></p>`}
+      ${justify ? html`<div class="why">${copy('consequenceWhy')}<textarea name="consequenceWhy" rows="3" placeholder="Why this consequence…" aria-label="${label} consequence justification" ${dataAttrs(at)}>${a?.consequenceWhy ?? ''}</textarea></div>` : ''}
       <div class="risk-level">Assessed level ${levelTag(ratings[stage][receptor])}</div>
     </div>`;
   };
   return html`<div class="risk-panels risk-${stage}">${RECEPTORS.map((r) => panel(/** @type {'personnel'} */ (r)))}</div>`;
+}
+
+/** A platform's SFARP considerations for a hazard: justification, conclusion and conditions of validity. @param {Data} data @param {any} h @param {string} platformId */
+export function sfarpArea(data, h, platformId) {
+  const sf = sfarpOf(data, h.id, platformId);
+  const sfAt = { change: 'setSfarp', 'hazard-id': h.id, 'platform-id': platformId };
+  return html`<div class="sfarp">
+    <label>SFARP justification<textarea name="justification" rows="4" aria-label="SFARP justification" ${dataAttrs(sfAt)}>${sf.justification}</textarea></label>
+    <label>SFARP conclusion<textarea name="conclusion" rows="2" aria-label="SFARP conclusion" ${dataAttrs(sfAt)}>${sf.conclusion}</textarea></label>
+    <label>Conditions of validity<textarea name="conditions" rows="3" aria-label="Conditions of validity" ${dataAttrs(sfAt)}>${sf.conditions}</textarea></label>
+  </div>`;
 }
 
 /**
@@ -276,7 +290,6 @@ export function platformTab(state, data, h, platformId) {
   if (!link || link.status !== 'live' || !p) return html`<p class="muted">This hazard is not on that platform. ${go('Back to the overview', 'hazard', { id: h.id })}</p>`;
   const d = /** @type {NonNullable<ReturnType<typeof hazardDetail>>} */ (hazardDetail(data, h.id));
   const sf = sfarpOf(data, h.id, platformId);
-  const sfAt = { change: 'setSfarp', 'hazard-id': h.id, 'platform-id': platformId };
   const ratings = ratingsOf(data, h.id, platformId);
   const controls = controlsOnPlatform(data, h.id, platformId);
   const reports = safetyReportsOn(data, h.id, platformId);
@@ -313,11 +326,7 @@ export function platformTab(state, data, h, platformId) {
       { key: 'controls', label: 'Controls', icon: 'controls', badge: controls.length, body: () => html`<h2>Controls <span class="shared-mark">Recommendation and justification shared across platforms</span>${copyPartButton(data, h, platformId, 'controls', 'the controls and their statuses')}</h2><section class="block">${controlsSection(state, data, h, platformId, p.name)}</section>` },
       { key: 'residual', label: 'Residual risk', icon: 'residual', badge: worstDot(ratings.residual), body: () => html`<h2>Residual risk${copyStageButton(data, h, platformId, 'residual')}</h2>${riskPanels(state, data, h, platformId, 'residual')}` },
       { key: 'sfarp', label: 'SFARP', icon: 'sfarp', badge: sf.conclusion?.trim() ? '✓' : '', body: () => html`<h2>SFARP considerations${copyPartButton(data, h, platformId, 'sfarp', 'the SFARP considerations')}</h2>
-        <div class="sfarp">
-          <label>SFARP justification<textarea name="justification" rows="4" aria-label="SFARP justification" ${dataAttrs(sfAt)}>${sf.justification}</textarea></label>
-          <label>SFARP conclusion<textarea name="conclusion" rows="2" aria-label="SFARP conclusion" ${dataAttrs(sfAt)}>${sf.conclusion}</textarea></label>
-          <label>Conditions of validity<textarea name="conditions" rows="3" aria-label="Conditions of validity" ${dataAttrs(sfAt)}>${sf.conditions}</textarea></label>
-        </div>` },
+        ${sfarpArea(data, h, platformId)}` },
     ], 'initial')}
   </article>`;
 }

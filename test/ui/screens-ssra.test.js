@@ -8,6 +8,7 @@ import { setControlAnalysis, updateControl, retireControl, createControl, create
 import { pickerView } from '../../src/ui/screens/picker.js';
 import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
 import { seed, act } from '../helpers.js';
+import { riskPanels, sfarpArea, controlsSection } from '../../src/ui/screens/ssra.js';
 
 const state = { ...initialState(), screen: 'main', today: '2026-09-28', profileId: 'u1', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }, { id: 'u2', name: 'Grace', createdAt: '' }] };
 const on = (tab, section) => ({ ...state, view: { name: 'hazard', id: 'h1', tab }, ...(section === undefined ? {} : { sections: { ssra: section } }) });
@@ -400,4 +401,18 @@ test('the overview\'s Safety Reports section lists every platform\'s safety repo
   assert.doesNotMatch(out, /Add a safety report/, 'added on a platform\'s tab');
   assert.match(out, /data-action="moveSafetyReport" data-id="sr1" data-platform-id="p2">Move to Bravo/);
   assert.match(out, /data-action="moveSafetyReport" data-id="sr2" data-platform-id="p1">Move to Alpha/);
+});
+
+test('risk panels show ratings only, justifications only, or both; SFARP and controls render on their own', () => {
+  const d = seed();
+  const h = d.records.hazard.h1;
+  const ratings = riskPanels(state, d, h, 'p1', 'residual', 'ratings').toString();
+  assert.match(ratings, /name="likelihood"/);
+  assert.doesNotMatch(ratings, /name="likelihoodWhy"/);
+  const why = riskPanels(state, d, h, 'p1', 'residual', 'justifications').toString();
+  assert.match(why, /name="likelihoodWhy"/);
+  assert.doesNotMatch(why, /<select name="likelihood"/);
+  assert.match(riskPanels(state, d, h, 'p1', 'residual').toString(), /name="likelihood".*name="likelihoodWhy"/s);
+  assert.match(sfarpArea(d, h, 'p1').toString(), /name="justification".*name="conclusion".*name="conditions"/s);
+  assert.match(controlsSection(state, d, h, 'p1', 'Alpha').toString(), /Sprinklers/);
 });
