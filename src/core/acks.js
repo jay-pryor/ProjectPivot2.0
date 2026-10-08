@@ -11,7 +11,7 @@ import { entries } from './history.js';
  * ops/reviews.js, which would make an import cycle through queries.js.
  */
 export const NOT_ACKNOWLEDGED = Object.freeze(['Mark review row', 'Set review outcome', 'Set review notes', 'Produce report',
-  'Add to platform group', 'Remove from platform group', 'Delete platform group']);
+  'Add to platform group', 'Remove from platform group', 'Delete platform group', 'Acknowledge review date']);
 
 /** @param {Data} data @param {any} entry @returns {Data} */
 const append = (data, entry) => ({ ...data, history: { ...data.history, [entry.id]: entry } });

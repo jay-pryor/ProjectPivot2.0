@@ -135,7 +135,7 @@ test('the replace question, the nav, the route, and Open bow-tie on a hazard\'s 
   const asking = bowtiesView(state(d, { workspace: one(B), bowtieReplace: { side: 'last', pane: A, index: 0 } }), d).toString();
   assert.match(asking, /class="picker-overlay"[\s\S]*?Replace the unsaved diagram\?[\s\S]*?data-action="confirmBowtieReplace"[\s\S]*?data-action="cancelBowtieReplace"/);
   assert.match(asking, /data-action="cancelBowtieReplace" autofocus>Keep it/, 'focus lands on the safe choice, so Escape and the keyboard work');
-  assert.match(shell(state(d), html``).toString(), /data-view="platforms">Platforms<\/button><button type="button" class="nav on" data-action="go" data-view="bowties">Bow-ties<\/button><button[^>]*data-view="info"/);
+  assert.match(shell(state(d), html``).toString(), /data-view="reviews">Reviews<\/button><button type="button" class="nav on" data-action="go" data-view="bowties">Bow-ties<\/button><button[^>]*data-view="info"/);
   assert.match(renderApp(state(d)), /<h1>Bow-ties<\/h1>/);
   const tab = hazardView(state(d, { view: { name: 'hazard', id: 'h1', tab: 'p:p1' } }), d, 'h1').toString();
   assert.match(tab, /data-action="openBowtie" data-hazard-id="h1" data-platform-id="p1"/);

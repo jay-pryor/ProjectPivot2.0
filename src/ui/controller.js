@@ -7,7 +7,9 @@ import { PivotError } from '../core/errors.js';
 import { newId } from '../core/ids.js';
 import { deleteName, bundlePage } from './screens/common.js';
 import { emptyData, NUMBERED, need, normalizeData } from '../core/data.js';
-import { epochOf, aestDate, systemClock } from '../core/time.js';
+import { epochOf, aestDate, systemClock, addDays } from '../core/time.js';
+import { dueOf, periodOf, URGENT_DAYS } from '../core/schedule.js';
+import { shiftMonth } from '../core/timeline.js';
 import { entries, unseenOverrides, markNoticesSeen, addComment, createBundle, unbundle, renameBundle, deleteHistory, restoreHistory } from '../core/history.js';
 import * as hazards from '../core/ops/hazards.js';
 import * as controls from '../core/ops/controls.js';
@@ -31,6 +33,8 @@ import { recordName, profileName, KIND_LABEL } from './names.js';
 import { THEMES, MIN_COLUMN_WIDTH, activeProfile, favouritesOf, samePage, FAVOURITE_LAYOUTS, COMING_UP_WINDOWS } from './prefs.js';
 import { mergeData } from '../core/merge.js';
 import { unlistedEntries, listPlatformGroups } from '../core/queries.js';
+import { DEFAULT_REVIEWS_PREFS, TIMELINE_LENGTHS, readReviewsPrefs, writeReviewsPrefs, reviewsPrefsKey } from './reviews-prefs.js';
+import { asUnit } from './screens/reviews.js';
 
 /** Every edit is an op called with the working data, the act, and the action's own fields. */
 const EDITS = {
@@ -52,7 +56,8 @@ const EDITS = {
   setControlStatus: assessment.setControlStatus, setRating: assessment.setRating,
   setAssessment: assessment.setAssessment, copyStageRisk: assessment.copyStageRisk, setSfarp: assessment.setSfarp,
   setImplementationStatus: assessment.setImplementationStatus, copyControls: assessment.copyControls, copySfarp: assessment.copySfarp,
-  setSchedule: reviews.setSchedule, startReview: reviews.startReview, markRow: reviews.markRow,
+  setRule: reviews.setRule, acknowledgeReviewDate: reviews.acknowledgeReviewDate, startReview: reviews.startReview, markRow: reviews.markRow,
+  createReviewPolicy: reviews.createReviewPolicy, updateReviewPolicy: reviews.updateReviewPolicy, renameReviewPolicy: reviews.renameReviewPolicy, deleteReviewPolicy: reviews.deleteReviewPolicy,
   setReviewOutcome: reviews.setReviewOutcome, setReviewNotes: reviews.setReviewNotes, completeReview: reviews.completeReview, abandonReview: reviews.abandonReview,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
@@ -84,10 +89,13 @@ const sameView = (a, b) => ['name', 'id', 'tab', 'reviewId', 'hazardId', 'platfo
 
 const BACKUP_CHECK_MS = 60_000;
 
+/** Edits whose point is to move a review date, so they never pop up to say it moved. */
+const QUIET_DATES = new Set(['completeReview', 'acknowledgeReviewDate']);
+
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
   'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'toggleBowtieNumbers', 'setBowtieLayout', 'setPaneTier', 'resetBowtieView', 'openBowtieHazard', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
-  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup',
+  'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'showReviewPanel', 'closeReviewPanel', 'dismissReviewMoved',
 ]);
 
 export function initialState() {
@@ -99,7 +107,7 @@ export function initialState() {
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
     workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null,
-    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null },
+    infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, reviewPanel: null, reviewMoved: null,
   };
 }
 
@@ -138,6 +146,12 @@ export function createController(env) {
   }
   const act = () => ({ by: /** @type {string} */ (state.profileId), at: env.clock.now() });
   const nameOf = (/** @type {string | null} */ id) => profileName(state, id);
+  /** A live review policy in the working data, or a message that it has gone. @param {string} id */
+  const policyNamed = (id) => {
+    const pol = state.session?.working.records.reviewPolicy[id];
+    if (!pol || pol.status === 'deleted') throw new PivotError('not-found', 'That review policy no longer exists.');
+    return pol;
+  };
 
   const docs = createDocHost({
     getData: () => state.session?.working ?? emptyData(),
@@ -175,7 +189,8 @@ export function createController(env) {
     DocGen.docHost.set(docs.host);
     const notices = unseenOverrides(state.session.working, /** @type {string} */ (state.profileId));
     const workspace = readWorkspace(env.storage, workspaceKey(state.folderName, /** @type {string} */ (state.profileId)));
-    set({ notices, screen: notices.length ? 'notices' : 'main', view: { name: 'home' }, workspace, bowtieReplace: null });
+    const reviewsPrefs = readReviewsPrefs(env.storage, reviewsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)));
+    set({ notices, screen: notices.length ? 'notices' : 'main', view: { name: 'home' }, workspace, reviewsPrefs, bowtieReplace: null });
   }
 
 
@@ -400,7 +415,7 @@ export function createController(env) {
     },
     async go({ view, id, hazardId, platformId, tab, reviewId }) {
       // Leaving a control being made, untitled, makes nothing.
-      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null, confirmDelete: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
+      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null, confirmDelete: null, reviewPanel: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
       if (view === 'references') await handlers.checkReferenceFiles();
       if (view === 'reference') await handlers.checkReferenceFiles({ id });
@@ -660,17 +675,75 @@ export function createController(env) {
     async rejectControl({ hazardId, controlId, platformId, reason }) {
       await applyEdit('setControlStatus', { hazardId, controlId, platformId, status: 'rejected', reason });
     },
-    async setScheduleField({ platformId, months, due }) {
-      const p = state.session?.working.records.platform[platformId];
+    async dismissReviewMoved() {
+      set({ reviewMoved: null });
+    },
+    async showReviewPanel({ id }) {
+      set({ reviewPanel: id });
+    },
+    async closeReviewPanel() {
+      set({ reviewPanel: null });
+    },
+    // One part of a platform's rule changed in place: the parts not sent are taken from its rule
+    // now. A first fixed rule is yearly and a first policy the first one, counted from today; a
+    // cleared date is sent on, to be refused.
+    async setRuleField({ platformId, kind, value, unit, policyId, start }) {
+      const data = state.session?.working;
+      const p = data?.records.platform[platformId];
       if (!p) throw new PivotError('not-found', 'That platform no longer exists.');
-      await applyEdit('setSchedule', { platformId, months: months ?? p.reviewMonths, due: due ?? p.reviewDue });
+      const r = p.reviewRule;
+      const k = kind ?? r?.kind ?? 'none';
+      if (k === 'none') {
+        await applyEdit('setRule', { platformId, kind: 'none' });
+        return;
+      }
+      const was = asUnit(r?.kind === 'fixed' ? r.months : 12);
+      const firstPolicy = Object.values(data.records.reviewPolicy).filter((x) => x.status === 'live').sort((a, b) => a.order - b.order)[0]?.id;
+      await applyEdit('setRule', {
+        platformId, kind: k,
+        months: value ?? was.n, unit: unit ?? was.unit,
+        policyId: policyId ?? (r?.kind === 'policy' ? r.policyId : firstPolicy),
+        start: start ?? p.reviewStart ?? state.today,
+      });
+    },
+    async newReviewPolicy({ name }) {
+      const id = newId();
+      await applyEdit('createReviewPolicy', { id, name });
+      set({ view: { name: 'reviews', tab: 'policies', id } });
+    },
+    // A policy cell's number or its unit changed: the half not sent is taken from the record, so
+    // changing the unit keeps the number (and on a blank cell leaves it blank).
+    async setPolicyCell({ id, receptor, band, value, unit }) {
+      const pol = policyNamed(id);
+      const was = asUnit(pol.receptors[receptor]?.periods[band] ?? null);
+      await applyEdit('updateReviewPolicy', { id, receptor, band, months: value ?? was.n, unit: unit ?? was.unit });
+    },
+    async setPolicyLongest({ id, value, unit }) {
+      const was = asUnit(policyNamed(id).longest);
+      await applyEdit('updateReviewPolicy', { id, longest: value ?? was.n, longestUnit: unit ?? was.unit });
+    },
+    async removeReviewPolicy({ id }) {
+      await applyEdit('deleteReviewPolicy', { id });
+      set({ view: { name: 'reviews', tab: 'policies' } });
+    },
+    // The Reviews tab's owner and group filters, and the timeline's range: remembered in this browser.
+    async setReviewsFilter({ owner, groupId, start, length, past, shift }) {
+      const p = { ...state.reviewsPrefs };
+      if (owner !== undefined) p.owner = owner || 'me';
+      if (groupId !== undefined) p.groupId = groupId || null;
+      if (start !== undefined) p.start = /^\d{4}-\d{2}$/.test(start) ? start : null;
+      if (length !== undefined && TIMELINE_LENGTHS.includes(Number(length))) p.length = Number(length);
+      if (past !== undefined) p.past = past === true || past === 'true';
+      if (shift !== undefined) p.start = shiftMonth(p.start ?? state.today.slice(0, 7), Number(shift));
+      set({ reviewsPrefs: p });
+      writeReviewsPrefs(env.storage, reviewsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
     },
     async setHomeOwner({ ownerId, show }) {
       set({ homeOwner: ownerId || 'me', ...(show === 'home' ? { view: { name: 'home' }, editing: null } : {}) });
     },
     async beginReview({ platformId }) {
       await applyEdit('startReview', { platformId });
-      set({ view: { name: 'platform', id: platformId, tab: 'reviews' } });
+      set({ view: { name: 'platformReview', id: platformId } });
     },
     async tickReviewRow({ reviewId, hazardId, reviewed }) {
       await applyEdit('markRow', { reviewId, hazardId, reviewed: reviewed === 'true' });
@@ -1005,9 +1078,26 @@ export function createController(env) {
     const from = openedAt && acks.ackStart(current) === null ? acks.startAcks(current, { by: /** @type {string} */ (state.profileId), at: openedAt }) : current;
     const next = EDITS[/** @type {keyof typeof EDITS} */ (type)](from, act(), /** @type {any} */ (args));
     const working = next === from ? current : next;
-    set({ session: { ...state.session, working }, message: null, editing: null, ...(type === 'createBundle' ? { bundling: null } : {}) });
+    const moved = working === current || QUIET_DATES.has(type) ? [] : movedReviewDates(current, working);
+    set({ session: { ...state.session, working }, message: null, editing: null, ...(type === 'createBundle' ? { bundling: null } : {}), ...(moved.length ? { reviewMoved: moved } : {}) });
     if (shows) set({ view: { name: shows, id: args.id } });
     await afterChange();
+  }
+
+  /**
+   * The platforms whose review date an edit moved (a rating, a hazard on or off, a policy or a
+   * rule), said at once: from when to when, why, who owns it, and whether it is now urgent.
+   * @param {any} before @param {any} after
+   */
+  function movedReviewDates(before, after) {
+    const today = aestDate(env.clock.now());
+    return Object.values(after.records.platform).filter((p) => p.status === 'live' && before.records.platform[p.id])
+      .map((p) => ({ p, from: dueOf(before, p.id), to: dueOf(after, p.id) }))
+      .filter(({ from, to }) => from !== to)
+      .map(({ p, from, to }) => ({
+        platformId: p.id, name: p.name, ownerId: p.ownerId, from, to,
+        urgent: Boolean(to && to <= addDays(today, URGENT_DAYS)), driver: periodOf(after, p.id)?.driver ?? null,
+      }));
   }
 
   /** @param {{ type: string, [k: string]: any }} action */

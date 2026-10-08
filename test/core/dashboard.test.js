@@ -5,8 +5,8 @@ import { startAcks } from '../../src/core/acks.js';
 import { updateHazard } from '../../src/core/ops/hazards.js';
 import { createPlatform, linkHazard } from '../../src/core/ops/platforms.js';
 import { confirmControl, setRating } from '../../src/core/ops/assessment.js';
-import { setSchedule, startReview } from '../../src/core/ops/reviews.js';
-import { seed } from '../helpers.js';
+import { startReview } from '../../src/core/ops/reviews.js';
+import { seed, scheduleFixed } from '../helpers.js';
 
 const at = (hhmm, by) => ({ by, at: `2026-09-28T${hhmm}:00+10:00` });
 const today = '2026-09-28';
@@ -22,10 +22,10 @@ function data() {
   d = createPlatform(d, at('10:31', 'u1'), { id: 'p3', name: 'Charlie', ownerId: 'u1' });
   d = createPlatform(d, at('10:32', 'u1'), { id: 'p4', name: 'Delta', ownerId: 'u1' });
   d = linkHazard(d, at('10:33', 'u1'), { hazardId: 'h2', platformId: 'p3' });
-  d = setSchedule(d, at('10:34', 'u1'), { platformId: 'p1', months: 6, due: '2026-09-01' });
-  d = setSchedule(d, at('10:34', 'u2'), { platformId: 'p2', months: 6, due: '2026-10-20' });
-  d = setSchedule(d, at('10:34', 'u1'), { platformId: 'p3', months: 6, due: '2026-12-20' });
-  d = setSchedule(d, at('10:34', 'u1'), { platformId: 'p4', months: 12, due: '2027-06-01' });
+  d = scheduleFixed(d, 'p1', 6, '2026-09-01', at('10:34', 'u1'));
+  d = scheduleFixed(d, 'p2', 6, '2026-10-20', at('10:34', 'u2'));
+  d = scheduleFixed(d, 'p3', 6, '2026-12-20', at('10:34', 'u1'));
+  d = scheduleFixed(d, 'p4', 12, '2027-06-01', at('10:34', 'u1'));
   d = startReview(d, at('10:35', 'u1'), { id: 'r4', platformId: 'p4' });
   d = confirmControl(d, at('10:36', 'u1'), { hazardId: 'h1', controlId: 'c1', platformId: 'p1' });
   d = setRating(d, at('10:37', 'u1'), { hazardId: 'h1', platformId: 'p1', stage: 'residual', consequence: 2, likelihood: 'C' });

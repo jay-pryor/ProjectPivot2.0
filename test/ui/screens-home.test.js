@@ -8,8 +8,7 @@ import { renderApp } from '../../src/ui/render.js';
 import { initialState } from '../../src/ui/controller.js';
 import { startAcks, waitingChanges } from '../../src/core/acks.js';
 import { updateHazard, assignNumbers } from '../../src/core/ops/hazards.js';
-import { setSchedule } from '../../src/core/ops/reviews.js';
-import { seed } from '../helpers.js';
+import { seed, scheduleFixed, seeDue } from '../helpers.js';
 
 test('changeDetail: an edit as before → after, escaped; other changes as a word', () => {
   const out = changeDetail({ change: 'edited', fields: [{ field: 'title', before: '<b>x</b>', after: 'Fire' }] }).toString();
@@ -28,7 +27,7 @@ const state = { ...initialState(), screen: 'main', today: '2026-09-28', profileI
 /** u3 retitles h1 (on p1 of Ada, p2 of Grace); p1 is overdue for review. */
 function data(title = 'Fire (Sam)') {
   let d = startAcks(assignNumbers(seed()), at('10:30', 'u1'));
-  d = setSchedule(d, at('10:40', 'u1'), { platformId: 'p1', months: 6, due: '2026-09-01' });
+  d = scheduleFixed(d, 'p1', 6, '2026-09-01', at('10:40', 'u1'));
   return updateHazard(d, at('11:00', 'u3'), { id: 'h1', title });
 }
 
@@ -45,13 +44,13 @@ test('Open items: an owner chooser, a summary, and the four full tables', () => 
   assert.match(out, /<select name="ownerId" data-change="setHomeOwner"[\s\S]*?<option value="me" selected>Me<\/option>[\s\S]*?<option value="u2">Grace<\/option>[\s\S]*?<option value="everyone">Everyone<\/option>/);
   assert.match(out, /<b>1<\/b><span>change to acknowledge<\/span>[\s\S]*?<b>1<\/b><span>review overdue<\/span>[\s\S]*?<b>2<\/b><span>controls awaiting status decision<\/span>[\s\S]*?<b>1<\/b><span>hazard unrated<\/span>/);
   assert.match(out, /class="tile warn on" data-action="showSection" data-page="openItems" data-section="acks" data-keep="true"/, 'a tile opens its section, its count highlighted');
-  assert.deepEqual([...openItemsView(state, d).toString().matchAll(/class="rail-item[^"]*"[^>]*data-section="(\w+)"/g)].map((m) => m[1]), ['acks', 'reviews', 'awaiting', 'implement', 'unrated']);
+  assert.deepEqual([...openItemsView(state, d).toString().matchAll(/class="rail-item[^"]*"[^>]*data-section="(\w+)"/g)].map((m) => m[1]), ['acks', 'reviews', 'moved', 'awaiting', 'implement', 'unrated']);
   for (const t of ['homeAcks', 'homeReviews', 'homeAwaiting', 'homeUnrated']) assert.match(out, new RegExp(`data-table="${t}"`));
   const [e] = waitingChanges(d, 'p1');
   assert.match(out, new RegExp(`data-action="acknowledge" data-entry-id="${e.id}" data-platform-id="p1"`));
   assert.match(out, new RegExp(`data-action="acknowledgeAll" data-keys="${e.id}\\|p1"`));
   assert.match(out, /<strong>Changed title<\/strong>: Fire → Fire \(Sam\)/);
-  assert.match(out, /data-action="go" data-view="platform" data-id="p1" data-tab="reviews"/);
+  assert.match(out, /data-action="go" data-view="platformReview" data-id="p1"/);
 });
 
 test('Open items: a double-click on a row goes where it is dealt with; reviews start from their table; statuses are chosen in place', () => {
@@ -60,7 +59,7 @@ test('Open items: a double-click on a row goes where it is dealt with; reviews s
   const [e] = waitingChanges(d, 'p1');
   assert.match(show('acks'), new RegExp(`<tr data-row="${e.id}\\|p1" data-dblclick="go" data-view="platform" data-id="p1" data-tab="history">`), 'a change opens the platform\'s history');
   const reviews = show('reviews');
-  assert.match(reviews, /<tr data-row="p1" data-dblclick="go" data-view="platform" data-id="p1" data-tab="reviews">[\s\S]*?data-action="beginReview" data-platform-id="p1">Start review<\/button>/);
+  assert.match(reviews, /<tr data-row="p1" data-dblclick="go" data-view="platformReview" data-id="p1">[\s\S]*?data-action="beginReview" data-platform-id="p1">Start review<\/button>/);
   const awaiting = show('awaiting');
   assert.match(awaiting, /<h2>Controls awaiting a status decision<\/h2>/);
   assert.match(awaiting, /<tr data-row="p1\|h1\|c1" data-dblclick="go" data-view="control" data-id="c1" data-tab="p:p1">[\s\S]*?<select class="quiet state-select state-recommended" name="value"[^>]*data-change="setControlState" data-hazard-id="h1" data-control-id="c1" data-platform-id="p1">/);
@@ -121,10 +120,10 @@ test('needs attention: most urgent first; changes acknowledged in place; the res
   assert.ok(at('chip-review') > 0 && at('chip-review') < at('chip-change') && at('chip-change') < at('chip-control') && at('chip-control') < at('chip-rating'));
   const [e] = waitingChanges(d, 'p1');
   assert.match(out, new RegExp(`data-action="acknowledge" data-entry-id="${e.id}" data-platform-id="p1">Acknowledge<`));
-  assert.match(out, /data-action="go" data-view="platform" data-id="p1" data-tab="reviews">Review →/);
+  assert.match(out, /data-action="go" data-view="platformReview" data-id="p1">Review →/);
   assert.match(out, /<td class="what"><strong>Decide on (C-\d+|Sprinklers) status for (HAZ-\d+|Fire[^<]*)<\/strong> <span class="muted">· Sprinklers · [^<]*<\/span><\/td>\s*<td class="by"><\/td><td class="where"><button[^>]*data-id="p1"[^>]*>Alpha</, 'what is to be done first, each part in its own column');
   assert.match(out, /data-action="go" data-view="control" data-id="c1" data-tab="p:p1">Decide →/, 'Decide opens the control\'s page for that platform, where its status is set');
-  assert.match(out, /<tr data-key="review\|p1" data-dblclick="go" data-view="platform" data-id="p1" data-tab="reviews">/, 'a double-click on a row goes where its button does');
+  assert.match(out, /<tr data-key="review\|p1" data-dblclick="go" data-view="platformReview" data-id="p1">/, 'a double-click on a row goes where its button does');
   assert.match(out, /<tr data-key="rating\|p1\|h1" data-dblclick="go" data-view="hazard" data-id="h1" data-tab="p:p1">[\s\S]*?data-view="hazard" data-id="h1" data-tab="p:p1">Rate →/, 'ratings are set on the hazard\'s page for the platform');
   assert.match(out, /<th>Type<\/th><th>Description<\/th><th>By<\/th><th>Platform<\/th>/);
   assert.match(out, /data-action="go" data-view="openItems">Open items →/);
@@ -146,7 +145,7 @@ test('needs attention draws its items, each keyed so it can slide when one goes,
 
 test('coming up: reviews due in the next 90 days; nothing says so', () => {
   assert.match(homeView(state, data()).toString(), /No reviews due in the next 90 days\./);
-  const d = setSchedule(data(), at('10:45', 'u2'), { platformId: 'p2', months: 6, due: '2026-10-10' });
+  const d = scheduleFixed(data(), 'p2', 6, '2026-10-10', at('10:45', 'u2'));
   const out = homeView({ ...state, homeOwner: 'everyone' }, d).toString();
   const box = out.slice(out.indexOf('<table class="attn upcoming-table">'));
   const table = box.slice(0, box.indexOf('</table>'));
@@ -158,7 +157,7 @@ test('coming up: reviews due in the next 90 days; nothing says so', () => {
 });
 
 test('coming up looks as far ahead as the menu beside its heading says: 90 days unless chosen', () => {
-  const d = setSchedule(data(), at('10:45', 'u2'), { platformId: 'p2', months: 6, due: '2026-10-10' });
+  const d = scheduleFixed(data(), 'p2', 6, '2026-10-10', at('10:45', 'u2'));
   const as = (prefs) => ({ ...state, homeOwner: 'everyone', profiles: state.profiles.map((p) => (p.id === 'u1' ? { ...p, prefs } : p)) });
   const out = homeView(as({}), d).toString();
   assert.match(out, /<h2>Coming up<\/h2><select class="window-pick" name="days" aria-label="How far ahead Coming up looks" data-change="setComingUpDays">[\s\S]*?<option value="90" selected>Next 90 days<\/option>[\s\S]*?Next 12 months<\/option>/);
@@ -254,7 +253,34 @@ test('working days until a date: Monday to Friday, from tomorrow to the day itse
 });
 
 test('a platform tile on Home says when its review is due soon, and in how many days', () => {
-  const d = setSchedule(data(), at('10:45', 'u2'), { platformId: 'p2', months: 6, due: '2026-10-10' });
+  const d = scheduleFixed(data(), 'p2', 6, '2026-10-10', at('10:45', 'u2'));
   const out = homeView({ ...state, homeOwner: 'everyone' }, d).toString();
   assert.match(out, /<strong>Bravo<\/strong> <span class="tag review-due-soon">Review due soon – 12 days<\/span>/);
+});
+
+/** The owner last saw a different date than the calculated one. */
+const moveSeen = seeDue;
+
+test('a moved review date far off is a plain row with Acknowledge', () => {
+  const d = moveSeen(scheduleFixed(assignNumbers(seed()), 'p1', 36, '2029-01-01'), 'p1', '2029-06-01');
+  const out = homeView(state, d).toString();
+  assert.match(out, /<strong>Review date moved: 1 Jun 2029 → 1 Jan 2029<\/strong>/);
+  assert.match(out, /data-action="acknowledgeReviewDate" data-platform-id="p1">Acknowledge/);
+  assert.doesNotMatch(out, /<tr class="urgent"/, 'two years off is not urgent');
+});
+
+test('Open items has a count and a table of moved review dates, red while any is urgent', () => {
+  const d = moveSeen(scheduleFixed(assignNumbers(seed()), 'p1', 6, '2026-10-01'), 'p1', '2027-01-01');
+  const out = openItemsView({ ...state, sections: { openItems: 'moved' } }, d).toString();
+  assert.match(out, /<button type="button" class="tile bad on" data-action="showSection" data-page="openItems" data-section="moved" data-keep="true"><b>1<\/b><span>review date moved<\/span>/);
+  assert.match(out, /<h2>Review dates moved<\/h2>[\s\S]*data-table="homeMoved"[\s\S]*1 Jan 2027[\s\S]*1 Oct 2026[\s\S]*<span class="chip chip-urgent">Urgent<\/span>[\s\S]*data-action="acknowledgeReviewDate" data-platform-id="p1"/);
+  const calm = openItemsView(state, moveSeen(scheduleFixed(assignNumbers(seed()), 'p1', 36, '2029-01-01'), 'p1', '2029-06-01')).toString();
+  assert.match(calm, /class="tile warn"[^>]*data-section="moved"/, 'orange when none is urgent');
+});
+
+test('a moved review date within 30 days, or passed, comes first, red and marked urgent', () => {
+  const d = moveSeen(scheduleFixed(assignNumbers(seed()), 'p1', 6, '2026-10-01'), 'p1', '2027-01-01');
+  const out = homeView(state, d).toString();
+  const rows = /<tbody>([\s\S]*?)<\/tbody>/.exec(out)?.[1] ?? '';
+  assert.match(rows, /^<tr class="urgent" data-key="dateMoved\|p1\|2026-10-01"[^>]*data-view="platformReview" data-id="p1">[\s\S]*?<span class="chip chip-urgent">Urgent<\/span>[\s\S]*?Review date moved: 1 Jan 2027 → 1 Oct 2026/, 'urgent first');
 });

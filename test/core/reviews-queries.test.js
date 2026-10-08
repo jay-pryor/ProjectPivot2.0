@@ -4,8 +4,8 @@ import { reviewRows, completedReviews, lastReviewed, hazardLastReviewed, reviewD
 import { linkHazard, unlinkHazard } from '../../src/core/ops/platforms.js';
 import { confirmControl } from '../../src/core/ops/assessment.js';
 import { assignHazardNumbers } from '../../src/core/ops/hazards.js';
-import { setSchedule, startReview, markRow, completeReview } from '../../src/core/ops/reviews.js';
-import { act, later, seed } from '../helpers.js';
+import { startReview, markRow, completeReview } from '../../src/core/ops/reviews.js';
+import { act, later, seed, scheduleFixed } from '../helpers.js';
 
 const t1 = { by: 'u1', at: '2026-09-28T10:00:00+10:00' };
 const t2 = { by: 'u2', at: '2026-10-05T10:00:00+10:00' };
@@ -14,7 +14,7 @@ function reviewing() {
   let d = assignHazardNumbers(seed());
   d = linkHazard(d, act, { hazardId: 'h2', platformId: 'p1' });
   d = confirmControl(d, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1' });
-  d = setSchedule(d, act, { platformId: 'p1', months: 6, due: '2026-10-31' });
+  d = scheduleFixed(d, 'p1', 6, '2026-10-30');
   d = startReview(d, act, { id: 'r1', platformId: 'p1' });
   return markRow(d, t1, { reviewId: 'r1', hazardId: 'h1', reviewed: true, note: 'Fine' });
 }
@@ -54,8 +54,8 @@ test('a completed review lists exactly what it covered; past reviews, last revie
 });
 
 test('reviewDueList: scheduled live platforms, soonest first, with their state', () => {
-  let d = setSchedule(seed(), act, { platformId: 'p1', months: 6, due: '2026-12-31' });
-  d = setSchedule(d, act, { platformId: 'p2', months: 6, due: '2026-09-01' });
-  assert.deepEqual(reviewDueList(d, '2026-09-28').map((x) => [x.platform.id, x.state, x.due]), [['p2', 'overdue', '2026-09-01'], ['p1', 'ok', '2026-12-31']]);
+  let d = scheduleFixed(seed(), 'p1', 6, '2026-12-30');
+  d = scheduleFixed(d, 'p2', 6, '2026-09-01');
+  assert.deepEqual(reviewDueList(d, '2026-09-28').map((x) => [x.platform.id, x.state, x.due]), [['p2', 'overdue', '2026-09-01'], ['p1', 'ok', '2026-12-30']]);
   assert.deepEqual(reviewDueList(seed(), '2026-09-28'), []);
 });

@@ -4,10 +4,10 @@ import { NOT_ACKNOWLEDGED, ackStart, startAcks, ownerAt, waitingChanges, acknowl
 import { REVIEW_DETAIL_ACTIONS } from '../../src/core/ops/reviews.js';
 import { updateHazard } from '../../src/core/ops/hazards.js';
 import { setOwner, retirePlatform, setReportId, createPlatform, linkHazard } from '../../src/core/ops/platforms.js';
-import { setSchedule, startReview, markRow, completeReview } from '../../src/core/ops/reviews.js';
+import { startReview, markRow, completeReview } from '../../src/core/ops/reviews.js';
 import { createReport } from '../../src/core/ops/reports.js';
 import { mergeData } from '../../src/core/merge.js';
-import { seed } from '../helpers.js';
+import { seed, scheduleFixed } from '../helpers.js';
 
 /** An act by `by` at `hh:mm` on 2026-09-28. */
 const at = (hhmm, by) => ({ by, at: `2026-09-28T${hhmm}:00+10:00` });
@@ -54,7 +54,7 @@ test('the owner at the time: the new owner inherits what waits, but not the old 
 });
 
 test('review ticks and producing a report do not wait; starting and completing a review do', () => {
-  let d = setSchedule(started(), at('11:00', 'u1'), { platformId: 'p1', months: 6, due: '2026-12-31' });
+  let d = scheduleFixed(started(), 'p1', 6, '2026-12-30', at('11:00', 'u1'));
   d = startReview(d, at('11:05', 'u2'), { id: 'r1', platformId: 'p1' });
   d = markRow(d, at('11:10', 'u2'), { reviewId: 'r1', hazardId: 'h1', reviewed: true });
   d = completeReview(d, at('11:15', 'u2'), { reviewId: 'r1' });

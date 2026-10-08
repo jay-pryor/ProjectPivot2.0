@@ -1,5 +1,5 @@
 import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
-import { html } from '../html.js';
+import { html, raw } from '../html.js';
 import { dataAttrs, option, go, reviewTag, changeDetail, idTag, favouriteLabel, unfavouriteStar, groupTags } from './common.js';
 import { favouritesOf, favouriteLayout, comingUpDays, COMING_UP_WINDOWS } from '../prefs.js';
 import { platformImage, statusSelect, rejectionCell } from './platforms.js';
@@ -10,6 +10,7 @@ import { BANDS } from '../../core/matrix.js';
 import { get } from '../../core/data.js';
 import { hazardLabel, controlLabel, UNNUMBERED } from '../../core/ids.js';
 import { profileName, when, day, recordName, KIND_LABEL } from '../names.js';
+import { driverWord } from '../review-words.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -27,8 +28,8 @@ function entryDetail(data, entry) {
   return html`<ul class="plain">${entry.items.map((/** @type {any} */ i) => html`<li><strong>${KIND_LABEL[/** @type {keyof typeof KIND_LABEL} */ (i.kind)] ?? i.kind}: ${recordName(i.kind, get(data, i.kind, i.id), data)}</strong> ${changeDetail(i)}</li>`)}</ul>`;
 }
 
-/** @param {any} p a platform @param {string} [tab] */
-const platformLink = (p, tab) => go(p.name, 'platform', { id: p.id, ...(tab ? { tab } : {}) });
+/** @param {any} p a platform */
+const platformLink = (p) => go(p.name, 'platform', { id: p.id });
 
 /** The Owner chooser: me, each other profile, everyone. @param {any} state */
 function ownerPicker(state) {
@@ -39,11 +40,12 @@ function ownerPicker(state) {
 }
 
 /**
- * Where an open item's action is done, for a double-click on its row: a review on the platform's
- * Reviews tab; a control's status (to decide, or to implement) on the control's page for that
- * platform; ratings on the hazard's page for that platform. A change is acknowledged in the list
- * itself, so its row opens the platform's history, where the change sits in context.
- * @param {'change' | 'review' | 'schedule' | 'control' | 'implement' | 'rating'} type
+ * Where an open item's action is done, for a double-click on its row: a review (or a moved review
+ * date) on the platform's review page; a control's status (to decide, or to implement) on the
+ * control's page for that platform; ratings on the hazard's page for that platform. A change is
+ * acknowledged in the list itself, so its row opens the platform's history, where the change sits
+ * in context.
+ * @param {'change' | 'review' | 'schedule' | 'dateMoved' | 'control' | 'implement' | 'rating'} type
  * @param {{ platform: any, hazard?: any, control?: any }} item
  * @returns {Record<string, string>}
  */
@@ -52,7 +54,7 @@ export function whereToAct(type, item) {
   if (type === 'control' || type === 'implement') return { view: 'control', id: item.control.id, tab: on };
   if (type === 'rating') return { view: 'hazard', id: item.hazard.id, tab: on };
   if (type === 'change') return { view: 'platform', id: item.platform.id, tab: 'history' };
-  return { view: 'platform', id: item.platform.id, tab: 'reviews' };
+  return { view: 'platformReview', id: item.platform.id };
 }
 
 /** A row's double-click to where its action is done. @param {Parameters<typeof whereToAct>[0]} type */
@@ -96,6 +98,7 @@ export function openItemsView(state, data) {
       ${totalTile(attentionItems(items).length)}
       ${tile('acks', items.acks.length, 'change to acknowledge', 'changes to acknowledge')}
       ${tile('reviews', overdue, 'review overdue', 'reviews overdue', 'bad')}
+      ${tile('moved', items.dateMoved.length, 'review date moved', 'review dates moved', items.dateMoved.some((m) => m.urgent) ? 'bad' : 'warn')}
       ${tile('awaiting', items.awaiting.length, 'control awaiting status decision', 'controls awaiting status decision', 'warn')}
       ${tile('implement', items.toImplement.length, 'control to implement', 'controls to implement')}
       ${tile('unrated', items.unrated.length, 'hazard unrated', 'hazards unrated')}
@@ -107,10 +110,21 @@ export function openItemsView(state, data) {
       { key: 'reviews', label: 'Reviews', icon: 'calendar', badge: items.reviews.length, body: () => html`<h2>Reviews</h2><section class="block">${dataTable(state, {
         id: 'homeReviews', rowKey: (r) => r.platform.id, rows: items.reviews, empty: 'No reviews due.', rowAttrs: actRow('review'),
         columns: [
-          { key: 'platform', label: 'Platform', width: 360, minWidth: 160, value: (r) => r.platform.name, render: (r) => platformLink(r.platform, 'reviews') },
+          { key: 'platform', label: 'Platform', width: 360, minWidth: 160, value: (r) => r.platform.name, render: (r) => go(r.platform.name, 'platformReview', { id: r.platform.id }) },
           { key: 'due', label: 'Next due', width: 300, minWidth: 160, value: (r) => r.due, render: (r) => (r.due ? html`${day(r.due)}${reviewTag(r.state)}` : html`<span class="tag">No schedule</span>`) },
           { key: 'last', label: 'Last reviewed', width: 240, minWidth: 140, value: (r) => r.lastReviewed, render: (r) => (r.lastReviewed ? day(r.lastReviewed) : html`<span class="muted">Never</span>`) },
           { key: 'open', label: 'Review', width: 220, minWidth: 160, value: (r) => (r.open ? 'In progress' : ''), render: reviewButton },
+        ],
+      })}</section>` },
+      { key: 'moved', label: 'Review dates moved', icon: 'calendar', badge: items.dateMoved.length, body: () => html`<h2>Review dates moved</h2><section class="block">${dataTable(state, {
+        id: 'homeMoved', rowKey: (r) => r.platform.id, rows: items.dateMoved, empty: 'No review dates have moved.', rowAttrs: actRow('dateMoved'),
+        columns: [
+          { key: 'platform', label: 'Platform', width: 300, minWidth: 160, value: (r) => r.platform.name, render: (r) => go(r.platform.name, 'platformReview', { id: r.platform.id }) },
+          { key: 'seen', label: 'Was due', width: 200, minWidth: 130, value: (r) => r.seen, render: (r) => day(r.seen) },
+          { key: 'due', label: 'Now due', width: 260, minWidth: 150, value: (r) => r.due, render: (r) => html`${day(r.due)}${r.urgent ? html` <span class="chip chip-urgent">Urgent</span>` : ''}` },
+          { key: 'why', label: 'Set by', width: 380, minWidth: 180, value: (r) => driverWord(data, r.driver) },
+          { key: 'ack', label: '', width: 170, minWidth: 140, sortable: false,
+            render: (r) => html`<button type="button" ${dataAttrs({ action: 'acknowledgeReviewDate', 'platform-id': r.platform.id })}>Acknowledge</button>` },
         ],
       })}</section>` },
       { key: 'awaiting', label: 'Controls awaiting status decision', icon: 'controls', badge: items.awaiting.length, body: () => html`<h2>Controls awaiting a status decision</h2>
@@ -154,7 +168,7 @@ export function openItemsView(state, data) {
  */
 export const ATTENTION_LIMIT = 40;
 
-const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], implement: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'], schedule: ['Review', 'chip-review'] };
+const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], implement: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'], schedule: ['Review', 'chip-review'], dateMoved: ['Review', 'chip-review'] };
 
 /**
  * Every open item across the team, whoever owns the platform: a quiet line above the counts.
@@ -184,11 +198,18 @@ export function changeSummary(action, subject) {
 /** A row of Needs attention: what kind, what it is, who made the change (for a change), the platform and what to do. @param {any} state @param {Data} data @param {any} item from attentionItems */
 function attentionRow(state, data, item) {
   const [word, cls] = CHIP[/** @type {keyof typeof CHIP} */ (item.type)];
-  /** @param {any} what @param {any} action @param {any} [by] */
-  const key = [item.type, item.platform.id, item.entry?.id, item.hazard?.id, item.control?.id].filter(Boolean).join('|');
+  // A moved date is keyed by the date it moved to, so moving again makes it a new row.
+  const key = [item.type, item.platform.id, item.entry?.id, item.hazard?.id, item.control?.id, item.type === 'dateMoved' ? item.due : ''].filter(Boolean).join('|');
   const place = whereToAct(item.type, item);
-  const row = (what, action, by = '') => html`<tr ${dataAttrs({ key, dblclick: 'go', ...place })}><td class="kind"><span class="chip ${cls}">${word}</span></td><td class="what">${what}</td>
+  const urgent = item.type === 'dateMoved' && item.urgent;
+  /** @param {any} what @param {any} action @param {any} [by] */
+  const row = (what, action, by = '') => html`<tr ${urgent ? raw('class="urgent" ') : ''}${dataAttrs({ key, dblclick: 'go', ...place })}><td class="kind">${urgent ? html`<span class="chip chip-urgent">Urgent</span> ` : ''}<span class="chip ${cls}">${word}</span></td><td class="what">${what}</td>
     <td class="by">${by}</td><td class="where">${platformLink(item.platform)}</td><td class="act">${action}</td></tr>`;
+  if (item.type === 'dateMoved') {
+    const why = driverWord(data, item.driver);
+    return row(html`<strong>Review date moved: ${day(item.seen)} → ${day(item.due)}</strong>${why ? html` <span class="muted">· ${why}</span>` : ''}`,
+      html`<button type="button" class="small" ${dataAttrs({ action: 'acknowledgeReviewDate', 'platform-id': item.platform.id })}>Acknowledge</button>`);
+  }
   if (item.type === 'review') return row(`Review overdue since ${day(item.due)}`, go('Review →', place.view, place));
   if (item.type === 'change') {
     const first = item.entry.items[0];
@@ -302,7 +323,7 @@ function comingUp(state, rows) {
     <thead><tr><th>Scheduled</th><th>Platform</th><th>Working days left</th><th></th></tr></thead>
     <tbody>${rows.map((r) => html`<tr>
       <td class="date">${r.due ? day(r.due) : html`<span class="muted">—</span>`}</td>
-      <td>${platformLink(r.platform, 'reviews')}</td>
+      <td>${go(r.platform.name, 'platformReview', { id: r.platform.id })}</td>
       <td class="days">${r.due ? workingDaysUntil(state.today, r.due) : html`<span class="muted">—</span>`}</td>
       <td class="act">${reviewButton(r)}</td>
     </tr>`)}</tbody></table>`;
@@ -311,7 +332,7 @@ function comingUp(state, rows) {
 /** Start a platform's review, or carry on with the one under way. @param {{ platform: any, open: boolean }} r */
 function reviewButton(r) {
   return r.open
-    ? html`<button type="button" class="small" title="A review is under way" ${dataAttrs({ action: 'go', view: 'platform', id: r.platform.id, tab: 'reviews' })}>Continue review →</button>`
+    ? html`<button type="button" class="small" title="A review is under way" ${dataAttrs({ action: 'go', view: 'platformReview', id: r.platform.id })}>Continue review →</button>`
     : html`<button type="button" class="small" ${dataAttrs({ action: 'beginReview', 'platform-id': r.platform.id })}>Start review</button>`;
 }
 

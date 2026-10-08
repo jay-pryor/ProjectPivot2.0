@@ -4,17 +4,17 @@ import { dataTable } from './table.js';
 import { all, live } from '../../core/data.js';
 import { hasUnsavedRecords } from '../../storage/mirror.js';
 import { profileName, when, day } from '../names.js';
-import { reviewState } from '../../core/time.js';
+import { scheduleOf } from '../../core/schedule.js';
 import { lastReviewed } from '../../core/queries.js';
 
 /** What the Produce form says about the chosen platform's review. @param {any} state @param {import('../../core/data.js').Data} data @param {any} p */
 function reviewNote(state, data, p) {
-  const s = reviewState(p, state.today);
+  const { state: s, due } = scheduleOf(data, p.id, state.today);
   if (s === 'overdue') {
     const last = lastReviewed(data, p.id);
-    return html`<p class="note review-warning" role="status">${p.name} was due for review on ${day(p.reviewDue)} (${last ? `last reviewed ${day(last)}` : 'never reviewed'}). You can still produce the report; it will be marked as produced while overdue.</p>`;
+    return html`<p class="note review-warning" role="status">${p.name} was due for review on ${day(due)} (${last ? `last reviewed ${day(last)}` : 'never reviewed'}). You can still produce the report; it will be marked as produced while overdue.</p>`;
   }
-  if (s === 'dueSoon') return html`<p class="muted">${p.name} is due for review on ${day(p.reviewDue)}.</p>`;
+  if (s === 'dueSoon') return html`<p class="muted">${p.name} is due for review on ${day(due)}.</p>`;
   return '';
 }
 

@@ -8,7 +8,7 @@ export const KIND_LABEL = Object.freeze({
   hazard: 'Hazard', causalFactor: 'Causal factor', consequence: 'Consequence', control: 'Control',
   platform: 'Platform', hazardControl: 'Control link', hazardPlatform: 'Platform link',
   ruling: 'Control decision', rating: 'Rating', report: 'Report', reportDesign: 'Report design',
-  review: 'Review', reviewRow: 'Review row', reference: 'Reference', referenceLink: 'Reference link',
+  review: 'Review', reviewRow: 'Review row', reviewPolicy: 'Review policy', reviewSeen: 'Review date seen', reference: 'Reference', referenceLink: 'Reference link',
   assessment: 'Risk assessment', sfarp: 'SFARP considerations',
   phase: 'Lifecycle phase', hazardPhase: 'Lifecycle phase link', safetyReport: 'Safety report', implementer: 'Control owner', implementationStatus: 'Implementation status', controlOn: 'Control on platform',
   bowtieView: 'Bow-tie view', systemElement: 'System/Element', affectedGroup: 'Affected group', failureMode: 'Element failure mode',
@@ -57,6 +57,7 @@ export function recordName(kind, rec, data) {
     case 'platform':
     case 'phase':
     case 'platformGroup':
+    case 'reviewPolicy':
     case 'facetOption':
     case 'bowtieView': return rec.name;
     case 'safetyReport': return rec.summary;
@@ -85,4 +86,10 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 export function day(date) {
   const [y, m, d] = date.slice(0, 10).split('-');
   return `${Number(d)} ${MONTH_NAMES[Number(m) - 1]} ${y}`;
+}
+
+/** A review period as a person says it: whole years in years, otherwise months. @param {number} months */
+export function periodWord(months) {
+  if (months % 12 === 0) return `${months / 12} year${months === 12 ? '' : 's'}`;
+  return `${months} month${months === 1 ? '' : 's'}`;
 }

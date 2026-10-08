@@ -5,7 +5,8 @@ import { platformHazards, hazardDetail, causalFactorsOn, lastReviewed, reference
 import { formatRating } from '../core/matrix.js';
 import { RECEPTORS, stageKey } from '../core/receptors.js';
 import { referenceLabel, controlLabel } from '../core/ids.js';
-import { reviewState, aestDate } from '../core/time.js';
+import { aestDate } from '../core/time.js';
+import { scheduleOf } from '../core/schedule.js';
 
 /** @typedef {import('../core/data.js').Data} Data */
 /**
@@ -92,14 +93,10 @@ export function buildSnapshot(data, platformId, o) {
   const references = [...found.values()]
     .map(({ ref, supports }) => ({ number: referenceLabel(ref), title: ref.title, docNumber: ref.docNumber ?? '', revision: ref.revision ?? '', supports: supports.join(', ') }))
     .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }) || a.title.localeCompare(b.title));
+  const s = scheduleOf(data, platformId, aestDate(o.at));
   return structuredClone({
     platformId, platformName: platform.name, ownerName: o.profileName(platform.ownerId),
     producedAt: o.at, producedBy: o.by, title: o.title, classification: o.classification, rows, references,
-    review: {
-      state: reviewState(platform, aestDate(o.at)),
-      due: platform.reviewDue ?? null,
-      months: platform.reviewMonths ?? null,
-      lastReviewed: lastReviewed(data, platformId),
-    },
+    review: { state: s.state, due: s.due, months: s.months, lastReviewed: lastReviewed(data, platformId) },
   });
 }

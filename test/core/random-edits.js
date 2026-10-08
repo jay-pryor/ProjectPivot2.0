@@ -5,7 +5,7 @@ import { createPlatform, linkHazard, unlinkHazard, setReportId, retirePlatform }
 import { confirmControl, excludeControl, resetControl, setControlStatus, setRating, setAssessment, setSfarp } from '../../src/core/ops/assessment.js';
 import { createPhase, linkPhase, unlinkPhase, deletePhase } from '../../src/core/ops/phases.js';
 import { createSafetyReport } from '../../src/core/ops/safety-reports.js';
-import { setSchedule, startReview, markRow, setReviewOutcome, setReviewNotes, completeReview, abandonReview } from '../../src/core/ops/reviews.js';
+import { setRule, startReview, markRow, setReviewOutcome, setReviewNotes, completeReview, abandonReview } from '../../src/core/ops/reviews.js';
 
 /** A small, seeded pseudo-random generator (mulberry32), so a failure can be replayed. @param {number} seed */
 export function prng(seed) {
@@ -68,7 +68,7 @@ export function randomEdit(d, rand, act) {
     () => setRating(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), stage: pick(rand, ['initial', 'residual']), consequence: 1 + Math.floor(rand() * 5), likelihood: pick(rand, [...'ABCDEFG']) }),
     () => setAssessment(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), stage: pick(rand, ['initial', 'residual']), receptor: pick(rand, ['personnel', 'environment']), likelihood: pick(rand, [...'ABCDEFG']), likelihoodWhy: `Why ${n()}` }),
     () => setSfarp(d, act, { hazardId: pick(rand, hz), platformId: pick(rand, pl), conclusion: `C ${n()}` }),
-    () => setSchedule(d, act, { platformId: pick(rand, pl), months: 1 + Math.floor(rand() * 12), due: `2026-${String(1 + Math.floor(rand() * 12)).padStart(2, '0')}-28` }),
+    () => setRule(d, act, { platformId: pick(rand, pl), kind: 'fixed', months: 1 + Math.floor(rand() * 12), unit: 'months', start: `2026-${String(1 + Math.floor(rand() * 12)).padStart(2, '0')}-28` }),
     () => startReview(d, act, { platformId: pick(rand, pl) }),
     () => markRow(d, act, { reviewId: pick(rand, rv), hazardId: pick(rand, hz), reviewed: rand() < 0.7, note: `Note ${n()}` }),
     () => setReviewOutcome(d, act, { reviewId: pick(rand, rv), outcome: `Outcome ${n()}` }),

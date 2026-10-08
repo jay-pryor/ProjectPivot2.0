@@ -2,7 +2,8 @@ import { html, raw, esc } from '../html.js';
 import { dataTable } from './table.js';
 import { historyOf, commentsOn, hazardOfItem, bundlesOf } from '../../core/history.js';
 import { hasUnsaved } from '../../storage/mirror.js';
-import { profileName, when } from '../names.js';
+import { profileName, when, day, periodWord } from '../names.js';
+import { driverWord } from '../review-words.js';
 import { themeOf, isFavourite } from '../prefs.js';
 import { ratingFor, LIKELIHOODS, CONSEQUENCES } from '../../core/matrix.js';
 import { openItems, attentionItems } from '../../core/queries.js';
@@ -154,13 +155,13 @@ export function groupTags(groups) {
   return groups.length ? html`<span class="group-tags">${groups.map((g) => html`<span class="tag group-tag">${g.name}</span>`)}</span>` : '';
 }
 
-const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['bowties', 'Bow-ties'], ['info', 'Info'], ['reports', 'Reports'], ['references', 'References']];
+const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['reviews', 'Reviews'], ['bowties', 'Bow-ties'], ['info', 'Info'], ['reports', 'Reports'], ['references', 'References']];
 
 /** The settings menu, opened from the three lines at the end of the top bar. */
 const SETTINGS = [['backups', 'Backups'], ['historyDeletions', 'Deletion history']];
 
 /** The top-bar section each view belongs to. */
-const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', newControl: 'controls', platforms: 'platforms', platform: 'platforms', bowties: 'bowties', references: 'references', reference: 'references', info: 'info', reports: 'reports', backups: 'backups', historyDeletions: 'historyDeletions' };
+const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', newControl: 'controls', platforms: 'platforms', platform: 'platforms', reviews: 'reviews', platformReview: 'reviews', bowties: 'bowties', references: 'references', reference: 'references', info: 'info', reports: 'reports', backups: 'backups', historyDeletions: 'historyDeletions' };
 
 /** The three lines that open the settings menu. */
 const MENU_SVG = '<svg viewBox="0 0 20 20" width="20" height="20" focusable="false" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg>';
@@ -203,7 +204,7 @@ export function shell(state, body) {
   </header>
   <div class="messages">${messages(state)}</div>
   <main class="view">${state.view?.name === 'bowties' ? '' : backButton(state)}${body}</main>
-  ${confirmDialog(state)}`;
+  ${confirmDialog(state)}${reviewMovedDialog(state)}`;
 }
 
 /** Back to the page open before this one, whichever it was, and the page's star. @param {any} state */
@@ -267,7 +268,7 @@ export function favouriteLabel(state, f) {
   return { label: withTab(label), kind: sub, gone: false, heading, detail: String(rec.title ?? rec.name ?? '') };
 }
 
-const PAGE_WORD = { home: 'Home', openItems: 'Open items', hazards: 'Hazards', controls: 'Controls', platforms: 'Platforms', references: 'References', info: 'Info', reports: 'Reports', bowties: 'Bow-ties', backups: 'Backups', historyDeletions: 'Deletion history', newControl: 'New control' };
+const PAGE_WORD = { home: 'Home', openItems: 'Open items', reviews: 'Reviews', platformReview: 'Review', hazards: 'Hazards', controls: 'Controls', platforms: 'Platforms', references: 'References', info: 'Info', reports: 'Reports', bowties: 'Bow-ties', backups: 'Backups', historyDeletions: 'Deletion history', newControl: 'New control' };
 
 /**
  * A page as Back names it: a list by its name; a record's page by its own title, e.g.
@@ -293,6 +294,29 @@ export function confirmDialog(state) {
 }
 
 /**
+ * Said at once when an edit moves review dates: each platform from when to when and why, and who
+ * should look (you, as its owner, or its owner by name). Urgent moves are marked, under a banner.
+ * @param {any} state
+ */
+export function reviewMovedDialog(state) {
+  const list = state.reviewMoved;
+  if (!list?.length) return '';
+  const data = state.session?.working;
+  const urgent = list.some((/** @type {any} */ m) => m.urgent);
+  const item = (/** @type {any} */ m) => {
+    const why = data ? driverWord(data, m.driver) : '';
+    const who = m.ownerId === state.profileId ? `You own ${m.name}: check its review date.` : `${m.name} is owned by ${profileName(state, m.ownerId)}: they have been asked to check its review date.`;
+    return html`<li${m.urgent ? raw(' class="urgent"') : ''}><strong>${m.name}</strong>: ${m.from ? day(m.from) : 'no date'} → ${m.to ? day(m.to) : 'no date'}${m.urgent ? html` <span class="chip chip-urgent">${m.to < state.today ? 'Now overdue' : 'Due within 30 days'}</span>` : ''}
+      ${why ? html`<br><span class="muted">${why}</span>` : ''}<br>${who}</li>`;
+  };
+  return html`<div class="picker-overlay confirm-overlay"><div class="picker confirm-box review-moved-box" role="alertdialog" aria-modal="true" aria-label="Review date moved">
+    <h2>Review date moved</h2>
+    ${urgent ? html`<p class="urgent-banner"><strong>Urgent.</strong> A review is now overdue or due within 30 days.</p>` : ''}
+    <ul class="plain">${list.map(item)}</ul>
+    <div class="actions"><button type="button" class="primary" ${dataAttrs({ action: 'dismissReviewMoved' })} autofocus>OK</button></div></div></div>`;
+}
+
+/**
  * A value as a person reads it: a rating as its matrix cell and band ("2C Serious"), a stored file
  * or image by its name, a list item by item, yes or no; never raw data.
  * @param {any} v @returns {string}
@@ -307,6 +331,8 @@ function show(v) {
     return r.cell ? `${r.cell} ${r.band}` : '(none)';
   }
   if (typeof v.stored === 'string') return String(v.name ?? v.stored.split('/').at(-1));
+  if (v.kind === 'fixed' && Number.isInteger(v.months)) return `fixed, every ${periodWord(v.months)}`;
+  if (v.kind === 'policy' && typeof v.policyId === 'string') return 'a review policy';
   return Object.entries(v).map(([k, x]) => `${fieldWord(k)} ${show(x)}`).join('; ');
 }
 
@@ -314,7 +340,7 @@ function show(v) {
 const FIELD_WORD = {
   likelihoodWhy: 'likelihood justification', consequenceWhy: 'consequence justification',
   reportId: 'report ID', ownerId: 'owner', docNumber: 'document number',
-  reviewDue: 'next review date', reviewMonths: 'review interval (months)', dueAfter: 'due after', dueBefore: 'due before',
+  reviewRule: 'review rule', reviewStart: 'reviews counted from', longest: 'longest period', dueAfter: 'due after', dueBefore: 'due before',
   completedAt: 'completed on', completedBy: 'completed by', pastFiles: 'earlier files', sharedWith: 'shared with',
   filters: 'diagram filters', url: 'web link', path: 'network path', considerations: 'SFARP considerations',
   implementedBy: 'implemented by', off: 'taken off the platform', category: 'type', state: 'status', hazardId: 'hazard', platformId: 'platform', controlId: 'control', phaseId: 'lifecycle phase',

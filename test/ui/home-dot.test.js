@@ -5,8 +5,7 @@ import { html } from '../../src/ui/html.js';
 import { initialState } from '../../src/ui/controller.js';
 import { emptyData } from '../../src/core/data.js';
 import { createPlatform } from '../../src/core/ops/platforms.js';
-import { setSchedule } from '../../src/core/ops/reviews.js';
-import { seed, act } from '../helpers.js';
+import { seed, act, scheduleFixed, seeDue } from '../helpers.js';
 
 const top = (data, profileId) => shell({ ...initialState(), screen: 'main', today: '2026-09-30', profileId,
   profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }, { id: 'u3', name: 'Cy', createdAt: '' }],
@@ -21,6 +20,12 @@ test('Home shows an orange dot, not a count, when the active profile\'s platform
   assert.equal(home(top(seed(), 'u3')), 'Home', 'someone who owns no platform with work has no dot');
   const unscheduled = createPlatform(emptyData(), act, { id: 'p1', name: 'Alpha', ownerId: 'u1' });
   assert.match(home(top(unscheduled, 'u1')), /nav-dot/, 'a platform with no review schedule needs one');
-  const quiet = setSchedule(unscheduled, act, { platformId: 'p1', months: 12, due: '2027-06-01' });
+  const quiet = scheduleFixed(unscheduled, 'p1', 12, '2027-06-01');
   assert.equal(home(top(quiet, 'u1')), 'Home', 'a platform with nothing to do has no dot');
+});
+
+test('a review date moved since its owner last saw it lights the dot', () => {
+  const quiet = scheduleFixed(createPlatform(emptyData(), act, { id: 'p1', name: 'Alpha', ownerId: 'u1' }), 'p1', 12, '2027-06-01');
+  const moved = seeDue(quiet, 'p1', '2028-06-01');
+  assert.match(home(top(moved, 'u1')), /nav-dot/);
 });
