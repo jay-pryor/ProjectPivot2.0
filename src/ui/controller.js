@@ -60,7 +60,7 @@ const EDITS = {
   setImplementationStatus: assessment.setImplementationStatus, copyControls: assessment.copyControls, copySfarp: assessment.copySfarp,
   setRule: reviews.setRule, acknowledgeReviewDate: reviews.acknowledgeReviewDate,
   createReviewPolicy: reviews.createReviewPolicy, updateReviewPolicy: reviews.updateReviewPolicy, renameReviewPolicy: reviews.renameReviewPolicy, deleteReviewPolicy: reviews.deleteReviewPolicy,
-  startWorkflow: workflows.startWorkflow, setStep: workflows.setStep, setWorkflowOutcome: workflows.setWorkflowOutcome, setWorkflowNotes: workflows.setWorkflowNotes,
+  startWorkflow: workflows.startWorkflow, startOnboarding: workflows.startOnboarding, setStep: workflows.setStep, setWorkflowOutcome: workflows.setWorkflowOutcome, setWorkflowNotes: workflows.setWorkflowNotes,
   setWorkflowPosition: workflows.setWorkflowPosition, takeOverWorkflow: workflows.takeOverWorkflow, cancelWorkflow: workflows.cancelWorkflow, completeWorkflow: workflows.completeWorkflow,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
@@ -784,6 +784,12 @@ export function createController(env) {
     },
     async setHomeOwner({ ownerId, show }) {
       set({ homeOwner: ownerId || 'me', ...(show === 'home' ? { view: { name: 'home' }, editing: null } : {}) });
+    },
+    // New platform: made and onboarded together, the onboarding opened.
+    async onboardPlatform({ name, ownerId }) {
+      const id = newId();
+      await applyEdit('startOnboarding', { id, platformId: newId(), name, ownerId: ownerId || state.profileId });
+      await handlers.go({ view: 'workflow', id });
     },
     // Start review opens the platform's Platform Review: the one in progress, or a new one.
     async beginReview({ platformId }) {

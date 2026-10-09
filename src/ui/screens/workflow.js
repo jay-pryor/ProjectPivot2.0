@@ -3,6 +3,7 @@ import { dataAttrs, go, idTag, confirmButton, changeDetail } from './common.js';
 import { safetyReportsSection, controlsSection, riskPanels, sfarpArea } from './ssra.js';
 import { referencesCard } from './references.js';
 import { workflowSubject } from './workflows.js';
+import { onboardingBody, onboardingGrid } from './onboarding.js';
 import { get } from '../../core/data.js';
 import { workflowLabel, UNNUMBERED } from '../../core/ids.js';
 import { dueOf } from '../../core/schedule.js';
@@ -106,7 +107,7 @@ function changesList(state, data, wf) {
 function endedBody(state, data, wf) {
   const word = wf.state === 'completed' ? 'Completed' : 'Cancelled';
   return html`<p class="doc-meta"><span class="tag wf-${wf.state}">${word}</span> by ${profileName(state, wf.endedBy)}, ${when(wf.endedAt)}. Started by ${profileName(state, wf.createdBy)}, ${when(wf.createdAt)}.</p>
-    <article class="doc">${checkGrid(data, wf)}
+    <article class="doc">${wf.type === 'platformOnboarding' ? onboardingGrid(data, wf) : checkGrid(data, wf)}
       ${wf.outcome ? html`<h3>Outcome</h3><p class="outcome-text">${wf.outcome}</p>` : ''}
       ${wf.notes ? html`<h3>Additional notes</h3><p class="outcome-text">${wf.notes}</p>` : ''}
       <h2>Changes made through ${workflowLabel(wf)}</h2>${changesList(state, data, wf)}</article>`;
@@ -125,10 +126,13 @@ export function workflowView(state, data, id) {
   const title = html`<h1>${go('Workflows', 'workflows')} · ${idTag(workflowLabel(wf))} ${typeName(wf.type)} · ${get(data, 'platform', wf.platformId) ? go(workflowSubject(data, wf), 'platform', { id: wf.platformId }) : workflowSubject(data, wf)}</h1>`;
   if (wf.state !== 'open') return html`<div class="head">${title}</div>${endedBody(state, data, wf)}`;
   const tools = mine
-    ? confirmButton('Cancel workflow…', `Cancel ${named(wf)}: its ticks and notes are kept in History as cancelled; changes you made to hazards stay`, dataAttrs({ action: 'cancelWorkflow', 'workflow-id': wf.id }))
+    ? confirmButton('Cancel workflow…', wf.type === 'platformOnboarding'
+      ? `Cancel ${named(wf)}: it is kept in History as cancelled; the platform stays as it is, marked Onboarding, and can be onboarded again`
+      : `Cancel ${named(wf)}: its ticks and notes are kept in History as cancelled; changes you made to hazards stay`, dataAttrs({ action: 'cancelWorkflow', 'workflow-id': wf.id }))
     : confirmButton('Take over…', `Take over ${named(wf)} from ${profileName(state, wf.ownerId)}`, dataAttrs({ action: 'takeOverWorkflow', 'workflow-id': wf.id }));
   const head = html`<div class="head">${title}<span class="wf-owner muted">Owner: ${profileName(state, wf.ownerId)}</span>${tools}</div>
     ${mine ? '' : html`<p class="wf-banner">Owned by ${profileName(state, wf.ownerId)}. You can look through it; take it over to work on it.</p>`}`;
+  if (wf.type === 'platformOnboarding') return html`${head}${onboardingBody(state, data, wf, mine)}`;
   const hz = workflowHazards(data, wf);
   const want = state.view?.hazardId === 'summary' ? null : state.view?.hazardId ?? wf.at?.hazardId ?? null;
   const x = want ? hz.find((y) => y.hazard.id === want) ?? (state.view?.hazardId ? null : hz[0] ?? null) : null;
