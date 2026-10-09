@@ -68,7 +68,7 @@ function causalFactorPlatforms(data, r) {
 }
 
 /** The platforms a reference link's target is on. @param {Data} data @param {string} kind @param {string} id @returns {string[]} */
-function targetPlatforms(data, kind, id) {
+export function targetPlatforms(data, kind, id) {
   switch (kind) {
     case 'platform': return [id];
     case 'hazard': return platformsOfHazard(data, id);
