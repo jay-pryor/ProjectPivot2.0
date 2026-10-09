@@ -414,6 +414,17 @@ export function hazardRows(data) {
   });
 }
 
+/**
+ * Whether a platform is still being onboarded: its latest onboarding is not completed (as
+ * core/workflows.js onboardingOf, kept here to avoid an import cycle).
+ * @param {Data} data @param {string} platformId
+ */
+export function isOnboarding(data, platformId) {
+  const latest = live(data, 'workflow').filter((w) => w.type === 'platformOnboarding' && w.platformId === platformId)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))[0];
+  return Boolean(latest && latest.state !== 'completed');
+}
+
 /** The Platform Review in progress on a platform, if any: an open workflow. @param {Data} data @param {string} platformId @returns {Rec | null} */
 export function openReview(data, platformId) {
   return live(data, 'workflow').find((w) => w.type === 'platformReview' && w.platformId === platformId && w.state === 'open') ?? null;
@@ -460,7 +471,7 @@ export function reviewDueList(data, today) {
 export function openItems(data, today, ownerId) {
   /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], dateMoved: { platform: Rec, due: string, seen: string, urgent: boolean, driver: any }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], toImplement: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string[] }[], unjustified: { platform: Rec, hazard: Rec, missing: string[] }[], controlGaps: { platform: Rec, control: Rec, missing: string[] }[], sfarpGaps: { platform: Rec, hazard: Rec, missing: string[] }[] }} */
   const out = { acks: [], reviews: [], dateMoved: [], awaiting: [], toImplement: [], unrated: [], unjustified: [], controlGaps: [], sfarpGaps: [] };
-  for (const platform of live(data, 'platform').filter((p) => ownerId == null || p.ownerId === ownerId)) {
+  for (const platform of live(data, 'platform').filter((p) => (ownerId == null || p.ownerId === ownerId) && !isOnboarding(data, p.id))) {
     for (const entry of waitingChanges(data, platform.id)) out.acks.push({ entry, platform });
     const s = scheduleOf(data, platform.id, today);
     const open = Boolean(openReview(data, platform.id));
@@ -578,7 +589,7 @@ const ownedBy = (p, ownerId) => ownerId == null || p.ownerId === ownerId;
  */
 export function upcomingReviews(data, today, ownerId, days = 90) {
   const until = addDays(today, days);
-  return live(data, 'platform').filter((p) => ownedBy(p, ownerId))
+  return live(data, 'platform').filter((p) => ownedBy(p, ownerId) && !isOnboarding(data, p.id))
     .map((platform) => {
       const s = scheduleOf(data, platform.id, today);
       return { platform, due: s.due, state: s.state, open: Boolean(openReview(data, platform.id)) };

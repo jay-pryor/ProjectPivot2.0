@@ -3,7 +3,7 @@ import { html, raw } from '../html.js';
 import { dataAttrs, confirmButton, reviewTag, go, bandTag, idTag, option } from './common.js';
 import { dataTable } from './table.js';
 import { get, live, all } from '../../core/data.js';
-import { openReview, lastReviewed, completedReviews, bandOf, listPlatformGroups, groupsOf } from '../../core/queries.js';
+import { openReview, isOnboarding, lastReviewed, completedReviews, bandOf, listPlatformGroups, groupsOf } from '../../core/queries.js';
 import { scheduleOf, POLICY_BANDS } from '../../core/schedule.js';
 import { MAX_REVIEW_MONTHS } from '../../core/ops/reviews.js';
 import { workflowLabel } from '../../core/ids.js';
@@ -157,6 +157,7 @@ export function reviewsPlatforms(state, data) {
   const owner = reviewsOwnerId(state);
   const groupId = state.reviewsPrefs?.groupId ?? null;
   return live(data, 'platform')
+    .filter((p) => !isOnboarding(data, p.id))
     .filter((p) => owner == null || p.ownerId === owner)
     .filter((p) => !groupId || groupsOf(data, p.id).some((g) => g.id === groupId));
 }
