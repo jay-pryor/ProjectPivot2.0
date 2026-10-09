@@ -15,9 +15,10 @@ export function createPlatform(data, act, { id = newId(), name, ownerId }) {
   return commit(data, act, 'Create platform', [{ kind: 'platform', rec }]);
 }
 
-/** The records that cancel a platform's open workflows: its review and its onboarding. @param {Data} data @param {Act} act @param {string} platformId */
+/** The records that cancel a platform's open workflows: its review, its onboarding and its transfer. @param {Data} data @param {Act} act @param {string} platformId */
 function openWorkflowsCancelled(data, act, platformId) {
-  return [openReview(data, platformId), onboardingOf(data, platformId)].filter((w) => w && w.state === 'open').flatMap((w) => cancelRecs(data, act, /** @type {any} */ (w)));
+  const transfer = live(data, 'workflow').find((w) => w.type === 'transferOwner' && w.platformId === platformId && w.state === 'open') ?? null;
+  return [openReview(data, platformId), onboardingOf(data, platformId), transfer].filter((w) => w && w.state === 'open').flatMap((w) => cancelRecs(data, act, /** @type {any} */ (w)));
 }
 
 /** @param {Data} data @param {Act} act @param {{ id: string, name?: string, description?: string }} args */

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { workflowView } from '../../src/ui/screens/workflow.js';
 import { createReference, linkReference } from '../../src/core/ops/references.js';
 import { startWorkflow, setReferenceDraft, setStep, completeWorkflow } from '../../src/core/ops/workflows.js';
-import { assignNumbers } from '../../src/core/ops/hazards.js';
+import { assignNumbers, updateHazard } from '../../src/core/ops/hazards.js';
 import { state } from './screens-workflows.test.js';
 import { seed, act } from '../helpers.js';
 
@@ -33,4 +33,12 @@ test('a completed update shows the revision change and the items as they were ti
   const out = workflowView(on(), d, 'u1').toString();
   assert.match(out, /Revision B → C/);
   assert.match(out, /Still right/);
+});
+
+test('a completed update lists the changes made through it', () => {
+  let d = setReferenceDraft(started(), act, { workflowId: 'u1', revision: 'C', url: 'https://new' });
+  d = updateHazard(d, { ...act, workflowId: 'u1' }, { id: 'h1', title: 'Fire on the range' });
+  d = setStep(d, act, { workflowId: 'u1', hazardId: 'hazard:h1', check: 'item', checked: true });
+  d = completeWorkflow(d, act, { workflowId: 'u1' });
+  assert.match(workflowView(on(), d, 'u1').toString(), /Changes made through WF-001[\s\S]*?Edit hazard/);
 });

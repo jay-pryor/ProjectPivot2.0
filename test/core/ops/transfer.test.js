@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { PivotError } from '../../../src/core/errors.js';
 import { entries } from '../../../src/core/history.js';
 import { mergeData } from '../../../src/core/merge.js';
+import { checkRules } from '../../../src/core/rules.js';
+import { retirePlatform, deletePlatform, createPlatform } from '../../../src/core/ops/platforms.js';
 import { startWorkflow, setTransferRecipient, setStep, completeWorkflow, markTransferReviewed, takeOverWorkflow } from '../../../src/core/ops/workflows.js';
 import { transferGroups } from '../../../src/core/workflows.js';
 import { openItems, attentionItems } from '../../../src/core/queries.js';
@@ -82,4 +84,26 @@ test('two people starting a transfer of the same platform: mine is kept', () => 
   const { data } = mergeData(base, mine, theirs, { by: 'u1', at: '2026-09-28T13:00:00+10:00' });
   assert.equal(data.records.workflow.mine.state, 'open');
   assert.equal(data.records.workflow.theirs.status, 'deleted');
+});
+
+test('retiring or deleting a platform cancels its open transfer, so the rules still hold', () => {
+  const ret = retirePlatform(started(), act, { id: 'p1' });
+  assert.equal(ret.records.workflow.t1.state, 'cancelled');
+  assert.deepEqual(checkRules(ret), []);
+  let e = createPlatform(seed(), act, { id: 'p9', name: 'Empty', ownerId: 'u1' });
+  e = deletePlatform(startWorkflow(e, act, { id: 't9', type: 'transferOwner', platformId: 'p9' }), act, { id: 'p9' });
+  assert.equal(e.records.workflow.t9.state, 'cancelled');
+  assert.deepEqual(checkRules(e), []);
+});
+
+test('the urgent item goes once the platform is no longer theirs or no longer live', () => {
+  let d = setTransferRecipient(started(), act, { workflowId: 't1', toOwnerId: 'u2' });
+  d = completeWorkflow(tickAll(d), act, { workflowId: 't1' });
+  assert.equal(openItems(d, today, 'u2').transfers.length, 1);
+  assert.deepEqual(openItems(retirePlatform(d, act, { id: 'p1' }), today, 'u2').transfers, [], 'retired');
+  let back = startWorkflow(d, later, { id: 't2', type: 'transferOwner', platformId: 'p1' });
+  back = setTransferRecipient(back, later, { workflowId: 't2', toOwnerId: 'u1' });
+  for (const g of transferGroups(back, 'p1', today, 't2').filter((x) => x.items.length)) back = setStep(back, later, { workflowId: 't2', hazardId: '-', check: `group:${g.key}`, checked: true });
+  back = completeWorkflow(back, later, { workflowId: 't2' });
+  assert.deepEqual(openItems(back, today, 'u2').transfers, [], 'handed back: no longer Grace’s');
 });

@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PivotError } from '../../../src/core/errors.js';
 import { entries } from '../../../src/core/history.js';
-import { createReference, linkReference, unlinkReference, setReferenceArchived } from '../../../src/core/ops/references.js';
+import { createReference, linkReference, unlinkReference, setReferenceArchived, retireReference, deleteReference } from '../../../src/core/ops/references.js';
+import { checkRules } from '../../../src/core/rules.js';
 import { startWorkflow, setReferenceDraft, setStep, completeWorkflow, cancelWorkflow } from '../../../src/core/ops/workflows.js';
 import { act, later, seed } from '../../helpers.js';
 
@@ -65,4 +66,16 @@ test('cancelling leaves the reference untouched, even after a file was given', (
 
 test('only the owner drafts the update', () => {
   assert.throws(() => setReferenceDraft(started(), later, { workflowId: 'u1', revision: 'C' }), code('workflow.owner'));
+});
+
+test('retiring, archiving or deleting a reference cancels its open update, so the rules still hold', () => {
+  for (const end of [(d) => retireReference(d, act, { id: 'r1' }), (d) => setReferenceArchived(d, act, { id: 'r1', archived: true })]) {
+    const d = end(started());
+    assert.equal(d.records.workflow.u1.state, 'cancelled');
+    assert.deepEqual(checkRules(d), []);
+  }
+  let e = createReference(seed(), act, { id: 'r5', title: 'Loose', url: 'x' });
+  e = deleteReference(startWorkflow(e, act, { id: 'u5', type: 'referenceUpdate', referenceId: 'r5' }), act, { id: 'r5' });
+  assert.equal(e.records.workflow.u5.state, 'cancelled');
+  assert.deepEqual(checkRules(e), []);
 });

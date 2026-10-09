@@ -526,7 +526,8 @@ export function openItems(data, today, ownerId) {
   for (const w of live(data, 'workflow')) {
     if (w.type !== 'transferOwner' || w.state !== 'completed' || w.reviewed || (ownerId != null && w.toOwnerId !== ownerId)) continue;
     const platform = get(data, 'platform', w.platformId);
-    if (platform && platform.status !== 'deleted') out.transfers.push({ workflow: w, platform, from: w.fromOwnerId });
+    // Only while the platform is live and still theirs: a transfer back, or a retirement, ends it.
+    if (platform && platform.status === 'live' && platform.ownerId === w.toOwnerId) out.transfers.push({ workflow: w, platform, from: w.fromOwnerId });
   }
   return out;
 }

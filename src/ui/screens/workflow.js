@@ -98,7 +98,7 @@ function summary(state, data, wf, mine) {
 }
 
 /** What each change made through the workflow did, newest first. @param {any} state @param {Data} data @param {any} wf */
-function changesList(state, data, wf) {
+export function changesList(state, data, wf) {
   const list = workflowChanges(data, wf.id).slice().reverse();
   if (!list.length) return html`<p class="muted">No changes were made through this workflow.</p>`;
   return html`<ul class="plain wf-changes">${list.map((e) => html`<li><strong>${e.action}</strong> <span class="muted">${profileName(state, e.by)}, ${when(e.at)}</span>

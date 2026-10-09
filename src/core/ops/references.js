@@ -57,6 +57,16 @@ export function attachFile(data, act, { id, file }) {
 }
 
 /**
+ * The records that cancel a reference's open update, when it stops being one an update can reach
+ * (archived, retired or deleted). The update is kept, cancelled; nothing it drafted reaches the reference.
+ * @param {Data} data @param {Act} act @param {string} referenceId
+ */
+function updateCancelled(data, act, referenceId) {
+  return live(data, 'workflow').filter((w) => w.type === 'referenceUpdate' && w.referenceId === referenceId && w.state === 'open')
+    .map((w) => ({ kind: 'workflow', rec: changed(w, act, { state: 'cancelled', endedBy: act.by, endedAt: act.at, covered: [] }) }));
+}
+
+/**
  * Move a reference to the archive, or back to the active list. Archived, it is listed apart and
  * not offered for linking; what it already supports stays linked.
  * @param {Data} data @param {Act} act @param {{ id: string, archived: unknown }} args
@@ -65,14 +75,14 @@ export function setReferenceArchived(data, act, { id, archived }) {
   const r = need(data, 'reference', id);
   const on = archived === true || archived === 'true';
   if (Boolean(r.archived) === on) return data;
-  return commit(data, act, on ? 'Archive reference' : 'Return reference from archive', [{ kind: 'reference', rec: changed(r, act, { archived: on }) }]);
+  return commit(data, act, on ? 'Archive reference' : 'Return reference from archive', [{ kind: 'reference', rec: changed(r, act, { archived: on }) }, ...(on ? updateCancelled(data, act, id) : [])]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ id: string }} args */
 export function retireReference(data, act, { id }) {
   const r = need(data, 'reference', id);
   if (r.status === 'retired') return data;
-  return commit(data, act, 'Retire reference', [{ kind: 'reference', rec: changed(r, act, { status: 'retired' }) }]);
+  return commit(data, act, 'Retire reference', [{ kind: 'reference', rec: changed(r, act, { status: 'retired' }) }, ...updateCancelled(data, act, id)]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ id: string }} args */
@@ -80,7 +90,7 @@ export function deleteReference(data, act, { id }) {
   const r = need(data, 'reference', id);
   const n = live(data, 'referenceLink').filter((l) => l.referenceId === id).length;
   if (n) throw new PivotError('reference.in-use', `${r.title} still supports ${n === 1 ? 'a record' : `${n} records`}. Unlink it first.`);
-  return commit(data, act, 'Delete reference', [{ kind: 'reference', rec: changed(r, act, { status: 'deleted' }) }]);
+  return commit(data, act, 'Delete reference', [{ kind: 'reference', rec: changed(r, act, { status: 'deleted' }) }, ...updateCancelled(data, act, id)]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ referenceId: string, targetKind: string, targetId: string }} args */

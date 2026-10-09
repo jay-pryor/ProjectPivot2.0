@@ -3,6 +3,8 @@ import { dataAttrs, go } from './common.js';
 import { get } from '../../core/data.js';
 import { referenceItems, stepOf } from '../../core/workflows.js';
 import { profileName, when } from '../names.js';
+import { workflowLabel } from '../../core/ids.js';
+import { changesList } from './workflow.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
 
@@ -47,5 +49,6 @@ export function updateEnded(state, data, wf) {
     ? html`<p class="doc-meta"><span class="tag wf-completed">Completed</span> Revision ${wf.before ?? '?'} → ${wf.revision}, by ${profileName(state, wf.endedBy)}, ${when(wf.endedAt)}.</p>`
     : html`<p class="doc-meta"><span class="tag wf-cancelled">Cancelled</span> by ${profileName(state, wf.endedBy)}, ${when(wf.endedAt)}. The reference was left as it was.</p>`;
   return html`${status}<article class="doc"><table class="wf-grid"><thead><tr><th>Item</th><th>Checked</th><th>Note</th></tr></thead>
-    <tbody>${keys.map((k, n) => { const s = stepOf(data, wf.id, k, 'item'); return html`<tr><th scope="row">${wf.coveredLabels?.[n] ?? k}</th><td class="${s?.checked ? 'yes' : 'no'}">${s?.checked ? '✓' : ''}</td><td>${s?.note ?? ''}</td></tr>`; })}</tbody></table></article>`;
+    <tbody>${keys.map((k, n) => { const s = stepOf(data, wf.id, k, 'item'); return html`<tr><th scope="row">${wf.coveredLabels?.[n] ?? k}</th><td class="${s?.checked ? 'yes' : 'no'}">${s?.checked ? '✓' : ''}</td><td>${s?.note ?? ''}</td></tr>`; })}</tbody></table>
+    <h2>Changes made through ${workflowLabel(wf)}</h2>${changesList(state, data, wf)}</article>`;
 }
