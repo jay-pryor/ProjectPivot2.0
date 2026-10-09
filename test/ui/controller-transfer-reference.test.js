@@ -55,3 +55,17 @@ test('a file uploaded for an update is stored, held by the update, and not given
   assert.match(W(c).records.workflow[id].file.stored, /^files\/r1\//);
   assert.equal(W(c).records.reference.r1.file, null);
 });
+
+test('moving between tabs of the item opened from an update keeps the way back, and keeps edits made through it', async () => {
+  const c = await ready();
+  await c.dispatch({ type: 'startReferenceUpdate', referenceId: 'r1' });
+  const id = c.getState().view.id;
+  await c.dispatch({ type: 'go', view: 'hazard', id: 'h1', via: id });
+  await c.dispatch({ type: 'go', view: 'hazard', id: 'h1', tab: 'history' });
+  assert.equal(c.getState().view.via, id);
+  await c.dispatch({ type: 'go', view: 'hazard', id: 'h1' });
+  await c.dispatch({ type: 'updateHazard', id: 'h1', title: 'Fire on the range' });
+  assert.equal(entries(W(c)).at(-1).workflow, id);
+  await c.dispatch({ type: 'go', view: 'controls' });
+  assert.equal(c.getState().view.via, undefined);
+});

@@ -22,7 +22,7 @@ export function transferBody(state, data, wf, mine) {
   const cards = groups.map((g) => {
     const s = stepOf(data, wf.id, '-', `group:${g.key}`);
     const at = { change: 'setStep', 'workflow-id': wf.id, 'hazard-id': '-', check: `group:${g.key}` };
-    return html`<section class="wf-check${!g.items.length || s?.checked ? ' done' : ''}" aria-label="${g.title}">
+    return html`<section class="wf-check${s?.checked ? ' done' : !g.items.length ? ' empty' : ''}" aria-label="${g.title}">
       <h3 class="wf-check-h">${g.title} <span class="count">${g.items.length}</span></h3>
       ${g.items.length ? html`<details class="wf-group"${g.items.length <= 5 ? raw(' open') : ''}><summary>${g.items.length} item${g.items.length === 1 ? '' : 's'}</summary>${itemList(g.items)}</details>
         <div class="wf-check-foot"><input class="grow" name="note" value="${s?.note ?? ''}" placeholder="Note (optional)…" aria-label="Note on ${g.title}"${dis} ${dataAttrs(at)}>

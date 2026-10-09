@@ -430,6 +430,8 @@ export function createController(env) {
       set({ warnings: (state.warnings ?? []).filter((/** @type {string} */ _w, /** @type {number} */ i) => i !== Number(index)) });
     },
     async go({ view, id, hazardId, platformId, tab, reviewId, via }) {
+      // Another tab of the record opened from a workflow keeps the way back to it.
+      if (!via && state.view?.via && state.view.name === view && (state.view.id ?? null) === (id ?? null)) via = state.view.via;
       // Leaving a control being made, untitled, makes nothing.
       set({ view: { name: view, id, hazardId, platformId, tab, reviewId, ...(via ? { via } : {}) }, message: null, editing: null, confirmDelete: null, reviewPanel: null, ruleDraft: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
