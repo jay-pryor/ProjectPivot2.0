@@ -4,7 +4,8 @@ import { get, created, changed, need, put } from '../data.js';
 import { commit } from '../apply.js';
 import { dueOf } from '../schedule.js';
 import { seenRec } from './reviews.js';
-import { CHECKS, workflowHazards, workflowProgress, openPlatformReview } from '../workflows.js';
+import { CHECKS, NONE_CHECKS, ONBOARDING_POSITIONS, workflowHazards, workflowProgress, openPlatformReview, onboardingOf, onboardingProgress } from '../workflows.js';
+import { createPlatform } from './platforms.js';
 
 /** @typedef {import('../data.js').Data} Data */
 /** @typedef {import('../data.js').Act} Act */
@@ -30,25 +31,47 @@ function needHazard(data, wf, hazardId) {
   return /** @type {string} */ (hazardId);
 }
 
+/** A workflow's opening record. @param {Act} act @param {string} id @param {string} type @param {string} platformId @param {string | null} at */
+const opening = (act, id, type, platformId, at) => created(act, id, { number: null, type, platformId, ownerId: act.by, state: 'open', at: { hazardId: at }, outcome: '', notes: '', endedBy: null, endedAt: null });
+
 /**
- * Start a workflow, owned by whoever starts it. A Platform Review needs a live platform with no
- * review open, and opens on its first hazard (on the summary when it has none).
+ * Onboard a new platform: make it and its onboarding together, the onboarding owned by whoever
+ * starts it and opening on the platform's details.
+ * @param {Data} data @param {Act} act @param {{ id?: string, platformId?: string, name: string, ownerId: string }} args
+ */
+export function startOnboarding(data, act, { id = newId(), platformId = newId(), name, ownerId }) {
+  const withPlatform = createPlatform(data, act, { id: platformId, name, ownerId });
+  const platform = withPlatform.records.platform[platformId];
+  return commit(data, act, 'Onboard platform', [{ kind: 'platform', rec: platform }, { kind: 'workflow', rec: opening(act, id, 'platformOnboarding', platformId, '@details') }]);
+}
+
+/**
+ * Start a workflow, owned by whoever starts it. A Platform Review needs a live platform that is not
+ * being onboarded and has no review open, and opens on its first hazard (on the summary when it has
+ * none). A Platform Onboarding is started again only for a platform whose onboarding was cancelled.
  * @param {Data} data @param {Act} act @param {{ id?: string, type: string, platformId: string }} args
  */
 export function startWorkflow(data, act, { id = newId(), type, platformId }) {
-  if (type !== 'platformReview') throw new PivotError('workflow.type', 'That workflow is not available yet.');
   const p = need(data, 'platform', platformId);
+  if (type === 'platformOnboarding') {
+    const under = onboardingOf(data, platformId);
+    if (!under) throw new PivotError('onboarding.not', `${p.name} has been onboarded already.`);
+    if (under.state === 'open') throw new PivotError('onboarding.open', `${p.name} is being onboarded already.`);
+    if (p.status !== 'live') throw new PivotError('platform.retired', `${p.name} is retired.`);
+    return commit(data, act, 'Start workflow', [{ kind: 'workflow', rec: opening(act, id, type, platformId, '@details') }]);
+  }
+  if (type !== 'platformReview') throw new PivotError('workflow.type', 'That workflow is not available yet.');
   if (p.status !== 'live') throw new PivotError('platform.retired', `${p.name} is retired, so it cannot be reviewed.`);
+  if (onboardingOf(data, platformId)) throw new PivotError('review.onboarding', `Finish onboarding ${p.name} first.`);
   if (openPlatformReview(data, platformId)) throw new PivotError('review.open', `${p.name} already has a review in progress.`);
   const first = workflowHazards(data, { platformId })[0]?.hazard.id ?? null;
-  const rec = created(act, id, { number: null, type, platformId, ownerId: act.by, state: 'open', at: { hazardId: first }, outcome: '', notes: '', endedBy: null, endedAt: null });
-  return commit(data, act, 'Start workflow', [{ kind: 'workflow', rec }]);
+  return commit(data, act, 'Start workflow', [{ kind: 'workflow', rec: opening(act, id, type, platformId, first) }]);
 }
 
 /** Where the owner is in it, kept for resuming: a hazard, or null for the summary. @param {Data} data @param {Act} act @param {{ workflowId: string, hazardId: string | null }} args */
 export function setWorkflowPosition(data, act, { workflowId, hazardId }) {
   const wf = needOpen(data, act, workflowId);
-  const to = hazardId ? needHazard(data, wf, hazardId) : null;
+  const to = !hazardId ? null : wf.type === 'platformOnboarding' && ONBOARDING_POSITIONS.includes(hazardId) ? hazardId : needHazard(data, wf, hazardId);
   return commit(data, act, 'Move in workflow', [{ kind: 'workflow', rec: changed(wf, act, { at: { hazardId: to } }) }]);
 }
 
@@ -60,7 +83,8 @@ export function setWorkflowPosition(data, act, { workflowId, hazardId }) {
  */
 export function setStep(data, act, { workflowId, hazardId, check, checked, note }) {
   const wf = needOpen(data, act, workflowId);
-  if (!CHECKS.includes(check)) throw new PivotError('workflow.check', 'That is not one of the review checks.');
+  const allowed = wf.type === 'platformOnboarding' ? NONE_CHECKS : CHECKS;
+  if (!allowed.includes(check)) throw new PivotError('workflow.check', 'That is not one of this workflow’s checks.');
   needHazard(data, wf, hazardId);
   const id = ids.workflowStep(workflowId, hazardId, check);
   const fields = {
@@ -115,6 +139,11 @@ export function cancelWorkflow(data, act, { workflowId }) {
  */
 export function completeWorkflow(data, act, { workflowId }) {
   const wf = needOpen(data, act, workflowId);
+  if (wf.type === 'platformOnboarding') {
+    const { unmet } = onboardingProgress(data, wf);
+    if (unmet.length) throw new PivotError('workflow.unmet', `${unmet.length} thing${unmet.length === 1 ? ' is' : 's are'} still needed.`);
+    return commit(data, act, 'Complete onboarding', [{ kind: 'workflow', rec: changed(wf, act, { state: 'completed', endedBy: act.by, endedAt: act.at, covered: covered(data, wf) }) }]);
+  }
   const p = need(data, 'platform', wf.platformId);
   const { done, total } = workflowProgress(data, wf);
   const left = total - done;

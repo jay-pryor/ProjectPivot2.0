@@ -4,7 +4,7 @@ import { createControl, linkControl } from '../src/core/ops/controls.js';
 import { createPlatform, linkHazard } from '../src/core/ops/platforms.js';
 import { setRule } from '../src/core/ops/reviews.js';
 import { addMonths } from '../src/core/time.js';
-import { startWorkflow, setStep, completeWorkflow, takeOverWorkflow } from '../src/core/ops/workflows.js';
+import { startWorkflow, setStep, completeWorkflow, takeOverWorkflow, startOnboarding } from '../src/core/ops/workflows.js';
 import { CHECKS, workflowHazards } from '../src/core/workflows.js';
 
 export const act = { by: 'u1', at: '2026-09-28T10:00:00+10:00' };
@@ -75,4 +75,9 @@ export function finishPlatformReview(d, by, { workflowId }) {
     for (const check of CHECKS) d = setStep(d, by, { workflowId, hazardId: hazard.id, check, checked: true });
   }
   return completeWorkflow(d, by, { workflowId });
+}
+
+/** Onboard a new platform. @param {import('../src/core/data.js').Data} d @param {{ by: string, at: string }} by @param {{ id: string, platformId: string, name: string, ownerId: string }} args */
+export function beginOnboarding(d, by, args) {
+  return startOnboarding(d, by, args);
 }
