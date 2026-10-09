@@ -1,6 +1,6 @@
 import { get, live } from './data.js';
 import { hazardLabel } from './ids.js';
-import { platformHazards, byNumber, causalFactorsOn, platformListOn, controlsOnPlatform, implementedByOf, assessmentOf, sfarpOf } from './queries.js';
+import { platformHazards, byNumber, causalFactorsOn, platformListOn, controlsOnPlatform, implementedByOf, assessmentOf, sfarpOf, groupsOf } from './queries.js';
 import { RECEPTORS } from './receptors.js';
 import { entries, deletedEntries } from './history.js';
 
@@ -185,4 +185,49 @@ export function onboardingProgress(data, wf) {
     perHazard.set(hid, { facets, implemented, optional, required: Number(facetsMet) + Number(implemented) });
   }
   return { details, groups, hazards: hz.length > 0, perHazard, unmet };
+}
+
+/** @param {Data} data @param {string} kind 'hazard', 'control', or 'facetOption' @param {string} id @returns {Set<string>} */
+const assignedGroups = (data, kind, id) => new Set(live(data, 'optionGroup').filter((l) => l.optionKind === kind && l.optionId === id).map((l) => /** @type {string} */ (l.groupId)));
+
+/** @param {Data} data @param {string} groupId */
+const groupName = (data, groupId) => (groupId === 'all' ? 'All platforms' : get(data, 'platformGroup', groupId)?.name ?? '');
+
+/**
+ * The groups a hazard on a platform takes suggestions from: those the platform is in that the
+ * hazard is assigned to, and All platforms when the hazard is assigned to it.
+ * @param {Data} data @param {string} platformId @param {string} hazardId @returns {string[]}
+ */
+export function sharedGroups(data, platformId, hazardId) {
+  const mine = new Set(groupsOf(data, platformId).map((g) => g.id));
+  return [...assignedGroups(data, 'hazard', hazardId)].filter((g) => g === 'all' || mine.has(g));
+}
+
+/**
+ * What onboarding suggests, from platform groups: hazards assigned to the platform's groups (or
+ * All platforms) not on it yet; and, for a hazard there, facet options or controls assigned to the
+ * groups it shares with the platform, not there yet. Each says which groups it came from.
+ * @param {Data} data @param {{ kind: string, platformId: string, hazardId?: string }} o
+ * @returns {{ id: string, text: string, from: string }[]}
+ */
+export function groupSuggestions(data, { kind, platformId, hazardId }) {
+  // What is assigned to All platforms applies to every platform, so it is always offered.
+  const groups = ['all', ...(kind === 'hazard' ? groupsOf(data, platformId).map((g) => g.id) : sharedGroups(data, platformId, /** @type {string} */ (hazardId)))];
+  const want = new Set(groups);
+  const from = (/** @type {string} */ k, /** @type {string} */ id) => [...assignedGroups(data, k, id)].filter((g) => want.has(g)).map((g) => groupName(data, g)).join(', ');
+  if (kind === 'hazard') {
+    const on = new Set(live(data, 'hazardPlatform').filter((l) => l.platformId === platformId).map((l) => l.hazardId));
+    return live(data, 'hazard').filter((h) => !on.has(h.id)).sort(byNumber)
+      .map((h) => ({ id: h.id, text: `${hazardLabel(h)} ${h.title}`, from: from('hazard', h.id) })).filter((s) => s.from);
+  }
+  if (kind === 'control') {
+    const here = new Set(controlsOnPlatform(data, /** @type {string} */ (hazardId), platformId).map((c) => c.control.id));
+    return live(data, 'control').filter((c) => !here.has(c.id)).sort(byNumber)
+      .map((c) => ({ id: c.id, text: c.title, from: from('control', c.id) })).filter((s) => s.from);
+  }
+  const entries = kind === 'causalFactor' ? causalFactorsOn(data, /** @type {string} */ (hazardId), platformId) : platformListOn(data, /** @type {any} */ (kind), /** @type {string} */ (hazardId), platformId);
+  const have = new Set(entries.map((e) => String(e.text).trim().toLowerCase()));
+  return live(data, 'facetOption').filter((o) => o.facet === kind && !have.has(String(o.name).trim().toLowerCase()))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((o) => ({ id: o.id, text: o.name, from: from('facetOption', o.id) })).filter((s) => s.from);
 }
