@@ -29,9 +29,9 @@ test('lists open with an ID column: hazards H-, controls C-, platforms P-; new r
   assert.doesNotMatch(controls, /data-category|<nav class="tabs">|Create as/, 'one kind of control: no sub-tabs');
   const platforms = platformsView(state, data()).toString();
   assert.match(platforms, /P-001/);
-  assert.doesNotMatch(platforms, /<form data-action="createPlatform"/, 'no form until + is pressed');
+  assert.doesNotMatch(platforms, /<form data-action="onboardPlatform"/, 'no form until + is pressed');
   const adding = platformsView({ ...state, editing: { kind: 'newPlatform', id: 'new' } }, data()).toString();
-  assert.match(adding, /<form data-action="createPlatform"[\s\S]*?name="name"[^>]*autofocus/);
+  assert.match(adding, /<form data-action="onboardPlatform"[\s\S]*?name="name"[^>]*autofocus/);
 });
 
 test('Back names a numbered record\'s page by its own title, not the record\'s long name', () => {

@@ -793,6 +793,12 @@ export function createController(env) {
         await applyEdit('setControlStatus', { hazardId, controlId: id, platformId, status: 'implemented' });
       }
     },
+    // A platform whose onboarding was cancelled, onboarded again.
+    async onboardAgain({ platformId }) {
+      const id = newId();
+      await applyEdit('startWorkflow', { id, type: 'platformOnboarding', platformId });
+      await handlers.go({ view: 'workflow', id });
+    },
     // New platform: made and onboarded together, the onboarding opened.
     async onboardPlatform({ name, ownerId }) {
       const id = newId();

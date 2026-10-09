@@ -1,5 +1,6 @@
 import { html } from '../html.js';
-import { dataAttrs, option, statusTag, stateTag, go, deletePanel, deleteName, levelTag, pageTabs, historyTable, plus, idTag, reviewTag, removeColumn, removeButton, recordMenu, menuItem, stateWord, rowsCounted, groupTags } from './common.js';
+import { dataAttrs, option, statusTag, stateTag, go, deletePanel, deleteName, levelTag, pageTabs, historyTable, plus, idTag, reviewTag, removeColumn, removeButton, recordMenu, menuItem, stateWord, rowsCounted, groupTags, onboardingTag } from './common.js';
+import { onboardingOf } from '../../core/workflows.js';
 import { ruleWord, driverWord } from '../review-words.js';
 import { waitingChanges } from '../../core/acks.js';
 import { scheduleOf } from '../../core/schedule.js';
@@ -24,7 +25,7 @@ import { RECEPTORS, stageKey } from '../../core/receptors.js';
 export function platformsView(state, data) {
   const count = (/** @type {string} */ id) => live(data, 'hazardPlatform').filter((l) => l.platformId === id).length;
   const owner = html`<select name="ownerId" aria-label="Owner">${state.profiles.map((/** @type {any} */ p) => option(p.id, p.name, state.profileId))}</select>`;
-  return html`<div class="head"><h1>Platforms</h1>${newRecord(state, 'newPlatform', 'createPlatform', 'name', 'New platform name', owner)}</div>
+  return html`<div class="head"><h1>Platforms</h1>${newRecord(state, 'newPlatform', 'onboardPlatform', 'name', 'New platform name', owner)}</div>
     ${dataTable(state, {
       id: 'platforms',
       rowKey: (p) => p.id,
@@ -33,7 +34,7 @@ export function platformsView(state, data) {
       rowAttrs: (p) => ({ dblclick: 'go', view: 'platform', id: p.id }),
       columns: [
         idColumn((p) => p, platformLabel, (p) => go(idTag(platformLabel(p)), 'platform', { id: p.id })),
-        { key: 'name', label: 'Platform', width: 560, minWidth: 180, value: (p) => p.name, filter: 'text', render: (p) => go(p.name, 'platform', { id: p.id }) },
+        { key: 'name', label: 'Platform', width: 560, minWidth: 180, value: (p) => p.name, filter: 'text', render: (p) => html`${go(p.name, 'platform', { id: p.id })}${onboardingTag(data, p.id)}` },
         { key: 'owner', label: 'Owner', width: 400, minWidth: 140, value: (p) => profileName(state, p.ownerId), filter: 'select',
           options: state.profiles.map((/** @type {any} */ pr) => /** @type {[string, string]} */ ([pr.id, pr.name])), match: (p, v) => p.ownerId === v },
         { key: 'groups', label: 'Groups', width: 300, minWidth: 120, value: (p) => groupsOf(data, p.id).map((g) => g.name).join(', '), filter: 'select',
@@ -50,6 +51,13 @@ export function platformsView(state, data) {
         statusColumn((p) => p.status),
       ],
     })}`;
+}
+
+/** Onboard again, for a platform whose onboarding was cancelled. @param {Data} data @param {any} p */
+function onboardAgain(data, p) {
+  const wf = onboardingOf(data, p.id);
+  return wf && wf.state === 'cancelled' && p.status === 'live'
+    ? html`<button type="button" class="small" ${dataAttrs({ action: 'onboardAgain', 'platform-id': p.id })}>Onboard again</button>` : '';
 }
 
 /**
@@ -134,7 +142,7 @@ export function platformView(state, data, id) {
   // Ticks, notes and outcome edits stay in the review itself rather than crowding the History tab.
   const reaching = historyReaching(data, id);
   const page = tab === 'history' ? 'History' : 'Details';
-  const head = html`<div class="doc-head"><h1 class="doc-page"><span class="doc-id">${idTag(platformLabel(p))}</span> <span class="doc-page-sep" aria-hidden="true">—</span> ${page}</h1>${statusTag(p.status)}${platformMenu(data, p)}</div>${state.confirmDelete?.kind === 'platform' && state.confirmDelete.id === id ? deletePanel('platform', id, deleteName('platform', p), 'Its safety reports go with it.') : ''}
+  const head = html`<div class="doc-head"><h1 class="doc-page"><span class="doc-id">${idTag(platformLabel(p))}</span> <span class="doc-page-sep" aria-hidden="true">—</span> ${page}</h1>${statusTag(p.status)}${onboardingTag(data, id)}${onboardAgain(data, p)}${platformMenu(data, p)}</div>${state.confirmDelete?.kind === 'platform' && state.confirmDelete.id === id ? deletePanel('platform', id, deleteName('platform', p), 'Its safety reports go with it.') : ''}
     <label class="doc-subtitle"><span class="field-label">Platform</span>
       <input class="doc-title small" name="name" value="${p.name}" required aria-label="Platform name" ${dataAttrs({ change: 'updatePlatform', id })}></label>
     ${pageTabs('platform', { id }, tab, rowsCounted(data, reaching))}${state.reviewPanel === id ? reviewPanel(state, data, p) : ''}`;

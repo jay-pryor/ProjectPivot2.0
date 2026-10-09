@@ -62,12 +62,17 @@ function reviewCard(state, data) {
     : html`<p class="muted">No live platforms to review.</p>`;
 }
 
+/** The card that onboards a new platform: its name and owner. @param {any} state */
+function onboardCard(state) {
+  return html`<form class="wf-start" data-action="onboardPlatform"><input name="name" required placeholder="New platform name" aria-label="New platform name"><select name="ownerId" aria-label="Owner">${state.profiles.map((/** @type {any} */ p) => option(p.id, p.name, state.profileId))}</select><button type="submit" class="primary small">Start</button></form>`;
+}
+
 /** @param {any} state @param {Data} data */
 function startCards(state, data) {
   return html`<div class="wf-cards">${WORKFLOW_TYPES.map((t) => html`<section class="dash-card wf-card${t.ready ? '' : ' soon'}" aria-label="${t.name}">
     <h3 class="dash-card-h">${t.name}${t.ready ? '' : html` <span class="tag">Coming soon</span>`}</h3>
     <p class="muted">${t.blurb}</p>
-    ${t.type === 'platformReview' ? reviewCard(state, data) : ''}
+    ${t.type === 'platformReview' ? reviewCard(state, data) : t.type === 'platformOnboarding' ? onboardCard(state) : ''}
   </section>`)}</div>`;
 }
 

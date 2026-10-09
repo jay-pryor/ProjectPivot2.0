@@ -1,6 +1,6 @@
 import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
 import { html, raw } from '../html.js';
-import { dataAttrs, option, go, reviewTag, changeDetail, idTag, favouriteLabel, unfavouriteStar, groupTags } from './common.js';
+import { dataAttrs, option, go, reviewTag, changeDetail, idTag, favouriteLabel, unfavouriteStar, groupTags, onboardingTag } from './common.js';
 import { favouritesOf, favouriteLayout, comingUpDays, COMING_UP_WINDOWS } from '../prefs.js';
 import { platformImage, statusSelect, rejectionCell } from './platforms.js';
 import { dataTable, shownRows } from './table.js';
@@ -466,7 +466,7 @@ export function homeView(state, data) {
     </div>
     <h2 class="dash-h">${heading}</h2>
     ${cards.length ? html`<div class="pcards">${cards.map((c) => html`<button type="button" class="pcard" ${dataAttrs({ action: 'go', view: 'platform', id: c.platform.id })}>
-        <span class="pcard-top"><span class="pcard-h"><strong>${c.platform.name}</strong>${c.state === 'dueSoon' && c.due ? html` <span class="tag review-due-soon">Review due soon – ${daysUntil(state.today, c.due)} day${daysUntil(state.today, c.due) === 1 ? '' : 's'}</span>` : reviewTag(c.state)}${c.open ? html` <span class="tag">Review in progress</span>` : ''}</span>${groupTags(groupsOf(data, c.platform.id))}</span>
+        <span class="pcard-top"><span class="pcard-h"><strong>${c.platform.name}</strong>${onboardingTag(data, c.platform.id, { link: false })}${c.state === 'dueSoon' && c.due ? html` <span class="tag review-due-soon">Review due soon – ${daysUntil(state.today, c.due)} day${daysUntil(state.today, c.due) === 1 ? '' : 's'}</span>` : reviewTag(c.state)}${c.open ? html` <span class="tag">Review in progress</span>` : ''}</span>${groupTags(groupsOf(data, c.platform.id))}</span>
         ${owner === 'everyone' ? html`<span class="muted">${profileName(state, c.platform.ownerId)}</span>` : ''}
         ${RECEPTORS.map((x) => html`<span class="rx">${RECEPTOR_WORD[/** @type {'personnel'} */ (x)]}</span>${riskBar(c.bands[x])}`)}
         <span>${count(c.hazards, 'hazard', 'hazards')} · ${c.awaiting} awaiting status decision · ${count(c.acks, 'change', 'changes')}</span>

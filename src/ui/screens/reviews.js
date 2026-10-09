@@ -8,6 +8,7 @@ import { scheduleOf, POLICY_BANDS } from '../../core/schedule.js';
 import { MAX_REVIEW_MONTHS } from '../../core/ops/reviews.js';
 import { workflowLabel } from '../../core/ids.js';
 import { checkGrid } from './workflow.js';
+import { onboardingOf } from '../../core/workflows.js';
 import { BANDS } from '../../core/matrix.js';
 import { day, when, profileName, periodWord } from '../names.js';
 import { ruleWord, driverWord } from '../review-words.js';
@@ -75,7 +76,10 @@ export function reviewLine(state, data, p) {
         ${s.moved ? html`<span class="tag review-moved${s.urgent ? ' urgent' : ''}">Moved from ${day(/** @type {string} */ (s.seen))}</span>
           <button type="button" class="small" ${dataAttrs({ action: 'acknowledgeReviewDate', 'platform-id': p.id })}>Acknowledge</button>` : ''}</div>`
     : html`<div class="rv-big muted">—</div><div class="rv-foot muted">Set a rule to have one</div>`;
-  const start = inProgress
+  const onboard = onboardingOf(data, p.id);
+  const start = onboard
+    ? html`<span class="muted">Finish onboarding first</span> ${go('Open onboarding →', 'workflow', { id: onboard.id })}`
+    : inProgress
     ? html`<span class="tag">${workflowLabel(inProgress) === 'TBC' ? 'Review' : workflowLabel(inProgress)} in progress</span> ${go('Resume →', 'workflow', { id: inProgress.id })}`
     : p.status !== 'live' ? html`<span class="muted">${p.name} is retired</span>`
       : html`<button type="button" class="primary rv-action" ${dataAttrs({ action: 'beginReview', 'platform-id': p.id })}>Start review</button>`;

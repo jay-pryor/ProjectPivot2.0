@@ -9,6 +9,7 @@ import { ratingFor, LIKELIHOODS, CONSEQUENCES } from '../../core/matrix.js';
 import { openItems, attentionItems } from '../../core/queries.js';
 import { UNNUMBERED, hazardLabel, controlLabel, referenceLabel, platformLabel, workflowLabel } from '../../core/ids.js';
 import { get } from '../../core/data.js';
+import { onboardingOf } from '../../core/workflows.js';
 import { FULCRUM_SVG } from '../logo.js';
 import { safetyReportId } from '../../core/ops/report-ids.js';
 import { wordDiff } from '../text-diff.js';
@@ -580,6 +581,20 @@ export function historyTable(state, data, kind, id, list = historyOf(data, kind,
 function viaWorkflow(data, e) {
   const wf = e.workflow ? get(data, 'workflow', e.workflow) : null;
   return wf ? html` <button type="button" class="tag wf-chip" title="Made through this workflow" ${dataAttrs({ action: 'go', view: 'workflow', id: wf.id })}>via ${workflowLabel(wf)}</button>` : '';
+}
+
+/**
+ * "Onboarding · WF-n" for a platform still being onboarded, opening the onboarding; nothing
+ * otherwise. Inside something already clickable (a Home card) it is a plain tag.
+ * @param {any} data @param {string} platformId @param {{ link?: boolean }} [o]
+ */
+export function onboardingTag(data, platformId, { link = true } = {}) {
+  const wf = onboardingOf(data, platformId);
+  if (!wf) return '';
+  const label = workflowLabel(wf) === UNNUMBERED ? 'Onboarding' : `Onboarding · ${workflowLabel(wf)}`;
+  return link
+    ? html` <button type="button" class="tag onboarding-tag" title="Still being onboarded" ${dataAttrs({ action: 'go', view: 'workflow', id: wf.id })}>${label}</button>`
+    : html` <span class="tag onboarding-tag">${label}</span>`;
 }
 
 /** A small, quiet + button, drawn rather than typed so it sits dead centre. @param {Record<string, unknown>} attrs @param {string} label what it does, for its tooltip */
