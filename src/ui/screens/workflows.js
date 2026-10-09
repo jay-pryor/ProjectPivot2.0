@@ -29,6 +29,9 @@ export function progressBar(done, total) {
   return html`<span class="wf-progress"><span class="wf-bar" role="img" aria-label="${done} of ${total} checks done"><span style="width:${pct}%"></span></span><span class="muted">${done}/${total}</span></span>`;
 }
 
+/** A dropdown's opening choice, saying what to pick; it cannot be chosen, so the form needs a real one. @param {string} words */
+const NEUTRAL = (words) => html`<option value="" disabled selected>${words}</option>`;
+
 const STATE_RANK = { overdue: 0, dueSoon: 1, ok: 2, none: 3 };
 
 /** @param {any} state @param {Data} data */
@@ -58,13 +61,13 @@ function reviewCard(state, data) {
     .sort((a, b) => (STATE_RANK[/** @type {keyof typeof STATE_RANK} */ (a.s.state)] - STATE_RANK[/** @type {keyof typeof STATE_RANK} */ (b.s.state)]) || String(a.p.name).localeCompare(b.p.name));
   const word = (/** @type {any} */ r) => (r.open ? ` — ${workflowLabel(r.open) === 'TBC' ? 'review' : workflowLabel(r.open)} in progress` : r.s.state === 'overdue' ? ' — overdue' : r.s.state === 'dueSoon' ? ' — due soon' : '');
   return rows.length
-    ? html`<form class="wf-start" data-action="beginReview"><div class="wf-fields-col"><select name="platformId" aria-label="Platform to review" required>${rows.map((r) => option(r.p.id, `${r.p.name}${word(r)}`, ''))}</select></div><button type="submit" class="primary small wf-go">Start</button></form>`
+    ? html`<form class="wf-start" data-action="beginReview"><div class="wf-fields-col"><select name="platformId" aria-label="Platform to review" required>${NEUTRAL('Select platform…')}${rows.map((r) => option(r.p.id, `${r.p.name}${word(r)}`, ''))}</select></div><button type="submit" class="wf-go">Start <span class="wf-go-arrow" aria-hidden="true">→</span></button></form>`
     : html`<p class="muted">No live platforms to review.</p>`;
 }
 
 /** The card that onboards a new platform: its name and owner. @param {any} state */
 function onboardCard(state) {
-  return html`<form class="wf-start" data-action="onboardPlatform"><div class="wf-fields-col"><input name="name" required placeholder="New platform name" aria-label="New platform name"><select name="ownerId" aria-label="Owner">${state.profiles.map((/** @type {any} */ p) => option(p.id, p.name, state.profileId))}</select></div><button type="submit" class="primary small wf-go">Start</button></form>`;
+  return html`<form class="wf-start" data-action="onboardPlatform"><div class="wf-fields-col"><input name="name" required placeholder="New platform name" aria-label="New platform name"><select name="ownerId" aria-label="Owner" required>${NEUTRAL('Select owner…')}${state.profiles.map((/** @type {any} */ p) => option(p.id, p.name, ''))}</select></div><button type="submit" class="wf-go">Start <span class="wf-go-arrow" aria-hidden="true">→</span></button></form>`;
 }
 
 /** @param {any} state @param {Data} data */

@@ -64,7 +64,14 @@ test('a workflow not yet saved shows a TBC tag', () => {
 
 test('each start tile has its fields one per line and a Start button in the same place', () => {
   const out = workflowsView(state, data()).toString();
-  assert.match(out, /data-action="beginReview"><div class="wf-fields-col">[\s\S]*?<\/div><button type="submit" class="primary small wf-go">Start<\/button>/);
-  assert.match(out, /data-action="onboardPlatform"><div class="wf-fields-col"><input name="name"[^>]*><select name="ownerId"[\s\S]*?<\/div><button type="submit" class="primary small wf-go">Start<\/button>/);
+  assert.match(out, /data-action="beginReview"><div class="wf-fields-col">[\s\S]*?<\/div><button type="submit" class="wf-go">Start <span class="wf-go-arrow" aria-hidden="true">→<\/span><\/button>/);
+  assert.match(out, /data-action="onboardPlatform"><div class="wf-fields-col"><input name="name"[^>]*><select name="ownerId"[\s\S]*?<\/div><button type="submit" class="wf-go">Start <span class="wf-go-arrow" aria-hidden="true">→<\/span><\/button>/);
   assert.doesNotMatch(out, /Start or resume/);
+});
+
+test('the start dropdowns open on a neutral choice that must be changed', () => {
+  const out = workflowsView(state, data()).toString();
+  assert.match(out, /<select name="platformId"[^>]*required[^>]*><option value="" disabled selected>Select platform…<\/option>/);
+  assert.match(out, /<select name="ownerId"[^>]*required[^>]*><option value="" disabled selected>Select owner…<\/option>/);
+  assert.doesNotMatch(out.split('data-action="onboardPlatform"')[1].split('</form>')[0], /<option value="u1" selected>/, 'no owner picked in advance');
 });
