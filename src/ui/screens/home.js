@@ -440,6 +440,7 @@ export function homeView(state, data) {
       ${tile(items.controlGaps.length, 'control incomplete', 'controls incomplete')}
       ${tile(items.sfarpGaps.length, 'SFARP incomplete', 'SFARP incomplete')}
     </div>
+    <hr class="dash-rule">
     <div class="dash-cols">
       <section class="panel attn-panel"><h2>Needs attention</h2>
         ${attention.length

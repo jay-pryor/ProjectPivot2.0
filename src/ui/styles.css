@@ -421,6 +421,8 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
   .dash-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(200px, .55fr); gap: 12px; }
   .dash-cols > .fav-panel { height: var(--dash-height); min-height: 0; overflow-y: auto; }
 }
+/* Home: a thick rule between the indicator tiles and the boxes beneath. */
+.dash-rule { border: 0; border-top: 3px solid var(--p-line); margin: 16px 0; }
 .panel { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; padding: 12px 14px; margin: 0; }
 .panel h2 { margin: 0 0 6px; font-size: 15px; }
 .panel > .muted { margin: 4px 0; }

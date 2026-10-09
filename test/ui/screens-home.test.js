@@ -300,3 +300,8 @@ test('Home lists the workflows in progress for the owner chosen, with Resume and
   const all = homeView({ ...state, homeOwner: 'everyone' }, d).toString();
   assert.match(all, /data-id="w2"/);
 });
+
+test('a thick rule separates the indicator tiles from the boxes beneath', () => {
+  const out = homeView(state, seed()).toString();
+  assert.match(out, /<div class="tiles">[\s\S]*?<\/div>\s*<hr class="dash-rule">\s*<div class="dash-cols">/);
+});
