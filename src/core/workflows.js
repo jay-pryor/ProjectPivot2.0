@@ -1,6 +1,7 @@
 import { get, live } from './data.js';
 import { hazardLabel } from './ids.js';
-import { platformHazards, byNumber } from './queries.js';
+import { platformHazards, byNumber, causalFactorsOn, platformListOn, controlsOnPlatform, implementedByOf, assessmentOf, sfarpOf } from './queries.js';
+import { RECEPTORS } from './receptors.js';
 import { entries, deletedEntries } from './history.js';
 
 /** @typedef {import('./data.js').Data} Data */
@@ -9,7 +10,7 @@ import { entries, deletedEntries } from './history.js';
 /** The workflows, in the order the dashboard offers them; only those ready can be started. */
 export const WORKFLOW_TYPES = Object.freeze([
   { type: 'platformReview', name: 'Platform Review', blurb: 'Walk each hazard on a platform through six checks, then complete its review.', ready: true },
-  { type: 'platformOnboarding', name: 'Platform Onboarding', blurb: 'Set up a new platform: its groups, hazards, facets and controls.', ready: false },
+  { type: 'platformOnboarding', name: 'Platform Onboarding', blurb: 'Set up a new platform: its groups, hazards, facets and controls.', ready: true },
   { type: 'newTechData', name: 'New Tech Data', blurb: 'Work new technical data through the platforms, controls and ratings it affects.', ready: false },
   { type: 'transferOwner', name: 'Transfer Platform Owner', blurb: 'Hand a platform and everything open on it to a new owner.', ready: false },
   { type: 'referenceUpdate', name: 'Reference Update', blurb: 'Take a reference to a new revision and check everything that cites it.', ready: false },
@@ -66,6 +67,13 @@ export function stepOf(data, workflowId, hazardId, check) {
 
 /** How many checks are ticked on each hazard the workflow covers, and in all. @param {Data} data @param {Rec} wf */
 export function workflowProgress(data, wf) {
+  if (wf.type === 'platformOnboarding') {
+    const o = onboardingProgress(data, wf);
+    /** @type {Map<string, number>} */
+    const perHazard = new Map([...o.perHazard].map(([id, x]) => [id, x.required]));
+    const done = Number(o.details) + Number(o.groups) + Number(o.hazards) + [...perHazard.values()].reduce((a, b) => a + b, 0);
+    return { perHazard, done, total: 3 + perHazard.size * 2 };
+  }
   /** @type {Map<string, number>} */
   const perHazard = new Map();
   for (const { hazard } of workflowHazards(data, wf)) perHazard.set(hazard.id, CHECKS.filter((c) => stepOf(data, wf.id, hazard.id, c)?.checked).length);
@@ -99,4 +107,82 @@ export function workflowChanges(data, workflowId) {
   const gone = deletedEntries(data);
   return entries(data).filter((e) => e.type === 'change' && e.workflow === workflowId && !gone.has(e.id)
     && e.items.some((/** @type {any} */ i) => i.kind !== 'workflow' && i.kind !== 'workflowStep'));
+}
+
+/** The per-platform facets onboarding asks for on each hazard. */
+export const FACET_KINDS = Object.freeze(['failureMode', 'systemElement', 'affectedGroup', 'causalFactor']);
+
+/** Onboarding's "none applies" ticks: one per facet, and one for implemented controls. */
+export const NONE_CHECKS = Object.freeze([...FACET_KINDS.map((f) => `none:${f}`), 'none:controls']);
+
+/** Where onboarding can stand besides a hazard or the summary. */
+export const ONBOARDING_POSITIONS = Object.freeze(['@details', '@groups', '@hazards']);
+
+/** How many required things each hazard has in a workflow of this type. @param {{ type: string }} wf */
+export const requiredOf = (wf) => (wf.type === 'platformOnboarding' ? 2 : CHECKS.length);
+
+/**
+ * The onboarding a platform is under: its most recently started onboarding workflow, unless that
+ * one was completed. A platform never onboarded is under none.
+ * @param {Data} data @param {string} platformId @returns {Rec | null}
+ */
+export function onboardingOf(data, platformId) {
+  const latest = live(data, 'workflow').filter((w) => w.type === 'platformOnboarding' && w.platformId === platformId)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))[0];
+  return latest && latest.state !== 'completed' ? latest : null;
+}
+
+/** @param {Data} data @param {string} workflowId @param {string} hazardId @param {string} check */
+const ticked = (data, workflowId, hazardId, check) => Boolean(stepOf(data, workflowId, hazardId, check)?.checked);
+
+/** The words for each requirement, as the summary lists them. */
+const FACET_NAME = Object.freeze({ failureMode: 'element failure modes', systemElement: 'systems or elements', affectedGroup: 'affected groups', causalFactor: 'causal factors' });
+
+/**
+ * What an onboarding still needs, worked out from the data: the platform's description, a group
+ * and a hazard; on each hazard each facet (an entry, or None applies) and its implemented controls
+ * (one Implemented with tier, origin, description and implemented-by here, or No controls
+ * implemented); and whether each optional card has anything in it.
+ * @param {Data} data @param {Rec} wf
+ */
+export function onboardingProgress(data, wf) {
+  const pid = wf.platformId;
+  const p = get(data, 'platform', pid);
+  const details = Boolean(p && String(p.name ?? '').trim() && String(p.description ?? '').trim());
+  const groups = live(data, 'platformGroupLink').some((l) => l.platformId === pid && get(data, 'platformGroup', l.groupId)?.status !== 'deleted');
+  const hz = workflowHazards(data, wf);
+  /** @type {{ hazardId: string | null, what: string }[]} */
+  const unmet = [];
+  if (!details) unmet.push({ hazardId: null, what: 'A description of the platform' });
+  if (!groups) unmet.push({ hazardId: null, what: 'At least one platform group' });
+  if (!hz.length) unmet.push({ hazardId: null, what: 'At least one hazard' });
+  /** @type {Map<string, any>} */
+  const perHazard = new Map();
+  for (const { hazard } of hz) {
+    const hid = hazard.id;
+    /** @type {Record<string, boolean>} */
+    const facets = {};
+    for (const f of FACET_KINDS) {
+      const entries = f === 'causalFactor' ? causalFactorsOn(data, hid, pid) : platformListOn(data, /** @type {any} */ (f), hid, pid);
+      facets[f] = entries.length > 0 || ticked(data, wf.id, hid, `none:${f}`);
+    }
+    const controls = controlsOnPlatform(data, hid, pid);
+    const complete = (/** @type {Rec} */ c) => Boolean(c.tier && String(c.origin ?? '').trim() && String(c.description ?? '').trim() && implementedByOf(data, c.id, pid));
+    const implemented = controls.some((c) => c.state === 'implemented') && controls.filter((c) => c.state === 'implemented').every((c) => complete(c.control))
+      || (ticked(data, wf.id, hid, 'none:controls') && !controls.some((c) => c.state === 'implemented'));
+    const rated = (/** @type {string} */ stage) => RECEPTORS.some((r) => { const a = assessmentOf(data, hid, pid, stage, r); return a && (a.likelihood != null || a.consequence != null); });
+    const why = (/** @type {string} */ stage) => RECEPTORS.some((r) => { const a = assessmentOf(data, hid, pid, stage, r); return a && (String(a.likelihoodWhy ?? '').trim() || String(a.consequenceWhy ?? '').trim()); });
+    const sf = sfarpOf(data, hid, pid);
+    const optional = {
+      otherControls: controls.some((c) => c.state !== 'implemented'),
+      ratings: rated('initial') || rated('residual'),
+      justifications: why('initial') || why('residual'),
+      sfarp: ['justification', 'conclusion', 'conditions'].some((f) => String(sf[f] ?? '').trim()),
+    };
+    const facetsMet = FACET_KINDS.every((f) => facets[f]);
+    for (const f of FACET_KINDS) if (!facets[f]) unmet.push({ hazardId: hid, what: `${hazardLabel(hazard)}: ${FACET_NAME[/** @type {'failureMode'} */ (f)]}, or None applies` });
+    if (!implemented) unmet.push({ hazardId: hid, what: `${hazardLabel(hazard)}: implemented controls with tier, origin, description and implemented by, or No controls implemented` });
+    perHazard.set(hid, { facets, implemented, optional, required: Number(facetsMet) + Number(implemented) });
+  }
+  return { details, groups, hazards: hz.length > 0, perHazard, unmet };
 }

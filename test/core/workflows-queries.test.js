@@ -43,7 +43,7 @@ test('a finished workflow lists the hazards it checked, even after they leave th
   d = finishPlatformReview(startWorkflow(d, act, { id: 'w1', type: 'platformReview', platformId: 'p1' }), act, { workflowId: 'w1' });
   assert.deepEqual(workflowHazards(d, d.records.workflow.w1).map((x) => x.hazard.id), ['h1']);
   assert.equal(CHECKS.length, 6);
-  assert.deepEqual(WORKFLOW_TYPES.map((t) => [t.type, t.ready]), [['platformReview', true], ['platformOnboarding', false], ['newTechData', false], ['transferOwner', false], ['referenceUpdate', false]]);
+  assert.deepEqual(WORKFLOW_TYPES.map((t) => [t.type, t.ready]), [['platformReview', true], ['platformOnboarding', true], ['newTechData', false], ['transferOwner', false], ['referenceUpdate', false]]);
 });
 
 test('a finished workflow lists the hazards on the platform when it ended, not one unlinked partway through', () => {

@@ -15,10 +15,14 @@ export function createPlatform(data, act, { id = newId(), name, ownerId }) {
   return commit(data, act, 'Create platform', [{ kind: 'platform', rec }]);
 }
 
-/** @param {Data} data @param {Act} act @param {{ id: string, name: string }} args */
-export function updatePlatform(data, act, { id, name }) {
+/** @param {Data} data @param {Act} act @param {{ id: string, name?: string, description?: string }} args */
+export function updatePlatform(data, act, { id, name, description }) {
   const p = need(data, 'platform', id);
-  return commit(data, act, 'Rename platform', [{ kind: 'platform', rec: changed(p, act, { name: needText(name, 'A platform name') }) }]);
+  /** @type {Record<string, string>} */
+  const fields = {};
+  if (name !== undefined) fields.name = needText(name, 'A platform name');
+  if (description !== undefined) fields.description = String(description ?? '').trim();
+  return commit(data, act, name !== undefined && description === undefined ? 'Rename platform' : 'Edit platform', [{ kind: 'platform', rec: changed(p, act, fields) }]);
 }
 
 /**
