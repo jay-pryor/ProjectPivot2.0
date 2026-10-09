@@ -412,10 +412,14 @@ tr:hover .row-actions, .row-actions:focus-within { visibility: visible; }
 @media (min-width: 700px) {
   .tiles { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-columns: none; gap: 8px; }
 }
+/* Wide: Needs attention, then Coming up over Workflows in progress, then Favourite pages as a
+   column of its own down the right. Between, Favourite pages takes a row of its own beneath. */
+@media (min-width: 901px) and (max-width: 1100px) {
+  .dash-cols > .fav-panel { grid-column: 1 / -1; }
+}
 @media (min-width: 1101px) {
-  .dash-cols { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-  .dash-cols > .attn-panel { grid-column: span 3; }
-  .dash-cols > .dash-stack { grid-column: span 3; }
+  .dash-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(200px, .55fr); gap: 12px; }
+  .dash-cols > .fav-panel { height: var(--dash-height); min-height: 0; overflow-y: auto; }
 }
 .panel { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; padding: 12px 14px; margin: 0; }
 .panel h2 { margin: 0 0 6px; font-size: 15px; }
@@ -844,12 +848,22 @@ tr.ack-out > td { animation: ack-row .42s ease-in forwards; }
 /* Needs attention: a fixed share of the window, showing the rows that fit whole */
 .dash-cols { --dash-height: clamp(280px, 48vh, 760px); }
 .attn-panel { display: flex; flex-direction: column; height: var(--dash-height); }
-/* Beside it, Coming up over Favourite pages, each half its height; a long list scrolls in its box. */
+/* Beside it, Coming up over Workflows in progress, each half its height; a long list scrolls in its box. */
 .dash-stack { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; height: var(--dash-height); }
 .stack-panel { min-height: 0; overflow-y: auto; }
 .panel-head { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
 .panel-head h2 { margin: 0; flex: 1; }
 .coming-up-head h2 { flex: 0 1 auto; }
+/* A box's way on to its full page, at the top right of its heading. */
+.panel-go { flex: none; white-space: nowrap; font-size: 12px; padding: 3px 10px; color: var(--p-fg); }
+.panel-go:hover:not(:disabled) { border-color: var(--p-accent); color: var(--p-accent); }
+/* Workflows in progress on Home: each row its number and what it is, a short bar, and Resume. */
+.wf-home { table-layout: auto; width: 100%; }
+.wf-home td { vertical-align: middle; }
+.wf-home .wf-what { display: block; font-size: 12px; }
+.wf-home .wf-bar { width: 56px; }
+.wf-home .wf-progress { gap: 6px; white-space: nowrap; }
+.wf-home td.act { width: 1%; white-space: nowrap; text-align: right; }
 .window-pick { padding: 2px 6px; font-size: 13px; color: var(--p-muted); }
 /* Favourite pages fill their half of the stack; large blocks fill what is left of it. */
 .fav-panel { display: flex; flex-direction: column; }

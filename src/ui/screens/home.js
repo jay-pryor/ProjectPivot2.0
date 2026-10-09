@@ -308,7 +308,7 @@ function favouritesPanel(state) {
           <div class="fav-main"${Object.keys(open(x)).length ? html` role="link" tabindex="0" ${dataAttrs(open(x))}` : ''}>${name(x)}<span class="fav-kind">${x.kind}</span></div>${unfavouriteStar(x.f, x.label)}</li>`)}</ol>`
       : html`<div class="fav-blocks ${layout}">${blockRows(favs, layout).map((row) => html`<div class="fav-row">${row.map((x) => html`<div class="fav-block${x.gone ? ' gone' : ''}"${Object.keys(open(x)).length ? html` role="link" tabindex="0" ${dataAttrs(open(x))}` : ''}${drag(x)}>
           ${grip}<span class="fav-num">${x.i + 1}</span><span class="fav-heading">${x.heading}</span>${x.detail ? html`<span class="fav-name${x.gone ? ' muted' : ''}">${x.detail}</span>` : ''}<span class="fav-kind">${x.kind}</span>${unfavouriteStar(x.f, x.label)}</div>`)}</div>`)}</div>`;
-  return html`<section class="panel stack-panel fav-panel${editing ? ' editing' : ''}" aria-label="Favourite pages">
+  return html`<section class="panel fav-panel${editing ? ' editing' : ''}" aria-label="Favourite pages">
     <div class="panel-head"><h2>Favourite pages</h2>${editing ? html`<span class="fav-editing">Drag to reorder</span><button type="button" class="small" ${dataAttrs({ action: 'toggleFavouriteEdit' })}>Done</button>` : ''}${menu}</div>
     ${body}
   </section>`;
@@ -403,17 +403,17 @@ const WORKFLOW_LIMIT = 5;
 /** The workflows in progress for Home's owner (everyone's for null). @param {any} state @param {Data} data @param {string | null} ownerId */
 function workflowsPanel(state, data, ownerId) {
   const rows = openWorkflows(data, ownerId);
-  return html`<section class="panel stack-panel wf-panel"><div class="panel-head"><h2>Workflows in progress</h2></div>
+  const all = rows.length > WORKFLOW_LIMIT ? `All ${rows.length} workflows →` : 'All workflows →';
+  return html`<section class="panel stack-panel wf-panel"><div class="panel-head"><h2>Workflows in progress</h2><button type="button" class="small panel-go" ${dataAttrs({ action: 'go', view: 'workflows' })}>${all}</button></div>
     ${rows.length
       ? html`<table class="attn wf-home"><tbody>${rows.slice(0, WORKFLOW_LIMIT).map((w) => {
         const p = workflowProgress(data, w);
         return html`<tr>
-          <td>${idTag(workflowLabel(w))}</td><td>${typeName(w.type)} · ${workflowSubject(data, w)}${ownerId == null ? html` <span class="muted">${profileName(state, w.ownerId)}</span>` : ''}</td>
+          <td><strong>${idTag(workflowLabel(w))}</strong><span class="wf-what muted">${typeName(w.type)} · ${workflowSubject(data, w)}${ownerId == null ? ` · ${profileName(state, w.ownerId)}` : ''}</span></td>
           <td>${progressBar(p.done, p.total)}</td>
           <td class="act"><button type="button" class="small" ${dataAttrs({ action: 'go', view: 'workflow', id: w.id })}>Resume →</button></td></tr>`;
       })}</tbody></table>`
-      : html`<p class="muted">No workflows in progress.</p>`}
-    <div class="panel-more">${go(rows.length > WORKFLOW_LIMIT ? `All ${rows.length} workflows →` : 'All workflows →', 'workflows')}</div></section>`;
+      : html`<p class="muted">No workflows in progress.</p>`}</section>`;
 }
 
 /**
@@ -457,12 +457,12 @@ export function homeView(state, data) {
           : html`<p class="muted">Nothing needs attention.</p>`}
       </section>
       <div class="dash-stack">
-      ${workflowsPanel(state, data, ownerId)}
       <section class="panel stack-panel"><div class="panel-head coming-up-head"><h2>Coming up</h2>${windowPicker(days)}</div>
         ${upcoming.length ? comingUp(state, data, upcoming) : html`<p class="muted">No reviews due in the ${windowWords(days).toLowerCase()}.</p>`}
       </section>
-      ${favouritesPanel(state)}
+      ${workflowsPanel(state, data, ownerId)}
       </div>
+      ${favouritesPanel(state)}
     </div>
     <h2 class="dash-h">${heading}</h2>
     ${cards.length ? html`<div class="pcards">${cards.map((c) => html`<button type="button" class="pcard" ${dataAttrs({ action: 'go', view: 'platform', id: c.platform.id })}>

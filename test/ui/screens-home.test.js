@@ -197,7 +197,8 @@ test('Home: Coming up over Favourite pages beside Needs attention; numbered favo
   const favourites = [{ name: 'hazard', id: 'h1' }, { name: 'hazard', id: 'h1', tab: 'p:p2' }, { name: 'controls', id: null }, { name: 'platform', id: 'gone' }];
   const as = (prefs, extra = {}) => ({ ...state, ...extra, session: { base: d, working: d }, profiles: state.profiles.map((p) => (p.id === 'u1' ? { ...p, prefs: { favourites, ...prefs } } : p)) });
   const out = homeView(as({}), d).toString();
-  assert.match(out, /<div class="dash-stack">\s*<section class="panel stack-panel wf-panel"><div class="panel-head"><h2>Workflows in progress<\/h2>[\s\S]*?<section class="panel stack-panel"><div class="panel-head coming-up-head"><h2>Coming up<\/h2><select class="window-pick"[\s\S]*?<section class="panel stack-panel fav-panel" aria-label="Favourite pages">\s*<div class="panel-head"><h2>Favourite pages<\/h2><details class="dots-menu">/);
+  // Needs attention; then Coming up over Workflows in progress; then Favourite pages, a column of its own.
+  assert.match(out, /<section class="panel attn-panel">[\s\S]*?<div class="dash-stack">\s*<section class="panel stack-panel"><div class="panel-head coming-up-head"><h2>Coming up<\/h2><select class="window-pick"[\s\S]*?<section class="panel stack-panel wf-panel"><div class="panel-head"><h2>Workflows in progress<\/h2>[\s\S]*?<\/section>\s*<\/div>\s*<section class="panel fav-panel" aria-label="Favourite pages">\s*<div class="panel-head"><h2>Favourite pages<\/h2><details class="dots-menu">/);
   assert.match(out, /role="menuitemradio" aria-checked="true" data-action="setFavouriteLayout" data-layout="table">[\s\S]*?Table<\/button>[\s\S]*?Small blocks[\s\S]*?Large blocks[\s\S]*?data-action="toggleFavouriteEdit"[^>]*>[\s\S]*?Edit order/);
   assert.match(out, /<li class="fav"><span class="fav-num">1<\/span>\s*<div class="fav-main" role="link" tabindex="0" data-action="go" data-view="hazard" data-id="h1"><span class="fav-name">HAZ-001 Fire \(Sam\)<\/span><span class="fav-kind">Hazard<\/span><\/div><button type="button" class="fav-star on"[^>]*data-action="toggleFavourite" data-page="hazard" data-id="h1" data-tab="">/);
   assert.match(out, /<span class="fav-num">2<\/span>\s*<div class="fav-main" role="link" tabindex="0" data-action="go" data-view="hazard" data-id="h1" data-tab="p:p2"><span class="fav-name">HAZ-001 Fire \(Sam\) · Bravo<\/span><span class="fav-kind">Hazard on a platform<\/span>/, 'a page within a page');
@@ -205,7 +206,7 @@ test('Home: Coming up over Favourite pages beside Needs attention; numbered favo
   assert.match(homeView(state, d).toString(), /No favourites yet/);
   // Edit order: each draggable, with a grip, and nothing opens while editing.
   const editing = homeView(as({}, { favouritesEditing: true }), d).toString();
-  assert.match(editing, /<section class="panel stack-panel fav-panel editing"[\s\S]*?Drag to reorder[\s\S]*?<li class="fav" draggable="true" data-fav-index="0"><span class="fav-grip"/);
+  assert.match(editing, /<section class="panel fav-panel editing"[\s\S]*?Drag to reorder[\s\S]*?<li class="fav" draggable="true" data-fav-index="0"><span class="fav-grip"/);
   assert.doesNotMatch(editing.slice(editing.indexOf('class="favs"'), editing.indexOf('</ol>', editing.indexOf('class="favs"'))), /data-action="go"/);
   // Blocks: small ones in one wrapping row; large ones share the box out in rows.
   const small = homeView(as({ favouriteLayout: 'small' }), d).toString();
@@ -292,7 +293,8 @@ test('Home lists the workflows in progress for the owner chosen, with Resume and
   assert.match(mine, /<h2>Workflows in progress<\/h2>/);
   assert.match(mine, /data-id="w1"/);
   assert.doesNotMatch(mine, /data-id="w2"/);
-  assert.match(mine, /All workflows →/);
+  assert.match(mine, /<div class="panel-head"><h2>Workflows in progress<\/h2><button type="button" class="small panel-go" data-action="go" data-view="workflows">All workflows →<\/button><\/div>/, 'a button at the top right');
+  assert.doesNotMatch(mine.split('wf-panel')[1].split('</section>')[0], /class="link"[^>]*>All workflows/);
   const all = homeView({ ...state, homeOwner: 'everyone' }, d).toString();
   assert.match(all, /data-id="w2"/);
 });
