@@ -1211,10 +1211,15 @@ ul.dots { display: grid; gap: 3px; }
 .tl-key .tl-mark:first-child { margin-left: 0; }
 
 /* Workflows */
-.wf-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 20px; }
+/* Start tiles: every row the same height; each tile a column, its fields one to a line, and Start
+   always in the bottom-right corner. */
+.wf-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); grid-auto-rows: 1fr; gap: 12px; margin-bottom: 20px; }
+.wf-card { display: flex; flex-direction: column; }
 .wf-card.soon { opacity: .6; }
-.wf-start { display: flex; gap: 8px; align-items: center; }
-.wf-start select { flex: 1; min-width: 0; }
+.wf-start { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+.wf-fields-col { display: flex; flex-direction: column; gap: 8px; }
+.wf-fields-col input, .wf-fields-col select { width: 100%; min-width: 0; }
+.wf-go { margin-top: auto; align-self: flex-end; }
 .wf-progress { display: inline-flex; align-items: center; gap: 8px; }
 .wf-bar { display: inline-block; width: 110px; height: 6px; background: var(--p-line); overflow: hidden; }
 .wf-bar > span { display: block; height: 100%; background: var(--p-accent); }

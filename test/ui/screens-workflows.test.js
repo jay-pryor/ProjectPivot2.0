@@ -61,3 +61,10 @@ test('a workflow not yet saved shows a TBC tag', () => {
   const d = beginPlatformReview(seed(), act, { id: 'w9', platformId: 'p1' });
   assert.match(workflowsView(state, d).toString(), /tag-tbc/);
 });
+
+test('each start tile has its fields one per line and a Start button in the same place', () => {
+  const out = workflowsView(state, data()).toString();
+  assert.match(out, /data-action="beginReview"><div class="wf-fields-col">[\s\S]*?<\/div><button type="submit" class="primary small wf-go">Start<\/button>/);
+  assert.match(out, /data-action="onboardPlatform"><div class="wf-fields-col"><input name="name"[^>]*><select name="ownerId"[\s\S]*?<\/div><button type="submit" class="primary small wf-go">Start<\/button>/);
+  assert.doesNotMatch(out, /Start or resume/);
+});

@@ -58,13 +58,13 @@ function reviewCard(state, data) {
     .sort((a, b) => (STATE_RANK[/** @type {keyof typeof STATE_RANK} */ (a.s.state)] - STATE_RANK[/** @type {keyof typeof STATE_RANK} */ (b.s.state)]) || String(a.p.name).localeCompare(b.p.name));
   const word = (/** @type {any} */ r) => (r.open ? ` — ${workflowLabel(r.open) === 'TBC' ? 'review' : workflowLabel(r.open)} in progress` : r.s.state === 'overdue' ? ' — overdue' : r.s.state === 'dueSoon' ? ' — due soon' : '');
   return rows.length
-    ? html`<form class="wf-start" data-action="beginReview"><select name="platformId" aria-label="Platform to review" required>${rows.map((r) => option(r.p.id, `${r.p.name}${word(r)}`, ''))}</select><button type="submit" class="primary small">Start or resume</button></form>`
+    ? html`<form class="wf-start" data-action="beginReview"><div class="wf-fields-col"><select name="platformId" aria-label="Platform to review" required>${rows.map((r) => option(r.p.id, `${r.p.name}${word(r)}`, ''))}</select></div><button type="submit" class="primary small wf-go">Start</button></form>`
     : html`<p class="muted">No live platforms to review.</p>`;
 }
 
 /** The card that onboards a new platform: its name and owner. @param {any} state */
 function onboardCard(state) {
-  return html`<form class="wf-start" data-action="onboardPlatform"><input name="name" required placeholder="New platform name" aria-label="New platform name"><select name="ownerId" aria-label="Owner">${state.profiles.map((/** @type {any} */ p) => option(p.id, p.name, state.profileId))}</select><button type="submit" class="primary small">Start</button></form>`;
+  return html`<form class="wf-start" data-action="onboardPlatform"><div class="wf-fields-col"><input name="name" required placeholder="New platform name" aria-label="New platform name"><select name="ownerId" aria-label="Owner">${state.profiles.map((/** @type {any} */ p) => option(p.id, p.name, state.profileId))}</select></div><button type="submit" class="primary small wf-go">Start</button></form>`;
 }
 
 /** @param {any} state @param {Data} data */
