@@ -158,7 +158,7 @@ export function platformView(state, data, id) {
       ${withPlatformImage(p, html`<div class="dash-grid three">
         <section class="dash-card" aria-label="Platform">
           <h3 class="dash-card-h">Platform</h3>
-          <p class="glance-line">Owned by <select class="quiet inline-select" name="ownerId" aria-label="Owner" ${dataAttrs({ change: 'setOwner', id })}>${state.profiles.map((/** @type {any} */ pr) => option(pr.id, pr.name, p.ownerId))}</select></p>
+          <p class="glance-line">Owned by ${profileName(state, p.ownerId)} ${p.status === 'live' && !onboardingOf(data, id) ? html`<button type="button" class="small" ${dataAttrs({ action: 'startTransfer', 'platform-id': id })}>Transfer owner…</button>` : ''}</p>
           <p class="glance-line plat-groups">Groups ${groupsOf(data, id).map((g) => html`<span class="tag group-tag">${g.name}<button type="button" class="icon-x" title="Take ${p.name} out of ${g.name}" aria-label="Take ${p.name} out of ${g.name}" ${dataAttrs({ action: 'untagPlatform', 'platform-id': id, 'group-id': g.id })}>✕</button></span> `)}${p.status === 'deleted' ? '' : plus({ action: 'openPicker', picker: 'tagPlatforms', 'platform-id': id }, 'Add to platform groups')}</p>
           <p class="glance-line">${sched.due ? html`Next review ${day(sched.due)}${reviewTag(sched.state)}` : 'No review schedule'}
             ${go('Reviews →', 'platformReview', { id })}</p>

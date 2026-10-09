@@ -1,7 +1,10 @@
 import { workflowsView } from './screens/workflows.js';
 import { workflowView } from './screens/workflow.js';
 import * as start from './screens/start.js';
-import { shell } from './screens/common.js';
+import { shell, go } from './screens/common.js';
+import { html } from './html.js';
+import { workflowLabel, UNNUMBERED } from '../core/ids.js';
+import { typeName } from '../core/workflows.js';
 import { hazardsView, hazardView } from './screens/hazards.js';
 import { controlsView, controlView, newControlView } from './screens/controls.js';
 import { platformsView, platformView } from './screens/platforms.js';
@@ -43,6 +46,15 @@ function mainView(state) {
 }
 
 /** @param {any} state @returns {string} */
+/** On a page opened from a workflow, the way back to it, while it is open. @param {any} state */
+function viaBanner(state) {
+  const id = state.view?.via;
+  const wf = id ? state.session?.working.records.workflow?.[id] : null;
+  if (!wf || wf.status !== 'live' || wf.state !== 'open') return '';
+  const label = workflowLabel(wf) === UNNUMBERED ? 'this workflow' : workflowLabel(wf);
+  return html`<div class="via-banner">Working on ${label} ${typeName(wf.type)} · ${go(`← Back to ${label}`, 'workflow', { id: wf.id })}</div>`;
+}
+
 export function renderApp(state) {
   switch (state.screen) {
     case 'open': return start.openScreen(state).toString();
@@ -50,6 +62,6 @@ export function renderApp(state) {
     case 'profile': return start.profileScreen(state).toString();
     case 'recover': return start.recoverScreen(state).toString();
     case 'notices': return start.noticesScreen(state).toString();
-    default: return shell(state, mainView(state)).toString() + (state.session ? pickerView(state, state.session.working).toString() : '');
+    default: return shell(state, html`${viaBanner(state)}${mainView(state)}`).toString() + (state.session ? pickerView(state, state.session.working).toString() : '');
   }
 }

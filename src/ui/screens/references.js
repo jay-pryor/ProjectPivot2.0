@@ -128,7 +128,7 @@ export function referenceView(state, data, id) {
       menuItem('Retire', { action: 'retireReference', id }),
       targets.length ? '' : menuItem('Delete…', { action: 'askConfirm', run: 'deleteReference', id, title: `Delete ${r.title}?`, text: 'It supports nothing. It will be deleted; its stored files stay in the folder.' }, true)]
     : r.status === 'retired' ? [menuItem('Restore', { action: 'restoreRecord', kind: 'reference', id })] : []);
-  const head = html`<div class="doc-head"><h1 class="doc-page"><span class="doc-id">${idTag(referenceLabel(r))}</span> <span class="doc-page-sep" aria-hidden="true">—</span> ${page}</h1>${statusTag(r.status)}${r.archived ? html`<span class="tag">Archived</span>` : ''}${menu}</div>
+  const head = html`<div class="doc-head"><h1 class="doc-page"><span class="doc-id">${idTag(referenceLabel(r))}</span> <span class="doc-page-sep" aria-hidden="true">—</span> ${page}</h1>${statusTag(r.status)}${r.archived ? html`<span class="tag">Archived</span>` : ''}${r.status === 'live' && !r.archived ? html`<button type="button" class="small" ${dataAttrs({ action: 'startReferenceUpdate', 'reference-id': id })}>Update revision…</button>` : ''}${menu}</div>
     <label class="doc-subtitle"><span class="field-label">Reference</span>
       <input class="doc-title small" name="title" value="${r.title}" required aria-label="Reference title" ${dataAttrs({ change: 'updateReference', id })}></label>
     ${pageTabs('reference', { id }, tab, historyCount(state, data, 'reference', id))}`;
