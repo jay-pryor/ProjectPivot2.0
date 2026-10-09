@@ -48,11 +48,12 @@ function ownerPicker(state) {
  * considerations on the hazard's page for that platform. A change is
  * acknowledged in the list itself, so its row opens the platform's history, where the change sits
  * in context.
- * @param {'change' | 'review' | 'schedule' | 'dateMoved' | 'control' | 'implement' | 'controlGap' | 'rating' | 'justify' | 'sfarp'} type
+ * @param {'transfer' | 'change' | 'review' | 'schedule' | 'dateMoved' | 'control' | 'implement' | 'controlGap' | 'rating' | 'justify' | 'sfarp'} type
  * @param {{ platform: any, hazard?: any, control?: any }} item
  * @returns {Record<string, string>}
  */
 export function whereToAct(type, item) {
+  if (type === 'transfer') return { view: 'workflow', id: /** @type {any} */ (item).workflow.id };
   const on = `p:${item.platform.id}`;
   if (type === 'control' || type === 'implement' || type === 'controlGap') return { view: 'control', id: item.control.id, tab: on };
   if (type === 'rating' || type === 'justify' || type === 'sfarp') return { view: 'hazard', id: item.hazard.id, tab: on };
@@ -203,7 +204,7 @@ export function openItemsView(state, data) {
  */
 export const ATTENTION_LIMIT = 40;
 
-const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], implement: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'], justify: ['Rating', 'chip-rating'], controlGap: ['Control', 'chip-control'], sfarp: ['SFARP', 'chip-rating'], schedule: ['Review', 'chip-review'], dateMoved: ['Review', 'chip-review'] };
+const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], implement: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'], justify: ['Rating', 'chip-rating'], controlGap: ['Control', 'chip-control'], sfarp: ['SFARP', 'chip-rating'], schedule: ['Review', 'chip-review'], dateMoved: ['Review', 'chip-review'], transfer: ['Transfer', 'chip-review'] };
 
 /**
  * Every open item across the team, whoever owns the platform: a quiet line above the counts.
