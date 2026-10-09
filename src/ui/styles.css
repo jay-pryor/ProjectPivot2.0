@@ -1248,3 +1248,22 @@ ul.dots { display: grid; gap: 3px; }
 .tag.wf-cancelled { background: var(--p-surface-2); }
 .tag.wf-chip { cursor: pointer; border: 0; font: inherit; font-size: .8em; }
 @media (max-width: 900px) { .wf-layout { grid-template-columns: 1fr; } .wf-rail { position: static; border-right: 0; padding-right: 0; } }
+
+
+/* Onboarding */
+.wf-badge.met { background: var(--p-info-bg); color: var(--p-info-fg); }
+.wf-badge.needed { background: var(--p-warn-bg); color: var(--p-warn); }
+.wf-badge.empty { background: var(--p-surface-2); color: var(--p-muted); }
+.wf-facet { display: flex; flex-direction: column; gap: 6px; }
+.wf-none { color: var(--p-muted); font-size: .9em; }
+.wf-suggest { margin: 0 0 12px; padding: 8px 10px; border: 1px dashed var(--p-line); }
+.wf-controls { border-collapse: collapse; width: 100%; margin-bottom: 8px; }
+.wf-controls th, .wf-controls td { border: 1px solid var(--p-line); padding: 4px 6px; vertical-align: top; text-align: left; }
+.wf-controls textarea, .wf-controls input, .wf-controls select { width: 100%; }
+.wf-missing { color: var(--p-warn); font-size: .85em; margin-top: 4px; }
+.wf-unmet li { margin: 4px 0; }
+.wf-shared { margin-top: 8px; }
+.onboarding-tag { background: var(--p-warn-bg); color: var(--p-warn); border: 0; font: inherit; font-size: .8em; cursor: pointer; }
+.wf-image { max-width: 220px; display: block; margin: 6px 0; }
+.button-like { display: inline-block; cursor: pointer; border: 1px solid var(--p-line); background: var(--p-surface-2); color: var(--p-fg); padding: 4px 11px; margin-top: 4px; }
+.button-like:hover { border-color: var(--p-muted); }
