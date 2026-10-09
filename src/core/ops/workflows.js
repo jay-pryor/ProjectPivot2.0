@@ -93,9 +93,12 @@ export function takeOverWorkflow(data, act, { workflowId }) {
   return commit(data, act, 'Take over workflow', [{ kind: 'workflow', rec: changed(wf, act, { ownerId: act.by }) }]);
 }
 
-/** The records that cancel an open workflow: it, marked cancelled. Its checks are kept. @param {Data} _data @param {Act} act @param {Rec} wf */
-export function cancelRecs(_data, act, wf) {
-  return [{ kind: 'workflow', rec: changed(wf, act, { state: 'cancelled', endedBy: act.by, endedAt: act.at }) }];
+/** The hazards an open workflow covers as it ends, kept with it so its record does not change as the platform does. @param {Data} data @param {Rec} wf */
+const covered = (data, wf) => workflowHazards(data, wf).map((x) => x.hazard.id);
+
+/** The records that cancel an open workflow: it, marked cancelled, with the hazards it covered. Its checks are kept. @param {Data} data @param {Act} act @param {Rec} wf */
+export function cancelRecs(data, act, wf) {
+  return [{ kind: 'workflow', rec: changed(wf, act, { state: 'cancelled', endedBy: act.by, endedAt: act.at, covered: covered(data, wf) }) }];
 }
 
 /** @param {Data} data @param {Act} act @param {{ workflowId: string }} args */
@@ -128,6 +131,6 @@ export function completeWorkflow(data, act, { workflowId }) {
     { kind: 'review', rec: { ...review, dueAfter } },
     { kind: 'platform', rec: counted },
     seenRec(data, act, p.id, dueAfter),
-    { kind: 'workflow', rec: changed(wf, act, { state: 'completed', endedBy: act.by, endedAt: act.at }) },
+    { kind: 'workflow', rec: changed(wf, act, { state: 'completed', endedBy: act.by, endedAt: act.at, covered: covered(data, wf) }) },
   ]);
 }

@@ -434,7 +434,8 @@ export function lastReviewed(data, platformId) {
 /** @param {Data} data @param {string} hazardId @param {string} platformId @returns {string | null} */
 export function hazardLastReviewed(data, hazardId, platformId) {
   // Completing is strict, so a hazard the completed review has a ticked check for was reviewed.
-  const hit = completedReviews(data, platformId).find(({ review }) => {
+  const hit = completedReviews(data, platformId).find(({ review, workflow }) => {
+    if (Array.isArray(workflow?.covered) && !workflow.covered.includes(hazardId)) return false;
     const s = review.workflowId ? get(data, 'workflowStep', ids.workflowStep(review.workflowId, hazardId, 'safetyReports')) : null;
     return Boolean(s && s.status === 'live' && s.checked);
   });

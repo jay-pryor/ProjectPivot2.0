@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startWorkflow, setStep, cancelWorkflow } from '../../src/core/ops/workflows.js';
 import { updateHazard } from '../../src/core/ops/hazards.js';
+import { linkHazard, unlinkHazard } from '../../src/core/ops/platforms.js';
+import { hazardLastReviewed } from '../../src/core/queries.js';
 import { openWorkflows, endedWorkflows, workflowChanges, workflowHazards, lastActivity, WORKFLOW_TYPES, CHECKS } from '../../src/core/workflows.js';
 import { act, later, seed, scheduleFixed, finishPlatformReview } from '../helpers.js';
 
@@ -42,4 +44,24 @@ test('a finished workflow lists the hazards it checked, even after they leave th
   assert.deepEqual(workflowHazards(d, d.records.workflow.w1).map((x) => x.hazard.id), ['h1']);
   assert.equal(CHECKS.length, 6);
   assert.deepEqual(WORKFLOW_TYPES.map((t) => [t.type, t.ready]), [['platformReview', true], ['platformOnboarding', false], ['newTechData', false], ['transferOwner', false], ['referenceUpdate', false]]);
+});
+
+test('a finished workflow lists the hazards on the platform when it ended, not one unlinked partway through', () => {
+  let d = scheduleFixed(seed(), 'p1', 6, '2026-10-30');
+  d = startWorkflow(d, act, { id: 'w1', type: 'platformReview', platformId: 'p1' });
+  for (const check of ['safetyReports', 'references', 'controls']) d = setStep(d, act, { workflowId: 'w1', hazardId: 'h1', check, checked: true });
+  d = linkHazard(d, act, { hazardId: 'h2', platformId: 'p1' });
+  d = unlinkHazard(d, act, { hazardId: 'h1', platformId: 'p1' });
+  d = finishPlatformReview(d, act, { workflowId: 'w1' });
+  assert.deepEqual(workflowHazards(d, d.records.workflow.w1).map((x) => x.hazard.id), ['h2']);
+  assert.equal(hazardLastReviewed(d, 'h1', 'p1'), null, 'h1 left before the review was completed');
+  assert.equal(hazardLastReviewed(d, 'h2', 'p1'), act.at);
+});
+
+test('a cancelled workflow lists every hazard that was in it, ticked or not', () => {
+  let d = linkHazard(seed(), act, { hazardId: 'h2', platformId: 'p1' });
+  d = startWorkflow(d, act, { id: 'w1', type: 'platformReview', platformId: 'p1' });
+  d = setStep(d, act, { workflowId: 'w1', hazardId: 'h1', check: 'sfarp', checked: true });
+  d = cancelWorkflow(d, act, { workflowId: 'w1' });
+  assert.deepEqual(workflowHazards(d, d.records.workflow.w1).map((x) => x.hazard.id), ['h1', 'h2']);
 });

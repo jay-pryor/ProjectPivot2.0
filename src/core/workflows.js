@@ -43,15 +43,15 @@ export function openPlatformReview(data, platformId) {
 }
 
 /**
- * The hazards a workflow covers. Open: those on its platform now, in number order. Ended: those it
- * has checks for, as it left them.
+ * The hazards a workflow covers. Open: those on its platform now, in number order. Ended: those on
+ * its platform when it ended (for one ended before that was kept, those it has checks for).
  * @param {Data} data @param {any} wf a workflow, or just `{ platformId }` for one about to start
  * @returns {{ hazard: Rec, reportId: string }[]}
  */
 export function workflowHazards(data, wf) {
   const onNow = platformHazards(data, wf.platformId);
   if (!wf.state || wf.state === 'open') return onNow.map((ph) => ({ hazard: ph.hazard, reportId: ph.reportId })).sort((a, b) => byNumber(a.hazard, b.hazard));
-  const ids = new Set(live(data, 'workflowStep').filter((s) => s.workflowId === wf.id).map((s) => s.hazardId));
+  const ids = new Set(Array.isArray(wf.covered) ? wf.covered : live(data, 'workflowStep').filter((s) => s.workflowId === wf.id).map((s) => s.hazardId));
   const reportIds = new Map(onNow.map((ph) => [ph.hazard.id, ph.reportId]));
   return [...ids].map((id) => get(data, 'hazard', id)).filter((h) => h && h.status !== 'deleted')
     .map((h) => ({ hazard: /** @type {Rec} */ (h), reportId: reportIds.get(/** @type {Rec} */ (h).id) ?? hazardLabel(/** @type {Rec} */ (h)) }))
