@@ -4,6 +4,7 @@ import { safetyReportsSection, controlsSection, riskPanels, sfarpArea } from './
 import { referencesCard } from './references.js';
 import { workflowSubject } from './workflows.js';
 import { onboardingBody, onboardingGrid } from './onboarding.js';
+import { transferBody, transferEnded } from './transfer.js';
 import { get } from '../../core/data.js';
 import { workflowLabel, UNNUMBERED } from '../../core/ids.js';
 import { dueOf } from '../../core/schedule.js';
@@ -113,6 +114,13 @@ function endedBody(state, data, wf) {
       <h2>Changes made through ${workflowLabel(wf)}</h2>${changesList(state, data, wf)}</article>`;
 }
 
+/** What cancelling says it does, for the workflows where that differs from a review. */
+const CANCEL_WORDS = Object.freeze({
+  platformOnboarding: (/** @type {string} */ n) => `Cancel ${n}: it is kept in History as cancelled; the platform stays as it is, marked Onboarding, and can be onboarded again`,
+  transferOwner: (/** @type {string} */ n) => `Cancel ${n}: nothing changes; it is kept in History as cancelled`,
+  referenceUpdate: (/** @type {string} */ n) => `Cancel ${n}: the reference is left as it is; a file uploaded here stays in the folder, unused`,
+});
+
 /**
  * A workflow's page. Open: a rail of hazards and the summary, with the chosen one's checks; only
  * its owner can change them, anyone else sees them read-only and can take it over. Ended: what it
@@ -124,15 +132,14 @@ export function workflowView(state, data, id) {
   if (!wf || wf.status === 'deleted') return html`<p class="muted">That workflow no longer exists.</p>`;
   const mine = wf.ownerId === state.profileId;
   const title = html`<h1>${go('Workflows', 'workflows')} · ${idTag(workflowLabel(wf))} ${typeName(wf.type)} · ${get(data, 'platform', wf.platformId) ? go(workflowSubject(data, wf), 'platform', { id: wf.platformId }) : workflowSubject(data, wf)}</h1>`;
-  if (wf.state !== 'open') return html`<div class="head">${title}</div>${endedBody(state, data, wf)}`;
+  if (wf.state !== 'open') return html`<div class="head">${title}</div>${wf.type === 'transferOwner' ? transferEnded(state, data, wf) : endedBody(state, data, wf)}`;
   const tools = mine
-    ? confirmButton('Cancel workflow…', wf.type === 'platformOnboarding'
-      ? `Cancel ${named(wf)}: it is kept in History as cancelled; the platform stays as it is, marked Onboarding, and can be onboarded again`
-      : `Cancel ${named(wf)}: its ticks and notes are kept in History as cancelled; changes you made to hazards stay`, dataAttrs({ action: 'cancelWorkflow', 'workflow-id': wf.id }))
+    ? confirmButton('Cancel workflow…', CANCEL_WORDS[/** @type {keyof typeof CANCEL_WORDS} */ (wf.type)]?.(named(wf)) ?? `Cancel ${named(wf)}: its ticks and notes are kept in History as cancelled; changes you made to hazards stay`, dataAttrs({ action: 'cancelWorkflow', 'workflow-id': wf.id }))
     : confirmButton('Take over…', `Take over ${named(wf)} from ${profileName(state, wf.ownerId)}`, dataAttrs({ action: 'takeOverWorkflow', 'workflow-id': wf.id }));
   const head = html`<div class="head">${title}<span class="wf-owner muted">Owner: ${profileName(state, wf.ownerId)}</span>${tools}</div>
     ${mine ? '' : html`<p class="wf-banner">Owned by ${profileName(state, wf.ownerId)}. You can look through it; take it over to work on it.</p>`}`;
   if (wf.type === 'platformOnboarding') return html`${head}${onboardingBody(state, data, wf, mine)}`;
+  if (wf.type === 'transferOwner') return html`${head}${transferBody(state, data, wf, mine)}`;
   const hz = workflowHazards(data, wf);
   const want = state.view?.hazardId === 'summary' ? null : state.view?.hazardId ?? wf.at?.hazardId ?? null;
   const x = want ? hz.find((y) => y.hazard.id === want) ?? (state.view?.hazardId ? null : hz[0] ?? null) : null;
