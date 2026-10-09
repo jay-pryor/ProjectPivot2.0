@@ -4,6 +4,7 @@ import { createPlatformGroup, tagPlatform } from '../../src/core/ops/platform-gr
 import { createFacetOption, setOptionGroup } from '../../src/core/ops/facets.js';
 import { createHazard, addFailureMode } from '../../src/core/ops/hazards.js';
 import { createControl } from '../../src/core/ops/controls.js';
+import { setControlStatus } from '../../src/core/ops/assessment.js';
 import { sharedGroups, groupSuggestions } from '../../src/core/workflows.js';
 import { act, seed } from '../helpers.js';
 
@@ -46,10 +47,12 @@ test('hazard suggestions come from the platform’s groups and All platforms, wi
   assert.deepEqual(groupSuggestions(d, { kind: 'hazard', platformId: 'p1' }).map((s) => [s.id, s.from]), [['h3', 'Vehicles']], 'h1 is already on p1; h4 is Maritime only');
 });
 
-test('control suggestions come from the shared groups, without controls already on the hazard here', () => {
+test('control suggestions come from the shared groups, without controls already Implemented on the hazard here', () => {
   let d = groups();
   d = createControl(d, act, { id: 'c3', title: 'Beam stop' });
   d = setOptionGroup(d, act, { facet: 'control', optionId: 'c3', groupId: 'gL', on: true });
   d = setOptionGroup(d, act, { facet: 'control', optionId: 'c1', groupId: 'gL', on: true });
-  assert.deepEqual(groupSuggestions(d, { kind: 'control', platformId: 'p1', hazardId: 'h1' }).map((s) => s.id), ['c3'], 'c1 is already on h1 at p1');
+  assert.deepEqual(groupSuggestions(d, { kind: 'control', platformId: 'p1', hazardId: 'h1' }).map((s) => s.id), ['c1', 'c3'], 'c1 is on h1 at p1 only as Recommended');
+  d = setControlStatus(d, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'implemented' });
+  assert.deepEqual(groupSuggestions(d, { kind: 'control', platformId: 'p1', hazardId: 'h1' }).map((s) => s.id), ['c3']);
 });

@@ -206,7 +206,8 @@ export function sharedGroups(data, platformId, hazardId) {
 /**
  * What onboarding suggests, from platform groups: hazards assigned to the platform's groups (or
  * All platforms) not on it yet; and, for a hazard there, facet options or controls assigned to the
- * groups it shares with the platform, not there yet. Each says which groups it came from.
+ * groups it shares with the platform, not there yet (a control: not Implemented there yet). Each
+ * says which groups it came from.
  * @param {Data} data @param {{ kind: string, platformId: string, hazardId?: string }} o
  * @returns {{ id: string, text: string, from: string }[]}
  */
@@ -221,7 +222,9 @@ export function groupSuggestions(data, { kind, platformId, hazardId }) {
       .map((h) => ({ id: h.id, text: `${hazardLabel(h)} ${h.title}`, from: from('hazard', h.id) })).filter((s) => s.from);
   }
   if (kind === 'control') {
-    const here = new Set(controlsOnPlatform(data, /** @type {string} */ (hazardId), platformId).map((c) => c.control.id));
+    // A hazard's controls come onto each of its platforms as Recommended, so only those already
+    // Implemented here are left out: the rest are what onboarding asks about.
+    const here = new Set(controlsOnPlatform(data, /** @type {string} */ (hazardId), platformId).filter((c) => c.state === 'implemented').map((c) => c.control.id));
     return live(data, 'control').filter((c) => !here.has(c.id)).sort(byNumber)
       .map((c) => ({ id: c.id, text: c.title, from: from('control', c.id) })).filter((s) => s.from);
   }

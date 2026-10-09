@@ -30,3 +30,20 @@ test('New platform onboards it: the platform and its workflow are made and the w
   const saved = again.getState().session.working;
   assert.equal(saved.records.platform[saved.records.workflow[v.id].platformId].description, 'A trailer');
 });
+test('ticked suggested controls are added to the hazard here and set Implemented', async () => {
+  const f = new MemoryFolder();
+  const c = createController(env(f));
+  await c.dispatch({ type: 'chooseFolder' });
+  await c.dispatch({ type: 'createProfile', name: 'Ada' });
+  const ada = c.getState().profiles[0].id;
+  await c.dispatch({ type: 'selectProfile', id: ada });
+  await c.dispatch({ type: 'createHazard', id: 'h1', title: 'Fire' });
+  await c.dispatch({ type: 'createControl', id: 'c1', title: 'Sprinklers' });
+  await c.dispatch({ type: 'onboardPlatform', name: 'Gamma', ownerId: ada });
+  const w = c.getState().session.working;
+  const pid = w.records.workflow[c.getState().view.id].platformId;
+  await c.dispatch({ type: 'linkHazards', hazardId: 'h1', platformId: pid });
+  await c.dispatch({ type: 'addSuggestedControls', hazardId: 'h1', platformId: pid, controlId: ['c1'] });
+  const after = c.getState().session.working;
+  assert.equal(after.records.ruling[`ru:h1:c1:${pid}`].state, 'implemented');
+});

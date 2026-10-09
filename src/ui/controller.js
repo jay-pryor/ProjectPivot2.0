@@ -785,6 +785,14 @@ export function createController(env) {
     async setHomeOwner({ ownerId, show }) {
       set({ homeOwner: ownerId || 'me', ...(show === 'home' ? { view: { name: 'home' }, editing: null } : {}) });
     },
+    /** From onboarding: add the ticked controls to the hazard here, each at its usual kind, and mark them Implemented. */
+    async addSuggestedControls({ hazardId, platformId, controlId }) {
+      for (const id of list(controlId)) {
+        const kind = state.session?.working.records.control[id]?.kind || 'preventative';
+        await applyEdit('addControlHere', { hazardId, platformId, controlId: id, kind });
+        await applyEdit('setControlStatus', { hazardId, controlId: id, platformId, status: 'implemented' });
+      }
+    },
     // New platform: made and onboarded together, the onboarding opened.
     async onboardPlatform({ name, ownerId }) {
       const id = newId();
