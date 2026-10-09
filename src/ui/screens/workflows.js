@@ -122,6 +122,5 @@ export function workflowsView(state, data) {
     <section class="panel"><h2>In progress</h2>${inProgress(state, data)}</section>
     <h2 class="dash-h">Start a workflow</h2>${startCards(state, data)}
     <section class="panel"><div class="panel-head"><h2>Recently completed</h2>${range}</div>
-      ${endedTable(state, data, 'workflowsRecent', endedWorkflows(data, { since, ownerId }))}
-      <div class="panel-more">${go('All history →', 'workflows', { tab: 'history' })}</div></section>`;
+      ${endedTable(state, data, 'workflowsRecent', endedWorkflows(data, { since, ownerId }))}</section>`;
 }

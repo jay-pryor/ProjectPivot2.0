@@ -43,7 +43,7 @@ test('start a workflow: Platform Review with a platform picker, overdue first; t
   for (const name of ['Platform Onboarding', 'New Tech Data', 'Transfer Platform Owner', 'Reference Update']) assert.match(out, new RegExp(`${name}[\\s\\S]*?Coming soon`));
 });
 
-test('recently completed within the chosen range, with All history; History lists completed and cancelled', () => {
+test('recently completed within the chosen range, with no All history link (the History tab is there); History lists completed and cancelled', () => {
   let d = finishPlatformReview(data(), act, { workflowId: 'w1' });
   d = cancelWorkflow(d, { by: 'u2', at: '2026-06-01T10:00:00+10:00' }, { workflowId: 'w2' });
   const out = workflowsView(state, d).toString();
@@ -51,7 +51,7 @@ test('recently completed within the chosen range, with All history; History list
   assert.match(out, /<option value="30" selected>Last 30 days<\/option>/);
   assert.match(out, /WF-001[\s\S]*Completed/);
   assert.doesNotMatch(out.split('Recently completed')[1], /WF-002/, 'cancelled in June: outside 30 days');
-  assert.match(out, /All history →/);
+  assert.doesNotMatch(out, /All history/);
   const hist = workflowsView({ ...state, view: { name: 'workflows', tab: 'history' } }, d).toString();
   assert.match(hist, /WF-001[\s\S]*Completed/);
   assert.match(hist, /WF-002[\s\S]*Cancelled/);
