@@ -208,10 +208,12 @@ test('Home: Coming up over Favourite pages beside Needs attention; numbered favo
   const editing = homeView(as({}, { favouritesEditing: true }), d).toString();
   assert.match(editing, /<section class="panel fav-panel editing"[\s\S]*?Drag to reorder[\s\S]*?<li class="fav" draggable="true" data-fav-index="0"><span class="fav-grip"/);
   assert.doesNotMatch(editing.slice(editing.indexOf('class="favs"'), editing.indexOf('</ol>', editing.indexOf('class="favs"'))), /data-action="go"/);
-  // Blocks: small ones in one wrapping row; large ones share the box out in rows.
+  // Blocks: small ones in one wrapping row; large ones too, each wide rather than tall, the box sharing its height among the rows they make.
   const small = homeView(as({ favouriteLayout: 'small' }), d).toString();
   assert.match(small, /<div class="fav-blocks small"><div class="fav-row">(?:[\s\S]*?<div class="fav-block[^"]*"){4}/);
-  assert.equal((homeView(as({ favouriteLayout: 'large' }), d).toString().match(/class="fav-row"/g) ?? []).length, 2, 'four: two by two');
+  const large = homeView(as({ favouriteLayout: 'large' }), d).toString();
+  assert.equal((large.match(/class="fav-row"/g) ?? []).length, 1, 'one wrapping set; the width decides how many sit side by side');
+  assert.match(large, /<div class="fav-blocks large"><div class="fav-row">(?:[\s\S]*?<div class="fav-block[^"]*"){4}/);
   // The star beside Back: for the page and tab open; none on Home.
   const page = (view) => shell({ ...as({}), view }, html``).toString();
   assert.match(page({ name: 'hazard', id: 'h1', tab: 'p:p2' }), /<button type="button" class="fav-star on" aria-pressed="true"[^>]*data-page="hazard" data-id="h1" data-tab="p:p2">/);

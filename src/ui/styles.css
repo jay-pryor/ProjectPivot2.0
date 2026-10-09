@@ -905,7 +905,10 @@ tr.ack-out > td { animation: ack-row .42s ease-in forwards; }
 .fav-blocks.large { flex: 1; min-height: 0; }
 .fav-row { display: flex; gap: 8px; }
 .fav-blocks.small .fav-row { flex-wrap: wrap; align-items: flex-start; }
-.fav-blocks.large .fav-row { flex: 1; min-height: 0; }
+/* Large blocks wrap by width, each at least 220px wide so it is wider than tall; the rows they
+   make share the box's height, and a block on its own in a row widens to fill it. */
+.fav-blocks.large .fav-row { flex: 1; min-height: 0; flex-wrap: wrap; align-content: stretch; }
+.fav-blocks.large .fav-row > .fav-block { flex: 1 1 220px; min-height: 64px; }
 .fav-block { position: relative; min-width: 0; border: 1px solid var(--p-line); background: var(--p-bg); transition: border-color .12s, background-color .12s, transform .12s; }
 /* A block: the page's own heading, large and centred at the top, then its record's name and what
    kind of page it is; the number in its corner. Small blocks are no bigger than these need. */

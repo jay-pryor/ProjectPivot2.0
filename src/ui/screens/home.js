@@ -315,22 +315,13 @@ function favouritesPanel(state) {
 }
 
 /**
- * Blocks in rows. Small blocks all go in one row that wraps. Large blocks share the box: up to three
- * across, so each is wide enough for its heading, the rows sharing them out evenly, so every block
- * is as big as it can be and none is left over (two blocks: each half the box; four: two by two).
- * @template T @param {T[]} items @param {string} layout @returns {T[][]}
+ * Blocks in rows: small or large, they all go in one row that wraps. Large blocks take their size
+ * from the box (see .fav-blocks.large): each is wider than tall, as many across as fit, the rows
+ * sharing the box's height.
+ * @template T @param {T[]} items @param {string} _layout @returns {T[][]}
  */
-function blockRows(items, layout) {
-  if (layout !== 'large') return [items];
-  const rows = items.length <= 3 ? 1 : Math.ceil(items.length / 3);
-  const out = [];
-  let start = 0;
-  for (let r = 0; r < rows; r += 1) {
-    const n = Math.ceil((items.length - start) / (rows - r));
-    out.push(items.slice(start, start + n));
-    start += n;
-  }
-  return out;
+function blockRows(items, _layout) {
+  return [items];
 }
 
 /** The days from today until a date (calendar days). @param {string} today @param {string} due */
