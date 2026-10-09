@@ -2,7 +2,7 @@ import { PivotError } from '../errors.js';
 import { newId, ids, hazardLabel } from '../ids.js';
 import { get, live, created, changed, need, needText } from '../data.js';
 import { commit } from '../apply.js';
-import { openReview } from '../queries.js';
+import { openReview, onboardingOf } from '../queries.js';
 import { cancelRecs } from './workflows.js';
 import { linksTo } from './references.js';
 
@@ -13,6 +13,11 @@ import { linksTo } from './references.js';
 export function createPlatform(data, act, { id = newId(), name, ownerId }) {
   const rec = created(act, id, { number: null, name: needText(name, 'A platform name'), ownerId: needText(ownerId, 'A platform owner'), reviewRule: null, reviewStart: null });
   return commit(data, act, 'Create platform', [{ kind: 'platform', rec }]);
+}
+
+/** The records that cancel a platform's open workflows: its review and its onboarding. @param {Data} data @param {Act} act @param {string} platformId */
+function openWorkflowsCancelled(data, act, platformId) {
+  return [openReview(data, platformId), onboardingOf(data, platformId)].filter((w) => w && w.state === 'open').flatMap((w) => cancelRecs(data, act, /** @type {any} */ (w)));
 }
 
 /** @param {Data} data @param {Act} act @param {{ id: string, name?: string, description?: string }} args */
@@ -49,8 +54,7 @@ export function setOwner(data, act, { id, ownerId }) {
 export function retirePlatform(data, act, { id }) {
   const p = need(data, 'platform', id);
   if (p.status === 'retired') return data;
-  const open = openReview(data, id);
-  return commit(data, act, 'Retire platform', [{ kind: 'platform', rec: changed(p, act, { status: 'retired' }) }, ...(open ? cancelRecs(data, act, open) : [])]);
+  return commit(data, act, 'Retire platform', [{ kind: 'platform', rec: changed(p, act, { status: 'retired' }) }, ...openWorkflowsCancelled(data, act, id)]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ id: string }} args */
@@ -60,9 +64,8 @@ export function deletePlatform(data, act, { id }) {
   if (on.length) {
     throw new PivotError('platform.has-hazards', `${p.name} still has ${on.length === 1 ? 'a hazard' : `${on.length} hazards`} on it. Unlink them first.`, { hazardIds: on.map((l) => l.hazardId) });
   }
-  const open = openReview(data, id);
   const reports = ['safetyReport', 'implementer', 'platformGroupLink'].flatMap((kind) => live(data, kind).filter((r) => r.platformId === id).map((r) => ({ kind, rec: changed(r, act, { status: 'deleted' }) })));
-  return commit(data, act, 'Delete platform', [{ kind: 'platform', rec: changed(p, act, { status: 'deleted' }) }, ...reports, ...(open ? cancelRecs(data, act, open) : []), ...linksTo(data, act, [{ kind: 'platform', id }])]);
+  return commit(data, act, 'Delete platform', [{ kind: 'platform', rec: changed(p, act, { status: 'deleted' }) }, ...reports, ...openWorkflowsCancelled(data, act, id), ...linksTo(data, act, [{ kind: 'platform', id }])]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ hazardId: string, platformId: string }} args */

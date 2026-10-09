@@ -2,7 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PivotError } from '../../../src/core/errors.js';
 import { entries } from '../../../src/core/history.js';
-import { updatePlatform, linkHazard } from '../../../src/core/ops/platforms.js';
+import { updatePlatform, linkHazard, deletePlatform, retirePlatform } from '../../../src/core/ops/platforms.js';
+import { put } from '../../../src/core/data.js';
+import { isOnboarding } from '../../../src/core/queries.js';
+import { checkRules } from '../../../src/core/rules.js';
+import { mergeData } from '../../../src/core/merge.js';
 import { createPlatformGroup, tagPlatform } from '../../../src/core/ops/platform-groups.js';
 import { startOnboarding, startWorkflow, setWorkflowPosition, setStep, cancelWorkflow, completeWorkflow } from '../../../src/core/ops/workflows.js';
 import { onboardingOf } from '../../../src/core/workflows.js';
@@ -64,4 +68,30 @@ test('a cancelled onboarding leaves the platform Onboarding; Onboard again start
 test('a review cannot start while the platform is Onboarding', () => {
   const d = scheduleFixed(begun(), 'p9', 6, '2026-10-30');
   assert.throws(() => startWorkflow(d, act, { type: 'platformReview', platformId: 'p9' }), (e) => e instanceof PivotError && e.code === 'review.onboarding' && /Finish onboarding Gamma first/.test(e.message));
+});
+
+test('deleting or retiring a platform cancels its open onboarding', () => {
+  const del = deletePlatform(begun(), act, { id: 'p9' });
+  assert.equal(del.records.workflow.w9.state, 'cancelled');
+  const ret = retirePlatform(begun(), act, { id: 'p9' });
+  assert.equal(ret.records.workflow.w9.state, 'cancelled');
+});
+
+test('once an onboarding has completed the platform is never Onboarding again, whatever else a merge brings', () => {
+  let d = completeWorkflow(ready(), act, { workflowId: 'w9' });
+  d = put(d, 'workflow', { ...d.records.workflow.w9, id: 'w10', state: 'cancelled', createdAt: '2027-01-01T00:00:00+10:00', covered: [] });
+  assert.equal(onboardingOf(d, 'p9'), null);
+  assert.equal(isOnboarding(d, 'p9'), false);
+});
+
+test('two open onboardings on one platform break a rule, and a merge keeps mine', () => {
+  const base = cancelWorkflow(begun(), act, { workflowId: 'w9' });
+  const mine = startWorkflow(base, act, { id: 'mine', type: 'platformOnboarding', platformId: 'p9' });
+  const theirs = startWorkflow(base, later, { id: 'theirs', type: 'platformOnboarding', platformId: 'p9' });
+  const both = put(mine, 'workflow', theirs.records.workflow.theirs);
+  assert.ok(checkRules(both).some((v) => v.rule === 'two-open-onboardings'));
+  const { data } = mergeData(base, mine, theirs, { by: 'u1', at: '2026-09-28T13:00:00+10:00' });
+  assert.equal(data.records.workflow.mine.state, 'open');
+  assert.equal(data.records.workflow.theirs.status, 'deleted');
+  assert.deepEqual(checkRules(data), []);
 });

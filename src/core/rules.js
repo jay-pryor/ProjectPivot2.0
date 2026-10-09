@@ -108,18 +108,22 @@ export function checkRules(data) {
     const p = get(data, 'platform', r.platformId);
     if (!p || p.status === 'deleted') out.push({ rule: 'implementer-platform-deleted', message: 'A control owner is recorded for a platform that has been deleted.', records: [{ kind: 'implementer', id: r.id }, { kind: 'platform', id: r.platformId }] });
   }
-  // Platform Reviews: an open one needs a live platform, and there is one at a time per platform.
+  // An open workflow needs a live platform, and a platform has one open review and one open
+  // onboarding at most.
   /** @type {Map<string, any>} */
   const openOn = new Map();
   for (const w of live(data, 'workflow')) {
-    if (w.state !== 'open' || w.type !== 'platformReview') continue;
+    if (w.state !== 'open') continue;
     const p = get(data, 'platform', w.platformId);
     if (!p || p.status !== 'live') {
-      out.push({ rule: 'review-on-platform-not-live', message: 'A review is in progress on a platform that is not live.', records: [{ kind: 'workflow', id: w.id }, { kind: 'platform', id: w.platformId }] });
+      out.push({ rule: 'review-on-platform-not-live', message: 'A workflow is in progress on a platform that is not live.', records: [{ kind: 'workflow', id: w.id }, { kind: 'platform', id: w.platformId }] });
     }
-    const first = openOn.get(w.platformId);
-    if (first) out.push({ rule: 'two-open-reviews', message: 'A platform has two reviews in progress.', records: [{ kind: 'workflow', id: first.id }, { kind: 'workflow', id: w.id }] });
-    else openOn.set(w.platformId, w);
+    const key = `${w.type}:${w.platformId}`;
+    const first = openOn.get(key);
+    if (first) {
+      const review = w.type === 'platformReview';
+      out.push({ rule: review ? 'two-open-reviews' : 'two-open-onboardings', message: review ? 'A platform has two reviews in progress.' : 'A platform has two onboardings in progress.', records: [{ kind: 'workflow', id: first.id }, { kind: 'workflow', id: w.id }] });
+    } else openOn.set(key, w);
   }
   // A workflow's checks go with it. (An ended workflow is never changed again: its ops refuse it,
   // and a merge keeps it whole. Not judged by timestamps, which differ between machines' clocks.)

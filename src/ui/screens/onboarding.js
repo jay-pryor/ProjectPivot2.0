@@ -76,7 +76,9 @@ export function onboardingBody(state, data, wf, mine) {
   const p = get(data, 'platform', wf.platformId);
   const prog = onboardingProgress(data, wf);
   const hz = workflowHazards(data, wf);
-  const asked = state.view?.hazardId === 'summary' ? null : state.view?.hazardId ?? wf.at?.hazardId ?? '@details';
+  // No hazard chosen on screen: where the owner left it (null is the summary), else Details.
+  const kept = wf.at && 'hazardId' in wf.at ? wf.at.hazardId : '@details';
+  const asked = state.view?.hazardId === 'summary' ? null : state.view?.hazardId ?? kept;
   const current = asked && (asked.startsWith('@') || hz.some((x) => x.hazard.id === asked)) ? asked : asked ? '@details' : null;
   const x = current && !current.startsWith('@') ? hz.find((y) => y.hazard.id === current) : null;
   const main = current === '@details' ? detailsStep(state, data, wf, p)

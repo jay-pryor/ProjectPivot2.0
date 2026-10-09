@@ -415,14 +415,21 @@ export function hazardRows(data) {
 }
 
 /**
- * Whether a platform is still being onboarded: its latest onboarding is not completed (as
- * core/workflows.js onboardingOf, kept here to avoid an import cycle).
- * @param {Data} data @param {string} platformId
+ * The onboarding a platform is under: none once any of its onboardings has completed (so a merge
+ * can never put a finished platform back into onboarding); otherwise its open one, or failing that
+ * its most recent cancelled one. A platform never onboarded is under none.
+ * @param {Data} data @param {string} platformId @returns {Rec | null}
  */
+export function onboardingOf(data, platformId) {
+  const mine = live(data, 'workflow').filter((w) => w.type === 'platformOnboarding' && w.platformId === platformId);
+  if (!mine.length || mine.some((w) => w.state === 'completed')) return null;
+  return mine.find((w) => w.state === 'open')
+    ?? mine.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : a.id < b.id ? 1 : -1))[0];
+}
+
+/** Whether a platform is still being onboarded. @param {Data} data @param {string} platformId */
 export function isOnboarding(data, platformId) {
-  const latest = live(data, 'workflow').filter((w) => w.type === 'platformOnboarding' && w.platformId === platformId)
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))[0];
-  return Boolean(latest && latest.state !== 'completed');
+  return onboardingOf(data, platformId) !== null;
 }
 
 /** The Platform Review in progress on a platform, if any: an open workflow. @param {Data} data @param {string} platformId @returns {Rec | null} */

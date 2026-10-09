@@ -121,16 +121,7 @@ export const ONBOARDING_POSITIONS = Object.freeze(['@details', '@groups', '@haza
 /** How many required things each hazard has in a workflow of this type. @param {{ type: string }} wf */
 export const requiredOf = (wf) => (wf.type === 'platformOnboarding' ? 2 : CHECKS.length);
 
-/**
- * The onboarding a platform is under: its most recently started onboarding workflow, unless that
- * one was completed. A platform never onboarded is under none.
- * @param {Data} data @param {string} platformId @returns {Rec | null}
- */
-export function onboardingOf(data, platformId) {
-  const latest = live(data, 'workflow').filter((w) => w.type === 'platformOnboarding' && w.platformId === platformId)
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))[0];
-  return latest && latest.state !== 'completed' ? latest : null;
-}
+export { onboardingOf } from './queries.js';
 
 /** @param {Data} data @param {string} workflowId @param {string} hazardId @param {string} check */
 const ticked = (data, workflowId, hazardId, check) => Boolean(stepOf(data, workflowId, hazardId, check)?.checked);

@@ -81,3 +81,10 @@ test('an implemented control shows its missing properties; None applies is disab
   assert.match(out, /class="wf-missing"[^>]*>Missing: tier, origin, description, implemented by/);
   assert.match(out, /data-check="none:causalFactor"[^>]*disabled|disabled[^>]*data-check="none:causalFactor"/, 'h1 has a causal factor');
 });
+
+test('an onboarding left on its summary reopens on the summary', () => {
+  const d = onboardingData();
+  const w = { ...d.records.workflow.w9, at: { hazardId: null } };
+  const out = workflowView(on(), { ...d, records: { ...d.records, workflow: { ...d.records.workflow, w9: w } } }, 'w9').toString();
+  assert.match(out, /<h2>Summary<\/h2>/);
+});
