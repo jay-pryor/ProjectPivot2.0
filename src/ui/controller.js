@@ -17,6 +17,7 @@ import * as platforms from '../core/ops/platforms.js';
 import * as assessment from '../core/ops/assessment.js';
 import * as reviews from '../core/ops/reviews.js';
 import * as workflows from '../core/ops/workflows.js';
+import { openTransfer, openReferenceUpdate } from '../core/workflows.js';
 import * as acks from '../core/acks.js';
 import * as references from '../core/ops/references.js';
 import * as phases from '../core/ops/phases.js';
@@ -61,7 +62,8 @@ const EDITS = {
   setRule: reviews.setRule, acknowledgeReviewDate: reviews.acknowledgeReviewDate,
   createReviewPolicy: reviews.createReviewPolicy, updateReviewPolicy: reviews.updateReviewPolicy, renameReviewPolicy: reviews.renameReviewPolicy, deleteReviewPolicy: reviews.deleteReviewPolicy,
   startWorkflow: workflows.startWorkflow, startOnboarding: workflows.startOnboarding, setStep: workflows.setStep, setWorkflowOutcome: workflows.setWorkflowOutcome, setWorkflowNotes: workflows.setWorkflowNotes,
-  setWorkflowPosition: workflows.setWorkflowPosition, takeOverWorkflow: workflows.takeOverWorkflow, cancelWorkflow: workflows.cancelWorkflow, completeWorkflow: workflows.completeWorkflow,
+  setWorkflowPosition: workflows.setWorkflowPosition, takeOverWorkflow: workflows.takeOverWorkflow,
+  setTransferRecipient: workflows.setTransferRecipient, setReferenceDraft: workflows.setReferenceDraft, markTransferReviewed: workflows.markTransferReviewed, cancelWorkflow: workflows.cancelWorkflow, completeWorkflow: workflows.completeWorkflow,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
   retireReference: references.retireReference, setReferenceArchived: references.setReferenceArchived, deleteReference: references.deleteReference,
@@ -147,14 +149,17 @@ export function createController(env) {
     state = { ...state, ...patch, today: aestDate(env.clock.now()) };
     for (const f of listeners) f(state);
   }
-  // Edits made on a workflow page the profile owns, while it is open, carry the workflow.
+  // Edits made on a workflow page the profile owns, or on a page opened from one (its `via`), while
+  // it is open, carry the workflow.
   const act = () => {
     const by = /** @type {string} */ (state.profileId);
     const at = env.clock.now();
     const v = state.view;
-    const wf = v?.name === 'workflow' && v.id ? state.session?.working.records.workflow?.[v.id] : null;
+    const wid = v?.name === 'workflow' ? v.id : v?.via;
+    const wf = wid ? state.session?.working.records.workflow?.[wid] : null;
     return wf && wf.status === 'live' && wf.state === 'open' && wf.ownerId === by ? { by, at, workflowId: wf.id } : { by, at };
   };
+
   const nameOf = (/** @type {string | null} */ id) => profileName(state, id);
   /** A live review policy in the working data, or a message that it has gone. @param {string} id */
   const policyNamed = (id) => {
@@ -424,9 +429,9 @@ export function createController(env) {
     async dismissWarning({ index }) {
       set({ warnings: (state.warnings ?? []).filter((/** @type {string} */ _w, /** @type {number} */ i) => i !== Number(index)) });
     },
-    async go({ view, id, hazardId, platformId, tab, reviewId }) {
+    async go({ view, id, hazardId, platformId, tab, reviewId, via }) {
       // Leaving a control being made, untitled, makes nothing.
-      set({ view: { name: view, id, hazardId, platformId, tab, reviewId }, message: null, editing: null, confirmDelete: null, reviewPanel: null, ruleDraft: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
+      set({ view: { name: view, id, hazardId, platformId, tab, reviewId, ...(via ? { via } : {}) }, message: null, editing: null, confirmDelete: null, reviewPanel: null, ruleDraft: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
       if (view === 'references') await handlers.checkReferenceFiles();
       if (view === 'reference') await handlers.checkReferenceFiles({ id });
@@ -804,6 +809,31 @@ export function createController(env) {
       const id = newId();
       await applyEdit('startOnboarding', { id, platformId: newId(), name, ownerId: ownerId || state.profileId });
       await handlers.go({ view: 'workflow', id });
+    },
+    // Transfer owner: the platform's transfer under way, or a new one.
+    async startTransfer({ platformId }) {
+      const w = state.session ? openTransfer(state.session.working, platformId) : null;
+      if (w) return handlers.go({ view: 'workflow', id: w.id });
+      const id = newId();
+      await applyEdit('startWorkflow', { id, type: 'transferOwner', platformId });
+      await handlers.go({ view: 'workflow', id });
+    },
+    // Update revision: the reference's update under way, or a new one.
+    async startReferenceUpdate({ referenceId }) {
+      const w = state.session ? openReferenceUpdate(state.session.working, referenceId) : null;
+      if (w) return handlers.go({ view: 'workflow', id: w.id });
+      const id = newId();
+      await applyEdit('startWorkflow', { id, type: 'referenceUpdate', referenceId });
+      await handlers.go({ view: 'workflow', id });
+    },
+    // The new revision's file: copied into the folder now, given to the reference only when the update is confirmed.
+    async uploadUpdateFile({ workflowId, file }) {
+      const wf = state.session?.working.records.workflow[workflowId];
+      const r = wf ? state.session?.working.records.reference[wf.referenceId] : null;
+      if (!wf || !r) throw new PivotError('not-found', 'That update no longer exists.');
+      const f = chosenFile(file);
+      if (!f) throw new PivotError('reference.file', 'Choose a file to upload.');
+      await applyEdit('setReferenceDraft', { workflowId, file: await storeFile(r.id, 2 + (r.file ? 1 : 0) + r.pastFiles.length, f) });
     },
     // Start review opens the platform's Platform Review: the one in progress, or a new one.
     async beginReview({ platformId }) {
