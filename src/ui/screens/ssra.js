@@ -55,9 +55,10 @@ const controlIdColumn = () => ({ ...idColumn((/** @type {any} */ c) => c.control
  * has got, its kind here and what it prevents or mitigates, and the analysis shared across the
  * hazard's platforms. + adds controls here; ✕ takes one off this platform alone.
  * @param {any} state @param {Data} data @param {any} h @param {string} platformId @param {string} platformName
+ * @param {(row: any) => boolean} [only] the rows to show; every one when left out
  */
-export function controlsSection(state, data, h, platformId, platformName) {
-  const rows = controlsOnPlatform(data, h.id, platformId);
+export function controlsSection(state, data, h, platformId, platformName, only) {
+  const rows = controlsOnPlatform(data, h.id, platformId).filter((c) => !only || only(c));
   return dataTable(state, {
     id: 'controlAnalysis',
     rowKey: (c) => c.control.id,

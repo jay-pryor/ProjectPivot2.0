@@ -69,10 +69,11 @@ export function descriptionField(h) {
  * platforms, to tick and add with what is typed.
  * @param {any} state
  * @param {{ name: 'CausalFactor' | 'Consequence', items: any[], hazardId: string, platformId?: string | null,
- *   suggestions?: { text: string, from: string }[] }} o
- *   platformId: the platform the page is for; suggestions: causal factors on other platforms, not yet here
+ *   suggestions?: { text: string, from: string }[], grouped?: { text: string, from: string }[] }} o
+ *   platformId: the platform the page is for; suggestions: causal factors on other platforms, not yet here;
+ *   grouped: suggestions from the platform's groups, shown first
  */
-export function numberedCard(state, { name, items, hazardId, platformId = null, suggestions = [] }) {
+export function numberedCard(state, { name, items, hazardId, platformId = null, suggestions = [], grouped = [] }) {
   const causal = name === 'CausalFactor';
   const kind = causal ? 'causalFactor' : 'consequence';
   const what = causal ? 'causal factor' : 'consequence';
@@ -88,7 +89,7 @@ export function numberedCard(state, { name, items, hazardId, platformId = null, 
           : html`<span class="cell-text nl-text" ${dataAttrs({ dblclick: 'startEdit', kind, id: r.id })} title="Double-click to change">${r.text}</span>`}
         <span class="row-actions">${removeButton(`Delete ${what} ${i + 1}`, `Delete ${what} ${i + 1}?`, `“${r.text}” will be deleted.`, { run: `delete${name}`, id: r.id })}</span></li>`;
     })}</ol>` : html`<p class="muted nl-empty">No ${what}s yet.</p>`}
-    ${adding ? addForm({ action: `add${name}`, attrs: { 'hazard-id': hazardId }, what, extra: here, heading: 'On this hazard\'s other platforms', suggestions, reveal: `suggest:${hazardId}:${platformId}` }) : ''}
+    ${adding ? addForm({ action: `add${name}`, attrs: { 'hazard-id': hazardId }, what, extra: here, heading: 'On this hazard\'s other platforms', suggestions, grouped, reveal: `suggest:${hazardId}:${platformId}` }) : ''}
   </section>`;
 }
 
@@ -105,11 +106,11 @@ const PLATFORM_LISTS = Object.freeze({
  * or platform, and lists those entries to tick and add with it; a row is changed by double-clicking it.
  * @param {any} state
  * @param {{ kind: 'failureMode' | 'systemElement' | 'affectedGroup', items: any[], hazardId: string, platformId: string, entries: string[],
- *   usedOn?: Map<string, string[]> }} o
+ *   usedOn?: Map<string, string[]>, grouped?: { text: string, from: string }[] }} o
  *   entries: every one already given, the box's suggestions; usedOn: for each (in lower case), the
  *   hazard's other platforms it is on, named beside it and listed first
  */
-export function platformListCard(state, { kind, items, hazardId, platformId, entries, usedOn = new Map() }) {
+export function platformListCard(state, { kind, items, hazardId, platformId, entries, usedOn = new Map(), grouped = [] }) {
   const { name, title, what, none } = PLATFORM_LISTS[kind];
   const pair = `${hazardId}:${platformId}`;
   const adding = state.editing?.kind === `new${name}` && state.editing.id === pair;
@@ -129,7 +130,7 @@ export function platformListCard(state, { kind, items, hazardId, platformId, ent
     ${adding ? addForm({ action: `add${name}`, attrs: { 'hazard-id': hazardId, 'platform-id': platformId }, what, list, heading: 'Used before',
       suggestions: entries.filter((t) => !here.has(t.toLowerCase()))
         .map((text) => ({ text, from: (usedOn.get(text.toLowerCase()) ?? []).join(', ') }))
-        .sort((a, b) => Number(!a.from) - Number(!b.from)), reveal: `suggest:${kind}:${pair}` }) : ''}
+        .sort((a, b) => Number(!a.from) - Number(!b.from)), grouped: grouped.filter((g) => !here.has(g.text.toLowerCase())), reveal: `suggest:${kind}:${pair}` }) : ''}
     ${adding || items.some((r) => state.editing?.kind === kind && state.editing.id === r.id) ? suggestions : ''}
   </section>`;
 }
@@ -139,12 +140,17 @@ export function platformListCard(state, { kind, items, hazardId, platformId, ent
  * elsewhere as ticks. Add puts in what is typed and every one ticked; with any ticked, the box may
  * be left empty (see pickedEntries in mount.js).
  * @param {{ action: string, attrs: Record<string, string>, what: string, extra?: unknown, list?: string, heading: string,
- *   suggestions: { text: string, from: string }[], reveal: string }} o
+ *   suggestions: { text: string, from: string }[], reveal: string, grouped?: { text: string, from: string }[] }} o
  *   list: the id of a datalist the box suggests from as you type
  */
-function addForm({ action, attrs, what, extra = '', list, heading, suggestions, reveal }) {
+function addForm({ action, attrs, what, extra = '', list, heading, suggestions, reveal, grouped = [] }) {
+  const block = (/** @type {string} */ h, /** @type {{ text: string, from: string }[]} */ xs, /** @type {string} */ key) => (xs.length
+    ? html`<div class="suggest" data-reveal="${key}"><p class="suggest-h">${h}</p><ul class="suggest-list">${xs.map((x) => html`<li><label class="suggest-item"><input type="checkbox" name="pick" value="${x.text}"><span class="suggest-text">${x.text}</span>${x.from ? html`<span class="suggest-from">${x.from}</span>` : ''}</label></li>`)}</ul></div>`
+    : '');
+  const groupedTexts = new Set(grouped.map((g) => g.text.toLowerCase()));
   return html`<form data-action="${action}" ${dataAttrs(attrs)} class="new-row new-entries" data-picks>
     <div class="row inline fill"><input name="text" required${list ? html` list="${list}" autocomplete="off"` : ''} placeholder="New ${what}…" aria-label="New ${what}" class="grow" autofocus>${extra}<button type="submit">Add</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></div>
-    ${suggestions.length ? html`<div class="suggest" data-reveal="${reveal}"><p class="suggest-h">${heading}</p><ul class="suggest-list">${suggestions.map((x) => html`<li><label class="suggest-item"><input type="checkbox" name="pick" value="${x.text}"><span class="suggest-text">${x.text}</span>${x.from ? html`<span class="suggest-from">${x.from}</span>` : ''}</label></li>`)}</ul></div>` : ''}
+    ${block('Suggested from your groups', grouped, `${reveal}:groups`)}
+    ${block(heading, suggestions.filter((x) => !groupedTexts.has(x.text.toLowerCase())), reveal)}
   </form>`;
 }

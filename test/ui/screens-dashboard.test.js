@@ -4,6 +4,8 @@ import { hazardView } from '../../src/ui/screens/hazards.js';
 import { initialState } from '../../src/ui/controller.js';
 import { assignNumbers, addCausalFactor, addConsequence } from '../../src/core/ops/hazards.js';
 import { seed, act } from '../helpers.js';
+import { numberedCard, platformListCard } from '../../src/ui/screens/dashboard.js';
+import { controlsSection } from '../../src/ui/screens/ssra.js';
 
 const state = { ...initialState(), screen: 'main', today: '2026-09-28', profileId: 'u1', profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }] };
 const on = (tab, extra = {}) => ({ ...state, view: { name: 'hazard', id: 'h1', tab }, ...extra });
@@ -155,4 +157,16 @@ test('a control\'s and a reference\'s Retire and Delete are in the ⋯ menu by t
   assert.doesNotMatch(controlView({ ...state, view: { name: 'control', id: 'c1' } }, d, 'c1').toString(), /deleteControl/, 'in use: no Delete');
   const ref = referenceView({ ...state, view: { name: 'reference', id: 'r1' } }, d, 'r1').toString();
   assert.match(ref, /aria-label="Reference options"[\s\S]*?data-action="retireReference"[\s\S]*?data-run="deleteReference" data-id="r1"/);
+});
+
+test('the add form shows group suggestions first, each with its groups; the controls table can show a filtered set', () => {
+  const s = { ...state, editing: { kind: 'newFailureMode', id: 'h1:p1' } };
+  const out = platformListCard(s, { kind: 'failureMode', items: [], hazardId: 'h1', platformId: 'p1', entries: ['Old entry'], grouped: [{ text: 'Beam misaligned', from: 'Lasers' }] }).toString();
+  assert.match(out, /Suggested from your groups[\s\S]*Beam misaligned[\s\S]*Lasers[\s\S]*Used before[\s\S]*Old entry/);
+  const cf = numberedCard({ ...state, editing: { kind: 'newCausalFactor', id: 'h1' } }, { name: 'CausalFactor', items: [], hazardId: 'h1', platformId: 'p1', grouped: [{ text: 'Hot works', from: 'All platforms' }] }).toString();
+  assert.match(cf, /Suggested from your groups[\s\S]*Hot works/);
+  const d = seed();
+  const only = controlsSection(state, d, d.records.hazard.h1, 'p1', 'Alpha', (c) => c.control.id === 'c2').toString();
+  assert.match(only, /Fire drills/);
+  assert.doesNotMatch(only, /Sprinklers/);
 });
