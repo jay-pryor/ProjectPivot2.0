@@ -36,11 +36,12 @@ test('the owner filter narrows In progress', () => {
   assert.doesNotMatch(out, /WF-002/);
 });
 
-test('start a workflow: Platform Review with a platform picker, overdue first; the rest Coming soon', () => {
+test('start a workflow: Platform Review with a platform picker, overdue first; only New Tech Data still coming soon', () => {
   const out = workflowsView(state, data()).toString();
   assert.match(out, /data-action="beginReview"/);
   assert.match(out, /Alpha — WF-001 in progress/);
-  for (const name of ['Platform Onboarding', 'New Tech Data', 'Transfer Platform Owner', 'Reference Update']) assert.match(out, new RegExp(`${name}[\\s\\S]*?Coming soon`));
+  assert.match(out, /New Tech Data <span class="tag">Coming soon<\/span>/);
+  assert.equal((out.match(/Coming soon/g) ?? []).length, 1, 'only New Tech Data is still to come');
 });
 
 test('recently completed within the chosen range, with no All history link (the History tab is there); History lists completed and cancelled', () => {

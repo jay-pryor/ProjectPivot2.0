@@ -68,7 +68,7 @@ function causalFactorPlatforms(data, r) {
 }
 
 /** The platforms a reference link's target is on. @param {Data} data @param {string} kind @param {string} id @returns {string[]} */
-function targetPlatforms(data, kind, id) {
+export function targetPlatforms(data, kind, id) {
   switch (kind) {
     case 'platform': return [id];
     case 'hazard': return platformsOfHazard(data, id);
@@ -476,8 +476,8 @@ export function reviewDueList(data, today) {
  * @param {Data} data @param {string} today @param {string | null} ownerId
  */
 export function openItems(data, today, ownerId) {
-  /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], dateMoved: { platform: Rec, due: string, seen: string, urgent: boolean, driver: any }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], toImplement: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string[] }[], unjustified: { platform: Rec, hazard: Rec, missing: string[] }[], controlGaps: { platform: Rec, control: Rec, missing: string[] }[], sfarpGaps: { platform: Rec, hazard: Rec, missing: string[] }[] }} */
-  const out = { acks: [], reviews: [], dateMoved: [], awaiting: [], toImplement: [], unrated: [], unjustified: [], controlGaps: [], sfarpGaps: [] };
+  /** @type {{ acks: { entry: any, platform: Rec }[], reviews: { platform: Rec, state: string, due: string | null, lastReviewed: string | null, open: boolean }[], dateMoved: { platform: Rec, due: string, seen: string, urgent: boolean, driver: any }[], awaiting: { platform: Rec, hazard: Rec, control: Rec }[], toImplement: { platform: Rec, hazard: Rec, control: Rec }[], unrated: { platform: Rec, hazard: Rec, missing: string[] }[], unjustified: { platform: Rec, hazard: Rec, missing: string[] }[], controlGaps: { platform: Rec, control: Rec, missing: string[] }[], sfarpGaps: { platform: Rec, hazard: Rec, missing: string[] }[], transfers: { workflow: Rec, platform: Rec, from: string }[] }} */
+  const out = { acks: [], reviews: [], dateMoved: [], awaiting: [], toImplement: [], unrated: [], unjustified: [], controlGaps: [], sfarpGaps: [], transfers: [] };
   for (const platform of live(data, 'platform').filter((p) => (ownerId == null || p.ownerId === ownerId) && !isOnboarding(data, p.id))) {
     for (const entry of waitingChanges(data, platform.id)) out.acks.push({ entry, platform });
     const s = scheduleOf(data, platform.id, today);
@@ -523,6 +523,12 @@ export function openItems(data, today, ownerId) {
   }
   out.acks.sort((a, b) => (a.entry.at < b.entry.at ? 1 : a.entry.at > b.entry.at ? -1 : 0));
   out.dateMoved.sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
+  for (const w of live(data, 'workflow')) {
+    if (w.type !== 'transferOwner' || w.state !== 'completed' || w.reviewed || (ownerId != null && w.toOwnerId !== ownerId)) continue;
+    const platform = get(data, 'platform', w.platformId);
+    // Only while the platform is live and still theirs: a transfer back, or a retirement, ends it.
+    if (platform && platform.status === 'live' && platform.ownerId === w.toOwnerId) out.transfers.push({ workflow: w, platform, from: w.fromOwnerId });
+  }
   return out;
 }
 
@@ -641,6 +647,7 @@ export function platformCards(data, today, ownerId) {
 export function attentionItems(items) {
   const moved = items.dateMoved ?? [];
   return [
+    ...(items.transfers ?? []).map((x) => ({ type: 'transfer', ...x })),
     ...moved.filter((m) => m.urgent).map((m) => ({ type: 'dateMoved', ...m })),
     ...items.reviews.filter((r) => r.state === 'overdue').sort((a, b) => ((a.due ?? '') < (b.due ?? '') ? -1 : 1)).map((r) => ({ type: 'review', ...r })),
     ...items.acks.map((a) => ({ type: 'change', ...a })),

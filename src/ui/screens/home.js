@@ -48,11 +48,12 @@ function ownerPicker(state) {
  * considerations on the hazard's page for that platform. A change is
  * acknowledged in the list itself, so its row opens the platform's history, where the change sits
  * in context.
- * @param {'change' | 'review' | 'schedule' | 'dateMoved' | 'control' | 'implement' | 'controlGap' | 'rating' | 'justify' | 'sfarp'} type
+ * @param {'transfer' | 'change' | 'review' | 'schedule' | 'dateMoved' | 'control' | 'implement' | 'controlGap' | 'rating' | 'justify' | 'sfarp'} type
  * @param {{ platform: any, hazard?: any, control?: any }} item
  * @returns {Record<string, string>}
  */
 export function whereToAct(type, item) {
+  if (type === 'transfer') return { view: 'workflow', id: /** @type {any} */ (item).workflow.id };
   const on = `p:${item.platform.id}`;
   if (type === 'control' || type === 'implement' || type === 'controlGap') return { view: 'control', id: item.control.id, tab: on };
   if (type === 'rating' || type === 'justify' || type === 'sfarp') return { view: 'hazard', id: item.hazard.id, tab: on };
@@ -203,7 +204,7 @@ export function openItemsView(state, data) {
  */
 export const ATTENTION_LIMIT = 40;
 
-const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], implement: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'], justify: ['Rating', 'chip-rating'], controlGap: ['Control', 'chip-control'], sfarp: ['SFARP', 'chip-rating'], schedule: ['Review', 'chip-review'], dateMoved: ['Review', 'chip-review'] };
+const CHIP = { review: ['Review', 'chip-review'], change: ['Change', 'chip-change'], control: ['Control', 'chip-control'], implement: ['Control', 'chip-control'], rating: ['Rating', 'chip-rating'], justify: ['Rating', 'chip-rating'], controlGap: ['Control', 'chip-control'], sfarp: ['SFARP', 'chip-rating'], schedule: ['Review', 'chip-review'], dateMoved: ['Review', 'chip-review'], transfer: ['Transfer', 'chip-review'] };
 
 /**
  * Every open item across the team, whoever owns the platform: a quiet line above the counts.
@@ -234,9 +235,9 @@ export function changeSummary(action, subject) {
 function attentionRow(state, data, item) {
   const [word, cls] = CHIP[/** @type {keyof typeof CHIP} */ (item.type)];
   // A moved date is keyed by the date it moved to, so moving again makes it a new row.
-  const key = [item.type, item.platform.id, item.entry?.id, item.hazard?.id, item.control?.id, item.type === 'dateMoved' ? item.due : ''].filter(Boolean).join('|');
+  const key = [item.type, item.platform.id, item.workflow?.id, item.entry?.id, item.hazard?.id, item.control?.id, item.type === 'dateMoved' ? item.due : ''].filter(Boolean).join('|');
   const place = whereToAct(item.type, item);
-  const urgent = item.type === 'dateMoved' && item.urgent;
+  const urgent = (item.type === 'dateMoved' && item.urgent) || item.type === 'transfer';
   /** @param {any} what @param {any} action @param {any} [by] */
   const row = (what, action, by = '') => html`<tr ${urgent ? raw('class="urgent" ') : ''}${dataAttrs({ key, dblclick: 'go', ...place })}><td class="kind">${urgent ? html`<span class="chip chip-urgent">Urgent</span> ` : ''}<span class="chip ${cls}">${word}</span></td><td class="what">${what}</td>
     <td class="by">${by}</td><td class="where">${platformLink(item.platform)}</td><td class="act">${action}</td></tr>`;
@@ -244,6 +245,10 @@ function attentionRow(state, data, item) {
     const why = driverWord(data, item.driver);
     return row(html`<strong>Review date moved: ${day(item.seen)} → ${day(item.due)}</strong>${why ? html` <span class="muted">· ${why}</span>` : ''}`,
       html`<button type="button" class="small" ${dataAttrs({ action: 'acknowledgeReviewDate', 'platform-id': item.platform.id })}>Acknowledge</button>`);
+  }
+  if (item.type === 'transfer') {
+    return row(html`<strong>Review the transfer of ${item.platform.name} from ${profileName(state, item.from)}</strong> <span class="muted">· ${workflowLabel(item.workflow)}</span>`,
+      go('Review →', 'workflow', { id: item.workflow.id }));
   }
   if (item.type === 'review') return row(`Review overdue since ${day(item.due)}`, go('Review →', place.view, place));
   if (item.type === 'change') {

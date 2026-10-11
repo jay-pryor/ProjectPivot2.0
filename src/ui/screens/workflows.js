@@ -2,8 +2,8 @@ import { html } from '../html.js';
 import { dataAttrs, option, go, idTag } from './common.js';
 import { dataTable } from './table.js';
 import { get, live } from '../../core/data.js';
-import { workflowLabel } from '../../core/ids.js';
-import { openReview } from '../../core/queries.js';
+import { workflowLabel, referenceLabel } from '../../core/ids.js';
+import { openReview, isOnboarding } from '../../core/queries.js';
 import { scheduleOf } from '../../core/schedule.js';
 import { addDays } from '../../core/time.js';
 import { openWorkflows, endedWorkflows, workflowProgress, lastActivity, WORKFLOW_TYPES, typeName } from '../../core/workflows.js';
@@ -20,6 +20,7 @@ export function workflowsOwnerId(state) {
 
 /** What a workflow is about, as a person reads it. @param {Data} data @param {any} wf */
 export function workflowSubject(data, wf) {
+  if (wf.type === 'referenceUpdate') return get(data, 'reference', wf.referenceId)?.title ?? 'A deleted reference';
   return get(data, 'platform', wf.platformId)?.name ?? 'A deleted platform';
 }
 
@@ -65,6 +66,20 @@ function reviewCard(state, data) {
     : html`<p class="muted">No live platforms to review.</p>`;
 }
 
+const GO = html`<button type="submit" class="wf-go">Start <span class="wf-go-arrow" aria-hidden="true">→</span></button>`;
+
+/** The card that transfers a platform: platforms not still being onboarded. @param {Data} data */
+function transferCard(data) {
+  const ps = live(data, 'platform').filter((p) => !isOnboarding(data, p.id)).sort((a, b) => String(a.name).localeCompare(b.name));
+  return html`<form class="wf-start" data-action="startTransfer"><div class="wf-fields-col"><select name="platformId" aria-label="Platform to transfer" required>${NEUTRAL('Select platform…')}${ps.map((p) => option(p.id, p.name, ''))}</select></div>${GO}</form>`;
+}
+
+/** The card that updates a reference: live references not archived. @param {Data} data */
+function updateCard(data) {
+  const rs = live(data, 'reference').filter((r) => !r.archived).sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+  return html`<form class="wf-start" data-action="startReferenceUpdate"><div class="wf-fields-col"><select name="referenceId" aria-label="Reference to update" required>${NEUTRAL('Select reference…')}${rs.map((r) => option(r.id, `${referenceLabel(r)} ${r.title}${r.revision ? ` (rev ${r.revision})` : ''}`, ''))}</select></div>${GO}</form>`;
+}
+
 /** The card that onboards a new platform: its name and owner. @param {any} state */
 function onboardCard(state) {
   return html`<form class="wf-start" data-action="onboardPlatform"><div class="wf-fields-col"><input name="name" required placeholder="New platform name" aria-label="New platform name"><select name="ownerId" aria-label="Owner" required>${NEUTRAL('Select owner…')}${state.profiles.map((/** @type {any} */ p) => option(p.id, p.name, ''))}</select></div><button type="submit" class="wf-go">Start <span class="wf-go-arrow" aria-hidden="true">→</span></button></form>`;
@@ -75,7 +90,7 @@ function startCards(state, data) {
   return html`<div class="wf-cards">${WORKFLOW_TYPES.map((t) => html`<section class="dash-card wf-card${t.ready ? '' : ' soon'}" aria-label="${t.name}">
     <h3 class="dash-card-h">${t.name}${t.ready ? '' : html` <span class="tag">Coming soon</span>`}</h3>
     <p class="muted">${t.blurb}</p>
-    ${t.type === 'platformReview' ? reviewCard(state, data) : t.type === 'platformOnboarding' ? onboardCard(state) : ''}
+    ${t.type === 'platformReview' ? reviewCard(state, data) : t.type === 'platformOnboarding' ? onboardCard(state) : t.type === 'transferOwner' ? transferCard(data) : t.type === 'referenceUpdate' ? updateCard(data) : ''}
   </section>`)}</div>`;
 }
 

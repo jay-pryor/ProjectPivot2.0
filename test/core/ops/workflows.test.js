@@ -32,7 +32,7 @@ test('starting a Platform Review: open, owned by its starter, on the first hazar
   assert.throws(() => startWorkflow(d, later, { type: 'platformReview', platformId: 'p1' }), code('review.open'));
   assert.doesNotThrow(() => startWorkflow(d, later, { type: 'platformReview', platformId: 'p2' }));
   assert.throws(() => startWorkflow(retirePlatform(scheduled(), act, { id: 'p2' }), act, { type: 'platformReview', platformId: 'p2' }), code('platform.retired'));
-  assert.throws(() => startWorkflow(scheduled(), act, { type: 'referenceUpdate', platformId: 'p1' }), code('workflow.type'));
+  assert.throws(() => startWorkflow(scheduled(), act, { type: 'newTechData', platformId: 'p1' }), code('workflow.type'));
 });
 
 test('a platform with no hazards opens on the summary at 0 of 0 and can be completed', () => {

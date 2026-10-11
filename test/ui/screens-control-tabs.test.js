@@ -76,7 +76,7 @@ test('a control\'s platform tab has who implements it and its use there on cards
 
 test('a platform\'s Details are a dashboard: the platform, its worst risks, its controls, and a menu of its tables', () => {
   const out = platformView(state, data(), 'p1').toString();
-  assert.match(out, /aria-label="Platform">[\s\S]*?Owned by <select[\s\S]*?No review schedule[\s\S]*?Reviews →/);
+  assert.match(out, /aria-label="Platform">[\s\S]*?Owned by Ada[\s\S]*?Transfer owner…[\s\S]*?No review schedule[\s\S]*?Reviews →/);
   assert.match(out, /aria-label="Risk">[\s\S]*?<strong>1<\/strong> hazard[\s\S]*?1 not rated/);
   assert.match(out, /aria-label="Controls">[\s\S]*?<strong>2<\/strong> controls/);
   assert.doesNotMatch(out, /existing|additional/i, 'one kind of control');

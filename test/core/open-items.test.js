@@ -39,7 +39,7 @@ test('the owner filter: another owner, and everyone', () => {
   const all = openItems(data(), '2026-09-28', null);
   assert.equal(all.acks.length, 2);
   assert.equal(all.awaiting.length, 3);
-  assert.deepEqual(openItems(data(), '2026-09-28', 'nobody'), { acks: [], reviews: [], dateMoved: [], awaiting: [], toImplement: [], unrated: [], unjustified: [], controlGaps: [], sfarpGaps: [] });
+  assert.deepEqual(openItems(data(), '2026-09-28', 'nobody'), { acks: [], reviews: [], dateMoved: [], awaiting: [], toImplement: [], unrated: [], unjustified: [], controlGaps: [], sfarpGaps: [], transfers: [] });
 });
 
 test('a moved review date is an item for the owner: urgent first when passed or within 30 days', () => {

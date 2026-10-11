@@ -1,10 +1,11 @@
 import { PivotError } from '../errors.js';
 import { newId, ids, workflowLabel, UNNUMBERED } from '../ids.js';
-import { get, created, changed, need, put } from '../data.js';
+import { get, live, created, changed, need, put } from '../data.js';
+import { aestDate } from '../time.js';
 import { commit } from '../apply.js';
 import { dueOf } from '../schedule.js';
 import { seenRec } from './reviews.js';
-import { CHECKS, NONE_CHECKS, ONBOARDING_POSITIONS, workflowHazards, workflowProgress, openPlatformReview, onboardingOf, onboardingProgress } from '../workflows.js';
+import { CHECKS, NONE_CHECKS, ONBOARDING_POSITIONS, workflowHazards, workflowProgress, openPlatformReview, onboardingOf, onboardingProgress, stepOf, TRANSFER_GROUPS, transferGroups, openTransfer, referenceItems, openReferenceUpdate } from '../workflows.js';
 import { createPlatform } from './platforms.js';
 
 /** @typedef {import('../data.js').Data} Data */
@@ -31,7 +32,7 @@ function needHazard(data, wf, hazardId) {
   return /** @type {string} */ (hazardId);
 }
 
-/** A workflow's opening record. @param {Act} act @param {string} id @param {string} type @param {string} platformId @param {string | null} at */
+/** A workflow's opening record. @param {Act} act @param {string} id @param {string} type @param {string | null} platformId @param {string | null} at */
 const opening = (act, id, type, platformId, at) => created(act, id, { number: null, type, platformId, ownerId: act.by, state: 'open', at: { hazardId: at }, outcome: '', notes: '', endedBy: null, endedAt: null });
 
 /**
@@ -49,9 +50,25 @@ export function startOnboarding(data, act, { id = newId(), platformId = newId(),
  * Start a workflow, owned by whoever starts it. A Platform Review needs a live platform that is not
  * being onboarded and has no review open, and opens on its first hazard (on the summary when it has
  * none). A Platform Onboarding is started again only for a platform whose onboarding was cancelled.
- * @param {Data} data @param {Act} act @param {{ id?: string, type: string, platformId: string }} args
+ * @param {Data} data @param {Act} act @param {{ id?: string, type: string, platformId?: string, referenceId?: string }} args
  */
-export function startWorkflow(data, act, { id = newId(), type, platformId }) {
+export function startWorkflow(data, act, { id = newId(), type, platformId, referenceId }) {
+  if (type === 'referenceUpdate') {
+    const r = need(data, 'reference', /** @type {string} */ (referenceId));
+    if (r.status !== 'live') throw new PivotError('reference.retired', `${r.title} is retired.`);
+    if (r.archived) throw new PivotError('reference.archived', `${r.title} is archived.`);
+    if (openReferenceUpdate(data, r.id)) throw new PivotError('update.open', `${r.title} is being updated already.`);
+    const rec = { ...opening(act, id, type, /** @type {any} */ (null), null), referenceId: r.id, revision: '', file: null, url: null, path: null };
+    return commit(data, act, 'Start workflow', [{ kind: 'workflow', rec }]);
+  }
+  if (type === 'transferOwner') {
+    const p = need(data, 'platform', platformId);
+    if (p.status !== 'live') throw new PivotError('platform.retired', `${p.name} is retired.`);
+    if (onboardingOf(data, platformId)) throw new PivotError('transfer.onboarding', `Finish onboarding ${p.name} first.`);
+    if (openTransfer(data, platformId)) throw new PivotError('transfer.open', `${p.name} is being transferred already.`);
+    const rec = { ...opening(act, id, type, platformId, null), toOwnerId: null, fromOwnerId: null, reviewed: null };
+    return commit(data, act, 'Start workflow', [{ kind: 'workflow', rec }]);
+  }
   const p = need(data, 'platform', platformId);
   if (type === 'platformOnboarding') {
     const under = onboardingOf(data, platformId);
@@ -83,9 +100,15 @@ export function setWorkflowPosition(data, act, { workflowId, hazardId }) {
  */
 export function setStep(data, act, { workflowId, hazardId, check, checked, note }) {
   const wf = needOpen(data, act, workflowId);
-  const allowed = wf.type === 'platformOnboarding' ? NONE_CHECKS : CHECKS;
-  if (!allowed.includes(check)) throw new PivotError('workflow.check', 'That is not one of this workflow’s checks.');
-  needHazard(data, wf, hazardId);
+  if (wf.type === 'transferOwner') {
+    if (hazardId !== '-' || !TRANSFER_GROUPS.some(([k]) => `group:${k}` === check)) throw new PivotError('workflow.check', 'That is not one of this transfer’s groups.');
+  } else if (wf.type === 'referenceUpdate') {
+    if (check !== 'item' || !referenceItems(data, wf.referenceId).some((i) => i.key === hazardId)) throw new PivotError('workflow.check', 'That is not one of the items this reference informs.');
+  } else {
+    const allowed = wf.type === 'platformOnboarding' ? NONE_CHECKS : CHECKS;
+    if (!allowed.includes(check)) throw new PivotError('workflow.check', 'That is not one of this workflow’s checks.');
+    needHazard(data, wf, hazardId);
+  }
   const id = ids.workflowStep(workflowId, hazardId, check);
   const fields = {
     ...(checked === undefined ? {} : { checked: checked === true || checked === 'true' }),
@@ -117,6 +140,46 @@ export function takeOverWorkflow(data, act, { workflowId }) {
   return commit(data, act, 'Take over workflow', [{ kind: 'workflow', rec: changed(wf, act, { ownerId: act.by }) }]);
 }
 
+/** Who a transfer hands the platform to: anyone but its owner now. @param {Data} data @param {Act} act @param {{ workflowId: string, toOwnerId: string }} args */
+export function setTransferRecipient(data, act, { workflowId, toOwnerId }) {
+  const wf = needOpen(data, act, workflowId);
+  if (wf.type !== 'transferOwner') throw new PivotError('workflow.type', 'That is not a transfer.');
+  const p = need(data, 'platform', wf.platformId);
+  const to = String(toOwnerId ?? '').trim() || null;
+  if (to === p.ownerId) throw new PivotError('transfer.same', `${p.name} is theirs already.`);
+  return commit(data, act, 'Choose new owner', [{ kind: 'workflow', rec: changed(wf, act, { toOwnerId: to }) }]);
+}
+
+/** The recipient has looked over what they took on. @param {Data} data @param {Act} act @param {{ workflowId: string }} args */
+export function markTransferReviewed(data, act, { workflowId }) {
+  const wf = need(data, 'workflow', workflowId);
+  if (wf.type !== 'transferOwner' || wf.state !== 'completed') throw new PivotError('transfer.not-done', 'Only a completed transfer can be marked reviewed.');
+  if (wf.toOwnerId !== act.by) throw new PivotError('transfer.recipient', 'Only the new owner can mark the transfer reviewed.');
+  if (wf.reviewed) return data;
+  return commit(data, act, 'Review transfer', [{ kind: 'workflow', rec: changed(wf, act, { reviewed: { by: act.by, at: act.at } }) }]);
+}
+
+/**
+ * What a reference update will give the reference: its revision, and a new file, link or path. Left
+ * out, a field keeps its draft value; given blank, a link or path is not to change.
+ * @param {Data} data @param {Act} act
+ * @param {{ workflowId: string, revision?: string, url?: string, path?: string, file?: any }} args
+ */
+export function setReferenceDraft(data, act, { workflowId, revision, url, path, file }) {
+  const wf = needOpen(data, act, workflowId);
+  if (wf.type !== 'referenceUpdate') throw new PivotError('workflow.type', 'That is not a reference update.');
+  /** @type {Record<string, any>} */
+  const fields = {};
+  if (revision !== undefined) fields.revision = String(revision ?? '').trim();
+  if (url !== undefined) fields.url = String(url ?? '').trim() || null;
+  if (path !== undefined) fields.path = String(path ?? '').trim() || null;
+  if (file !== undefined) {
+    if (file && !file.stored) throw new PivotError('reference.file', 'Choose a file to store.');
+    fields.file = file || null;
+  }
+  return commit(data, act, 'Draft reference update', [{ kind: 'workflow', rec: changed(wf, act, fields) }]);
+}
+
 /** The hazards an open workflow covers as it ends, kept with it so its record does not change as the platform does. @param {Data} data @param {Rec} wf */
 const covered = (data, wf) => workflowHazards(data, wf).map((x) => x.hazard.id);
 
@@ -139,6 +202,41 @@ export function cancelWorkflow(data, act, { workflowId }) {
  */
 export function completeWorkflow(data, act, { workflowId }) {
   const wf = needOpen(data, act, workflowId);
+  if (wf.type === 'transferOwner') {
+    const p = need(data, 'platform', wf.platformId);
+    const today = aestDate(act.at);
+    const groups = transferGroups(data, p.id, today, wf.id).filter((g) => g.items.length);
+    const left = groups.filter((g) => !stepOf(data, wf.id, '-', `group:${g.key}`)?.checked).length + Number(!wf.toOwnerId);
+    if (left) throw new PivotError('workflow.unmet', `${left} thing${left === 1 ? ' is' : 's are'} still needed.`);
+    const from = p.ownerId;
+    const handed = live(data, 'workflow').filter((w) => w.platformId === p.id && w.state === 'open' && w.id !== wf.id && w.ownerId === from)
+      .map((w) => ({ kind: 'workflow', rec: changed(w, act, { ownerId: wf.toOwnerId }) }));
+    return commit(data, act, 'Transfer platform owner', [
+      { kind: 'platform', rec: changed(p, act, { ownerId: wf.toOwnerId }) },
+      ...handed,
+      { kind: 'workflow', rec: changed(wf, act, { state: 'completed', endedBy: act.by, endedAt: act.at, fromOwnerId: from }) },
+    ]);
+  }
+  if (wf.type === 'referenceUpdate') {
+    const r = need(data, 'reference', wf.referenceId);
+    const unmet = [];
+    if (!wf.revision) unmet.push('a new revision');
+    else if (wf.revision === String(r.revision ?? '').trim()) unmet.push('a revision different from the current one');
+    if (!wf.file && !wf.url && !wf.path) unmet.push('a new file, link or path');
+    const items = referenceItems(data, r.id);
+    const left = items.filter((i) => !stepOf(data, wf.id, i.key, 'item')?.checked).length;
+    if (left) unmet.push(`${left} item${left === 1 ? '' : 's'} to check`);
+    if (unmet.length) throw new PivotError('workflow.unmet', `Still needed: ${unmet.join(', ')}.`);
+    /** @type {Record<string, any>} */
+    const fields = { revision: wf.revision };
+    if (wf.file) { fields.file = wf.file; fields.pastFiles = r.file ? [r.file, ...(r.pastFiles ?? [])] : (r.pastFiles ?? []); }
+    if (wf.url) fields.url = wf.url;
+    if (wf.path) fields.path = wf.path;
+    return commit(data, act, `Update reference to rev ${wf.revision}`, [
+      { kind: 'reference', rec: changed(r, act, fields) },
+      { kind: 'workflow', rec: changed(wf, act, { state: 'completed', endedBy: act.by, endedAt: act.at, before: String(r.revision ?? ''), covered: items.map((i) => i.key), coveredLabels: items.map((i) => i.label) }) },
+    ]);
+  }
   if (wf.type === 'platformOnboarding') {
     const { unmet } = onboardingProgress(data, wf);
     if (unmet.length) throw new PivotError('workflow.unmet', `${unmet.length} thing${unmet.length === 1 ? ' is' : 's are'} still needed.`);

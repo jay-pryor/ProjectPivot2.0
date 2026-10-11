@@ -1,6 +1,7 @@
 import { get, live } from './data.js';
-import { hazardLabel } from './ids.js';
-import { platformHazards, byNumber, causalFactorsOn, platformListOn, controlsOnPlatform, implementedByOf, assessmentOf, sfarpOf, groupsOf } from './queries.js';
+import { hazardLabel, controlLabel, workflowLabel } from './ids.js';
+import { platformHazards, byNumber, causalFactorsOn, platformListOn, controlsOnPlatform, implementedByOf, assessmentOf, sfarpOf, groupsOf, openItems, referenceTargets, targetPlatforms } from './queries.js';
+import { scheduleOf } from './schedule.js';
 import { RECEPTORS } from './receptors.js';
 import { entries, deletedEntries } from './history.js';
 
@@ -12,8 +13,8 @@ export const WORKFLOW_TYPES = Object.freeze([
   { type: 'platformReview', name: 'Platform Review', blurb: 'Walk each hazard on a platform through six checks, then complete its review.', ready: true },
   { type: 'platformOnboarding', name: 'Platform Onboarding', blurb: 'Set up a new platform: its groups, hazards, facets and controls.', ready: true },
   { type: 'newTechData', name: 'New Tech Data', blurb: 'Work new technical data through the platforms, controls and ratings it affects.', ready: false },
-  { type: 'transferOwner', name: 'Transfer Platform Owner', blurb: 'Hand a platform and everything open on it to a new owner.', ready: false },
-  { type: 'referenceUpdate', name: 'Reference Update', blurb: 'Take a reference to a new revision and check everything that cites it.', ready: false },
+  { type: 'transferOwner', name: 'Transfer Platform Owner', blurb: 'Hand a platform and everything open on it to a new owner.', ready: true },
+  { type: 'referenceUpdate', name: 'Reference Update', blurb: 'Take a reference to a new revision and check everything that cites it.', ready: true },
 ]);
 
 /** @param {string} type */
@@ -67,6 +68,17 @@ export function stepOf(data, workflowId, hazardId, check) {
 
 /** How many checks are ticked on each hazard the workflow covers, and in all. @param {Data} data @param {Rec} wf */
 export function workflowProgress(data, wf) {
+  if (wf.type === 'transferOwner') {
+    const groups = transferGroups(data, wf.platformId, String(wf.updatedAt).slice(0, 10), wf.id).filter((g) => g.items.length);
+    const done = Number(Boolean(wf.toOwnerId)) + groups.filter((g) => stepOf(data, wf.id, '-', `group:${g.key}`)?.checked).length;
+    return { perHazard: new Map(), done, total: groups.length + 1 };
+  }
+  if (wf.type === 'referenceUpdate') {
+    const items = referenceItems(data, wf.referenceId);
+    const drafted = Boolean(String(wf.revision ?? '').trim() && (wf.file || String(wf.url ?? '').trim() || String(wf.path ?? '').trim()));
+    const done = Number(drafted) + items.filter((i) => stepOf(data, wf.id, i.key, 'item')?.checked).length;
+    return { perHazard: new Map(), done, total: items.length + 1 };
+  }
   if (wf.type === 'platformOnboarding') {
     const o = onboardingProgress(data, wf);
     /** @type {Map<string, number>} */
@@ -224,4 +236,80 @@ export function groupSuggestions(data, { kind, platformId, hazardId }) {
   return live(data, 'facetOption').filter((o) => o.facet === kind && !have.has(String(o.name).trim().toLowerCase()))
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map((o) => ({ id: o.id, text: o.name, from: from('facetOption', o.id) })).filter((s) => s.from);
+}
+
+/** A linked record as a person reads it. @param {Data} data @param {string} kind @param {any} r */
+function linkedLabel(data, kind, r) {
+  if (kind === 'hazard') return `${hazardLabel(r)} ${r.title}`;
+  if (kind === 'control') return `${controlLabel(r)} ${r.title}`;
+  if (kind === 'platform') return r.name;
+  if (kind === 'hazardPhase') return get(data, 'phase', r.phaseId)?.name ?? 'Lifecycle phase';
+  return String(r.text ?? '');
+}
+
+/** A transfer's responsibility groups: their keys and titles, in order. */
+export const TRANSFER_GROUPS = Object.freeze([
+  ['acks', 'Changes waiting acknowledgement'], ['review', 'Review schedule'], ['workflows', 'Workflows on this platform'],
+  ['awaiting', 'Controls awaiting a decision'], ['toImplement', 'Controls to implement'], ['controlGaps', 'Controls incomplete'],
+  ['hazardGaps', 'Hazards unrated, unjustified or SFARP incomplete'],
+]);
+
+/** The open transfer of a platform, if any. @param {Data} data @param {string} platformId */
+export function openTransfer(data, platformId) {
+  return live(data, 'workflow').find((w) => w.type === 'transferOwner' && w.platformId === platformId && w.state === 'open') ?? null;
+}
+
+/** The open update of a reference, if any. @param {Data} data @param {string} referenceId */
+export function openReferenceUpdate(data, referenceId) {
+  return live(data, 'workflow').find((w) => w.type === 'referenceUpdate' && w.referenceId === referenceId && w.state === 'open') ?? null;
+}
+
+/**
+ * What the owner of a platform answers for, as a transfer lists it: one group per kind, each with
+ * its items (what they say, and where to see them).
+ * @param {Data} data @param {string} platformId @param {string} today @param {string | null} [selfId] the transfer itself, left out of the platform's workflows
+ */
+export function transferGroups(data, platformId, today, selfId = null) {
+  const items = openItems(data, today, null);
+  const here = (/** @type {any[]} */ xs) => xs.filter((x) => x.platform.id === platformId);
+  const s = scheduleOf(data, platformId, today);
+  /** @type {Record<string, { text: string, view?: string, id?: string, tab?: string }[]>} */
+  const by = {
+    acks: here(items.acks).map((x) => ({ text: x.entry.action, view: 'platform', id: platformId, tab: 'history' })),
+    review: [{ text: s.due ? `Next review ${s.due}${s.state === 'overdue' ? ' (overdue)' : s.state === 'dueSoon' ? ' (due soon)' : ''}${s.moved ? `, moved from ${s.seen}` : ''}` : 'No review schedule', view: 'platformReview', id: platformId }],
+    workflows: live(data, 'workflow').filter((w) => w.platformId === platformId && w.state === 'open' && w.id !== selfId)
+      .map((w) => ({ text: `${workflowLabel(w)} ${typeName(w.type)}`, view: 'workflow', id: w.id })),
+    awaiting: here(items.awaiting).map((x) => ({ text: `${controlLabel(x.control)} ${x.control.title} on ${hazardLabel(x.hazard)} ${x.hazard.title}`, view: 'control', id: x.control.id, tab: `p:${platformId}` })),
+    toImplement: here(items.toImplement).map((x) => ({ text: `${controlLabel(x.control)} ${x.control.title} on ${hazardLabel(x.hazard)} ${x.hazard.title}`, view: 'control', id: x.control.id, tab: `p:${platformId}` })),
+    controlGaps: here(items.controlGaps ?? []).map((x) => ({ text: `${controlLabel(x.control)} ${x.control.title}: no ${x.missing.join(', ')}`, view: 'control', id: x.control.id, tab: `p:${platformId}` })),
+    hazardGaps: [...here(items.unrated), ...here(items.unjustified ?? []), ...here(items.sfarpGaps ?? [])]
+      .map((x) => ({ text: `${hazardLabel(x.hazard)} ${x.hazard.title}: ${x.missing.join(', ')}`, view: 'hazard', id: x.hazard.id, tab: `p:${platformId}` })),
+  };
+  return TRANSFER_GROUPS.map(([key, title]) => ({ key, title, items: by[key] }));
+}
+
+/** Where each kind of linked record is opened: its own page, or the page that holds it. */
+const OPEN_AT = Object.freeze({
+  hazard: (/** @type {any} */ r) => ({ view: 'hazard', id: r.id }),
+  control: (/** @type {any} */ r) => ({ view: 'control', id: r.id }),
+  platform: (/** @type {any} */ r) => ({ view: 'platform', id: r.id }),
+  consequence: (/** @type {any} */ r) => ({ view: 'hazard', id: r.hazardId }),
+  hazardPhase: (/** @type {any} */ r) => ({ view: 'hazard', id: r.hazardId }),
+  causalFactor: (/** @type {any} */ r) => ({ view: 'hazard', id: r.hazardId, ...(r.platformId ? { tab: `p:${r.platformId}` } : {}) }),
+  failureMode: (/** @type {any} */ r) => ({ view: 'hazard', id: r.hazardId, tab: `p:${r.platformId}` }),
+  systemElement: (/** @type {any} */ r) => ({ view: 'hazard', id: r.hazardId, tab: `p:${r.platformId}` }),
+  affectedGroup: (/** @type {any} */ r) => ({ view: 'hazard', id: r.hazardId, tab: `p:${r.platformId}` }),
+});
+
+/**
+ * What a reference informs, as an update lists it: each live link to a live record, with the
+ * platforms it reaches and where to open it.
+ * @param {Data} data @param {string} referenceId
+ */
+export function referenceItems(data, referenceId) {
+  return referenceTargets(data, referenceId).map(({ link, target }) => {
+    const kind = link.targetKind;
+    const platforms = targetPlatforms(data, kind, target.id).map((pid) => get(data, 'platform', pid)?.name ?? '').filter(Boolean);
+    return { key: `${kind}:${target.id}`, kind, label: linkedLabel(data, kind, target), platforms, open: OPEN_AT[/** @type {keyof typeof OPEN_AT} */ (kind)](target) };
+  });
 }
