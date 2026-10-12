@@ -103,6 +103,11 @@ const QUIET_DATES = new Set(['completeWorkflow', 'acknowledgeReviewDate']);
 /** What the tutorial switches off: anything that would reach the folder or another session. */
 const TOUR_OFF = new Set(['save', 'changeFolder', 'chooseFolder', 'recallFolder', 'selectProfile', 'createProfile', 'showBackups', 'prepareRestore', 'prepareRestoreFromFile', 'confirmRestore',
   'produceReport', 'addReference', 'uploadReferenceFile', 'uploadTechFile', 'uploadUpdateFile', 'addPlatformImage']);
+/** The page state the tutorial sets aside and puts back, so nothing from the sample follows you out. */
+const TOUR_KEPT = Object.freeze(['sections', 'workspace', 'reviewsPrefs', 'workflowsPrefs', 'homeOwner', 'tables', 'infoTools', 'bowtieDetails', 'openBundles',
+  'bundling', 'draftControl', 'ruleDraft', 'reviewPanel', 'lastReportId', 'bowtieReplace', 'favouritesEditing']);
+/** What a dialog or edit left open: closed going into the tutorial and coming out of it. */
+const TOUR_CLOSED = Object.freeze({ picker: null, editing: null, confirmDelete: null, confirm: null, reviewMoved: null, undo: null, message: null });
 /** The tutorial's own actions, and going somewhere: never what a try step waits for. */
 const TOUR_ACTIONS = new Set(['startTour', 'endTour', 'tourNext', 'tourBack', 'tourTo', 'tourSkip', 'dismissTourInvite', 'go']);
 
@@ -288,7 +293,7 @@ export function createController(env) {
   /** Show and remember the bow-tie windows. @param {import('./workspace.js').Workspace} ws */
   function setWorkspace(ws) {
     set({ workspace: ws });
-    writeWorkspace(env.storage, workspaceKey(state.folderName, /** @type {string} */ (state.profileId)), ws);
+    if (!state.tour) writeWorkspace(env.storage, workspaceKey(state.folderName, /** @type {string} */ (state.profileId)), ws);
   }
 
   /** A side from a data attribute: '0' or '1', or the last-used window when absent. @param {unknown} s @returns {0 | 1 | 'last'} */
@@ -792,7 +797,7 @@ export function createController(env) {
       if (past !== undefined) p.past = past === true || past === 'true';
       if (shift !== undefined) p.start = shiftMonth(p.start ?? state.today.slice(0, 7), Number(shift));
       set({ reviewsPrefs: p });
-      writeReviewsPrefs(env.storage, reviewsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
+      if (!state.tour) writeReviewsPrefs(env.storage, reviewsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
     },
     // A hazard (or '' for the summary) chosen in a workflow's rail: shown; and, for its owner, kept as the place to resume.
     async showWorkflowHazard({ workflowId, hazardId }) {
@@ -808,7 +813,7 @@ export function createController(env) {
       if (owner !== undefined) p.owner = owner || 'everyone';
       if (days !== undefined && RECENT_DAYS.includes(Number(days))) p.days = Number(days);
       set({ workflowsPrefs: p });
-      writeWorkflowsPrefs(env.storage, workflowsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
+      if (!state.tour) writeWorkflowsPrefs(env.storage, workflowsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
     },
     async setHomeOwner({ ownerId, show }) {
       set({ homeOwner: ownerId || 'me', ...(show === 'home' ? { view: { name: 'home' }, editing: null } : {}) });
@@ -845,20 +850,22 @@ export function createController(env) {
     async startTour() {
       if (!state.session || !state.profileId) throw new PivotError('no-data', 'Open your data first.');
       if (state.tour) return;
+      // A save under way would land on the sample: wait for it.
+      if (state.saving || running > 0) throw new PivotError('tour.busy', 'Wait for the save to finish, then start the tutorial.');
       if (activeProfile(state)?.prefs?.tutorialOffered === false) await savePrefs({ tutorialOffered: true });
       const sample = sampleRegister(state.profileId, state.today);
+      const kept = Object.fromEntries(TOUR_KEPT.map((k) => [k, state[/** @type {keyof typeof state} */ (k)]]));
       set({
-        tour: { step: 0, real: { session: state.session, profiles: state.profiles, view: state.view, viewHistory: state.viewHistory, sections: state.sections } },
+        tour: { step: 0, real: { session: state.session, profiles: state.profiles, view: state.view, viewHistory: state.viewHistory, kept } },
         session: { base: sample, working: sample, loadedStamp: null },
-        profiles: [...state.profiles, SAMPLE_PROFILE], viewHistory: [], sections: {},
-        picker: null, editing: null, confirmDelete: null, reviewMoved: null, undo: null, message: null,
+        profiles: [...state.profiles, SAMPLE_PROFILE], viewHistory: [], sections: {}, ...TOUR_CLOSED,
       });
       await enterTourStep(0);
     },
     async endTour() {
       if (!state.tour) return;
       const { real } = state.tour;
-      set({ tour: null, session: real.session, profiles: real.profiles, sections: real.sections, picker: null, editing: null, confirmDelete: null, reviewMoved: null, undo: null, message: null });
+      set({ tour: null, session: real.session, profiles: real.profiles, ...real.kept, ...TOUR_CLOSED });
       // Back then returns to where you were before the tutorial, never into the sample.
       set({ view: { name: 'help', topic: 'getting-started' } });
       set({ viewHistory: [...(real.viewHistory ?? []), real.view].slice(-HISTORY_LIMIT) });

@@ -311,10 +311,14 @@ export function mount(root, controller) {
   window.addEventListener('scroll', () => placeTour(appEl, tourAt), true);
   // The tutorial's keys: → or Enter for Next, ← for Back, Escape to leave; not while typing.
   document.addEventListener('keydown', (e) => {
-    if (!appEl.querySelector('.tour-bubble, .tour-card')) return;
+    if (e.defaultPrevented || !appEl.querySelector('.tour-bubble, .tour-card')) return;
     const t = /** @type {HTMLElement} */ (e.target);
+    // A key meant for something else (a box being typed in, a dialog, picker or menu, the designer) is left to it.
     if (t.closest?.('input, textarea, select, [contenteditable]')) return;
-    const type = e.key === 'ArrowRight' || (e.key === 'Enter' && !t.closest?.('button')) ? 'tourNext' : e.key === 'ArrowLeft' ? 'tourBack' : e.key === 'Escape' ? 'endTour' : null;
+    if (t !== document.body && !appEl.contains(t)) return;
+    if (appEl.querySelector('.confirm-overlay, .picker-overlay, details[open]')) return;
+    // Enter moves on only when nothing else has the focus: on a button or a row it is theirs.
+    const type = e.key === 'ArrowRight' || (e.key === 'Enter' && (t === document.body || t === appEl)) ? 'tourNext' : e.key === 'ArrowLeft' ? 'tourBack' : e.key === 'Escape' ? 'endTour' : null;
     if (!type || (type !== 'endTour' && !appEl.querySelector('.tour-bubble'))) return;
     e.preventDefault();
     void controller.dispatch({ type });

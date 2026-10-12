@@ -138,3 +138,44 @@ test('a try step moves on with its own action only: not with going somewhere, no
   await c.dispatch({ type: 'setStep', workflowId: 'tour-w1', hazardId: 'tour-h1', check: 'references', checked: 'true' });
   assert.equal(c.getState().tour.step, n + 1);
 });
+
+test('nothing from the tutorial is left behind: browser-kept settings, filters and windows are as before', async () => {
+  const { c, storage } = await ready();
+  await c.dispatch({ type: 'dismissTourInvite' });
+  const kept = JSON.stringify([...storage.items].sort());
+  const before = c.getState();
+  await c.dispatch({ type: 'startTour' });
+  await c.dispatch({ type: 'setReviewsFilter', owner: 'sample-sam', groupId: 'tour-g1' });
+  await c.dispatch({ type: 'setWorkflowsFilter', owner: 'sample-sam' });
+  await c.dispatch({ type: 'openBowtieView', id: 'tour-bv1' });
+  await c.dispatch({ type: 'setHomeOwner', ownerId: 'sample-sam' });
+  await c.dispatch({ type: 'filterTable', table: 'hazards', key: 'title', value: 'Person' });
+  await c.dispatch({ type: 'endTour' });
+  const after = c.getState();
+  assert.equal(JSON.stringify([...storage.items].sort()), kept, 'nothing written to the browser');
+  for (const k of ['workspace', 'reviewsPrefs', 'workflowsPrefs', 'homeOwner', 'tables']) assert.deepEqual(after[k], before[k], k);
+});
+
+test('a dialog or half-done edit from the tutorial does not follow you out', async () => {
+  const { c } = await ready();
+  await c.dispatch({ type: 'startTour' });
+  await c.dispatch({ type: 'go', view: 'bowties' });
+  await c.dispatch({ type: 'askConfirm', run: 'deleteHazard', id: 'tour-h4', title: 'Delete?', text: 'Sure?' });
+  await c.dispatch({ type: 'endTour' });
+  assert.equal(c.getState().confirm, null);
+});
+
+test('the tutorial waits for a save in progress: it cannot start until the save is done', async () => {
+  const f = new MemoryFolder();
+  const c = createController({ ...env(f), minSaveMs: 60 });
+  await c.dispatch({ type: 'chooseFolder' });
+  await c.dispatch({ type: 'createProfile', name: 'Ada' });
+  await c.dispatch({ type: 'selectProfile', id: c.getState().profiles[0].id });
+  await c.dispatch({ type: 'createHazard', id: 'h1', title: 'Real hazard' });
+  const saving = c.dispatch({ type: 'save' });
+  await c.dispatch({ type: 'startTour' });
+  assert.equal(c.getState().tour, null, 'not started mid-save');
+  assert.match(c.getState().message?.text ?? '', /save/i);
+  await saving;
+  assert.equal(c.getState().session.base.records.hazard.h1?.title, 'Real hazard', 'the save landed on the real data');
+});
