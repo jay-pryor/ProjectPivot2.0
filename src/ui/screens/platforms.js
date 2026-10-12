@@ -35,7 +35,7 @@ export function platformsView(state, data) {
       rowAttrs: (p) => ({ dblclick: 'go', view: 'platform', id: p.id }),
       columns: [
         idColumn((p) => p, platformLabel, (p) => go(idTag(platformLabel(p)), 'platform', { id: p.id })),
-        { key: 'name', label: 'Platform', width: 560, minWidth: 180, value: (p) => p.name, filter: 'text', render: (p) => html`${go(p.name, 'platform', { id: p.id })}${onboardingTag(data, p.id)}` },
+        { key: 'name', label: 'Platform', width: 560, minWidth: 180, value: (p) => p.name, filter: 'text', render: (p) => html`${p.name}${onboardingTag(data, p.id)}` },
         { key: 'owner', label: 'Owner', width: 400, minWidth: 140, value: (p) => profileName(state, p.ownerId), filter: 'select',
           options: state.profiles.map((/** @type {any} */ pr) => /** @type {[string, string]} */ ([pr.id, pr.name])), match: (p, v) => p.ownerId === v },
         { key: 'groups', label: 'Groups', width: 300, minWidth: 120, value: (p) => groupsOf(data, p.id).map((g) => g.name).join(', '), filter: 'select',

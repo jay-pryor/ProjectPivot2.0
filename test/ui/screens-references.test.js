@@ -38,7 +38,7 @@ test('the references list: ID, title, doc number, revision, what it points at, h
   assert.match(out, /<h1>References<\/h1>/);
   assert.match(out, /data-action="startEdit" data-kind="newReference"/);
   assert.match(out, /REF-001/);
-  assert.match(out, />Safety case<\/button> <span class="tag tag-missing">File missing<\/span>/);
+  assert.match(out, />Safety case <span class="tag tag-missing">File missing<\/span>/);
   assert.match(out, /<button type="button" class="chip chip-open" title="Open [^"]+" data-action="openReferenceFile" data-stored="[^"]+">File<\/button><a class="chip chip-open" href="https:\/\/[^"]+" target="_blank" rel="noopener"[^>]*>Link<\/a><button type="button" class="chip chip-open" title="Copy [^"]+" data-action="copyPath" data-path="[^"]+">Path<\/button>/, 'each opens what it points at');
   assert.match(out, /Standard &lt;b&gt;x&lt;\/b&gt;/);
   const adding = referencesView({ ...state, editing: { kind: 'newReference', id: 'new' } }, data()).toString();
