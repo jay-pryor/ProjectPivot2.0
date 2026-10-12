@@ -116,8 +116,9 @@ export async function createProfile(handle, name, clock) {
     throw new PivotError('profile.duplicate', `There is already a profile called ${clean}.`);
   }
   const at = clock.now();
-  // helpSeen false: the first time it is used, the app opens on Help (profiles made before have none).
-  const profile = { id: newId(), name: clean, createdAt: at, prefs: { helpSeen: false } };
+  // helpSeen false: the first time it is used, the app opens on Help; tutorialOffered false: Getting
+  // started invites it to the tutorial (profiles made before have neither).
+  const profile = { id: newId(), name: clean, createdAt: at, prefs: { helpSeen: false, tutorialOffered: false } };
   const body = { profiles: Object.fromEntries([...profiles, profile].map((p) => [p.id, p])) };
   await writeWhole(handle, FILES.profiles, serialize(await seal('profiles', body, null, at)));
   return profile;

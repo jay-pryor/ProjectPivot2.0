@@ -1,0 +1,49 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { TOUR_STEPS } from '../../src/ui/tour/steps.js';
+import { sampleRegister, SAMPLE_PROFILE } from '../../src/ui/tour/sample.js';
+import { renderApp } from '../../src/ui/render.js';
+import { initialState } from '../../src/ui/controller.js';
+import { hasMatch } from './selector-match.js';
+
+const today = '2026-10-12';
+const sample = sampleRegister('u1', today);
+const stateAt = (step, n) => ({
+  ...initialState(), screen: 'main', today, folderName: 'f', profileId: 'u1',
+  profiles: [{ id: 'u1', name: 'Ada', createdAt: '' }, SAMPLE_PROFILE],
+  session: { base: sample, working: sample, loadedStamp: null },
+  view: step.view, sections: step.sections ?? {}, tour: { step: n, real: {} },
+});
+
+test('there are 22 steps, each with an id, a page, a title and short text', () => {
+  assert.equal(TOUR_STEPS.length, 22);
+  assert.equal(new Set(TOUR_STEPS.map((s) => s.id)).size, 22);
+  for (const s of TOUR_STEPS) {
+    assert.ok(s.view?.name && s.title && s.text, s.id);
+    assert.ok(s.text.length <= 320, `${s.id}: keep it short`);
+  }
+});
+
+test('every step’s highlight is on its page with the sample data', () => {
+  TOUR_STEPS.forEach((s, n) => {
+    if (!s.target) return;
+    assert.ok(hasMatch(renderApp(stateAt(s, n)), s.target), `${s.id}: nothing matches ${s.target}`);
+  });
+});
+
+test('three try steps: acknowledge Sam’s change, set a residual likelihood, tick a check', () => {
+  const tries = TOUR_STEPS.filter((s) => s.try);
+  assert.deepEqual(tries.map((s) => s.id), ['try-acknowledge', 'try-rating', 'try-check']);
+  assert.ok(tries[0].try.action.includes('acknowledge'));
+  assert.ok(tries[1].try.action.includes('setAssessment'));
+  assert.ok(tries[2].try.action.includes('setStep'));
+});
+
+test('the matcher itself: classes, attributes, tags and descendants', () => {
+  const html = '<div class="a b"><span data-x="1" aria-label="Risk">t</span></div>';
+  assert.ok(hasMatch(html, '.a.b'));
+  assert.ok(hasMatch(html, 'span[data-x="1"]'));
+  assert.ok(hasMatch(html, '.a [aria-label="Risk"]'));
+  assert.ok(!hasMatch(html, '.c'));
+  assert.ok(!hasMatch(html, 'span[data-x="2"]'));
+});

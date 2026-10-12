@@ -30,6 +30,14 @@ function glossary(term) {
     <dl class="help-glossary">${GLOSSARY.map((g) => termBlock(g, termId(g.term) === term))}</dl>`;
 }
 
+/** Getting started's way into the tutorial, and, for a new profile until answered, an invitation. @param {any} state */
+function tourStart(state) {
+  const offered = state.profiles?.find((/** @type {any} */ p) => p.id === state.profileId)?.prefs?.tutorialOffered === false;
+  return html`${offered ? html`<aside class="tour-invite"><span><strong>New to PIVOT?</strong> Take the 5-minute tutorial: it shows you around using sample data.</span>
+      <span class="tour-invite-buttons"><button type="button" class="primary" ${dataAttrs({ action: 'startTour' })}>Start</button><button type="button" ${dataAttrs({ action: 'dismissTourInvite' })}>Not now</button></span></aside>` : ''}
+    <p><button type="button" class="primary tour-start" ${dataAttrs({ action: 'startTour' })}>Start the tutorial</button> <span class="muted">A 5-minute tour on sample data.</span></p>`;
+}
+
 /**
  * The Help page: the topic rail with search, and the topic chosen (Getting started unless
  * another is asked for).
@@ -43,6 +51,7 @@ export function helpView(state, _data) {
     <div class="help-layout">${rail(id)}
       <article class="help-main doc">
         <h2>${t.title}</h2><div class="help-summary">${renderHelpText(t.summary)}</div>
+        ${id === 'getting-started' ? tourStart(state) : ''}
         ${renderHelpText(t.body)}
         ${id === 'glossary' ? glossary(state.view?.term) : ''}
         ${related.length ? html`<h3>Related</h3><ul class="plain help-related">${related.map((r) => html`<li><button type="button" class="link" ${dataAttrs({ action: 'go', view: 'help', topic: r })}>${HELP_TOPICS[r].title}</button></li>`)}</ul>` : ''}

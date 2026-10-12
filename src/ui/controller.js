@@ -38,6 +38,8 @@ import { unlistedEntries, listPlatformGroups, openReview } from '../core/queries
 import { DEFAULT_REVIEWS_PREFS, TIMELINE_LENGTHS, readReviewsPrefs, writeReviewsPrefs, reviewsPrefsKey } from './reviews-prefs.js';
 import { asUnit } from './screens/reviews.js';
 import { DEFAULT_WORKFLOWS_PREFS, RECENT_DAYS, readWorkflowsPrefs, writeWorkflowsPrefs, workflowsPrefsKey } from './workflows-prefs.js';
+import { sampleRegister, SAMPLE_PROFILE } from './tour/sample.js';
+import { TOUR_STEPS } from './tour/steps.js';
 
 /** Every edit is an op called with the working data, the act, and the action's own fields. */
 const EDITS = {
@@ -98,7 +100,18 @@ const BACKUP_CHECK_MS = 60_000;
 const QUIET_DATES = new Set(['completeWorkflow', 'acknowledgeReviewDate']);
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
-const QUIET = new Set(['setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
+/** What the tutorial switches off: anything that would reach the folder or another session. */
+const TOUR_OFF = new Set(['save', 'changeFolder', 'chooseFolder', 'recallFolder', 'selectProfile', 'createProfile', 'showBackups', 'prepareRestore', 'prepareRestoreFromFile', 'confirmRestore',
+  'produceReport', 'addReference', 'uploadReferenceFile', 'uploadTechFile', 'uploadUpdateFile', 'addPlatformImage']);
+/** The page state the tutorial sets aside and puts back, so nothing from the sample follows you out. */
+const TOUR_KEPT = Object.freeze(['sections', 'workspace', 'reviewsPrefs', 'workflowsPrefs', 'homeOwner', 'tables', 'infoTools', 'bowtieDetails', 'openBundles',
+  'bundling', 'draftControl', 'ruleDraft', 'reviewPanel', 'lastReportId', 'bowtieReplace', 'favouritesEditing']);
+/** What a dialog or edit left open: closed going into the tutorial and coming out of it. */
+const TOUR_CLOSED = Object.freeze({ picker: null, editing: null, confirmDelete: null, confirm: null, reviewMoved: null, undo: null, message: null });
+/** The tutorial's own actions, and going somewhere: never what a try step waits for. */
+const TOUR_ACTIONS = new Set(['startTour', 'endTour', 'tourNext', 'tourBack', 'tourTo', 'tourSkip', 'dismissTourInvite', 'go']);
+
+const QUIET = new Set(['startTour', 'endTour', 'tourNext', 'tourBack', 'tourTo', 'tourSkip', 'dismissTourInvite', 'setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
   'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'toggleBowtieNumbers', 'setBowtieLayout', 'setPaneTier', 'resetBowtieView', 'openBowtieHazard', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
   'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'setWorkflowsFilter', 'showReviewPanel', 'closeReviewPanel', 'dismissReviewMoved', 'showPolicy', 'editRule', 'setRuleDraft', 'cancelRule',
 ]);
@@ -111,7 +124,7 @@ export function initialState() {
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
-    workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null,
+    workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null, tour: null,
     infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, workflowsPrefs: DEFAULT_WORKFLOWS_PREFS, reviewPanel: null, reviewMoved: null, policyUnits: {}, ruleDraft: null,
   };
 }
@@ -184,6 +197,8 @@ export function createController(env) {
 
   /** Mirror the working state, and take a backup if one is due. Never throws. */
   async function afterChange() {
+    // The tutorial's sample is never kept: no copy in the browser, no backup in the folder.
+    if (state.tour) return;
     const warnings = [];
     const mirrorWarning = writeMirror(env.storage, { folderName: state.folderName, ...state.session });
     if (mirrorWarning) warnings.push(mirrorWarning);
@@ -257,6 +272,8 @@ export function createController(env) {
     // Shown at once, before the file is written, so nothing redraws with the old setting.
     const id = state.profileId;
     set({ profiles: state.profiles.map((p) => (p.id === id ? { ...p, prefs: { ...(p.prefs ?? {}), ...patch } } : p)) });
+    // In the tutorial a setting lasts only while it runs: the profile is put back as it was.
+    if (state.tour) return;
     const updated = await store.updateProfilePrefs(handle, id, patch, env.clock);
     set({ profiles: state.profiles.map((p) => (p.id === updated.id ? updated : p)) });
   }
@@ -267,6 +284,7 @@ export function createController(env) {
 
   /** Copy a chosen file into the folder and describe it for its reference. @param {string} referenceId @param {number} n @param {File} file */
   async function storeFile(referenceId, n, file) {
+    if (state.tour) throw new PivotError('tour.off', 'That is switched off in the tutorial.');
     if (!handle) throw new PivotError('no-data', 'Open the data folder first.');
     const stored = await store.storeReferenceFile(handle, referenceId, n, file);
     return { name: file.name, stored, size: file.size, type: file.type || '', addedBy: /** @type {string} */ (state.profileId), addedAt: env.clock.now() };
@@ -275,7 +293,7 @@ export function createController(env) {
   /** Show and remember the bow-tie windows. @param {import('./workspace.js').Workspace} ws */
   function setWorkspace(ws) {
     set({ workspace: ws });
-    writeWorkspace(env.storage, workspaceKey(state.folderName, /** @type {string} */ (state.profileId)), ws);
+    if (!state.tour) writeWorkspace(env.storage, workspaceKey(state.folderName, /** @type {string} */ (state.profileId)), ws);
   }
 
   /** A side from a data attribute: '0' or '1', or the last-used window when absent. @param {unknown} s @returns {0 | 1 | 'last'} */
@@ -779,7 +797,7 @@ export function createController(env) {
       if (past !== undefined) p.past = past === true || past === 'true';
       if (shift !== undefined) p.start = shiftMonth(p.start ?? state.today.slice(0, 7), Number(shift));
       set({ reviewsPrefs: p });
-      writeReviewsPrefs(env.storage, reviewsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
+      if (!state.tour) writeReviewsPrefs(env.storage, reviewsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
     },
     // A hazard (or '' for the summary) chosen in a workflow's rail: shown; and, for its owner, kept as the place to resume.
     async showWorkflowHazard({ workflowId, hazardId }) {
@@ -795,7 +813,7 @@ export function createController(env) {
       if (owner !== undefined) p.owner = owner || 'everyone';
       if (days !== undefined && RECENT_DAYS.includes(Number(days))) p.days = Number(days);
       set({ workflowsPrefs: p });
-      writeWorkflowsPrefs(env.storage, workflowsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
+      if (!state.tour) writeWorkflowsPrefs(env.storage, workflowsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)), p);
     },
     async setHomeOwner({ ownerId, show }) {
       set({ homeOwner: ownerId || 'me', ...(show === 'home' ? { view: { name: 'home' }, editing: null } : {}) });
@@ -828,6 +846,44 @@ export function createController(env) {
       await applyEdit('startWorkflow', { id, type: 'transferOwner', platformId });
       await handlers.go({ view: 'workflow', id });
     },
+    // The tutorial: the real session set aside, the sample register in its place, until it ends.
+    async startTour() {
+      if (!state.session || !state.profileId) throw new PivotError('no-data', 'Open your data first.');
+      if (state.tour) return;
+      // A save under way would land on the sample: wait for it.
+      if (state.saving || running > 0) throw new PivotError('tour.busy', 'Wait for the save to finish, then start the tutorial.');
+      if (activeProfile(state)?.prefs?.tutorialOffered === false) await savePrefs({ tutorialOffered: true });
+      const sample = sampleRegister(state.profileId, state.today);
+      const kept = Object.fromEntries(TOUR_KEPT.map((k) => [k, state[/** @type {keyof typeof state} */ (k)]]));
+      set({
+        tour: { step: 0, real: { session: state.session, profiles: state.profiles, view: state.view, viewHistory: state.viewHistory, kept } },
+        session: { base: sample, working: sample, loadedStamp: null },
+        profiles: [...state.profiles, SAMPLE_PROFILE], viewHistory: [], sections: {}, ...TOUR_CLOSED,
+      });
+      await enterTourStep(0);
+    },
+    async endTour() {
+      if (!state.tour) return;
+      const { real } = state.tour;
+      set({ tour: null, session: real.session, profiles: real.profiles, ...real.kept, ...TOUR_CLOSED });
+      // Back then returns to where you were before the tutorial, never into the sample.
+      set({ view: { name: 'help', topic: 'getting-started' } });
+      set({ viewHistory: [...(real.viewHistory ?? []), real.view].slice(-HISTORY_LIMIT) });
+    },
+    async tourSkip() { await handlers.endTour(); },
+    async tourNext() {
+      if (!state.tour) return;
+      if (state.tour.step >= TOUR_STEPS.length - 1) return handlers.endTour();
+      await enterTourStep(state.tour.step + 1);
+    },
+    async tourBack() {
+      if (state.tour && state.tour.step > 0) await enterTourStep(state.tour.step - 1);
+    },
+    async tourTo({ step }) {
+      const n = Number(step);
+      if (state.tour && Number.isInteger(n) && n >= 0 && n < TOUR_STEPS.length) await enterTourStep(n);
+    },
+    async dismissTourInvite() { await savePrefs({ tutorialOffered: true }); },
     // Update revision: the reference's update under way, or a new one.
     async startReferenceUpdate({ referenceId }) {
       const w = state.session ? openReferenceUpdate(state.session.working, referenceId) : null;
@@ -1223,12 +1279,28 @@ export function createController(env) {
       }));
   }
 
+  /** A try step moves on once its action is done. @param {string} type */
+  async function tourTried(type) {
+    const step = state.tour ? TOUR_STEPS[state.tour.step] : null;
+    if (step?.try && !TOUR_ACTIONS.has(type) && step.try.action.includes(type)) await handlers.tourNext();
+  }
+
+  /** Show a tutorial step: its page, and any section of the page it needs open. @param {number} n */
+  async function enterTourStep(n) {
+    const step = TOUR_STEPS[n];
+    set({ tour: { ...state.tour, step: n }, ...(step.sections ? { sections: { ...state.sections, ...step.sections } } : {}), picker: null, editing: null, reviewMoved: null });
+    const { name, ...where } = step.view;
+    await handlers.go({ view: name, ...where });
+  }
+
   /** @param {{ type: string, [k: string]: any }} action */
   async function dispatch(action) {
     const { type, ...args } = action;
     try {
+      if (state.tour && TOUR_OFF.has(type)) throw new PivotError('tour.off', type === 'save' ? 'Saving is off in the tutorial: nothing here is kept.' : 'That is switched off in the tutorial.');
       if (type in EDITS) {
         await applyEdit(type, args);
+        await tourTried(type);
         return;
       }
       const h = handlers[type];
@@ -1236,6 +1308,7 @@ export function createController(env) {
       const quiet = QUIET.has(type);
       if (!quiet) { running += 1; set({ busy: true }); }
       await h(args);
+      await tourTried(type);
     } catch (e) {
       if (e && typeof e === 'object' && /** @type {any} */ (e).name === 'AbortError') return;
       set({

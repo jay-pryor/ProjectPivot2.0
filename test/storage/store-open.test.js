@@ -74,9 +74,9 @@ test('profile preferences: merged into the stored profile, kept for other profil
   const grace = await createProfile(f.handle, 'Grace', clock());
   await updateProfilePrefs(f.handle, ada.id, { theme: 'light' }, clock());
   const updated = await updateProfilePrefs(f.handle, ada.id, { columnWidths: { 'hazards.title': 320 } }, clock());
-  assert.deepEqual(updated.prefs, { helpSeen: false, theme: 'light', columnWidths: { 'hazards.title': 320 } });
+  assert.deepEqual(updated.prefs, { helpSeen: false, tutorialOffered: false, theme: 'light', columnWidths: { 'hazards.title': 320 } });
   const read = await readProfiles(f.handle);
-  assert.deepEqual(read.find((p) => p.id === ada.id).prefs, { helpSeen: false, theme: 'light', columnWidths: { 'hazards.title': 320 } });
-  assert.deepEqual(read.find((p) => p.id === grace.id).prefs, { helpSeen: false }, 'another profile is untouched: new, it has yet to see Help');
+  assert.deepEqual(read.find((p) => p.id === ada.id).prefs, { helpSeen: false, tutorialOffered: false, theme: 'light', columnWidths: { 'hazards.title': 320 } });
+  assert.deepEqual(read.find((p) => p.id === grace.id).prefs, { helpSeen: false, tutorialOffered: false }, 'another profile is untouched: new, it has yet to see Help');
   await assert.rejects(() => updateProfilePrefs(f.handle, 'nope', { theme: 'dark' }, clock()), (e) => e.code === 'not-found');
 });

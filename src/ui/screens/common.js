@@ -1,4 +1,5 @@
 import { html, raw, esc } from '../html.js';
+import { tourOverlay, tourBanner } from './tour.js';
 import { helpTopicFor } from '../help-content.js';
 import { dataTable } from './table.js';
 import { historyOf, commentsOn, hazardOfItem, bundlesOf } from '../../core/history.js';
@@ -206,9 +207,10 @@ export function shell(state, body) {
     </span>
     ${state.saving ? html`<div class="save-progress" role="progressbar" aria-label="Saving"><span></span></div>` : ''}
   </header>
+  ${tourBanner(state)}
   <div class="messages">${messages(state)}</div>
   <main class="view">${state.view?.name === 'bowties' ? '' : backButton(state)}${body}</main>
-  ${confirmDialog(state)}${reviewMovedDialog(state)}`;
+  ${confirmDialog(state)}${reviewMovedDialog(state)}${tourOverlay(state)}`;
 }
 
 /** Back to the page open before this one, whichever it was, and the page's star. @param {any} state */
