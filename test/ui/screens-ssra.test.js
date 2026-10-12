@@ -167,7 +167,7 @@ test('the Controls list names only the platforms a control is on, and a control 
   const d = controlled();
   const list = controlsView({ ...state, view: { name: 'controls' } }, d).toString();
   const row = list.slice(list.indexOf('<tr data-row="c3"'), list.indexOf('</tr>', list.indexOf('<tr data-row="c3"')));
-  assert.match(row, /HAZ-001 Fire[\s\S]*?Alpha/);
+  assert.match(row, /HAZ-001<\/button> Fire[\s\S]*?Alpha/);
   assert.doesNotMatch(row, /Bravo/, 'taken off Bravo');
   const page = controlView(state, d, 'c3').toString();
   assert.deepEqual([...page.matchAll(/data-page="control" data-section="(\w+)"/g)].map((m) => m[1]), ['usage', 'references']);
