@@ -17,7 +17,7 @@ test('nothing is drawn outside the tutorial', () => {
 
 test('the bubble: step count, title, text, Back hidden on the first, Next, Skip; centred with no target', () => {
   const out = tourOverlay(at(0)).toString();
-  assert.match(out, /Step 1 of 22/);
+  assert.match(out, new RegExp(`Step 1 of ${TOUR_STEPS.length}`));
   assert.match(out, new RegExp(TOUR_STEPS[0].title));
   assert.match(out, /class="tour-bubble centred"/);
   assert.doesNotMatch(out, /data-action="tourBack"/);
@@ -28,7 +28,7 @@ test('the bubble: step count, title, text, Back hidden on the first, Next, Skip;
 
 test('a targeted step names its target; the last step says Finish; a try step says what to do', () => {
   assert.match(tourOverlay(at(1)).toString(), /data-tour-target="\.topbar nav"/);
-  assert.match(tourOverlay(at(21)).toString(), /data-action="tourNext"[^>]*>Finish/);
+  assert.match(tourOverlay(at(TOUR_STEPS.length - 1)).toString(), /data-action="tourNext"[^>]*>Finish/);
   const n = TOUR_STEPS.findIndex((s) => s.try);
   assert.match(tourOverlay(at(n)).toString(), /Your turn:<\/strong> /);
 });
@@ -52,4 +52,20 @@ test('Getting started has Start the tutorial, and the invitation for a new profi
   assert.match(out, /class="tour-invite"[\s\S]*data-action="startTour"[\s\S]*data-action="dismissTourInvite"/);
   assert.doesNotMatch(helpView({ ...base, view }, seed()).toString(), /tour-invite/, 'older profiles are not invited');
   assert.doesNotMatch(helpView({ ...invited, view: { name: 'help', topic: 'hazards' } }, seed()).toString(), /startTour/, 'only on Getting started');
+});
+
+test('Start the tutorial sits in Getting started’s Getting help section; the invitation stays at the top', () => {
+  const view = { name: 'help', topic: 'getting-started' };
+  const out = helpView({ ...base, view, profiles: [{ id: 'u1', name: 'Ada', createdAt: '', prefs: { tutorialOffered: false } }] }, seed()).toString();
+  const help = out.indexOf('<h3>Getting help</h3>');
+  assert.ok(help > 0);
+  assert.ok(out.indexOf('class="primary tour-start"') > help, 'the button comes after the Getting help heading');
+  assert.ok(out.indexOf('class="tour-invite"') < out.indexOf('<h3>'), 'the invitation is above the first section');
+});
+
+test('a step’s text can have short lists and bold, as Help’s text does', () => {
+  const n = TOUR_STEPS.findIndex((s) => s.id === 'attention');
+  const out = tourOverlay(at(n)).toString();
+  assert.match(out, /<ul><li>/);
+  assert.match(out, /<strong>/);
 });

@@ -205,9 +205,9 @@ export function shell(state, body) {
         <div class="settings-body" role="menu">${SETTINGS.map(([view, label]) => html`<button type="button" role="menuitem" class="${current === view ? 'on' : ''}" ${dataAttrs({ action: 'go', view })}>${label}</button>`)}</div>
       </details>
     </span>
+    ${tourBanner(state)}
     ${state.saving ? html`<div class="save-progress" role="progressbar" aria-label="Saving"><span></span></div>` : ''}
   </header>
-  ${tourBanner(state)}
   <div class="messages">${messages(state)}</div>
   <main class="view">${state.view?.name === 'bowties' ? '' : backButton(state)}${body}</main>
   ${confirmDialog(state)}${reviewMovedDialog(state)}${tourOverlay(state)}`;
