@@ -5,8 +5,10 @@ import { aestDate } from '../time.js';
 import { commit } from '../apply.js';
 import { dueOf } from '../schedule.js';
 import { seenRec } from './reviews.js';
-import { CHECKS, NONE_CHECKS, ONBOARDING_POSITIONS, workflowHazards, workflowProgress, openPlatformReview, onboardingOf, onboardingProgress, stepOf, TRANSFER_GROUPS, transferGroups, openTransfer, referenceItems, openReferenceUpdate } from '../workflows.js';
-import { createPlatform } from './platforms.js';
+import { CHECKS, NONE_CHECKS, ONBOARDING_POSITIONS, workflowHazards, workflowProgress, openPlatformReview, onboardingOf, onboardingProgress, stepOf, TRANSFER_GROUPS, transferGroups, openTransfer, referenceItems, openReferenceUpdate, openTechData, techPairs, pairKey } from '../workflows.js';
+import { createPlatform, linkHazard } from './platforms.js';
+import { createHazard } from './hazards.js';
+import { createReference } from './references.js';
 
 /** @typedef {import('../data.js').Data} Data */
 /** @typedef {import('../data.js').Act} Act */
@@ -32,6 +34,22 @@ function needHazard(data, wf, hazardId) {
   return /** @type {string} */ (hazardId);
 }
 
+/** An open New Tech Data its owner is working on. @param {Data} data @param {Act} act @param {string} workflowId */
+function needTech(data, act, workflowId) {
+  const wf = needOpen(data, act, workflowId);
+  if (wf.type !== 'newTechData') throw new PivotError('workflow.type', 'That is not New Tech Data.');
+  return wf;
+}
+
+/** A step record, new or changed. @param {Data} data @param {Act} act @param {string} workflowId @param {string} hazardId @param {string} check @param {Record<string, any>} fields */
+function stepRec(data, act, workflowId, hazardId, check, fields) {
+  const id = ids.workflowStep(workflowId, hazardId, check);
+  const existing = get(data, 'workflowStep', id);
+  return existing && existing.status === 'live'
+    ? changed(existing, act, fields)
+    : created(act, id, { workflowId, hazardId, check, checked: false, note: '', ...fields });
+}
+
 /** A workflow's opening record. @param {Act} act @param {string} id @param {string} type @param {string | null} platformId @param {string | null} at */
 const opening = (act, id, type, platformId, at) => created(act, id, { number: null, type, platformId, ownerId: act.by, state: 'open', at: { hazardId: at }, outcome: '', notes: '', endedBy: null, endedAt: null });
 
@@ -53,6 +71,13 @@ export function startOnboarding(data, act, { id = newId(), platformId = newId(),
  * @param {Data} data @param {Act} act @param {{ id?: string, type: string, platformId?: string, referenceId?: string }} args
  */
 export function startWorkflow(data, act, { id = newId(), type, platformId, referenceId }) {
+  if (type === 'newTechData') {
+    const r = need(data, 'reference', /** @type {string} */ (referenceId));
+    if (r.status !== 'live') throw new PivotError('reference.retired', `${r.title} is retired.`);
+    if (r.archived) throw new PivotError('reference.archived', `${r.title} is archived.`);
+    if (openTechData(data, r.id)) throw new PivotError('techData.open', `${r.title} is being worked through already.`);
+    return commit(data, act, 'Start workflow', [{ kind: 'workflow', rec: { ...opening(act, id, type, null, '@scope'), referenceId: r.id, linked: null } }]);
+  }
   if (type === 'referenceUpdate') {
     const r = need(data, 'reference', /** @type {string} */ (referenceId));
     if (r.status !== 'live') throw new PivotError('reference.retired', `${r.title} is retired.`);
@@ -83,6 +108,63 @@ export function startWorkflow(data, act, { id = newId(), type, platformId, refer
   if (openPlatformReview(data, platformId)) throw new PivotError('review.open', `${p.name} already has a review in progress.`);
   const first = workflowHazards(data, { platformId })[0]?.hazard.id ?? null;
   return commit(data, act, 'Start workflow', [{ kind: 'workflow', rec: opening(act, id, type, platformId, first) }]);
+}
+
+/**
+ * New Tech Data on a new reference: the reference and the workflow made together, the reference
+ * made through the workflow.
+ * @param {Data} data @param {Act} act
+ * @param {{ id?: string, referenceId?: string, title: string, docNumber?: string, revision?: string, url?: string, path?: string }} args
+ */
+export function startTechData(data, act, { id = newId(), referenceId = newId(), title, docNumber, revision, url, path }) {
+  const withRef = createReference(data, act, { id: referenceId, title, docNumber, revision, url, path });
+  return commit(data, { ...act, workflowId: id }, 'Start new tech data', [
+    { kind: 'reference', rec: withRef.records.reference[referenceId] },
+    { kind: 'workflow', rec: { ...opening(act, id, 'newTechData', null, '@scope'), referenceId, linked: null } },
+  ]);
+}
+
+/**
+ * Tick or untick a platform, or a hazard on a ticked platform, as something the data affects.
+ * Unticked, its answers are kept for if it is ticked again.
+ * @param {Data} data @param {Act} act @param {{ workflowId: string, platformId: string, hazardId?: string, checked: boolean | string }} args
+ */
+export function setTechScope(data, act, { workflowId, platformId, hazardId, checked }) {
+  const wf = needTech(data, act, workflowId);
+  const on = checked === true || checked === 'true';
+  const p = need(data, 'platform', platformId);
+  let key = `p:${p.id}`;
+  if (hazardId) {
+    if (on && !stepOf(data, wf.id, key, 'scope')?.checked) throw new PivotError('techData.scope', `Tick ${p.name} first.`);
+    if (on && get(data, 'hazardPlatform', ids.hazardPlatform(hazardId, p.id))?.status !== 'live') throw new PivotError('workflow.hazard', 'That hazard is not on this platform.');
+    key = pairKey(p.id, hazardId);
+  } else if (on) {
+    if (p.status !== 'live') throw new PivotError('platform.retired', `${p.name} is retired.`);
+    if (onboardingOf(data, p.id)) throw new PivotError('techData.onboarding', `${p.name} is still being onboarded.`);
+  }
+  return commit(data, act, 'Scope new tech data', [{ kind: 'workflowStep', rec: stepRec(data, act, wf.id, key, 'scope', { checked: on }) }]);
+}
+
+/**
+ * A hazard the data brings to a ticked platform: an existing one linked to it, or a new one made
+ * from a title, and scoped, all in one change. One the workflow linked or made is marked added.
+ * @param {Data} data @param {Act} act @param {{ workflowId: string, platformId: string, hazardId?: string, title?: string }} args
+ */
+export function addTechHazard(data, act, { workflowId, platformId, hazardId, title }) {
+  const wf = needTech(data, act, workflowId);
+  const p = need(data, 'platform', platformId);
+  if (!stepOf(data, wf.id, `p:${p.id}`, 'scope')?.checked) throw new PivotError('techData.scope', `Tick ${p.name} first.`);
+  const hid = hazardId || newId();
+  let d = hazardId ? data : createHazard(data, act, { id: hid, title: /** @type {string} */ (title) });
+  const linkId = ids.hazardPlatform(hid, p.id);
+  const already = get(d, 'hazardPlatform', linkId)?.status === 'live';
+  d = linkHazard(d, act, { hazardId: hid, platformId: p.id });
+  /** @type {{ kind: string, rec: Rec }[]} */
+  const recs = [];
+  if (!hazardId) recs.push({ kind: 'hazard', rec: d.records.hazard[hid] });
+  if (!already) recs.push({ kind: 'hazardPlatform', rec: d.records.hazardPlatform[linkId] });
+  recs.push({ kind: 'workflowStep', rec: stepRec(data, act, wf.id, pairKey(p.id, hid), 'scope', { checked: true, ...(already ? {} : { added: true }) }) });
+  return commit(data, act, hazardId ? 'Link hazard to platform' : 'Create hazard on platform', recs);
 }
 
 /** Where the owner is in it, kept for resuming: a hazard, or null for the summary. @param {Data} data @param {Act} act @param {{ workflowId: string, hazardId: string | null }} args */
@@ -180,8 +262,8 @@ export function setReferenceDraft(data, act, { workflowId, revision, url, path, 
   return commit(data, act, 'Draft reference update', [{ kind: 'workflow', rec: changed(wf, act, fields) }]);
 }
 
-/** The hazards an open workflow covers as it ends, kept with it so its record does not change as the platform does. @param {Data} data @param {Rec} wf */
-const covered = (data, wf) => workflowHazards(data, wf).map((x) => x.hazard.id);
+/** What an open workflow covers as it ends, kept with it so its record does not change as the platforms do. @param {Data} data @param {Rec} wf */
+const covered = (data, wf) => (wf.type === 'newTechData' ? techPairs(data, wf).map((x) => x.key) : workflowHazards(data, wf).map((x) => x.hazard.id));
 
 /** The records that cancel an open workflow: it, marked cancelled, with the hazards it covered. Its checks are kept. @param {Data} data @param {Act} act @param {Rec} wf */
 export function cancelRecs(data, act, wf) {

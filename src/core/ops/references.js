@@ -2,6 +2,7 @@ import { PivotError } from '../errors.js';
 import { newId, ids } from '../ids.js';
 import { get, live, created, changed, need, needText } from '../data.js';
 import { commit } from '../apply.js';
+import { techPairs } from '../workflows.js';
 
 /** @typedef {import('../data.js').Data} Data */
 /** @typedef {import('../data.js').Act} Act */
@@ -57,13 +58,13 @@ export function attachFile(data, act, { id, file }) {
 }
 
 /**
- * The records that cancel a reference's open update, when it stops being one an update can reach
- * (archived, retired or deleted). The update is kept, cancelled; nothing it drafted reaches the reference.
+ * The records that cancel a reference's open update or New Tech Data, for an op that takes the
+ * reference out of use.
  * @param {Data} data @param {Act} act @param {string} referenceId
  */
 function updateCancelled(data, act, referenceId) {
-  return live(data, 'workflow').filter((w) => w.type === 'referenceUpdate' && w.referenceId === referenceId && w.state === 'open')
-    .map((w) => ({ kind: 'workflow', rec: changed(w, act, { state: 'cancelled', endedBy: act.by, endedAt: act.at, covered: [] }) }));
+  return live(data, 'workflow').filter((w) => (w.type === 'referenceUpdate' || w.type === 'newTechData') && w.referenceId === referenceId && w.state === 'open')
+    .map((w) => ({ kind: 'workflow', rec: changed(w, act, { state: 'cancelled', endedBy: act.by, endedAt: act.at, covered: w.type === 'newTechData' ? techPairs(data, w).map((x) => x.key) : [] }) }));
 }
 
 /**

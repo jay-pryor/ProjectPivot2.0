@@ -1,6 +1,6 @@
 import { get, live } from './data.js';
-import { hazardLabel, controlLabel, workflowLabel } from './ids.js';
-import { platformHazards, byNumber, causalFactorsOn, platformListOn, controlsOnPlatform, implementedByOf, assessmentOf, sfarpOf, groupsOf, openItems, referenceTargets, targetPlatforms } from './queries.js';
+import { hazardLabel, controlLabel, workflowLabel, ids } from './ids.js';
+import { platformHazards, byNumber, causalFactorsOn, platformListOn, controlsOnPlatform, implementedByOf, assessmentOf, sfarpOf, groupsOf, openItems, referenceTargets, targetPlatforms, onboardingOf } from './queries.js';
 import { scheduleOf } from './schedule.js';
 import { RECEPTORS } from './receptors.js';
 import { entries, deletedEntries } from './history.js';
@@ -312,4 +312,42 @@ export function referenceItems(data, referenceId) {
     const platforms = targetPlatforms(data, kind, target.id).map((pid) => get(data, 'platform', pid)?.name ?? '').filter(Boolean);
     return { key: `${kind}:${target.id}`, kind, label: linkedLabel(data, kind, target), platforms, open: OPEN_AT[/** @type {keyof typeof OPEN_AT} */ (kind)](target) };
   });
+}
+
+/** A platform-hazard as New Tech Data keys it. @param {string} platformId @param {string} hazardId */
+export const pairKey = (platformId, hazardId) => `${platformId}|${hazardId}`;
+
+/** The open New Tech Data on a reference, if any. @param {Data} data @param {string} referenceId */
+export function openTechData(data, referenceId) {
+  return live(data, 'workflow').find((w) => w.type === 'newTechData' && w.referenceId === referenceId && w.state === 'open') ?? null;
+}
+
+/** The platforms New Tech Data can take in: live ones not being onboarded, by name. @param {Data} data */
+export function techPlatforms(data) {
+  return live(data, 'platform').filter((p) => !onboardingOf(data, p.id)).sort((a, b) => String(a.name).localeCompare(b.name));
+}
+
+/**
+ * What a New Tech Data covers now: each platform ticked that can still be taken in, with the
+ * hazards ticked on it that are still live and on it, in number order. A hazard the workflow
+ * linked or made is marked added.
+ * @param {Data} data @param {Rec} wf
+ * @returns {{ platform: Rec, hazards: { hazard: Rec, reportId: string, key: string, added: boolean }[] }[]}
+ */
+export function techScope(data, wf) {
+  const step = (/** @type {string} */ key) => stepOf(data, wf.id, key, 'scope');
+  return techPlatforms(data).filter((p) => step(`p:${p.id}`)?.checked).map((platform) => ({
+    platform,
+    hazards: platformHazards(data, platform.id).filter((ph) => ph.hazard.status === 'live' && step(pairKey(platform.id, ph.hazard.id))?.checked)
+      .sort((a, b) => byNumber(a.hazard, b.hazard))
+      .map((ph) => {
+        const key = pairKey(platform.id, ph.hazard.id);
+        return { hazard: ph.hazard, reportId: ph.reportId, key, added: Boolean(step(key)?.added) };
+      }),
+  }));
+}
+
+/** Every platform-hazard in a New Tech Data's scope now, platform by platform. @param {Data} data @param {Rec} wf */
+export function techPairs(data, wf) {
+  return techScope(data, wf).flatMap((s) => s.hazards.map((x) => ({ platform: s.platform, ...x })));
 }
