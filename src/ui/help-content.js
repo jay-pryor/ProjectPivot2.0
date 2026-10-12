@@ -162,7 +162,7 @@ The owner switch at the top shows your items (Me), another person's, or Everyone
     title: 'Hazards',
     summary: 'The things that could cause harm, and everything recorded about each one.',
     body: `
-The Hazards tab lists every [[hazard]], with the platforms it is on and its worst [[residual risk]]. Add one by typing a title in the box above the list. Each hazard is numbered (HAZ-001 and so on) when it is first saved; until then it shows a [[TBC]] tag.
+The Hazards tab lists every [[hazard]], with the platforms it is on and its worst [[residual risk]]. Add one with the small **+** next to the page's title: type its title and press **Add**. Each hazard is numbered (HAZ-001 and so on) when it is first saved; until then it shows a [[TBC]] tag.
 
 ## A hazard's page
 
@@ -227,7 +227,7 @@ A [[platform]] is a system or asset the register covers. Each has an [[owner]], 
 
 ## Adding a platform
 
-**New platform** on the Platforms tab (or the Platform Onboarding tile on Workflows) starts an [[onboarding]]: a guided set-up of the platform's description, groups, hazards, facets and controls. See {{wf-onboarding|Platform Onboarding}}.
+The small **+** next to the Platforms page's title (or the Platform Onboarding tile on Workflows) starts an [[onboarding]]: a guided set-up of the platform's description, groups, hazards, facets and controls. See {{wf-onboarding|Platform Onboarding}}.
 
 ## A platform's page
 
@@ -449,7 +449,7 @@ Every new platform is set up through onboarding. The platform is made straight a
 
 ## Starting
 
-**New platform** on the Platforms tab, or the Platform Onboarding tile on Workflows: give the name and the owner.
+The small **+** next to the Platforms page's title, or the Platform Onboarding tile on Workflows: give the name and the owner.
 
 ## The steps
 

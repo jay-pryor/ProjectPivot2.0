@@ -1,5 +1,6 @@
 import { html, raw, esc } from '../html.js';
 import { TOUR_STEPS } from '../tour/steps.js';
+import { renderHelpText } from '../help-content.js';
 
 /** @param {Record<string, string | number>} a */
 const attrs = (a) => raw(Object.entries(a).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' '));
@@ -23,8 +24,8 @@ export function tourOverlay(state) {
   return html`<div class="tour-spotlight" aria-hidden="true"></div>
     <section class="tour-bubble${step.target ? '' : ' centred'}" role="dialog" aria-label="Tutorial" ${step.target ? attrs({ 'tour-target': step.target }) : ''} ${attrs({ 'tour-step': n })}>
       <p class="tour-count">Step ${n + 1} of ${TOUR_STEPS.length}</p>
-      <h2>${step.title}</h2><p>${step.text}</p>
-      ${step.try ? html`<p class="tour-try"><strong>✋ Your turn:</strong> ${step.try.says}</p>` : ''}
+      <h2>${step.title}</h2>${renderHelpText(step.text)}
+      ${step.try ? html`<div class="tour-try"><strong>✋ Your turn:</strong> ${renderHelpText(step.try.says)}</div>` : ''}
       <div class="tour-buttons">${n > 0 ? html`<button type="button" ${attrs({ action: 'tourBack' })}>Back</button>` : ''}
         <button type="button" class="primary" ${attrs({ action: 'tourNext' })}>${last ? 'Finish' : 'Next'}</button>
         <button type="button" class="link tour-skip" ${attrs({ action: 'tourSkip' })}>Skip tutorial</button></div>
