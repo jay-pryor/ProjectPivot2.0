@@ -328,3 +328,11 @@ test('the boxes that drive the live preview are marked', () => {
   assert.match(sectionAt(h, 'things', 'table'), /data-rd-tbl-field="title"[^>]*data-rd-live|data-rd-live[^>]*data-rd-tbl-field="title"/);
   assert.match(sectionAt(h, 'mine', 'content'), /data-rd-text="p1"[^>]*data-rd-live|data-rd-live[^>]*data-rd-text="p1"/);
 });
+
+test('a redraw asked for while a button is being pressed waits for the release, so the click lands on the button', () => {
+  assert.ok(RD._gate, 'the press gate is exposed');
+  RD._gate.pressing = true; RD._gate.pending = false;
+  RD._repaint();                                   // would touch the DOM if it did not wait
+  assert.equal(RD._gate.pending, true);
+  RD._gate.pressing = false; RD._gate.pending = false;
+});

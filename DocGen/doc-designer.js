@@ -4542,7 +4542,13 @@ import { toWinAnsi } from './doc-fonts.js';
       if (pane2) pane2.scrollTop = paneTop;
       return true;
     }
+    /* Leaving a text box saves it and redraws — on the press of whatever was clicked
+     * next. Redrawn then, the button under the pointer is a new one by the release, and
+     * the click is lost. So a redraw asked for while a button is held waits for the
+     * release; the click's own handler then runs on the button that was pressed. */
+    var _gate = { pressing: false, pending: false };
     function repaint() {
+      if (_gate.pressing) { _gate.pending = true; return; }
       if (!refresh() && _ctx) _ctx.refreshMain();
     }
     function quietly(fn) { if (_ctx && _ctx.quietEdit) _ctx.quietEdit(fn); else fn(); }
@@ -4815,6 +4821,15 @@ import { toWinAnsi } from './doc-fonts.js';
 
     function wireShell(h) {
       var dom = h.dom, ctx = h.ctx;
+
+      ctx.root.addEventListener('pointerdown', function () { _gate.pressing = true; }, true);
+      function release() {
+        if (!_gate.pressing) return;
+        _gate.pressing = false;
+        if (_gate.pending) setTimeout(function () { _gate.pending = false; repaint(); }, 0);
+      }
+      // A press that becomes a drag (reordering sections) ends without a pointerup.
+      ['pointerup', 'pointercancel', 'dragend', 'drop'].forEach(function (t) { document.addEventListener(t, release, true); });
 
       dom.on(ctx.root, 'click', '[data-rd-open]', function () {
         _rd.open = true; dirty(); ctx.refreshMain();
@@ -5568,7 +5583,7 @@ import { toWinAnsi } from './doc-fonts.js';
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
-      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, SEC_CATEGORIES: SEC_CATEGORIES,
+      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint,
       PANES: PANES, _rd: _rd
     };
   })(App);
