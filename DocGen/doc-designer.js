@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { STANDARD as STYLE_STANDARD, PAPER_MM as STYLE_PAPER_MM, normaliseStyle, fromProfile, isStyle } from './doc-style.js';
 import { layout } from './doc-layout.js';
-import { pagesHtml } from './doc-preview.js';
+import { pagesHtml, cropPage } from './doc-preview.js';
 import { toWinAnsi } from './doc-fonts.js';
   /* App namespace root. Exported at the bottom of this file. */
   var App = {};
@@ -3248,6 +3248,7 @@ import { toWinAnsi } from './doc-fonts.js';
       fmtId: null,           // Style being edited in the Styles pane
       styleSection: null,    // which part of that Style is open (PDF-1)
       held: null,            // what the last edit asked for that the Style could not use
+      secZoom: null,         // the section preview's zoom, when changed from the default
       conflict: null,        // { kindKey, plan, decisions } while an import is being resolved
       refFor: null,          // part id whose "insert reference" menu is open
       optMenu: null,         // block id whose columns/groups menu is open (OPT-1)
@@ -3829,9 +3830,15 @@ import { toWinAnsi } from './doc-fonts.js';
         '</div>';
     }
 
+    /** The zoom steps of the section preview, and where it starts. */
+    var SEC_ZOOMS = [0.4, 0.5, 0.6, 0.8, 1, 1.25, 1.5, 2];
+    var SEC_ZOOM = 0.6;
+
     /**
-     * PDF-1: a section previewed as the PAGES it lands on, cut from the whole document's
-     * layout — so its numbers, captions, references and page breaks are the real ones.
+     * PDF-1: a section previewed as it lands on the page — cut from the whole document's
+     * layout, so its numbers, captions, references and page breaks are the real ones, and
+     * cropped to the section itself: from its heading to where the next section starts,
+     * over as many pages as it runs.
      */
     function sectionPreview(project, block) {
       var p = _rd.preview || (_rd.preview = laidOut(project));
@@ -3840,17 +3847,27 @@ import { toWinAnsi } from './doc-fonts.js';
       var included = view.resolved.filter(function (r) { return r.included !== false; });
       var at = included.map(function (r) { return r.id; }).indexOf(block.id);
       var mine = at === -1 ? null : p.anchors[included[at].anchor];
-      if (!mine) return '<p class="muted">' + (at === -1 ? 'This section is not in the document.' : 'This section has no heading to find it by — see it in the <strong>Preview</strong>.') + '</p>';
-      var last = mine.page;
-      for (var i = at + 1; i < included.length; i++) {
-        var next = p.anchors[included[i].anchor];
-        if (next) { last = Math.max(mine.page, next.y > 80 ? next.page : next.page - 1); break; }
-        last = p.pages.length - 1;
+      if (!mine) return '<p class="muted">' + (at === -1 ? 'This section is not in the document.' : 'This section is not on the page — see the <strong>Preview</strong>.') + '</p>';
+      var end = null;
+      for (var i = at + 1; i < included.length && !end; i++) end = p.anchors[included[i].anchor] || null;
+      var m = p.style.page.margins, MMPT = 72 / 25.4;
+      var bands = [];
+      var lastPage = end ? end.page : p.pages.length - 1;
+      for (var pg = mine.page; pg <= lastPage; pg++) {
+        var page = p.pages[pg];
+        var top = pg === mine.page ? Math.max(0, mine.y - 2) : m.top * MMPT - 2;
+        var bottom = end && pg === end.page ? end.y - 1 : page.size[1] - m.bottom * MMPT + 2;
+        if (bottom - top > 1) bands.push(cropPage(page, top, bottom));
       }
-      var shown = p.pages.slice(mine.page, Math.min(last, mine.page + 2) + 1);
-      return '<div class="rd-secprev rd-preview-pages"><p class="muted rd-hint">Page ' + (mine.page + 1) +
-        (shown.length > 1 ? ' to ' + (mine.page + shown.length) : '') + ' of ' + p.pages.length + '.</p>' +
-        pagesHtml(shown, { scale: 0.6 }) + '</div>';
+      var k = _rd.secZoom || SEC_ZOOM;
+      var zoom = '<span class="rd-zoom">' +
+        '<button type="button" data-rd-zoom="out" title="Smaller"' + (k <= SEC_ZOOMS[0] ? ' disabled' : '') + '>−</button>' +
+        '<span class="rd-zoom-n">' + Math.round(k * 100) + '%</span>' +
+        '<button type="button" data-rd-zoom="in" title="Larger"' + (k >= SEC_ZOOMS[SEC_ZOOMS.length - 1] ? ' disabled' : '') + '>+</button></span>';
+      var pages = lastPage - mine.page + 1;
+      return '<div class="rd-secprev-head"><span class="muted rd-hint">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
+        ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
+        '<div class="rd-secprev rd-preview-pages">' + pagesHtml(bands, { scale: k }) + '</div>';
     }
 
     function metaPane(project) {
@@ -4883,6 +4900,14 @@ import { toWinAnsi } from './doc-fonts.js';
       dom.on(ctx.root, 'click', '[data-rd-cf-apply]', function () { applyConflict(); });
       // ---- preview ----------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-refresh-preview]', function () { dirty(); repaint(); });
+      // The section preview's zoom: a way of looking, so the laid-out pages are kept.
+      dom.on(ctx.root, 'click', '[data-rd-zoom]', function (e, el) {
+        var k = _rd.secZoom || SEC_ZOOM, i = SEC_ZOOMS.indexOf(k);
+        if (i === -1) i = SEC_ZOOMS.indexOf(SEC_ZOOM);
+        i += el.getAttribute('data-rd-zoom') === 'in' ? 1 : -1;
+        _rd.secZoom = SEC_ZOOMS[Math.max(0, Math.min(SEC_ZOOMS.length - 1, i))];
+        repaint();
+      });
       dom.on(ctx.root, 'click', '[data-prv-jump]', function (e, el) {
         e.preventDefault();
         var target = document.getElementById(el.getAttribute('data-prv-jump'));
