@@ -251,9 +251,54 @@ section { margin: 0 0 22px; }
 .add-row { max-width: 740px; }
 .page-actions { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--p-line); }
 
-/* The DocGen designer, in Pivot's colours and font; it follows the theme via html[data-theme]. */
+/* The DocGen designer, in Pivot's colours, font and controls; it follows the theme because every
+   one of its tokens is one of Pivot's. The selector is deliberately heavy: DocGen's own dark-theme
+   rule (:root[data-theme="dark"] .docgen) would otherwise win and paint it in its own blue. */
 .docgen, .docgen * { border-radius: 0 !important; }
-.docgen { --c-accent: var(--p-accent); --c-accent-text: var(--p-accent-fg); --font: var(--p-font); }
+:root .docgen.docgen.docgen {
+  --c-bg: var(--p-bg); --c-surface: var(--p-surface); --c-surface-alt: var(--p-surface-2); --c-border: var(--p-line);
+  --c-text: var(--p-fg); --c-text-muted: var(--p-muted); --c-accent: var(--p-accent); --c-accent-text: var(--p-accent-fg);
+  --c-error: var(--p-danger); --c-error-bg: var(--p-error-bg); --c-warn: var(--p-warn); --c-warn-bg: var(--p-warn-bg);
+  --c-undecided-border: var(--p-warn); --c-info: var(--p-info-fg); --c-info-bg: var(--p-info-bg); --c-badge-bg: var(--p-surface-2);
+  --font: var(--p-font); font-size: 14px;
+}
+.docgen button { padding: 4px 11px; background: var(--p-surface-2); border-color: var(--p-line); color: var(--p-fg); }
+.docgen button:hover:not(:disabled) { background: var(--p-surface-2); border-color: var(--p-muted); }
+.docgen button:disabled { opacity: .6; cursor: default; }
+.docgen button.primary { background: var(--p-accent); border-color: var(--p-accent); color: var(--p-accent-fg); font-weight: 600; }
+.docgen button.primary:hover:not(:disabled) { filter: none; border-color: var(--p-fg); }
+.docgen button.danger { background: transparent; border-color: var(--p-danger); color: var(--p-danger); }
+.docgen input, .docgen select, .docgen textarea, .docgen .rd-rich { font-family: var(--p-font); background: var(--p-surface); border-color: var(--p-line); color: var(--p-fg); }
+.docgen input:focus, .docgen select:focus, .docgen textarea:focus, .docgen .rd-rich:focus, .docgen button:focus-visible { outline: 2px solid var(--p-accent); outline-offset: 1px; }
+.docgen input[type="checkbox"], .docgen input[type="radio"] { accent-color: var(--p-accent); }
+.docgen a { color: var(--p-link); }
+/* The window: a page title like the app's, on the app's bar colour. */
+.docgen .modal-overlay { background: rgba(0, 0, 0, .5); }
+.docgen .modal { background: var(--p-bg); border-color: var(--p-line); box-shadow: 0 8px 24px rgba(0, 0, 0, .28); }
+.docgen .modal-head { background: var(--p-bar); color: var(--p-bar-fg); border-bottom-color: var(--p-line); }
+.docgen .modal-head h3 { font-family: var(--p-display); text-transform: uppercase; letter-spacing: .12em; font-weight: 600; font-size: 20px; }
+.docgen .modal-head .modal-sub { color: var(--p-bar-fg); opacity: .8; font-size: 13px; }
+.docgen .modal-close { color: var(--p-bar-fg); background: none; border: 1px solid transparent; padding: 0 6px; }
+.docgen .modal-close:hover:not(:disabled) { background: none; border-color: var(--p-accent); }
+.docgen .modal-foot { background: var(--p-surface); border-top-color: var(--p-line); }
+/* Panels and section headings as on the app's pages. */
+.docgen .rpt-pane, .docgen .rd-fieldset { background: var(--p-surface); border-color: var(--p-line); }
+.docgen .rpt-pane > h4, .docgen .rpt-pane h5, .docgen .rd-fieldset > strong { font-size: 15px; font-weight: 700; color: var(--p-fg); }
+.docgen .ord-step { background: var(--p-surface); border-color: var(--p-line); }
+.docgen .ord-step:hover { border-color: var(--p-muted); }
+.docgen .rd-row.sel { outline: 0; border-color: var(--p-accent); box-shadow: inset 3px 0 0 var(--p-accent); }
+/* The pane tabs, as the tabs on a record page. */
+.docgen .rd-tabs { gap: 2px; border-bottom: 1px solid var(--p-line); margin-bottom: 12px; }
+.docgen .rd-tab { font-size: 14px; padding: 6px 14px; margin-bottom: -1px; border: 1px solid transparent; border-bottom: 0; background: transparent; color: var(--p-muted); }
+.docgen .rd-tab:not(.on):hover:not(:disabled) { background: transparent; border-color: transparent; color: var(--p-fg); }
+.docgen .rd-tab.on:hover:not(:disabled) { background: var(--p-bg); border-color: var(--p-line); }
+.docgen .rd-tab.on { border-color: var(--p-line); background: var(--p-bg); color: var(--p-fg); font-weight: 700; }
+/* The Styles pane's list of sections, as the record page's section menu. */
+.docgen .rd-style-sec { background: transparent; border: 0; padding: 6px 10px; color: var(--p-fg); }
+.docgen .rd-style-sec:hover:not(:disabled) { background: var(--p-surface-2); border: 0; color: var(--p-accent); }
+.docgen .rd-style-sec.on { background: var(--p-surface-2); border: 0; box-shadow: inset 3px 0 0 var(--p-accent); font-weight: 700; }
+.docgen .rd-locked, .docgen .rd-held { background: var(--p-warn-bg); border-color: var(--p-warn); color: var(--p-fg); }
+.docgen .rd-subject { font-size: 13px; padding: 2px 6px; background: var(--p-surface); border: 1px solid var(--p-line); color: var(--p-fg); }
 
 /* Record pages read like a document you can edit in place. */
 .doc-head { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
