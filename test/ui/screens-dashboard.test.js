@@ -136,14 +136,6 @@ test('the link-to-hazards picker offers a control the hazards it is not linked t
   assert.doesNotMatch(fresh, /placeExistingControl|h1\|p1/);
 });
 
-test('the Controls list puts each row\'s Options in a gutter outside the table, as Lifecycle phases does', async () => {
-  const { controlsView } = await import('../../src/ui/screens/controls.js');
-  const out = controlsView({ ...state, view: { name: 'controls' } }, data()).toString();
-  assert.match(out, /<table class="grid has-gutter" data-table="controls"/);
-  assert.match(out, /<th data-col="options" class="row-out">/);
-  assert.match(out, /<td>live<\/td><td class="row-out"><details class="row-menu"><summary aria-label="Options for Sprinklers"/);
-});
-
 test('a control\'s and a reference\'s Retire and Delete are in the ⋯ menu by the heading; Delete asks in a pop-up, and only when nothing uses it', async () => {
   const { controlView } = await import('../../src/ui/screens/controls.js');
   const { referenceView } = await import('../../src/ui/screens/references.js');

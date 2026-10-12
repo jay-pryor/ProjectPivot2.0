@@ -99,7 +99,7 @@ test('References is in the nav and routed', () => {
   assert.match(main({ name: 'reference', id: 'r1' }), /Safety case/);
 });
 
-test('References has Active and Archived sub-tabs; each row\'s Options moves it to the other, and an archived one is not offered for linking', async () => {
+test('References has Active and Archived sub-tabs; a reference moves between them from its page\'s ⋯ menu, and an archived one is not offered for linking', async () => {
   const { referencesView, referenceView } = await import('../../src/ui/screens/references.js');
   const { createReference, setReferenceArchived } = await import('../../src/core/ops/references.js');
   const { pickerView } = await import('../../src/ui/screens/picker.js');
@@ -115,9 +115,10 @@ test('References has Active and Archived sub-tabs; each row\'s Options moves it 
   assert.match(active, /class="tab on" data-action="go" data-view="references" data-tab="active">Active <span class="count">1<\/span>[\s\S]*?data-tab="archived">Archived <span class="count">1<\/span>/);
   assert.match(active, /Safety case/);
   assert.doesNotMatch(active, /Old manual/);
-  assert.match(active, /<details class="row-menu"><summary aria-label="Options for Safety case"[\s\S]*?data-action="setReferenceArchived" data-id="r1" data-archived="true">Move to Archived<\/button>/);
+  assert.doesNotMatch(active, /row-menu/, 'no Options box on the list');
+  assert.match(referenceView({ ...st, view: { name: 'reference', id: 'r1' } }, d, 'r1').toString(), /data-action="setReferenceArchived" data-id="r1" data-archived="true">[\s\S]*?Move to Archived/);
   const archive = referencesView({ ...st, view: { name: 'references', tab: 'archived' } }, d).toString();
-  assert.match(archive, /Old manual[\s\S]*?data-action="setReferenceArchived" data-id="r2" data-archived="false">Move to Active<\/button>/);
+  assert.match(archive, /Old manual/);
   assert.doesNotMatch(archive, /Safety case|newReference/, 'no new reference from the archive');
   const page = referenceView({ ...st, view: { name: 'reference', id: 'r2' } }, d, 'r2').toString();
   assert.match(page, /<span class="tag">Archived<\/span>[\s\S]*?data-action="setReferenceArchived" data-id="r2" data-archived="false">[\s\S]*?Move to Active/);

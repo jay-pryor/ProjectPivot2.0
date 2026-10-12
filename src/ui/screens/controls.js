@@ -1,7 +1,7 @@
 import { html, raw } from '../html.js';
 import { dataAttrs, option, statusTag, stateTag, go, pageTabs, historyTable, historyCount, idTag, recordMenu, menuItem } from './common.js';
 import { sectionRail, stateCounts, glance } from './dashboard.js';
-import { optionsMenu, plus } from './common.js';
+import { plus } from './common.js';
 import { dataTable } from './table.js';
 import { referencesCard } from './references.js';
 import { statusColumn, idColumn, notFound } from './hazards.js';
@@ -57,10 +57,6 @@ export function controlsView(state, data) {
             : html`<span class="muted">None</span>`) },
         statusColumn((r) => r.control.status),
       ],
-      rowEnd: (r) => optionsMenu(`Options for ${r.control.title}`, [
-        html`<button type="button" ${dataAttrs({ action: 'go', view: 'control', id: r.control.id })}>Open</button>`,
-        r.control.status === 'live' ? html`<button type="button" ${dataAttrs({ action: 'openPicker', picker: 'controlHazards', 'control-id': r.control.id })}>Link to hazards…</button>` : '',
-      ]),
     })}${originList(data)}`;
 }
 

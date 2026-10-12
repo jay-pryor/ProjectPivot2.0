@@ -23,3 +23,13 @@ test('its hazards are dot points, only the HAZ number a link, the name beside it
 test('its platforms are dot points of plain names, as on the Hazards tab', () => {
   assert.match(row(), /<ul class="plain dots"><li>Alpha<\/li><li>Bravo<\/li><\/ul>/);
 });
+
+test('no Options box on the Controls or References lists: the number, or a double-click, opens a row', async () => {
+  const { referencesView } = await import('../../src/ui/screens/references.js');
+  const { createReference } = await import('../../src/core/ops/references.js');
+  const controls = controlsView({ ...state, view: { name: 'controls' } }, assignNumbers(seed())).toString();
+  const refs = referencesView({ ...state, view: { name: 'references' } }, createReference(seed(), { by: 'u1', at: '2026-09-28T10:00:00+10:00' }, { id: 'r1', title: 'Manual', url: 'x' })).toString();
+  for (const out of [controls, refs]) {
+    assert.doesNotMatch(out, /class="row-menu"|data-col="options"/);
+  }
+});

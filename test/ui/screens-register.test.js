@@ -40,7 +40,7 @@ test('the control library lists each control once, with its hazards and platform
   assert.doesNotMatch(list, /data-category/);
   assert.equal((list.match(/<tr data-row="c1"/g) ?? []).length, 1, 'one row per control, whatever it serves');
   const heads = [...list.split('</thead>')[0].matchAll(/<th data-col="(\w+)"/g)].map((m) => m[1]);
-  assert.deepEqual(heads, ['id', 'control', 'origin', 'tier', 'hazards', 'platforms', 'status', 'options'], 'an Origin for every control');
+  assert.deepEqual(heads, ['id', 'control', 'origin', 'tier', 'hazards', 'platforms', 'status'], 'an Origin for every control');
   assert.match(list, /<tr data-row="c1"[^>]*>[\s\S]*?data-view="hazard" data-id="h1">HAZ-001<\/button> Fire<\/li>[\s\S]*?<li>Alpha<\/li><li>Bravo<\/li>/);
   const onBravo = controlsView({ ...state, tables: { controls: { filters: { platforms: 'p2' } } } }, data()).toString();
   assert.match(onBravo, /data-row="c1"/);
