@@ -20,7 +20,7 @@ export function workflowsOwnerId(state) {
 
 /** What a workflow is about, as a person reads it. @param {Data} data @param {any} wf */
 export function workflowSubject(data, wf) {
-  if (wf.type === 'referenceUpdate') return get(data, 'reference', wf.referenceId)?.title ?? 'A deleted reference';
+  if (wf.type === 'referenceUpdate' || wf.type === 'newTechData') return get(data, 'reference', wf.referenceId)?.title ?? 'A deleted reference';
   return get(data, 'platform', wf.platformId)?.name ?? 'A deleted platform';
 }
 

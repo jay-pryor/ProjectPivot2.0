@@ -6,6 +6,7 @@ import { workflowSubject } from './workflows.js';
 import { onboardingBody, onboardingGrid } from './onboarding.js';
 import { transferBody, transferEnded } from './transfer.js';
 import { updateBody, updateEnded } from './reference-update.js';
+import { techBody, techEnded } from './tech-data.js';
 import { get } from '../../core/data.js';
 import { workflowLabel, UNNUMBERED } from '../../core/ids.js';
 import { dueOf } from '../../core/schedule.js';
@@ -120,6 +121,7 @@ const CANCEL_WORDS = Object.freeze({
   platformOnboarding: (/** @type {string} */ n) => `Cancel ${n}: it is kept in History as cancelled; the platform stays as it is, marked Onboarding, and can be onboarded again`,
   transferOwner: (/** @type {string} */ n) => `Cancel ${n}: nothing changes; it is kept in History as cancelled`,
   referenceUpdate: (/** @type {string} */ n) => `Cancel ${n}: the reference is left as it is; a file uploaded here stays in the folder, unused`,
+  newTechData: (/** @type {string} */ n) => `Cancel ${n}: it is kept in History as cancelled; changes made through it stay, and the reference is linked to nothing`,
 });
 
 /**
@@ -132,8 +134,8 @@ export function workflowView(state, data, id) {
   const wf = get(data, 'workflow', id);
   if (!wf || wf.status === 'deleted') return html`<p class="muted">That workflow no longer exists.</p>`;
   const mine = wf.ownerId === state.profileId;
-  const title = html`<h1>${go('Workflows', 'workflows')} · ${idTag(workflowLabel(wf))} ${typeName(wf.type)} · ${wf.type === 'referenceUpdate' ? (get(data, 'reference', wf.referenceId) ? go(workflowSubject(data, wf), 'reference', { id: wf.referenceId }) : workflowSubject(data, wf)) : get(data, 'platform', wf.platformId) ? go(workflowSubject(data, wf), 'platform', { id: wf.platformId }) : workflowSubject(data, wf)}</h1>`;
-  if (wf.state !== 'open') return html`<div class="head">${title}</div>${wf.type === 'transferOwner' ? transferEnded(state, data, wf) : wf.type === 'referenceUpdate' ? updateEnded(state, data, wf) : endedBody(state, data, wf)}`;
+  const title = html`<h1>${go('Workflows', 'workflows')} · ${idTag(workflowLabel(wf))} ${typeName(wf.type)} · ${(wf.type === 'referenceUpdate' || wf.type === 'newTechData') ? (get(data, 'reference', wf.referenceId) ? go(workflowSubject(data, wf), 'reference', { id: wf.referenceId }) : workflowSubject(data, wf)) : get(data, 'platform', wf.platformId) ? go(workflowSubject(data, wf), 'platform', { id: wf.platformId }) : workflowSubject(data, wf)}</h1>`;
+  if (wf.state !== 'open') return html`<div class="head">${title}</div>${wf.type === 'transferOwner' ? transferEnded(state, data, wf) : wf.type === 'referenceUpdate' ? updateEnded(state, data, wf) : wf.type === 'newTechData' ? techEnded(state, data, wf) : endedBody(state, data, wf)}`;
   const tools = mine
     ? confirmButton('Cancel workflow…', CANCEL_WORDS[/** @type {keyof typeof CANCEL_WORDS} */ (wf.type)]?.(named(wf)) ?? `Cancel ${named(wf)}: its ticks and notes are kept in History as cancelled; changes you made to hazards stay`, dataAttrs({ action: 'cancelWorkflow', 'workflow-id': wf.id }))
     : confirmButton('Take over…', `Take over ${named(wf)} from ${profileName(state, wf.ownerId)}`, dataAttrs({ action: 'takeOverWorkflow', 'workflow-id': wf.id }));
@@ -142,6 +144,7 @@ export function workflowView(state, data, id) {
   if (wf.type === 'platformOnboarding') return html`${head}${onboardingBody(state, data, wf, mine)}`;
   if (wf.type === 'transferOwner') return html`${head}${transferBody(state, data, wf, mine)}`;
   if (wf.type === 'referenceUpdate') return html`${head}${updateBody(state, data, wf, mine)}`;
+  if (wf.type === 'newTechData') return html`${head}${techBody(state, data, wf, mine)}`;
   const hz = workflowHazards(data, wf);
   const want = state.view?.hazardId === 'summary' ? null : state.view?.hazardId ?? wf.at?.hazardId ?? null;
   const x = want ? hz.find((y) => y.hazard.id === want) ?? (state.view?.hazardId ? null : hz[0] ?? null) : null;
