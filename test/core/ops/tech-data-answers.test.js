@@ -5,7 +5,7 @@ import { entries } from '../../../src/core/history.js';
 import { ids } from '../../../src/core/ids.js';
 import { linkReference } from '../../../src/core/ops/references.js';
 import { unlinkHazard } from '../../../src/core/ops/platforms.js';
-import { updateControl, retireControl } from '../../../src/core/ops/controls.js';
+import { updateControl, retireControl, removeControlHere, unlinkControl, createControl, addControlHere } from '../../../src/core/ops/controls.js';
 import { setSfarp, setRating, setControlStatus } from '../../../src/core/ops/assessment.js';
 import { createSafetyReport } from '../../../src/core/ops/safety-reports.js';
 import { setStep, setWorkflowPosition, completeWorkflow, cancelWorkflow, addTechHazard } from '../../../src/core/ops/workflows.js';
@@ -114,4 +114,14 @@ test('cancelling keeps its answers and links nothing', () => {
   const d = cancelWorkflow(answerAll(scoped(), 'p1|h1', 'changed'), act, { workflowId: 't1' });
   assert.deepEqual([wf(d).state, wf(d).covered, wf(d).linked], ['cancelled', ['p1|h1', 'p2|h1'], null]);
   assert.equal(Object.values(d.records.referenceLink ?? {}).length, 0);
+});
+
+test('taking a control off a pair, or unlinking it from the hazard, is a change to Controls there; adding one to a pair is not one on the others', () => {
+  const on = (d, key) => [...(techTouched(d, wf(d)).cards.get(key) ?? [])];
+  let d = removeControlHere(scoped(), via, { hazardId: 'h1', platformId: 'p1', controlId: 'c1' });
+  assert.deepEqual([on(d, 'p1|h1'), on(d, 'p2|h1')], [['controls'], []]);
+  d = unlinkControl(scoped(), via, { hazardId: 'h1', controlId: 'c2' });
+  assert.deepEqual([on(d, 'p1|h1'), on(d, 'p2|h1')], [['controls'], ['controls']]);
+  d = addControlHere(createControl(scoped(), act, { id: 'c3', title: 'Smoke hoods' }), via, { hazardId: 'h1', platformId: 'p1', controlId: 'c3', kind: 'mitigating' });
+  assert.deepEqual([on(d, 'p1|h1'), on(d, 'p2|h1')], [['controls'], []]);
 });

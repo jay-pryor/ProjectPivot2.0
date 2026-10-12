@@ -386,6 +386,10 @@ export function techTouched(data, wf) {
     if (!cards.has(key)) cards.set(key, new Set());
     /** @type {Set<string>} */ (cards.get(key)).add(card);
   };
+  /** A field's value as the change left it, not as it is now. @param {any} i @param {string} f */
+  const afterOf = (i, f) => i.fields?.find((/** @type {any} */ x) => x.field === f)?.after;
+  /** Whether a change also linked the record's control to its hazard. @param {any} e @param {Rec} r */
+  const linkedIn = (e, r) => e.items.some((/** @type {any} */ j) => j.kind === 'hazardControl' && (j.change === 'created' || j.change === 'restored') && j.id === ids.hazardControl(r.hazardId, r.controlId));
   const on = (/** @type {any} */ x, /** @type {string} */ controlId) => controlsOnPlatform(data, x.hazard.id, x.platform.id).some((c) => c.control.id === controlId);
   for (const e of workflowChanges(data, wf.id)) {
     for (const i of e.items) {
@@ -396,10 +400,14 @@ export function techTouched(data, wf) {
         case 'sfarp': mark(pairKey(r.platformId, r.hazardId), 'sfarp'); break;
         case 'assessment': if (r.stage === 'residual') mark(pairKey(r.platformId, r.hazardId), 'residual'); break;
         case 'ruling': case 'controlOn': case 'implementationStatus':
-          // Adding a new control to one platform turns it off on the hazard's others: not a change there.
-          if (!(i.kind === 'controlOn' && i.change === 'created' && r.off)) mark(pairKey(r.platformId, r.hazardId), 'controls');
+          // Adding a control new to the hazard on one platform turns it off on the hazard's others,
+          // in the same change: not a change there. (Taking it off one platform is.)
+          if (!(i.kind === 'controlOn' && i.change === 'created' && afterOf(i, 'off') && linkedIn(e, r))) mark(pairKey(r.platformId, r.hazardId), 'controls');
           controls.add(r.controlId); break;
-        case 'hazardControl': for (const x of pairs) if (x.hazard.id === r.hazardId && on(x, r.controlId)) mark(x.key, 'controls'); controls.add(r.controlId); break;
+        case 'hazardControl':
+          // Unlinked, the control is on none of the hazard's platforms now, so every pair on the hazard counts.
+          for (const x of pairs) if (x.hazard.id === r.hazardId && (i.change === 'deleted' || on(x, r.controlId))) mark(x.key, 'controls');
+          controls.add(r.controlId); break;
         case 'implementer': for (const x of pairs) if (x.platform.id === r.platformId && on(x, r.controlId)) mark(x.key, 'controls'); controls.add(r.controlId); break;
         case 'control': for (const x of pairs) if (on(x, r.id)) mark(x.key, 'controls'); controls.add(r.id); break;
         default: break;
