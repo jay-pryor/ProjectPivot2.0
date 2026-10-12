@@ -19,11 +19,11 @@ async function openAs(c, name) {
 }
 const W = (c) => c.getState().session.working;
 
-test('Pivot opens on Home, showing my items; opening alone leaves nothing unsaved', async () => {
+test('Pivot opens showing my items (a new profile on Help first; Home after: controller-help); opening alone leaves nothing unsaved', async () => {
   assert.equal(initialState().homeOwner, 'me');
   const c = createController(env(new MemoryFolder()));
   await openAs(c, 'Ada');
-  assert.equal(c.getState().view.name, 'home');
+  assert.equal(c.getState().view.name, 'help');
   assert.equal(hasUnsaved(c.getState().session), false);
   assert.equal(ackStart(W(c)), null);
 });

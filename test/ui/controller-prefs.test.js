@@ -75,7 +75,7 @@ test('sorting cycles ascending, descending, off; filters set and clear; neither 
   assert.deepEqual(c.getState().tables.hazards.filters, { title: 'fire' });
   await c.dispatch({ type: 'filterTable', table: 'hazards', key: 'title', value: '' });
   assert.deepEqual(c.getState().tables.hazards.filters, {});
-  assert.equal((await readProfiles(f.handle))[0].prefs, undefined);
+  assert.deepEqual((await readProfiles(f.handle))[0].prefs, { helpSeen: true }, 'only that Help was seen');
 });
 
 test('a row being edited in place: start, cancel, and cleared once the edit is applied', async () => {

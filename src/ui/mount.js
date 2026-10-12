@@ -129,7 +129,8 @@ export function wire(el, dispatch, submitting = new Set()) {
     if (!t.matches?.('[data-filter-list]')) return;
     const q = t.value.trim().toLowerCase();
     for (const li of /** @type {NodeListOf<HTMLElement>} */ (t.closest('form, [data-filter-scope]')?.querySelectorAll('[data-pick-text]') ?? [])) {
-      li.hidden = q !== '' && !String(li.dataset.pickText).includes(q);
+      // Some entries (Help's glossary terms) are there only to be found: hidden until something is searched for.
+      li.hidden = q === '' ? li.hasAttribute('data-pick-only') : !String(li.dataset.pickText).includes(q);
     }
   });
   // A picker's Add new shows its new-record fields in place (nothing redraws, so ticks stay) and

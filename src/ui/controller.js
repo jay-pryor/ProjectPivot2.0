@@ -199,14 +199,18 @@ export function createController(env) {
     set({ warnings });
   }
 
-  function finishOpening() {
+  async function finishOpening() {
     openedAt = env.clock.now();
     DocGen.docHost.set(docs.host);
     const notices = unseenOverrides(state.session.working, /** @type {string} */ (state.profileId));
     const workspace = readWorkspace(env.storage, workspaceKey(state.folderName, /** @type {string} */ (state.profileId)));
     const reviewsPrefs = readReviewsPrefs(env.storage, reviewsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)));
     const workflowsPrefs = readWorkflowsPrefs(env.storage, workflowsPrefsKey(state.folderName, /** @type {string} */ (state.profileId)));
-    set({ notices, screen: notices.length ? 'notices' : 'main', view: { name: 'home' }, workspace, reviewsPrefs, workflowsPrefs, bowtieReplace: null });
+    // A new profile's first time opens on Help's Getting started, once: the profile remembers it.
+    const firstTime = activeProfile(state)?.prefs?.helpSeen === false;
+    const view = firstTime ? { name: 'help', topic: 'getting-started' } : { name: 'home' };
+    set({ notices, screen: notices.length ? 'notices' : 'main', view, workspace, reviewsPrefs, workflowsPrefs, bowtieReplace: null });
+    if (firstTime) await savePrefs({ helpSeen: true });
   }
 
 
@@ -378,7 +382,7 @@ export function createController(env) {
         set({ recoverable: m, screen: 'recover' });
         return;
       }
-      finishOpening();
+      await finishOpening();
     },
     async recover() {
       if (!state.recoverable) return;
@@ -386,12 +390,12 @@ export function createController(env) {
       // Kept by an earlier version, it is brought up to date as data opened from the folder is.
       set({ session: { base: normalizeData(m.base), working: normalizeData(m.working), loadedStamp: m.loadedStamp }, recoverable: null });
       await afterChange();
-      finishOpening();
+      await finishOpening();
     },
     async discardRecovery() {
       clearMirror(env.storage);
       set({ recoverable: null });
-      finishOpening();
+      await finishOpening();
     },
     async dismissNotices() {
       const working = markNoticesSeen(state.session.working, act(), state.notices.map((n) => n.id));
@@ -429,11 +433,11 @@ export function createController(env) {
     async dismissWarning({ index }) {
       set({ warnings: (state.warnings ?? []).filter((/** @type {string} */ _w, /** @type {number} */ i) => i !== Number(index)) });
     },
-    async go({ view, id, hazardId, platformId, tab, reviewId, via }) {
+    async go({ view, id, hazardId, platformId, tab, reviewId, via, topic, term }) {
       // Another tab of the record opened from a workflow keeps the way back to it.
       if (!via && state.view?.via && state.view.name === view && (state.view.id ?? null) === (id ?? null)) via = state.view.via;
       // Leaving a control being made, untitled, makes nothing.
-      set({ view: { name: view, id, hazardId, platformId, tab, reviewId, ...(via ? { via } : {}) }, message: null, editing: null, confirmDelete: null, reviewPanel: null, ruleDraft: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
+      set({ view: { name: view, id, hazardId, platformId, tab, reviewId, ...(via ? { via } : {}), ...(topic ? { topic } : {}), ...(term ? { term } : {}) }, message: null, editing: null, confirmDelete: null, reviewPanel: null, ruleDraft: null, favouritesEditing: false, infoTools: { ...state.infoTools, assigning: null }, ...(view === 'newControl' ? {} : { draftControl: null }) });
       if (view === 'backups' && handle) set({ backups: await store.listBackups(handle) });
       if (view === 'references') await handlers.checkReferenceFiles();
       if (view === 'reference') await handlers.checkReferenceFiles({ id });

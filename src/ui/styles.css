@@ -1321,3 +1321,28 @@ ul.dots { display: grid; gap: 3px; }
 .wf-rev { margin-bottom: 8px; }
 .via-banner { display: flex; gap: 12px; align-items: center; padding: 6px 12px; margin: 0 0 12px; background: var(--p-info-bg); color: var(--p-info-fg); border-left: 3px solid var(--p-accent); }
 .wf-check.empty { opacity: .6; }
+
+/* Help: a ? button in the top bar; the page is a rail of topics (with search) and the topic. */
+.topbar .help-button { background: transparent; border-color: var(--p-bar-fg); color: var(--p-bar-fg); opacity: .85; }
+.topbar .help-button:hover, .topbar .help-button.on { opacity: 1; border-color: var(--p-accent); color: var(--p-accent); }
+.help-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 24px; align-items: start; }
+.help-rail { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid var(--p-line); padding-right: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+.help-search { width: 100%; }
+.help-group-h { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--p-muted); padding: 0 8px 2px; }
+.help-item { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 5px 8px; cursor: pointer; color: var(--p-fg); font: inherit; }
+.help-item:hover { background: var(--p-row-hover); }
+.help-item.on { background: var(--p-surface-2); font-weight: 600; box-shadow: inset 3px 0 0 var(--p-accent); }
+.help-main { max-width: 760px; line-height: 1.55; }
+.help-main h2 { margin-top: 0; font-size: 1.6em; }
+.help-main h3 { margin: 20px 0 6px; }
+.help-main li { margin: 3px 0; }
+.help-summary { font-size: 1.08em; color: var(--p-muted); margin-bottom: 12px; }
+.help-summary p { margin: 0; }
+.help-glossary, .help-lookup { margin: 12px 0; }
+.help-term { padding: 8px 10px; border-left: 3px solid transparent; }
+.help-term dt { font-weight: 600; }
+.help-term dd { margin: 2px 0 0; }
+.help-term dd p { margin: 0; }
+.help-term.on { border-left-color: var(--p-accent); background: var(--p-surface-2); }
+.help-related { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+@media (max-width: 760px) { .help-layout { grid-template-columns: 1fr; } .help-rail { position: static; border-right: 0; padding-right: 0; max-height: none; } }
