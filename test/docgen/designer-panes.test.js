@@ -336,3 +336,27 @@ test('a redraw asked for while a button is being pressed waits for the release, 
   assert.equal(RD._gate.pending, true);
   RD._gate.pressing = false; RD._gate.pending = false;
 });
+
+test('Final review I1: leaving a live box cancels its pending save, and a late save on a box no longer on screen is skipped', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../DocGen/doc-designer.js', import.meta.url), 'utf8');
+  assert.match(src, /dom\.on\(ctx\.root, 'focusout', '\[data-rd-live\]', function \(\) \{ clearTimeout\(liveTimer\); \}\);/);
+  assert.match(src, /if \(!el\.isConnected\) return;/);
+});
+
+test('Final review I2: only a plain left press outside form fields holds redraws, and the hold always lets go', () => {
+  const t = (sel) => ({ closest: (q) => (q.split(',').map((x) => x.trim()).includes(sel) ? {} : null) });
+  assert.equal(RD._holds({ button: 0, target: t('button') }), true);
+  assert.equal(RD._holds({ button: 0, target: t('select') }), false);
+  assert.equal(RD._holds({ button: 0, target: t('input') }), false);
+  assert.equal(RD._holds({ button: 2, target: t('button') }), false, 'a right-click opens a menu that eats the release');
+  assert.deepEqual(RD._releaseOn, ['pointerup', 'pointercancel', 'dragend', 'drop', 'click', 'contextmenu']);
+});
+
+test('Final review I3: the three columns stack by the pane\'s own width, not the window\'s', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../../DocGen/doc-designer.css', import.meta.url), 'utf8');
+  assert.match(css, /\.docgen \.rd-pane \{[^}]*container-type: inline-size/);
+  assert.match(css, /@container \(max-width: 820px\) \{ \.docgen \.rd-secgrid/);
+  assert.doesNotMatch(css, /@media \(max-width: 1400px\) \{ \.docgen \.rd-secgrid/);
+});

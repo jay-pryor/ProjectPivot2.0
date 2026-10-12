@@ -300,7 +300,8 @@
   .docgen [title] > strong, .docgen strong[title] { cursor: help;}
   /* The Sections pane: categories | their fields | the section on the page. */
   .docgen .rd-secgrid { display: grid; grid-template-columns: 140px minmax(300px, 1fr) minmax(320px, 1fr); gap: 12px; align-items: start;}
-  @media (max-width: 1400px) { .docgen .rd-secgrid { grid-template-columns: 140px minmax(0, 1fr); } .docgen .rd-sec-prev { grid-column: 1 / -1; } }
+  .docgen .rd-pane { container-type: inline-size;}
+  @container (max-width: 820px) { .docgen .rd-secgrid { grid-template-columns: 140px minmax(0, 1fr); } .docgen .rd-sec-prev { grid-column: 1 / -1; } }
   .docgen .rd-cat-list { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0;}
   .docgen .rd-cat { text-align: left; border: 1px solid transparent; background: none; padding: 5px 8px; font: inherit; font-size: 13px; color: var(--c-text); cursor: pointer;}
   .docgen .rd-cat.on { border-color: var(--c-accent); background: var(--c-surface-alt); font-weight: 600;}

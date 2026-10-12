@@ -4547,6 +4547,13 @@ import { toWinAnsi } from './doc-fonts.js';
      * the click is lost. So a redraw asked for while a button is held waits for the
      * release; the click's own handler then runs on the button that was pressed. */
     var _gate = { pressing: false, pending: false };
+    /** Whether a press holds redraws: a plain left press on something other than a form
+     *  field. A drop-down or a right-click opens a menu that can eat the release. */
+    function holds(e) {
+      return e.button === 0 && !(e.target && e.target.closest && e.target.closest('select, input, textarea, [contenteditable]'));
+    }
+    /** Every event that ends a press, whatever became of it. */
+    var RELEASE_ON = ['pointerup', 'pointercancel', 'dragend', 'drop', 'click', 'contextmenu'];
     function repaint() {
       if (_gate.pressing) { _gate.pending = true; return; }
       if (!refresh() && _ctx) _ctx.refreshMain();
@@ -4822,14 +4829,22 @@ import { toWinAnsi } from './doc-fonts.js';
     function wireShell(h) {
       var dom = h.dom, ctx = h.ctx;
 
-      ctx.root.addEventListener('pointerdown', function () { _gate.pressing = true; }, true);
+      var holdTimer = null;
+      ctx.root.addEventListener('pointerdown', function (e) {
+        if (!holds(e)) return;
+        _gate.pressing = true;
+        // However the press ends, the hold never outlasts a second and a half.
+        clearTimeout(holdTimer);
+        holdTimer = setTimeout(release, 1500);
+      }, true);
       function release() {
         if (!_gate.pressing) return;
         _gate.pressing = false;
         if (_gate.pending) setTimeout(function () { _gate.pending = false; repaint(); }, 0);
       }
       // A press that becomes a drag (reordering sections) ends without a pointerup.
-      ['pointerup', 'pointercancel', 'dragend', 'drop'].forEach(function (t) { document.addEventListener(t, release, true); });
+      RELEASE_ON.forEach(function (t) { document.addEventListener(t, release, true); });
+      window.addEventListener('blur', release);
 
       dom.on(ctx.root, 'click', '[data-rd-open]', function () {
         _rd.open = true; dirty(); ctx.refreshMain();
@@ -5211,11 +5226,14 @@ import { toWinAnsi } from './doc-fonts.js';
       dom.on(ctx.root, 'input', '[data-rd-live]', function (e, el) {
         clearTimeout(liveTimer);
         liveTimer = setTimeout(function () {
+          if (!el.isConnected) return;               // already saved by leaving it, and redrawn
           quietly(function () { logIssues(liveSave(el)); });
           dirty();
           refreshSectionPreview();
         }, 500);
       });
+      // Leaving a live box saves it there and then, so a save still waiting is dropped.
+      dom.on(ctx.root, 'focusout', '[data-rd-live]', function () { clearTimeout(liveTimer); });
 
       /* Keep the caret and the selection where the author put them.
        *
@@ -5583,7 +5601,7 @@ import { toWinAnsi } from './doc-fonts.js';
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
-      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint,
+      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _holds: holds, _releaseOn: RELEASE_ON,
       PANES: PANES, _rd: _rd
     };
   })(App);
