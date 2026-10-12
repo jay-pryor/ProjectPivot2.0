@@ -1351,8 +1351,10 @@ ul.dots { display: grid; gap: 3px; }
 /* Inside the top bar, along its bottom, so it stays in view with it and never covers it. */
 .tour-banner { flex-basis: 100%; order: 99; display: flex; align-items: center; gap: 10px; margin: 2px -20px -8px; padding: 6px 20px; background: var(--p-accent); color: #1b1b1b; }
 .tour-banner button { margin-left: auto; }
-.tour-spotlight { position: fixed; z-index: 60; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .55); outline: 2px solid var(--p-accent); transition: top .2s, left .2s, width .2s, height .2s; }
-.tour-spotlight.full { top: 0; left: 0; width: 0; height: 0; outline: none; }
+.tour-spotlight { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+.tour-spotlight svg { display: block; }
+.tour-dim { fill: rgba(0, 0, 0, .55); }
+.tour-ring { fill: none; stroke: var(--p-accent); stroke-width: 2; }
 .tour-bubble { position: fixed; z-index: 61; width: min(440px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow-y: auto; padding: 14px 16px; background: var(--p-surface); color: var(--p-fg); border: 1px solid var(--p-accent); box-shadow: 0 8px 28px rgba(0, 0, 0, .4); }
 .tour-bubble.centred { top: 50%; left: 50%; transform: translate(-50%, -50%); }
 .tour-bubble h2 { margin: 2px 0 6px; font-size: 1.15em; }

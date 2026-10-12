@@ -1,7 +1,7 @@
 import { emptyData } from '../../core/data.js';
 import { addDays, addMonths } from '../../core/time.js';
 import { createHazard, updateHazard, addCausalFactor, addConsequence, assignNumbers } from '../../core/ops/hazards.js';
-import { createControl, linkControl, setImplementedBy } from '../../core/ops/controls.js';
+import { createControl, linkControl, setImplementedBy, setControlTargets } from '../../core/ops/controls.js';
 import { createPlatform, linkHazard } from '../../core/ops/platforms.js';
 import { createPlatformGroup, tagPlatform } from '../../core/ops/platform-groups.js';
 import { setAssessment, setControlStatus, setSfarp } from '../../core/ops/assessment.js';
@@ -43,7 +43,11 @@ export function sampleRegister(me, today) {
   d = addCausalFactor(d, a, { id: 'tour-cf1', hazardId: 'tour-h1', platformId: 'tour-p1', text: 'Working on deck in heavy seas' });
   d = addCausalFactor(d, a, { id: 'tour-cf2', hazardId: 'tour-h2', platformId: 'tour-p1', text: 'Fuel leak onto a hot surface' });
   d = addCausalFactor(d, a, { id: 'tour-cf3', hazardId: 'tour-h3', platformId: 'tour-p1', text: 'Poor visibility at night' });
-  d = addConsequence(d, a, { id: 'tour-cq1', hazardId: 'tour-h1', text: 'Drowning or hypothermia' });
+  d = addCausalFactor(d, a, { id: 'tour-cf4', hazardId: 'tour-h1', platformId: 'tour-p1', text: 'Stepping across from the jetty' });
+  d = addCausalFactor(d, a, { id: 'tour-cf5', hazardId: 'tour-h1', platformId: 'tour-p1', text: 'Guardrail gate left open' });
+  d = addConsequence(d, a, { id: 'tour-cq1', hazardId: 'tour-h1', text: 'Drowning' });
+  d = addConsequence(d, a, { id: 'tour-cq4', hazardId: 'tour-h1', text: 'Hypothermia' });
+  d = addConsequence(d, a, { id: 'tour-cq5', hazardId: 'tour-h1', text: 'Injury from striking the hull' });
   d = addConsequence(d, a, { id: 'tour-cq2', hazardId: 'tour-h2', text: 'Burns and loss of propulsion' });
   d = addConsequence(d, a, { id: 'tour-cq3', hazardId: 'tour-h3', text: 'Hull damage and injury' });
 
@@ -69,12 +73,21 @@ export function sampleRegister(me, today) {
     ['tour-c2', 'Fixed fire suppression', 'Engineering', 'mitigating', 'tour-h2', 'implemented', 'oem'],
     ['tour-c3', 'Hot-work permits', 'Administrative', 'preventative', 'tour-h2', 'planned', 'highcom'],
     ['tour-c4', 'AIS collision alerting', 'Engineering', 'preventative', 'tour-h3', 'recommended', 'oem'],
+    ['tour-c5', 'Deck harness and jackstays', 'Engineering', 'preventative', 'tour-h1', 'implemented', 'oem'],
+    ['tour-c6', 'Boarding only by the gangway', 'Administrative', 'preventative', 'tour-h1', 'implemented', 'customer'],
+    ['tour-c7', 'Recovery drill and boat hook', 'Administrative', 'mitigating', 'tour-h1', 'implemented', 'customer'],
   ];
   for (const [id, title, tier, kind, h, status, by] of controls) {
     d = createControl(d, a, { id, title, tier, kind, origin: 'Sample', description: `${title} on the boat.` });
     d = linkControl(d, a, { hazardId: h, controlId: id, kind });
     if (status !== 'recommended') d = setControlStatus(d, a, { hazardId: h, controlId: id, platformId: 'tour-p1', status });
     d = setImplementedBy(d, a, { controlId: id, platformId: 'tour-p1', implementedBy: by });
+  }
+  // What each control on person overboard acts on, on the boat: so its bow-tie joins up.
+  /** @type {[string, string[]][]} */
+  const acts = [['tour-c5', ['tour-cf1', 'tour-cf5']], ['tour-c6', ['tour-cf4']], ['tour-c1', ['tour-cq1', 'tour-cq4']], ['tour-c7', ['tour-cq4', 'tour-cq5']]];
+  for (const [controlId, targets] of acts) {
+    d = setControlTargets(d, a, { hazardId: 'tour-h1', controlId, platformId: 'tour-p1', targets });
   }
   // On the range, the lifejackets (linked to the person-overboard hazard there too) are rejected: no water.
   d = setControlStatus(d, sam, { hazardId: 'tour-h1', controlId: 'tour-c1', platformId: 'tour-p2', status: 'rejected', reason: 'No open water on the range.' });
@@ -98,7 +111,7 @@ export function sampleRegister(me, today) {
 
   const now = { by: me, at: at(addDays(today, -1)) };
   d = startWorkflow(d, now, { id: 'tour-w1', type: 'platformReview', platformId: 'tour-p1' });
-  d = setStep(d, now, { workflowId: 'tour-w1', hazardId: 'tour-h1', check: 'safetyReports', checked: true, note: 'The near miss is recorded.' });
+  d = setStep(d, now, { workflowId: 'tour-w1', hazardId: 'tour-h3', check: 'safetyReports', checked: true, note: 'No reports for this one.' });
   d = createBowtieView(d, now, { id: 'tour-bv1', name: 'Person overboard on the boat', hazardId: 'tour-h1', platformId: 'tour-p1', filters: DEFAULT_FILTERS });
   return assignNumbers(d);
 }

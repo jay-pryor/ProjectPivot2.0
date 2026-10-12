@@ -40,3 +40,18 @@ test('an open review of the patrol boat, a saved bow-tie, a reference and a safe
   assert.equal(d.records.reference['tour-r1'].status, 'live');
   assert.equal(Object.values(d.records.safetyReport).filter((r) => r.status === 'live').length, 1);
 });
+
+test('person overboard on the boat is a real bow-tie: causes, consequences, and controls between them', () => {
+  const live = (k, f) => Object.values(d.records[k]).filter((r) => r.status === 'live' && f(r));
+  assert.ok(live('causalFactor', (r) => r.hazardId === 'tour-h1' && r.platformId === 'tour-p1').length >= 3);
+  assert.ok(live('consequence', (r) => r.hazardId === 'tour-h1').length >= 3);
+  const on = live('controlOn', (r) => r.hazardId === 'tour-h1' && r.platformId === 'tour-p1' && r.targets?.length);
+  const kinds = on.map((r) => d.records.hazardControl[`hc:tour-h1:${r.controlId}`].kind);
+  assert.ok(kinds.filter((k) => k === 'preventative').length >= 2, 'controls on the causes');
+  assert.ok(kinds.filter((k) => k === 'mitigating').length >= 2, 'controls on the consequences');
+});
+
+test('the review of the boat has nothing ticked on its first hazard, so the tutorial’s tick is the first', () => {
+  assert.equal(Object.values(d.records.workflowStep).filter((s) => s.workflowId === 'tour-w1' && s.hazardId === 'tour-h1' && s.checked).length, 0);
+  assert.equal(Object.values(d.records.workflowStep).filter((s) => s.workflowId === 'tour-w1' && s.checked).length, 1, 'one tick elsewhere: the review is under way');
+});

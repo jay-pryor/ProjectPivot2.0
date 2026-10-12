@@ -454,7 +454,7 @@ export function homeView(state, data) {
           : html`<p class="muted">Nothing needs attention.</p>`}
       </section>
       <div class="dash-stack">
-      <section class="panel stack-panel"><div class="panel-head coming-up-head"><h2>Coming up</h2>${windowPicker(days)}</div>
+      <section class="panel stack-panel coming-panel"><div class="panel-head coming-up-head"><h2>Coming up</h2>${windowPicker(days)}</div>
         ${upcoming.length ? comingUp(state, data, upcoming) : html`<p class="muted">No reviews due in the ${windowWords(days).toLowerCase()}.</p>`}
       </section>
       ${workflowsPanel(state, data, ownerId)}

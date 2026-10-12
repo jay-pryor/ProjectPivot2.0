@@ -1,5 +1,5 @@
 import { html, raw, esc } from '../html.js';
-import { TOUR_STEPS } from '../tour/steps.js';
+import { TOUR_STEPS, targetsOf } from '../tour/steps.js';
 import { renderHelpText } from '../help-content.js';
 
 /** @param {Record<string, string | number>} a */
@@ -22,7 +22,7 @@ export function tourOverlay(state) {
   }
   const last = n === TOUR_STEPS.length - 1;
   return html`<div class="tour-spotlight" aria-hidden="true"></div>
-    <section class="tour-bubble${step.target ? '' : ' centred'}" role="dialog" aria-label="Tutorial" ${step.target ? attrs({ 'tour-target': step.target }) : ''} ${attrs({ 'tour-step': n })}>
+    <section class="tour-bubble${targetsOf(step).length ? '' : ' centred'}" role="dialog" aria-label="Tutorial" ${targetsOf(step).length ? attrs({ 'tour-targets': targetsOf(step).join('|') }) : ''} ${attrs({ 'tour-step': n })}>
       <p class="tour-count">Step ${n + 1} of ${TOUR_STEPS.length}</p>
       <h2>${step.title}</h2>${renderHelpText(step.text)}
       ${step.try ? html`<div class="tour-try"><strong>✋ Your turn:</strong> ${renderHelpText(step.try.says)}</div>` : ''}

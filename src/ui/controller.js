@@ -859,6 +859,8 @@ export function createController(env) {
         tour: { step: 0, real: { session: state.session, profiles: state.profiles, view: state.view, viewHistory: state.viewHistory, kept } },
         session: { base: sample, working: sample, loadedStamp: null },
         profiles: [...state.profiles, SAMPLE_PROFILE], viewHistory: [], sections: {}, ...TOUR_CLOSED,
+        // Reviews shows everyone's platforms, so Sam's overdue range is there too.
+        reviewsPrefs: { ...(state.reviewsPrefs ?? DEFAULT_REVIEWS_PREFS), owner: 'everyone', groupId: null },
       });
       await enterTourStep(0);
     },
@@ -1291,6 +1293,10 @@ export function createController(env) {
     set({ tour: { ...state.tour, step: n }, ...(step.sections ? { sections: { ...state.sections, ...step.sections } } : {}), picker: null, editing: null, reviewMoved: null });
     const { name, ...where } = step.view;
     await handlers.go({ view: name, ...where });
+    if (step.enter) {
+      const { type, ...args } = step.enter;
+      await handlers[/** @type {keyof typeof handlers} */ (type)](/** @type {any} */ (args));
+    }
   }
 
   /** @param {{ type: string, [k: string]: any }} action */

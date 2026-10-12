@@ -1,12 +1,21 @@
 /**
- * The tutorial's steps, in order. Each shows a page of the sample register and highlights one
- * thing on it (`target`, a CSS selector; none centres the text). A try step (`try`) moves on by
- * itself once one of its actions is done. `sections` opens a page's rail section first.
+ * The tutorial's steps, in order. Each shows a page of the sample register and highlights what it
+ * talks about (`target`: one CSS selector or several; the first is what the bubble sits beside;
+ * none centres the text). A try step (`try`) moves on by itself once one of its actions is done.
+ * `sections` opens a page's rail section first; `enter` is an action done on arriving (opening a
+ * saved bow-tie, say).
  *
  * Text uses Help's markup (blank lines between paragraphs, "- " lists, **bold**), but never links:
- * a link would take the reader away from the step. It assumes no knowledge of PIVOT, and says
- * where on the screen each thing is.
+ * a link would take the reader away from the step. It assumes no knowledge of PIVOT, says where on
+ * the screen each thing is, and everything it talks about is highlighted.
  */
+
+/** A main tab at the top, as a step highlights it. @param {string} view */
+const tab = (view) => `.topbar nav button[data-view="${view}"]`;
+
+/** A step's highlights, as a list. @param {{ target?: string | string[] }} step @returns {string[]} */
+export const targetsOf = (step) => (step.target === undefined ? [] : Array.isArray(step.target) ? step.target : [step.target]);
+
 export const TOUR_STEPS = [
   {
     id: 'welcome', view: { name: 'home' }, title: 'Welcome to PIVOT',
@@ -22,7 +31,7 @@ Press **Next** (or the → key) to go on, **Back** (←) to go back, and **Skip 
 
 - **Home**: what needs your attention.
 - **Hazards**, **Controls** and **Platforms**: the register itself.
-- The rest (Workflows, Reviews and so on) are covered later in this tour.`,
+- The rest are covered later in this tour.`,
   },
   {
     id: 'save', view: { name: 'home' }, target: '.topbar .save', title: 'Saving your work',
@@ -39,7 +48,16 @@ When you change something, the change shows straight away but is only in your br
 Help also has a search box and a glossary that explains every term PIVOT uses, such as "residual risk" or "SFARP".`,
   },
   {
-    id: 'tiles', view: { name: 'home' }, target: '.tiles', title: 'Home: your numbers at a glance',
+    id: 'settings-menu', view: { name: 'home' }, target: '.settings-menu', title: 'The ☰ menu',
+    text: `The three lines at the far top right open a small menu:
+
+- **Backups**: earlier copies of the data PIVOT keeps automatically, which can be put back if something goes wrong.
+- **Deletion history**: things that have been deleted, which can be brought back.
+
+Click the three lines again, or anywhere else, to close it.`,
+  },
+  {
+    id: 'tiles', view: { name: 'home' }, target: ['.tiles', tab('home')], title: 'Home: your numbers at a glance',
     text: `You are on the **Home** page. This row of boxes counts the things waiting for you on the platforms you own, one kind per box (for example "1 to acknowledge" or "1 awaiting decision").
 
 A box with a number in orange has something in it. Click any box to see the full list of that kind.`,
@@ -51,7 +69,7 @@ A box with a number in orange has something in it. Click any box to see the full
 - **Change**: someone else changed one of your platforms; you **acknowledge** it once you have looked.
 - **Review**: a platform's **review** is due soon or overdue, or its date has moved.
 - **Control**: a control needs a **decision** (whether to use it), is planned for you to **implement**, or is missing details.
-- **Rating**: a hazard is missing a risk **rating**, or a rating has no **justification** (the reason for it).
+- **Rating**: a hazard is missing a risk **rating**, or a rating has no **justification**.
 - **SFARP**: the argument that the risk is as low as it reasonably can be is unfinished.
 
 Each row has a button at its right end that takes you to where the item is dealt with.`,
@@ -64,23 +82,36 @@ When someone else changes your platform, PIVOT asks you to acknowledge it, so yo
     try: { action: ['acknowledge', 'acknowledgeAll'], says: 'Click the **Acknowledge** button at the right end of that row.' },
   },
   {
-    id: 'workflows-home', view: { name: 'home' }, target: '.wf-panel', title: 'Coming up, and work in progress',
-    text: `To the right of Needs attention are two more panels:
+    id: 'coming-up', view: { name: 'home' }, target: '.coming-panel', title: 'Coming up',
+    text: `**Coming up** lists the reviews due soon on your platforms: when each is due, and how many working days are left. The dropdown at its top right changes how far ahead it looks.
 
-- **Coming up** (above): reviews due soon on your platforms, with how many working days are left.
-- **Workflows in progress** (highlighted): step-by-step tasks you have started and not finished. Here, your review of the patrol boat is under way. **Resume →** carries on where you left off.`,
+Here the Harbour Patrol Boat's review is due in two weeks. Its review is already under way, so the button says **Continue review →**.`,
   },
   {
-    id: 'hazards', view: { name: 'hazards' }, target: '[data-table="hazards"]', title: 'The Hazards page',
-    text: `You are now on the **Hazards** page (the Hazards tab at the top). A **hazard** is something that could cause harm, such as "Person overboard".
+    id: 'workflows-home', view: { name: 'home' }, target: '.wf-panel', title: 'Workflows in progress',
+    text: `**Workflows in progress** lists the step-by-step tasks you have started and not finished, each with a bar showing how far along it is.
 
-Each row is one hazard: its number (HAZ-001 and so on), its name, the platforms it applies to, and how serious it still is with controls in place. Click a hazard's name to open its own page. To add a hazard, click the small **+** next to the page's title, type its name and press **Add**.`,
+Here, your review of the patrol boat is under way. **Resume →** carries on where you left off, and **All workflows →** at the top right opens the Workflows page.`,
   },
   {
-    id: 'hazard', view: { name: 'hazard', id: 'tour-h1' }, target: '.dash-summary', title: 'A hazard’s page: the Overview',
+    id: 'hazards', view: { name: 'hazards' }, target: ['[data-table="hazards"]', tab('hazards')], title: 'The Hazards page',
+    text: `This is the **Hazards** page. A **hazard** is something that could cause harm, such as "Person overboard".
+
+Each row of the list is one hazard: its number (HAZ-001 and so on), its name, the platforms it applies to, and how serious it still is with controls in place. Click a hazard's name to open its own page.`,
+  },
+  {
+    id: 'add-hazard', view: { name: 'hazards' }, target: ['main .head .plus', tab('hazards')], title: 'Adding a hazard',
+    text: `To add a hazard, click the small **+** next to the page's title. A box opens: type the hazard's name and press **Add**.
+
+The same small **+** adds things all over PIVOT: next to a page's title, or at the top of a table or a card.`,
+  },
+  {
+    id: 'hazard', view: { name: 'hazard', id: 'tour-h1' }, target: ['.dash-summary', '.doc-menu'], title: 'A hazard’s page: the Overview',
     text: `This is the page for hazard **HAZ-001 Person overboard**.
 
-Each hazard's page opens on its **Overview**. The Overview holds what is true of the hazard on every platform it applies to: its description (highlighted), its consequences, the stages of a platform's life when it applies, the controls linked to it, and its references and safety reports. Scroll down to see them.`,
+Each hazard's page opens on its **Overview**. The Overview holds what is true of the hazard on every platform it applies to: its description (highlighted), its consequences, the stages of a platform's life when it applies, the controls linked to it, and its references and safety reports. Scroll down to see them.
+
+The **⋯** button at the right of the title has options for the whole hazard, such as Retire and Delete.`,
   },
   {
     id: 'platform-tabs', view: { name: 'hazard', id: 'tour-h1' }, target: 'nav.tabs', title: 'One tab for each platform',
@@ -102,10 +133,16 @@ The highlighted table shows how serious it is for three things it could harm (**
 Everything below on this tab (its causes, its controls, its ratings) is for this platform only.`,
   },
   {
-    id: 'try-rating', view: { name: 'hazard', id: 'tour-h1', tab: 'p:tour-p1' }, sections: { ssra: 'residual' }, target: '.risk-residual', title: 'Your turn: rate the risk',
-    text: `Further down the tab, a column of icons on the left opens each section; **Residual risk** is open now. It has one panel each for Personnel, Environment and Capability.
+    id: 'section-menu', view: { name: 'hazard', id: 'tour-h1', tab: 'p:tour-p1' }, sections: { ssra: 'residual' }, target: '.rail', title: 'The tab’s menu',
+    text: `Further down the tab, this column on the left is its **menu**. Each line opens one section beside it: Safety reports, References, Initial risk, Controls, Residual risk and SFARP. The highlighted line is the section open now; a number or coloured dot beside a line shows what is in it.
 
-Each rating is a **likelihood**, from A (frequent) to G (not credible), and a **consequence**, from 1 (catastrophic) to 5 (none). PIVOT works out the **assessed level** from the two. The boxes beneath are for the reason behind each choice.`,
+Click a line to open its section; click the open one again to close it. Many pages in PIVOT have a menu like this.`,
+  },
+  {
+    id: 'try-rating', view: { name: 'hazard', id: 'tour-h1', tab: 'p:tour-p1' }, sections: { ssra: 'residual' }, target: '.risk-residual', title: 'Your turn: rate the risk',
+    text: `**Residual risk** is open from the menu. It has one panel each for Personnel, Environment and Capability.
+
+Each rating is a **likelihood**, from A (frequent) to G (not credible), and a **consequence**, from 1 (catastrophic) to 5 (none). PIVOT works out the **assessed level** from the two. The boxes beneath each are for the justification of each choice.`,
     try: { action: ['setAssessment', 'setRating'], says: 'Choose a different letter in one of the **Likelihood** dropdowns.' },
   },
   {
@@ -115,8 +152,8 @@ Each rating is a **likelihood**, from A (frequent) to G (not credible), and a **
 So changing a rating can move the platform's review date. When it does, PIVOT tells the platform's owner, and the new date shows on their Home until they acknowledge it.`,
   },
   {
-    id: 'controls', view: { name: 'hazard', id: 'tour-h1', tab: 'p:tour-p1' }, sections: { ssra: 'controls' }, target: '.rail-panel', title: 'Controls on this platform',
-    text: `This is the **Controls** section (from the column of icons on the left). A **control** is something that stops the hazard happening or limits the harm, such as "Lifejackets worn on deck".
+    id: 'controls', view: { name: 'hazard', id: 'tour-h1', tab: 'p:tour-p1' }, sections: { ssra: 'controls' }, target: ['.rail-panel', '.rail-item[data-section="controls"]'], title: 'Controls on this platform',
+    text: `**Controls** is open from the menu. A **control** is something that stops the hazard happening or limits the harm, such as "Lifejackets worn on deck".
 
 Each control has a **status** on this platform, chosen in its dropdown:
 
@@ -126,44 +163,46 @@ Each control has a **status** on this platform, chosen in its dropdown:
 - **Rejected**: not used, with a reason.`,
   },
   {
-    id: 'platform', view: { name: 'platform', id: 'tour-p1' }, target: '.doc-head', title: 'A platform’s page',
-    text: `This is the page for the **Harbour Patrol Boat** platform (from the Platforms tab at the top). A **platform** is a piece of equipment or a system the register covers.
+    id: 'platform', view: { name: 'platform', id: 'tour-p1' }, target: ['.doc-head', tab('platforms')], title: 'A platform’s page',
+    text: `This is the page for the **Harbour Patrol Boat**, opened from the **Platforms** page. A **platform** is a piece of equipment or a system the register covers.
 
-Below its name: who **owns** it (the person responsible for it), the groups it belongs to, when its next review is due, then lists of its hazards and controls. **Transfer owner…** hands it to someone else.`,
+Below its name: who **owns** it (the person responsible for it), the groups it belongs to, when its next review is due, then lists of its hazards and controls. **Transfer owner…** hands it to someone else, and the **⋯** button at the right of the title has more options, such as its picture and its review schedule.`,
   },
   {
-    id: 'workflows', view: { name: 'workflows' }, target: '.wf-cards', title: 'Workflows: guided tasks',
+    id: 'workflows', view: { name: 'workflows' }, target: ['.wf-cards', tab('workflows')], title: 'Workflows: guided tasks',
     text: `This is the **Workflows** page. A workflow walks you through a bigger job step by step, such as reviewing a platform, setting up a new one, or handing one to a new owner.
 
-Start one from these boxes: choose what it is about from the dropdown, then press **Start**. Workflows you have started are listed above, under In progress, and anyone can see how far along they are.`,
+Start one from these boxes: choose what it is about from the box's dropdown, then press **Start**. Workflows already started are listed above, under In progress, with how far along each is.`,
   },
   {
-    id: 'review', view: { name: 'workflow', id: 'tour-w1', hazardId: 'tour-h1' }, target: '.wf-rail', title: 'A review in progress',
-    text: `This is your Platform Review of the patrol boat, opened from Workflows.
+    id: 'review', view: { name: 'workflow', id: 'tour-w1', hazardId: 'tour-h1' }, target: ['.wf-rail', tab('workflows')], title: 'A review in progress',
+    text: `This is your review of the patrol boat, opened from Workflows.
 
-The list on the left has one entry per hazard on the platform, each with how many of its checks are done, and **Summary & complete** at the bottom. Click an entry to go to it. The page to the right shows the checks for the hazard chosen: six questions to look at, each with what you need to look at it.`,
+The list on the left is the review's **menu**: one line per hazard on the platform, each with how many of its checks are done, and **Summary & complete** at the bottom. Click a line to go to it. The page to the right shows the checks for the hazard chosen: six questions to look at, each with what you need to answer it.`,
   },
   {
     id: 'try-check', view: { name: 'workflow', id: 'tour-w1', hazardId: 'tour-h1' }, target: '.wf-check-foot', title: 'Your turn: tick a check',
-    text: `Each check shows the same information you would see on the hazard's page, so you can fix anything there and then. Underneath each one is a box for a note, and a **Checked** tickbox.
+    text: `Each check shows the same information you would see on the hazard's page, so you can fix anything there and then. At the bottom of each check is a box for a note, and a **Checked** tickbox (highlighted, for the first check).
 
-Once every check on every hazard is ticked, the review can be completed from Summary & complete.`,
-    try: { action: ['setStep'], says: 'Tick one of the **Checked** boxes.' },
+Once every check on every hazard is ticked, the review can be completed from **Summary & complete**.`,
+    try: { action: ['setStep'], says: 'Tick the **Checked** box.' },
   },
   {
-    id: 'reviews', view: { name: 'reviews' }, target: '[data-table="reviewSchedule"]', title: 'The Reviews page',
-    text: `The **Reviews** page lists every platform with when its next review is due.
+    id: 'reviews', view: { name: 'reviews' }, target: ['[data-table="reviewSchedule"]', tab('reviews')], title: 'The Reviews page',
+    text: `This is the **Reviews** page. It lists every platform and when its next review is due.
 
-Here the Training Range is **overdue** (its date has passed) and the Harbour Patrol Boat is **due soon** (within 30 days). Click a platform to set how often it is reviewed or start a review. The **Timeline** tab shows the whole year at a glance.`,
+Here the Training Range's review is **overdue** (its date has passed) and the Harbour Patrol Boat's is **due soon** (within 30 days). Click a platform's name to set how often it is reviewed, or to start its review. The **Timeline** tab, above the list, shows the whole year at a glance.`,
   },
   {
-    id: 'bowties', view: { name: 'bowties' }, target: '.bt-side', title: 'Bow-ties',
-    text: `The **Bow-ties** page draws a hazard on a platform as a diagram shaped like a bow tie: its causes on the left, the hazard in the middle, and its consequences on the right, with the controls in between.
+    id: 'bowties', view: { name: 'bowties' }, enter: { type: 'openBowtieView', id: 'tour-bv1' }, target: ['.bt-stage', '.bt-side', tab('bowties')], title: 'Bow-ties',
+    text: `This is the **Bow-ties** page, showing the saved diagram of Person overboard on the patrol boat.
 
-This panel on the left lists your saved diagrams; click one to open it, or choose **New diagram**.`,
+It is drawn like a bow tie: the **causes** on the left, the **hazard** in the middle, and the **consequences** on the right. Between them are the **controls**: those that stop the causes, and those that limit the consequences. Solid boxes are controls in place; dashed ones are not yet.
+
+The panel on the left lists your saved diagrams, and **New diagram** draws another.`,
   },
   {
-    id: 'rest', view: { name: 'info' }, target: '.topbar nav', title: 'Info, Reports and References',
+    id: 'rest', view: { name: 'info' }, target: [tab('info'), tab('reports'), tab('references')], title: 'Info, Reports and References',
     text: `Three more tabs at the top:
 
 - **Info** (open now): the shared lists PIVOT offers choices from, and the groups platforms belong to.
