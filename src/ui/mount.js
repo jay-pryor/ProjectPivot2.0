@@ -1,4 +1,5 @@
 import { renderApp } from './render.js';
+import { pickMatches } from './pick-match.js';
 import { captureDrafts, restoreDrafts, formIdentity, formValues } from './drafts.js';
 import { themeOf } from './prefs.js';
 import { clampZoom, ZOOM_MIN, ZOOM_MAX } from './workspace.js';
@@ -128,9 +129,14 @@ export function wire(el, dispatch, submitting = new Set()) {
     const t = /** @type {HTMLInputElement} */ (e.target);
     if (!t.matches?.('[data-filter-list]')) return;
     const q = t.value.trim().toLowerCase();
-    for (const li of /** @type {NodeListOf<HTMLElement>} */ (t.closest('form, [data-filter-scope]')?.querySelectorAll('[data-pick-text]') ?? [])) {
+    const scope = t.closest('form, [data-filter-scope]');
+    for (const li of /** @type {NodeListOf<HTMLElement>} */ (scope?.querySelectorAll('[data-pick-text]') ?? [])) {
       // Some entries (Help's glossary terms) are there only to be found: hidden until something is searched for.
-      li.hidden = q === '' ? li.hasAttribute('data-pick-only') : !String(li.dataset.pickText).includes(q);
+      li.hidden = q === '' ? li.hasAttribute('data-pick-only') : !pickMatches(String(li.dataset.pickText), q);
+    }
+    // A group (Help's headings) shows only while something in it does.
+    for (const g of /** @type {NodeListOf<HTMLElement>} */ (scope?.querySelectorAll('[data-pick-group]') ?? [])) {
+      g.hidden = q !== '' && ![...g.querySelectorAll('[data-pick-text]')].some((li) => !(/** @type {HTMLElement} */ (li)).hidden);
     }
   });
   // A picker's Add new shows its new-record fields in place (nothing redraws, so ticks stay) and
