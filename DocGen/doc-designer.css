@@ -332,3 +332,22 @@
       transparent 0 6px, var(--c-surface-alt) 6px 7px); border-radius: 2px;}
   .docgen .rd-paper .prv-space { background: none;}
   .docgen :focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px;}
+  /* PDF-1: pages laid out as the PDF will be — a white sheet with everything placed on it. */
+  .docgen .rd-preview-pages { display: flex; flex-direction: column; align-items: center; gap: 16px; background: var(--c-surface-alt); padding: 12px;}
+  .docgen .dp-page { position: relative; flex: 0 0 auto; background: #fff; box-shadow: 0 1px 5px rgba(0,0,0,0.3); overflow: hidden; border-radius: 0;}
+  .docgen .dp-page::after { content: attr(data-page); position: absolute; right: 4px; bottom: 2px; font-size: 10px; color: #aaa;}
+  .docgen .dp-text { position: absolute; white-space: pre;}
+  .docgen .dp-fill, .docgen .dp-rule, .docgen .dp-link, .docgen .dp-anchor { position: absolute;}
+  .docgen .dp-link { display: block;}
+  .docgen .dp-link:hover { background: rgba(20, 65, 140, 0.12);}
+  /* PDF-1: the Styles pane — sections, their fields, and the pages beside them. */
+  .docgen .rd-styles { display: grid; grid-template-columns: 170px minmax(280px, 1fr) minmax(320px, auto); gap: 12px; align-items: start; margin-top: 10px;}
+  .docgen .rd-style-list { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0;}
+  .docgen .rd-style-sec { text-align: left; border: 1px solid transparent; background: none; padding: 5px 8px; font: inherit; font-size: 13px; color: var(--c-text); cursor: pointer;}
+  .docgen .rd-style-sec.on { border-color: var(--c-accent); background: var(--c-surface-alt); font-weight: 600;}
+  .docgen .rd-style-fields .rd-fmt-body { border: 0; padding: 0; margin: 0; min-width: 0;}
+  .docgen .rd-flags { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0;}
+  .docgen .rd-held { font-size: 12px; border: 1px solid var(--c-border); border-left-width: 4px; background: var(--c-warn-bg); padding: 6px 10px; margin: 6px 0;}
+  .docgen .rd-held ul { margin: 4px 0 0 18px; padding: 0;}
+  .docgen .rd-style-preview { max-height: calc(100vh - 220px); overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; background: var(--c-surface-alt); padding: 10px;}
+  .docgen .rd-replaced code { font-size: 15px; margin-right: 6px;}

@@ -1,5 +1,7 @@
 // @ts-nocheck
-import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from './doc-style.js';
+import { STANDARD as STYLE_STANDARD, PAPER_MM as STYLE_PAPER_MM, normaliseStyle, fromProfile, isStyle } from './doc-style.js';
+import { layout } from './doc-layout.js';
+import { pagesHtml } from './doc-preview.js';
   /* App namespace root. Exported at the bottom of this file. */
   var App = {};
 
@@ -2799,7 +2801,7 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
       if (!raw.name || typeof raw.name !== 'string') bad('A formatting profile needs a name.');
       if (raw.levels !== undefined && !Array.isArray(raw.levels)) bad('levels must be an array.');
       if (issues.length) return { ok: false, issues: issues, profile: null };
-      var p = normaliseProfile(raw);
+      var p = normalise(raw);
       delete p.builtin;                       // an imported profile is never the built-in
       return { ok: true, issues: [], profile: p };
     }
@@ -5157,7 +5159,9 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
       var docTitle = tag(String(meta.title || ''));
       return {
         document: { title: docTitle, meta: { title: docTitle, platform: meta.platform || '', date: meta.date || '', marking: meta.classification || '' }, blocks: out },
-        style: tagged, tags: findTags(all)
+        style: tagged, tags: findTags(all),
+        // What a reference can point at, and how each reads — for the designer's link menu and editors.
+        refs: { resolve: resolveRef, targets: App.doc.refTargets(resolved, tableList) }
       };
     }
 
@@ -7554,11 +7558,9 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
     var PANES = [
       { id: 'section', label: 'Section' },
       { id: 'relevance', label: 'Relevance' },
-      { id: 'formatting', label: 'Formatting' },
-      // HDR-1: the running header and footer are a big enough question — six slots, a
-      // different first page, and the classification banner — to be their own pane
-      // rather than a fourth fieldset under Formatting.
-      { id: 'headerfooter', label: 'Header & Footer' },
+      // PDF-1: one pane for everything about how the document looks — page, text,
+      // tables, header and footer, marking, numbering — with the pages beside it.
+      { id: 'styles', label: 'Styles' },
       { id: 'templates', label: 'Templates' },
       { id: 'preview', label: 'Preview' },
       // GEN-TAB: generation is the last thing you do, so it is the last tab. It is also
@@ -7572,11 +7574,14 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
       pane: 'section',
       pages: false,          // PRV-4: is the preview showing sheets of paper?
       selected: null,        // block id being edited in the Section pane
-      fmtId: null,           // profile being edited in the Formatting pane
+      fmtId: null,           // Style being edited in the Styles pane
+      styleSection: null,    // which part of that Style is open (PDF-1)
+      held: null,            // what the last edit asked for that the Style could not use
       conflict: null,        // { kindKey, plan, decisions } while an import is being resolved
       refFor: null,          // part id whose "insert reference" menu is open
       optMenu: null,         // block id whose columns/groups menu is open (OPT-1)
-      preview: null          // cached { html, outline } so switching panes is not a re-generate
+      preview: null,         // cached layout of the document, so switching panes is not a re-layout
+      refs: null             // cached reference targets of the built document
     };
     var _ctx = null;
     var _dragId = null;      // section being dragged
@@ -7644,8 +7649,8 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
         blocks: blocks,
         resolved: App.doc.outline(blocks, {
           baseLevel: 1,
-          clampSkips: profile.headings.clampSkips !== false,
-          numbered: profile.headings.numbered !== false
+          clampSkips: true,
+          numbered: profile.numbering.on
         }),
         profile: profile
       };
@@ -7795,8 +7800,24 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
      * so a chip reads exactly what the PDF will print, renumbering included.
      * ---------------------------------------------------------------------- */
     function refResolver(project) {
-      try { return docCtx(project, filledView(project)).resolveRef; }
-      catch (e) { return null; }        // a half-built document must not break the editor
+      var r = docRefs(project);
+      return r ? r.resolve : null;
+    }
+    /**
+     * PDF-1: what a reference can point at, from the document as it will be built —
+     * generated tables included, numbered as they will print. Cached until the next
+     * change, because every rich-text box on a pane asks.
+     */
+    function docRefs(project) {
+      if (_rd.refs) return _rd.refs;
+      var selId = selectedSubjectId(project);
+      try {
+        var built = App.docGen.documentFor(H(), Object.assign({}, opts(), { subjectId: selId }), { utc: H().clock && H().clock.nowIso ? H().clock.nowIso() : '' });
+        _rd.refs = built.refs;
+      } catch (e) {
+        _rd.refs = null;                 // a half-built document must not break the editor
+      }
+      return _rd.refs;
     }
 
     /**
@@ -7855,9 +7876,8 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
      */
     function refMenuFor(project, ownId, host) {
       // Filled, so the register tables are in the list — see filledView.
-      var view = filledView(project);
-      var tables = App.doc.tableIndex(view.resolved);
-      var targets = App.doc.refTargets(view.resolved, tables).filter(function (t) { return t.id !== ownId; });
+      var refs = docRefs(project);
+      var targets = (refs ? refs.targets : []).filter(function (t) { return t.id !== ownId; });
       if (!targets.length) return '<div class="rd-refmenu"><em>Nothing to link to yet.</em></div>';
       return '<div class="rd-refmenu">' +
         '<div class="rd-refmenu-h">Link to&hellip;</div>' +
@@ -7907,7 +7927,11 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
      * the PDF will have — at a scale, but honestly at a scale.
      * @returns {number} the editor table's width in px
      */
-    function textWidthPx(profile) { return App.docFormat.textWidthPx(profile); }
+    function textWidthPx(style) {
+      var dims = STYLE_PAPER_MM[style.page.paper] || STYLE_PAPER_MM.a4;
+      var w = style.page.orientation === 'landscape' ? dims[1] : dims[0];
+      return Math.round((w - style.page.margins.left - style.page.margins.right) * 96 / 25.4);
+    }
 
     /**
      * PRV-2: a rendered document, wrapped in a page-shaped box carrying the profile's
@@ -8071,8 +8095,7 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
           '</span>' +
           cb('data-rd-part-flag="centre" ' + host, 'Centre', part.centre === true) +
           // TBS-1: this table opts in; the Formatting pane decides what opting in looks like.
-          cb('data-rd-part-flag="styleHead" data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"', 'Style header row', part.styleHead === true) +
-          cb('data-rd-part-flag="styleFirstColumn" data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"', 'Style first column', part.styleFirstColumn === true) +
+
           // CAP-4: a table that names itself in its own title row, or one that is simply
           // a layout, does not want "Table 7:" underneath it.
           cb('data-rd-part-flag="noCaption" data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"', 'No caption', part.noCaption === true) +
@@ -8266,43 +8289,30 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
       return (resolved && resolved.introNumber) ? MD.text(resolved.introNumber) + ' ' + body : body;
     }
 
+    /**
+     * PDF-1: a section previewed as the PAGES it lands on, cut from the whole document's
+     * layout — so its numbers, captions, references and page breaks are the real ones.
+     */
     function sectionPreview(project, block) {
-      if (block && block.kind === 'custom') return customPreview(project, block);
-      var selId = selectedSubjectId(project);
-      if (!selId) return '<p class="muted">No ' + esc(noun()) + ' selected — nothing to preview.</p>';
-      try {
-        var generatedUtc = H().clock.nowIso();
-        var ctx = App.docHost.context(selId, generatedUtc);
-        var filled = App.docGen.sectionContent(H(), block,
-          Object.assign({}, opts(), { subjectId: selId, providers: runSections(selId) }), ctx,
-          App.docHost.chosenMeta(selId, generatedUtc));
-        // Numbered as it will actually be numbered, so the preview reads as the page.
-        var resolved = outlineNow(project).resolved.filter(function (r) { return r.id === block.id; })[0];
-        var md = App.md.join([
-          // The HEADING, not the name (NAM-1): `resolved` already carries the heading as
-          // `title`, and forcing the label in here was showing the section list's
-          // shorthand in a preview of the page, where the page will print the heading.
-          resolved ? App.doc.headingFor(resolved) : '',
-          // SEC-1/SEC-2: the introduction, with the number it will actually carry. The
-          // number comes from `resolved`, which is the same outline the document uses,
-          // so the preview cannot show a different one. REF-1: rendered through the real
-          // document ctx, so a cross-reference in an introduction reads here exactly as
-          // it will on the page rather than as "[missing reference]".
-          introMd(project, block, resolved),
-          filled.body || '',
-          (filled.children || []).map(function (c) {
-            var lvl = Math.min((resolved ? resolved.level : 1) + 1, 4);
-            return App.md.join([App.md.heading(lvl, App.md.text(c.label)), c.body]);
-          }).join('\n\n')
-        ]);
-        if (!String(md).trim()) return '<p class="muted">This section is empty for the selected ' + esc(noun()) + '.</p>';
-        return '<div class="rd-preview-doc rd-secprev">' + paper(project, App.ui.mdPreview.toHtml(withTags(md)).html) + '</div>';
-      } catch (e) {
-        return '<p class="rd-err">Preview failed: ' + esc(e && e.message) + '</p>';
+      var p = _rd.preview || (_rd.preview = laidOut(project));
+      if (p.error) return '<p class="muted">' + esc(p.error) + '</p>';
+      var view = outlineNow(project);
+      var included = view.resolved.filter(function (r) { return r.included !== false; });
+      var at = included.map(function (r) { return r.id; }).indexOf(block.id);
+      var mine = at === -1 ? null : p.anchors[included[at].anchor];
+      if (!mine) return '<p class="muted">' + (at === -1 ? 'This section is not in the document.' : 'This section has no heading to find it by — see it in the <strong>Preview</strong>.') + '</p>';
+      var last = mine.page;
+      for (var i = at + 1; i < included.length; i++) {
+        var next = p.anchors[included[i].anchor];
+        if (next) { last = Math.max(mine.page, next.y > 80 ? next.page : next.page - 1); break; }
+        last = p.pages.length - 1;
       }
+      var shown = p.pages.slice(mine.page, Math.min(last, mine.page + 2) + 1);
+      return '<div class="rd-secprev rd-preview-pages"><p class="muted rd-hint">Page ' + (mine.page + 1) +
+        (shown.length > 1 ? ' to ' + (mine.page + shown.length) : '') + ' of ' + p.pages.length + '.</p>' +
+        pagesHtml(shown, { scale: 0.6 }) + '</div>';
     }
 
-    /** META-1: the include/exclude ticks for the subject's metadata rows. */
     function metaPane(project) {
       var selId = selectedSubjectId(project);
       if (!selId) return '<p class="muted">No ' + esc(noun()) + ' selected.</p>';
@@ -8329,7 +8339,8 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
        * breaks and therefore a blank page between them. App.doc now suppresses the
        * second; this says so, rather than leaving a tick that visibly does nothing. */
       var lvl = resolved ? resolved.level : null;
-      var byLevel = App.docFormat.levelBreaks(App.docFormat.resolve(project))[lvl] === true;
+      var lvStyle = App.docFormat.resolve(project).text[lvl === App.doc.TITLE_LEVEL ? 'title' : 'h' + lvl];
+      var byLevel = !!(lvStyle && lvStyle.pageBreakBefore);
       return '<div class="rd-fieldset"><strong>On the page</strong>' +
         cb('data-rd-centre="' + esc(block.id) + '"',
           'Centre this section\u2019s content \u2014 heading included', block.centre === true) +
@@ -8459,25 +8470,6 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
         '</div>';
     }
 
-    /** TBS-1: whether this section's generated tables wear the profile's table styling. */
-    function tableStyleField(project, block) {
-      var t = App.docFormat.normalise(App.docFormat.resolve(project)).tables;
-      function describe(s) {
-        var bits = [];
-        if (s.bold) bits.push('bold');
-        if (s.italic) bits.push('italic');
-        if (s.shade) bits.push('shaded ' + s.shade);
-        return bits.length ? bits.join(', ') : 'no styling set';
-      }
-      var st = block.tableStyle || {};
-      return '<div class="rd-fieldset"><strong>Table styling</strong>' +
-        '<p class="muted">What <em>styled</em> looks like is set once, in the <strong>Formatting</strong> pane; which tables wear it is decided here, per section.</p>' +
-        // FNT-4: opting in is about the SHADE now; the weight reaches every table.
-        cb('data-rd-tstyle="head" data-rd-block="' + esc(block.id) + '"', 'Shade the header row (' + describe(t.head) + ')', st.head === true) +
-        cb('data-rd-tstyle="firstColumn" data-rd-block="' + esc(block.id) + '"', 'Style the first column (' + describe(t.firstColumn) + ')', st.firstColumn === true) +
-        '</div>';
-    }
-
     function paneSection(project, view) {
       var id = _rd.selected;
       if (!id) return '<p class="muted">Pick a section on the left to open it.</p>';
@@ -8492,7 +8484,6 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
         out.push(centreToggle(project, block, view.resolved.filter(function (r) { return r.id === block.id; })[0]));
         out.push(introField(project, block));
         out.push(tableWordingEditor(project, block));
-        out.push(tableStyleField(project, block));
         if (block.kind === 'meta') out.push(metaPane(project));
         // OPT-1: the column and group ticks are on the section ROW now, not here — see
         // optionsMenu. What stays is the width strip, which is drawn against whatever
@@ -8609,269 +8600,216 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
       return '<label class="gen-opt" title="' + esc(hint || '') + '"><input type="checkbox" data-rd-fmt-bool="' + esc(key) + '"' + (on ? ' checked' : '') + '> ' + esc(label) + '</label>';
     }
 
-    function paneFormatting(project) {
-      var all = App.docFormat.list(project);
-      var active = App.docFormat.resolve(project);
-      var editId = _rd.fmtId || active.id;
-      var f = all.filter(function (x) { return x.id === editId; })[0] || active;
-      var builtin = !!f.builtin;
+    // ======================================================================
+    // PDF-1: the Styles pane — every setting of a Style, section by section, with the
+    // document laid out beside it, so a change is seen on the page as it is made.
+    // ======================================================================
 
-      var head = '<div class="rd-fmt-head">' +
-        '<label class="rd-lab">Profile in use' +
-          '<select data-rd-fmt-active aria-label="Formatting profile in use">' +
-            all.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === active.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
-          '</select></label>' +
-        '<label class="rd-lab">Editing' +
-          '<select data-rd-fmt-edit aria-label="Formatting profile being edited">' +
-            all.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === f.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
-          '</select></label>' +
-        '<span class="spacer"></span>' +
-        '<button type="button" data-rd-fmt-new>Duplicate</button>' +
-        '<button type="button" class="danger" data-rd-fmt-del' + (builtin ? ' disabled' : '') + '>Delete</button>' +
-        '</div>';
+    /** The sections of a Style, in the order the left list shows them. */
+    var STYLE_SECTIONS = [
+      { id: 'page', label: 'Page' },
+      { id: 'title', label: 'Title' }, { id: 'h1', label: 'Heading 1' }, { id: 'h2', label: 'Heading 2' },
+      { id: 'h3', label: 'Heading 3' }, { id: 'h4', label: 'Heading 4' },
+      { id: 'body', label: 'Body' }, { id: 'caption', label: 'Caption' }, { id: 'code', label: 'Code' },
+      { id: 'tables', label: 'Tables' },
+      { id: 'headerFooter', label: 'Header & footer' },
+      { id: 'marking', label: 'Marking' },
+      { id: 'numbering', label: 'Numbering & contents' }
+    ];
+    var FAMILY_LABELS = [{ value: 'helvetica', label: 'Helvetica (sans serif)' }, { value: 'times', label: 'Times (serif)' }, { value: 'courier', label: 'Courier (fixed width)' }];
+    var ALIGN_LABELS = [{ value: 'left', label: 'Left' }, { value: 'centre', label: 'Centre' }, { value: 'right', label: 'Right' }, { value: 'justify', label: 'Justified' }];
 
-      var locked = builtin
-        ? '<div class="rd-locked">The <strong>Standard</strong> profile ships with the tool and cannot be edited — <strong>Duplicate</strong> it and change the copy. That keeps a known-good baseline in every project.</div>'
-        : '';
-
-      var page = '<div class="rd-fieldset"><strong>Page</strong>' +
-        '<div class="rd-grid">' +
-          pick('Paper', 'page.paper', f.page.paper, App.docFormat.PAPERS) +
-          // FNT-3: the document's own size has moved to the Fonts table below, beside the
-          // heading sizes and the two table sizes — every size in the document, in one
-          // place, rather than one under Page, two under Tables and four under Headings.
-          pick('Body font', 'page.fontFamily', f.page.fontFamily, App.docFormat.FONTS,
-            'Every font here ships with the TeX distribution, so the .md carries its own font and needs nothing installed on the machine that builds the PDF.') +
-          num('Line spacing', 'page.lineSpacing', f.page.lineSpacing, '1 = single, 1.15, 1.5 …') +
-          num('Margin top', 'page.marginTop', f.page.marginTop, 'A bare number is read as millimetres.') +
-          num('Margin bottom', 'page.marginBottom', f.page.marginBottom, 'A bare number is read as millimetres.') +
-          num('Margin left', 'page.marginLeft', f.page.marginLeft, 'A bare number is read as millimetres.') +
-          num('Margin right', 'page.marginRight', f.page.marginRight, 'A bare number is read as millimetres.') +
-          // HDR-1: the page-number picker is gone. It offered five fixed positions for
-          // one thing, and the Header & Footer pane offers six slots you can put
-          // anything in — the number included. Two mechanisms aiming at the same three
-          // positions is how a document ends up printing the number twice.
-        '</div>' +
-        // CODE-1: a shade well plus its "no shade" button, the same pair the table
-        // styling uses — a colour picker has no "none", and white is a colour.
-        '<div class="rd-grid rd-grid-inline">' +
-          '<label class="rd-lab rd-lab-s" title="The background behind a package name, a key or a hash. A run too long to fit stays unshaded so it can still wrap.">Code shading' +
-            '<input type="color" class="rd-shade" value="' + esc(f.page.codeShade || '#ffffff') + '" data-rd-fmt="page.codeShade" aria-label="Code span shading"></label>' +
-          '<button type="button" data-rd-fmt-clear="page.codeShade" title="No background behind code spans">No shade</button>' +
-        '</div></div>';
-
-      /* FNT-3: every size in the document, in one table.
-       *
-       * The four heading levels were here; the document's own size was under Page and the
-       * two table sizes under Tables, which meant "what size is this set at?" was three
-       * questions in three places. They are one question, so they are one table — and the
-       * three that are not headings simply have fewer answers: a run of body text has a
-       * size and nothing else. What has no meaning for a row is DISABLED rather than
-       * absent, so the column still lines up and the row says plainly that the setting
-       * belongs to headings.
-       */
-      function txtCell(key, v, label, on) {
-        return '<td><input class="rd-tiny" value="' + esc(v == null ? '' : v) + '"' +
-          (on === false ? ' disabled' : ' data-rd-fmt="' + esc(key) + '"') +
-          ' aria-label="' + esc(label) + '"></td>';
-      }
-      function boolCell(key, checked, label, on) {
-        return '<td><input type="checkbox"' + (checked ? ' checked' : '') +
-          (on === false ? ' disabled' : ' data-rd-fmt-bool="' + esc(key) + '"') +
-          ' aria-label="' + esc(label) + '"></td>';
-      }
-      /**
-       * FNT-4: a row for something that has a size, a weight and a slope — but none of
-       * the placement a heading has.
-       *
-       * Bold and italic used to be greyed out here, which said "body text cannot be
-       * bold" — untrue of every one of these four, and the reason a report whose house
-       * style sets tables in italic could not be produced. What genuinely has no meaning
-       * for them is leading, the two spacings and the page break, and those stay
-       * disabled so the row still says plainly which settings belong to headings.
-       */
-      /* `sizeKey` may be null, for a kind of text with a weight and a slope but no size
-       * of its own. FNT-5 made the table's first column one such row, because its
-       * emphasis travels as markdown on the cell and markdown cannot say "and set this
-       * column two points smaller". FNT-6 gave it one anyway — through a LaTeX macro,
-       * which is the same route the shading has always taken — so nothing uses the null
-       * form today. It stays because the next kind of text may want it. */
-      function textRow(label, sizeKey, size, boldKey, bold, italicKey, italic) {
-        return '<tr><th>' + esc(label) + '</th>' +
-          (sizeKey ? txtCell(sizeKey, size, label + ' size') : txtCell('', '', label + ' size', false)) +
-          txtCell('', '', label + ' leading', false) +
-          boolCell(boldKey, bold, label + ' bold') + boolCell(italicKey, italic, label + ' italic') +
-          txtCell('', '', label + ' space before', false) + txtCell('', '', label + ' space after', false) +
-          boolCell('', false, label + ' new page', false) + '</tr>';
-      }
-      var fonts = '<div class="rd-fieldset"><strong>Fonts</strong>' +
-        flag('Number the sections', 'headings.numbered', f.headings.numbered !== false, 'Numbers are written into the markdown, so the preview, the .md and the PDF all agree.') +
-        flag('Pull up a skipped level', 'headings.clampSkips', f.headings.clampSkips !== false, 'An H3 with no H2 above it becomes an H2. Switch off to let it number as 1.0.1, which is what LaTeX would do.') +
-        '<table class="rd-lvl"><thead><tr><th>Text</th><th>Size</th><th>Leading</th><th>Bold</th><th>Italic</th><th>Space before</th><th>Space after</th><th>New page</th></tr></thead><tbody>' +
-        f.levels.map(function (lv, i) {
-          // TTL-3: the title is a level like any other in this table, and the first one —
-          // it prints above every heading, so it is listed above them.
-          var name = lv.level === App.doc.TITLE_LEVEL ? 'Title' : 'H' + lv.level;
-          function cell(k, v) {
-            return txtCell('levels.' + i + '.' + k, v, name + ' ' + k);
-          }
-          function bcell(k, on) {
-            return boolCell('levels.' + i + '.' + k, on, name + ' ' + k);
-          }
-          return '<tr><th>' + esc(name) + '</th>' + cell('size', lv.size) + cell('leading', lv.leading) +
-            bcell('bold', lv.bold) + bcell('italic', lv.italic) +
-            cell('spaceBefore', lv.spaceBefore) + cell('spaceAfter', lv.spaceAfter) +
-            bcell('pageBreakBefore', lv.pageBreakBefore) + '</tr>';
-        }).join('') +
-        textRow('Regular', 'page.fontSize', f.page.fontSize, 'page.bold', f.page.bold, 'page.italic', f.page.italic) +
-        textRow('Table text', 'tables.fontSize', f.tables.fontSize, 'tables.bold', f.tables.bold, 'tables.italic', f.tables.italic) +
-        textRow('Table headers', 'tables.headFontSize', f.tables.headFontSize, 'tables.headBold', f.tables.headBold, 'tables.headItalic', f.tables.headItalic) +
-        // FNT-5: the first column of every table, beside the header row it matches.
-        // FNT-6: with a size of its own, like every other row in this table.
-        textRow('Table first column', 'tables.firstColFontSize', f.tables.firstColFontSize,
-          'tables.firstColBold', f.tables.firstColBold, 'tables.firstColItalic', f.tables.firstColItalic) +
-        textRow('Table captions', 'tables.captionFontSize', f.tables.captionFontSize, 'tables.captionBold', f.tables.captionBold, 'tables.captionItalic', f.tables.captionItalic) +
-        '</tbody></table>' +
-        '<p class="muted rd-hint"><strong>Title</strong> is the <code>T</code> level — a heading that prints at the top level and takes no number. ' +
-        '<strong>Regular</strong> is the document’s own size, which everything else falls back to: leave the three table sizes blank and a table is set at it. ' +
-        '<strong>Table headers</strong> and <strong>Table first column</strong> apply to every table, whether or not the section has opted that part in for shading — including their <strong>size</strong>, so a key column can be set smaller than the prose beside it. ' +
-        'The greyed cells are heading-only — a run of body text has a size and a weight, not a space-before.</p></div>';
-
-      var toc = '<div class="rd-fieldset"><strong>Contents</strong>' +
-        flag('Include a table of contents', 'toc.include', !!(f.toc && f.toc.include)) +
-        '<div class="rd-grid">' +
-          num('Depth', 'toc.depth', f.toc.depth, 'How many heading levels the contents lists.') +
-          num('Space between entries', 'toc.entrySpacing', f.toc.entrySpacing,
-            'Points between one line of the contents and the next. Nested entries take half. LaTeX’s own is about 10pt, which on a report of one-line sections reads as a half-empty page.') +
-        '</div>' +
-        '<p class="muted rd-hint">Where the list goes is the <strong>Contents</strong> section’s business, in the list on the left — move it, rename it or give it a heading level like any other section.</p></div>';
-
-      // TBS-1: the LOOK of a styled header row / first column. Which tables wear it is
-      // decided per table — on a generated section in the Section pane, on a
-      // hand-authored one on the table itself — so nothing here switches anything on.
-      /* FNT-4/FNT-5: neither row has a bold/italic cell here any more.
-       *
-       * Both had one, and so did the Fonts table, and the two meant different things —
-       * this one only reached the sections that had ticked the part in, that one reached
-       * every table. Two switches saying "bold" is how a document ends up with two kinds
-       * of header. The weights live with the other type settings now.
-       *
-       * They were left here as a greyed "set in Fonts, above" note, which is two dead
-       * columns explaining themselves in every profile anybody opens. The sentence under
-       * the table says the same thing once, so the columns are gone: what this table is
-       * for is the SHADE, and it now says only that.
-       */
-      function styleRow(label, key, s) {
-        return '<tr><th>' + esc(label) + '</th>' +
-          '<td><input type="color" class="rd-shade" value="' + esc(s.shade || '#ffffff') + '" data-rd-fmt="tables.' + key + '.shade" aria-label="' + esc(label) + ' shade colour"></td>' +
-          '<td><button type="button" data-rd-fmt-clear="tables.' + key + '.shade" title="Remove the shading">No shade</button></td></tr>';
-      }
-      var tables = '<div class="rd-fieldset"><strong>Tables</strong>' +
-        // FNT-3: the two table SIZES are in the Fonts table above, with every other size
-        // in the document. What is left here is what is particular to a table.
-        '<div class="rd-grid">' +
-          pick('Caption position', 'tables.captionPosition', f.tables.captionPosition, CAPTION_POSITIONS,
-            'Which side of the table the caption sits on. It is numbered either way — “Table 4: …” — with the same number a cross-reference to it uses.') +
-          num('Caption gap', 'tables.captionSkip', f.tables.captionSkip, 'Points between the table and its caption.') +
-        '</div>' +
-        flag('Centre the table caption', 'tables.captionCentre', !!(f.tables && f.tables.captionCentre),
-          'Otherwise it starts at the left edge of the text, like a paragraph.') +
-        '<p class="muted">What a section buys by opting its header row or first column in: the <strong>shading</strong>, which reaches the PDF as a LaTeX table colour and needs no filter and no extra tool. Their size, weight and slope are in <strong>Fonts</strong>, above, and reach every table.</p>' +
-        '<table class="rd-lvl"><thead><tr><th>Part</th><th>Shade</th><th></th></tr></thead><tbody>' +
-        styleRow('Header row', 'head', f.tables.head) +
-        // FNT-5/FNT-6: the first column's size, weight and slope are in the Fonts table,
-        // for the reason the header row's are — they reach every table, and a second
-        // "bold" here meant a document could end up with two kinds of first column.
-        styleRow('First column', 'firstColumn', f.tables.firstColumn) +
-        '</tbody></table></div>';
-
-      // Sharing profiles between projects is a CATALOGUE job, so it lives in the
-      // Templates pane beside the other two — one place to look for import/export,
-      // rather than three scattered through the workspace.
-      var io = '<p class="muted rd-hint">Profiles travel with the project file. To share one between projects, ' +
-        'export it from the <strong>Templates</strong> pane.</p>';
-
-      return head + locked + '<fieldset class="rd-fmt-body"' + (builtin ? ' disabled' : '') + '>' + page + fonts + toc + tables + '</fieldset>' + io;
+    function colourField(label, key, val) {
+      return '<label class="rd-lab rd-lab-s">' + esc(label) +
+        '<input type="color" class="rd-shade" value="' + esc(val || '#000000') + '" data-rd-fmt="' + esc(key) + '" aria-label="' + esc(label) + '"></label>';
+    }
+    function flagField(label, key, on) {
+      return '<label class="gen-opt"><input type="checkbox" data-rd-fmt-bool="' + esc(key) + '"' + (on ? ' checked' : '') + '> ' + esc(label) + '</label>';
     }
 
-    // ======================================================================
-    // HDR-1: the header and footer
-    // ======================================================================
+    /** One kind of text: its font, size, weight, slope, colour, alignment, spacing and breaks. */
+    function textFields(f, key, opts2) {
+      var t = f.text[key], p = 'text.' + key + '.';
+      var o = opts2 || {};
+      return '<div class="rd-grid">' +
+          pick('Font', p + 'family', t.family, FAMILY_LABELS) +
+          num('Size (pt)', p + 'size', t.size, '6 to 72 points') +
+          colourField('Colour', p + 'colour', t.colour) +
+          pick('Alignment', p + 'align', t.align, ALIGN_LABELS) +
+          num('Line spacing', p + 'lineSpacing', t.lineSpacing, '1 = single, 1.15, 1.5 …') +
+          num('Space before (pt)', p + 'spaceBefore', t.spaceBefore) +
+          num('Space after (pt)', p + 'spaceAfter', t.spaceAfter) +
+        '</div>' +
+        '<div class="rd-flags">' +
+          flagField('Bold', p + 'bold', t.bold) + flagField('Italic', p + 'italic', t.italic) + flagField('Underline', p + 'underline', t.underline) +
+          (o.heading ? flagField('Keep with the next paragraph', p + 'keepWithNext', t.keepWithNext) + flagField('Start a new page', p + 'pageBreakBefore', t.pageBreakBefore) : '') +
+        '</div>';
+    }
 
     /**
-     * Six slots, and a second six for the first page when it is asked to be different.
-     *
-     * Drawn as a three-column strip rather than a list of labelled boxes, because what
-     * an operator is deciding is a POSITION — "the classification goes in the middle" —
-     * and a row of three boxes in the order they will print says that without a word.
+     * HDR-1: six slots, and a second six for the first page when it is asked to be
+     * different — a three-column strip, because what is being decided is a POSITION.
      */
-    function hfRow(project, f, set, label, hint) {
+    function hfRow(f, set, label) {
       var hfv = f.headerFooter[set];
-      return '<div class="rd-hf"><div class="rd-hf-h">' + esc(label) +
-        (hint ? '<span class="muted"> — ' + esc(hint) + '</span>' : '') + '</div>' +
-        '<div class="rd-hf-slots">' + App.docFormat.HF_SLOTS.map(function (s) {
+      return '<div class="rd-hf"><div class="rd-hf-h">' + esc(label) + '</div>' +
+        '<div class="rd-hf-slots">' + ['left', 'centre', 'right'].map(function (s) {
           return '<label class="rd-lab rd-lab-s">' + esc(s === 'centre' ? 'Centre' : s === 'left' ? 'Left' : 'Right') +
             '<input value="' + esc(hfv[s] || '') + '" data-rd-hf-set="' + esc(set) + '" data-rd-hf-slot="' + s + '"' +
               ' aria-label="' + esc(label + ', ' + s) + '"></label>';
         }).join('') + '</div></div>';
     }
 
-    function paneHeaderFooter(project) {
+    /** The fields of one section of the Style. */
+    function styleSectionFields(project, f, section) {
+      if (section === 'page') {
+        var m = f.page.margins;
+        return '<div class="rd-grid">' +
+            pick('Paper', 'page.paper', f.page.paper, [{ value: 'a4', label: 'A4' }, { value: 'letter', label: 'Letter' }, { value: 'a5', label: 'A5' }, { value: 'legal', label: 'Legal' }]) +
+            pick('Orientation', 'page.orientation', f.page.orientation, [{ value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Landscape' }]) +
+            num('Top margin (mm)', 'page.margins.top', m.top) + num('Bottom margin (mm)', 'page.margins.bottom', m.bottom) +
+            num('Left margin (mm)', 'page.margins.left', m.left) + num('Right margin (mm)', 'page.margins.right', m.right) +
+          '</div><p class="muted rd-hint">The header and footer sit in the top and bottom margins, so leave room for them.</p>';
+      }
+      if (/^(title|h[1-4])$/.test(section)) return textFields(f, section, { heading: true });
+      if (section === 'body' || section === 'caption' || section === 'code') {
+        return textFields(f, section) + (section === 'caption'
+          ? '<p class="muted rd-hint">Table captions. Where they go is set under <strong>Tables</strong>.</p>' : '');
+      }
+      if (section === 'tables') {
+        var t = f.tables;
+        return '<p class="muted">These settings apply to every table in the document.</p>' +
+          '<div class="rd-grid">' +
+            pick('Borders', 'tables.borders', t.borders, [{ value: 'all', label: 'All lines' }, { value: 'horizontal', label: 'Between rows only' }, { value: 'outer', label: 'Outside only' }, { value: 'none', label: 'None' }]) +
+            colourField('Border colour', 'tables.borderColour', t.borderColour) +
+            num('Border weight (pt)', 'tables.borderWidth', t.borderWidth) +
+            num('Text size (pt)', 'tables.fontSize', t.fontSize) +
+            num('Cell padding (mm)', 'tables.padding', t.padding) +
+            pick('Table position', 'tables.align', t.align, [{ value: 'left', label: 'Left' }, { value: 'centre', label: 'Centre' }]) +
+            pick('Caption', 'tables.captionPosition', t.captionPosition, [{ value: 'below', label: 'Below the table' }, { value: 'above', label: 'Above the table' }]) +
+          '</div>' +
+          '<div class="rd-fieldset"><strong>Header row</strong><div class="rd-grid">' +
+            colourField('Fill', 'tables.header.fill', t.header.fill) + colourField('Text colour', 'tables.header.colour', t.header.colour) +
+            num('Text size (pt)', 'tables.header.size', t.header.size) +
+          '</div><div class="rd-flags">' + flagField('Bold', 'tables.header.bold', t.header.bold) + flagField('Italic', 'tables.header.italic', t.header.italic) +
+            flagField('Repeat on every page', 'tables.header.repeat', t.header.repeat) + '</div></div>' +
+          '<div class="rd-fieldset"><strong>Rows</strong><div class="rd-flags">' + flagField('Shade every other row', 'tables.banding.on', t.banding.on) + '</div>' +
+            '<div class="rd-grid">' + colourField('Shade', 'tables.banding.fill', t.banding.fill) + '</div></div>' +
+          '<div class="rd-fieldset"><strong>First column</strong><div class="rd-flags">' + flagField('Style the first column', 'tables.firstColumn.on', t.firstColumn.on) +
+            flagField('Bold', 'tables.firstColumn.bold', t.firstColumn.bold) + '</div>' +
+            '<div class="rd-grid">' + colourField('Fill', 'tables.firstColumn.fill', t.firstColumn.fill) + '</div></div>';
+      }
+      if (section === 'headerFooter') {
+        var first = f.headerFooter.firstDifferent;
+        return '<p class="muted">What each line reads. These words are replaced on each page: <code>#page</code> (the page number), <code>#pages</code> (the total), ' +
+            '<code>#title</code>, <code>#platform</code>, <code>#date</code> and <code>#marking</code>. So <code>Page #page of #pages</code> prints “Page 3 of 12”.</p>' +
+          hfRow(f, 'header', 'Header') + hfRow(f, 'footer', 'Footer') +
+          '<div class="rd-flags">' + flagField('A line under the header', 'headerFooter.ruleUnderHeader', f.headerFooter.ruleUnderHeader) +
+            flagField('A line over the footer', 'headerFooter.ruleOverFooter', f.headerFooter.ruleOverFooter) + '</div>' +
+          '<div class="rd-fieldset"><strong>The first page</strong>' +
+            cb('data-rd-hf-first', 'Give the first page its own header and footer', first) +
+            (first ? hfRow(f, 'firstHeader', 'First-page header') + hfRow(f, 'firstFooter', 'First-page footer')
+              : '<p class="muted rd-hint">A title page usually wants neither: tick this and leave its slots empty.</p>') +
+          '</div>' +
+          '<div class="rd-fieldset"><strong>How the header and footer look</strong>' + textFields(f, 'headerFooter') + '</div>';
+      }
+      if (section === 'marking') {
+        var marking = (project.report || {}).classification;
+        var markings = H().classifications || [];
+        return '<label class="rd-lab">Marking for this document <select data-rd-classification aria-label="Classification marking">' +
+            '<option value=""' + (marking ? '' : ' selected') + '>None</option>' +
+            markings.map(function (x) { return '<option value="' + esc(x) + '"' + (x === marking ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') +
+          '</select></label>' +
+          '<p class="muted rd-hint">The marking is saved with the report design. The Style decides whether and how it is printed, at the top and bottom of every page.</p>' +
+          '<div class="rd-flags">' + flagField('Print the marking on every page', 'marking.show', f.marking.show) + '</div>' +
+          textFields(f, 'marking');
+      }
+      if (section === 'numbering') {
+        return '<div class="rd-fieldset"><strong>Heading numbers</strong><div class="rd-flags">' +
+            flagField('Number the headings', 'numbering.on', f.numbering.on) + flagField('Show the numbers in the contents', 'numbering.inToc', f.numbering.inToc) + '</div>' +
+            '<div class="rd-grid">' + pick('Number down to', 'numbering.format', f.numbering.format, [{ value: '1', label: '1 (Heading 1)' }, { value: '1.1', label: '1.1 (Heading 2)' }, { value: '1.1.1', label: '1.1.1 (Heading 3)' }]) + '</div></div>' +
+          '<div class="rd-fieldset"><strong>Contents</strong><div class="rd-flags">' +
+            flagField('Include a contents list', 'toc.include', f.toc.include) + flagField('Page numbers', 'toc.pageNumbers', f.toc.pageNumbers) +
+            flagField('Dot leaders to the page numbers', 'toc.leaders', f.toc.leaders) + '</div>' +
+            '<div class="rd-grid">' + num('Contents title', 'toc.title', f.toc.title) +
+              pick('Headings listed', 'toc.depth', f.toc.depth, [{ value: 1, label: 'Heading 1' }, { value: 2, label: 'Down to heading 2' }, { value: 3, label: 'Down to heading 3' }, { value: 4, label: 'Down to heading 4' }]) + '</div>' +
+            ['toc1', 'toc2', 'toc3'].map(function (k, i) { return '<div class="rd-fieldset"><strong>Contents level ' + (i + 1) + '</strong>' + textFields(f, k) + '</div>'; }).join('') +
+          '</div>' +
+          '<div class="rd-fieldset"><strong>Cross-references</strong><div class="rd-flags">' +
+            flagField('Add the page in the PDF, as in “Section 2 (page 4)”', 'refs.pageInPdf', f.refs.pageInPdf) + '</div></div>';
+      }
+      return '';
+    }
+
+    function paneStyles(project) {
       var all = App.docFormat.list(project);
       var active = App.docFormat.resolve(project);
       var editId = _rd.fmtId || active.id;
       var f = all.filter(function (x) { return x.id === editId; })[0] || active;
       var builtin = !!f.builtin;
-      var first = f.headerFooter.firstDifferent;
+      var section = _rd.styleSection || 'page';
 
       var head = '<div class="rd-fmt-head">' +
+        '<label class="rd-lab">Style in use' +
+          '<select data-rd-fmt-active aria-label="Style in use">' +
+            all.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === active.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
+          '</select></label>' +
         '<label class="rd-lab">Editing' +
-          '<select data-rd-fmt-edit aria-label="Formatting profile being edited">' +
+          '<select data-rd-fmt-edit aria-label="Style being edited">' +
             all.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === f.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
           '</select></label>' +
         '<span class="spacer"></span>' +
         '<button type="button" data-rd-fmt-new>Duplicate</button>' +
-        '</div>' +
-        (builtin
-          ? '<div class="rd-locked">The <strong>Standard</strong> profile ships with the tool and cannot be edited — <strong>Duplicate</strong> it and change the copy.</div>'
-          : '');
+        '<button type="button" class="danger" data-rd-fmt-del' + (builtin ? ' disabled' : '') + '>Delete</button>' +
+        '</div>';
+      var locked = builtin
+        ? '<div class="rd-locked">The <strong>Standard</strong> style comes with the tool and cannot be changed. <strong>Duplicate</strong> it and change the copy.</div>'
+        : '';
+      var held = (_rd.held && _rd.held.length)
+        ? '<div class="rd-held"><strong>Some values could not be used:</strong><ul>' + _rd.held.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></div>'
+        : '';
+      var list = '<nav class="rd-style-list">' + STYLE_SECTIONS.map(function (s) {
+        return '<button type="button" class="rd-style-sec' + (s.id === section ? ' on' : '') + '" data-rd-style-section="' + s.id + '"' +
+          (s.id === section ? ' aria-current="true"' : '') + '>' + esc(s.label) + '</button>';
+      }).join('') + '</nav>';
+      var label = (STYLE_SECTIONS.filter(function (s) { return s.id === section; })[0] || {}).label || '';
+      var fields = '<div class="rd-style-fields"><h5>' + esc(label) + '</h5>' + held +
+        '<fieldset class="rd-fmt-body"' + (builtin ? ' disabled' : '') + '>' + styleSectionFields(project, f, section) + '</fieldset></div>';
+      // The pages are drawn in the Style being EDITED, so a change is seen before it is put in use.
+      var laid = laidOut(project, f);
+      var pages = '<div class="rd-style-preview" data-rd-style-preview>' + (laid.error
+        ? '<p class="rd-err">' + esc(laid.error) + '</p>'
+        : pagesHtml(laid.pages, { scale: 0.5 })) + '</div>';
+      return head + locked + '<div class="rd-styles">' + list + fields + pages + '</div>' +
+        '<p class="muted rd-hint">Styles travel with the project file. To share one between projects, export it from the <strong>Templates</strong> pane.</p>';
+    }
 
-      var marking = (project.report || {}).classification;
-      var markings = H().classifications || [];
-      var banner = '<div class="rd-fieldset"><strong>Classification banner</strong>' +
-        // CLS-1: read from the project, like the title block, not from the session. CLS-2: the
-        // choices are the host's; there is no free text, so a marking cannot be mistyped.
-        '<label class="rd-lab">Marking on every page <select data-rd-classification aria-label="Classification marking">' +
-          '<option value=""' + (marking ? '' : ' selected') + '>None</option>' +
-          markings.map(function (m) {
-            return '<option value="' + esc(m) + '"' + (m === marking ? ' selected' : '') + '>' + esc(m) + '</option>';
-          }).join('') +
-        '</select></label>' +
-        '<p class="muted rd-hint">Printed in the first free slot of the header and of the footer, preferring the centre. ' +
-        'Fill all three slots of a line yourself and the banner leaves that line alone — your words win.</p>' +
-        '<p class="muted rd-hint">Saved with the project, so it is set once for the document rather than re-ticked ' +
-        'every time the tool is opened.</p></div>';
-
-      var body = '<fieldset class="rd-fmt-body"' + (builtin ? ' disabled' : '') + '>' +
-        '<div class="rd-fieldset"><strong>Every page</strong>' +
-          '<p class="muted">What each line reads. Write <code>#page</code> for the page number and <code>#pages</code> for the total — ' +
-          'so <code>Page #page of #pages</code> prints “Page 3 of 12”. Everything else is printed as you write it, ' +
-          'so a header reading “Title page” stays “Title page”.</p>' +
-          hfRow(project, f, 'header', 'Header') +
-          hfRow(project, f, 'footer', 'Footer') +
-        '</div>' +
-        '<div class="rd-fieldset"><strong>The first page</strong>' +
-          cb('data-rd-hf-first', 'Give the first page its own header and footer', first) +
-          '<p class="muted rd-hint">A title page usually wants neither. Leave every slot empty and the first page carries nothing.</p>' +
-          (first
-            ? hfRow(project, f, 'firstHeader', 'First-page header') + hfRow(project, f, 'firstFooter', 'First-page footer')
-            : '') +
-        '</div>' +
-        '</fieldset>';
-
-      return head + banner + body +
-        '<p class="muted rd-hint">These show in the <strong>Preview</strong> only with <strong>Pages</strong> switched on — ' +
-        'a continuous scroll has no page edges to put them against.</p>';
+    /**
+     * PDF-1: the document for the selected subject, laid out on pages — what Make PDF
+     * will write. `style` overrides the one in use (the Styles pane shows the one being
+     * edited). Never throws: a failure is returned as `error`, for the pane to say.
+     */
+    function laidOut(project, style, tagsOverride) {
+      var selId = selectedSubjectId(project);
+      if (!selId) return { error: 'No ' + noun() + ' selected.' };
+      try {
+        var subj = latest().filter(function (c) { return c.id === selId; })[0] || {};
+        var o = Object.assign({}, opts(), { subjectId: selId });
+        if (tagsOverride) o.tags = tagsOverride;
+        var utc = H().clock && H().clock.nowIso ? H().clock.nowIso() : '';
+        var built = App.docGen.documentFor(H(), o, { title: subj.label || '', platform: subj.label || '', date: String(utc).slice(0, 10), utc: utc,
+          classification: o.classification || (project.report || {}).classification || '' });
+        var s = style ? App.docFormat.normalise(style) : built.style;
+        if (style) {
+          ['header', 'footer', 'firstHeader', 'firstFooter'].forEach(function (k) {
+            ['left', 'centre', 'right'].forEach(function (slot) { s.headerFooter[k][slot] = App.docGen.applyTags(s.headerFooter[k][slot], o.tags || {}, true); });
+          });
+        }
+        var r = layout(built.document, s);
+        return { document: built.document, style: s, tags: built.tags, pages: r.pages, anchors: r.anchors, headings: r.headings, replaced: r.replaced };
+      } catch (e) {
+        return { error: 'The pages could not be laid out: ' + (e && e.message) };
+      }
     }
 
     // ======================================================================
@@ -8892,13 +8830,13 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
     function paneTemplates(project) {
       var b = bag(project);
       var profiles = (b.formats || []);
-      return '<div class="rd-fieldset"><strong>Formatting profiles</strong>' +
-          '<p class="muted">Page setup and heading styling, saved under a name. Edit them in the <strong>Formatting</strong> pane; export them here to reuse in another project.</p>' +
+      return '<div class="rd-fieldset"><strong>Styles</strong>' +
+          '<p class="muted">How the document looks, saved under a name. Edit them in the <strong>Styles</strong> pane; export them here to reuse in another project.</p>' +
           (profiles.length
             ? '<ul class="rd-tpl-list">' + profiles.map(function (f) {
                 return '<li><span class="rd-tpl-name">' + esc(f.name) + '</span></li>';
               }).join('') + '</ul>'
-            : '<p class="muted">Only the built-in Standard profile so far. Duplicate it in the Formatting pane to make your own.</p>') +
+            : '<p class="muted">Only the built-in Standard style so far. Duplicate it in the Styles pane to make your own.</p>') +
           '<div class="rd-addbar">' +
             '<button type="button" data-rd-export="formats"' + (profiles.length ? '' : ' disabled') + '>Export</button>' +
             '<label class="rd-filebtn">Import<input type="file" accept=".json,application/json" data-rd-import="formats"></label>' +
@@ -8911,7 +8849,7 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
             '<label class="rd-filebtn">Import<input type="file" accept=".json,application/json" data-rd-import="sections"></label>' +
           '</div></div>' +
         '<div class="rd-fieldset"><strong>Report templates</strong>' +
-          '<p class="muted">The whole design: the section order, the pinned levels, every custom section and the formatting profile. Applying one <strong>replaces</strong> the current arrangement.</p>' +
+          '<p class="muted">The whole design: the section order, the pinned levels, every custom section and the Style. Applying one <strong>replaces</strong> the current arrangement.</p>' +
           templateList(b.reportTemplates || [], 'reports', 'No report templates yet.') +
           '<div class="rd-addbar">' +
             '<button type="button" class="primary" data-rd-rpt-save>Save current design&hellip;</button>' +
@@ -8973,13 +8911,14 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
       if (!selId) return '<p class="muted">No ' + esc(noun()) + ' selected — nothing to generate.</p>';
       var ready = H().subject.ready(selId);
       var o = opts();
-      var built = null;
-      try { built = H().build ? H().build(selId, Object.assign({}, o, { tags: {} })) : null; } catch (e) { built = null; }
-      var tags = built ? App.docGen.findTags(built.text || '') : [];
+      // Laid out with no values, so every tag written anywhere is found, and the characters
+      // the standard fonts cannot show are known before anything is made.
+      var laid = laidOut(project, null, {});
+      var tags = laid.error ? [] : laid.tags;
+      var replaced = laid.error ? [] : laid.replaced;
       var values = o.tags || {};
       var unfilled = tags.filter(function (t) { return !String(values[t] || '').trim(); });
 
-      var name = App.docGen.docFilename(o.filename);
       var tagRows = tags.length
         ? tags.map(function (t) {
             var v = String(values[t] || '');
@@ -8990,14 +8929,7 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
         : '<p class="muted">None written yet. Type <code>/[Date]</code> — a slash, then a name in square brackets — ' +
           'in any heading, paragraph, table or header slot and it will be listed here.</p>';
 
-      return '<div class="rd-fieldset"><strong>File name</strong>' +
-          '<p class="muted">What the generated <code>.md</code> is called (the <code>.html</code> takes the same name). Leave it blank for the standard ' +
-          'name the host gives it.</p>' +
-          '<label class="rd-lab"><input class="rd-title" value="' + esc(o.filename || '') + '" data-rd-filename' +
-            ' placeholder="' + esc(selId + '-reporting-…….md') + '" aria-label="File name"></label>' +
-          (name ? '<p class="muted rd-hint">Saves as <code>' + esc(name) + '</code>.</p>' : '') +
-        '</div>' +
-        '<div class="rd-fieldset"><strong>Placeholders</strong>' +
+      return '<div class="rd-fieldset"><strong>Placeholders</strong>' +
           '<p class="muted">Every <code>/[Tag]</code> written anywhere in the document, filled in once here and ' +
           'replaced everywhere it appears. A tag left blank is printed as it stands, so an unfinished document ' +
           'looks unfinished rather than merely incomplete.</p>' +
@@ -9007,53 +8939,23 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
               ' still to fill in: ' + unfilled.map(function (t) { return '<code>/[' + esc(t) + ']</code>'; }).join(' ') + '</p>'
             : (tags.length ? '<p class="rpt-omit muted">Every placeholder has a value.</p>' : '')) +
         '</div>' +
-        '<div class="rd-fieldset"><strong>Generate</strong>' +
+        (replaced.length
+          ? '<div class="rd-fieldset rd-replaced"><strong>Characters the PDF cannot show</strong>' +
+              '<p class="muted">The PDF uses the standard fonts every PDF reader has, which cannot show these. ' +
+              'They are written another way (≥ as &gt;=, ✓ as Yes) or as ?. The HTML shows them as they are.</p>' +
+              '<p>' + replaced.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(' ') + '</p></div>'
+          : '') +
+        '<div class="rd-fieldset"><strong>Make the report</strong>' +
           '<p class="muted">' + (ready
-            ? 'One <code>.md</code> for pandoc, exactly as the Preview shows it, or the same document as a printable <code>.html</code> page.'
+            ? 'A PDF laid out exactly as the Preview shows it, or the same document as one web page (HTML).'
             : 'This ' + esc(noun()) + ' is not ready — the host reports it incomplete.') + '</p>' +
+          (laid.error ? '<p class="rd-err">' + esc(laid.error) + '</p>' : '') +
           '<div class="rd-addbar">' +
             // The HOST wires these ([data-generate-action], reading data-generate-format):
             // where a file goes is its business, not the designer's.
-            '<button type="button" class="primary" data-generate-action="document" data-generate-format="md"' + (ready ? '' : ' disabled') + '>Generate .md</button>' +
-            '<button type="button" data-generate-action="document" data-generate-format="html"' + (ready ? '' : ' disabled') + '>Generate .html</button>' +
+            '<button type="button" class="primary" data-generate-action="document" data-generate-format="pdf"' + (ready ? '' : ' disabled') + '>Make PDF</button>' +
+            '<button type="button" data-generate-action="document" data-generate-format="html"' + (ready ? '' : ' disabled') + '>Make HTML</button>' +
           '</div>' +
-        '</div>' +
-        /* The conversion, in full.
-         *
-         * It used to be half a sentence — `pandoc report.md -o report.pdf` — which is not
-         * the command that produces this document: it names no engine, and it does not
-         * pass the Lua filter every table in the file depends on. Run as written it either
-         * failed or quietly produced a document with the tables broken. The three things
-         * that actually go wrong are on Windows and none of them are LaTeX, so they are
-         * here rather than in a troubleshooting page nobody reaches.
-         */
-        '<div class="rd-fieldset"><strong>Converting it to PDF</strong>' +
-          '<p class="muted">One command — pandoc drives tectonic itself, so there is no second step. ' +
-          'Run it in the folder holding both the <code>.md</code> and <code>pdfGenLuaConfig.lua</code>:</p>' +
-          '<pre class="rd-cmd">pandoc report.md --lua-filter=pdfGenLuaConfig.lua --pdf-engine=tectonic -o report.pdf</pre>' +
-          '<p class="muted">Or with full paths, from anywhere:</p>' +
-          '<pre class="rd-cmd">pandoc "C:\\path\\to\\report.md" --lua-filter="C:\\path\\to\\pdfGenLuaConfig.lua" ' +
-            '--pdf-engine=tectonic -o "C:\\path\\to\\report.pdf"</pre>' +
-          '<p class="muted">The Lua filter is not optional: the tables in this document are built as LaTeX ' +
-          '<code>longtable</code>s through it, and without it the shading, the merged title rows, the column ' +
-          'widths and the line breaks inside cells are all lost.</p>' +
-          '<p class="muted"><strong>Three things that bite on Windows.</strong></p>' +
-          '<ul class="muted rd-cmdlist">' +
-            '<li><strong>Both <code>pandoc.exe</code> and <code>tectonic.exe</code> must be on <code>PATH</code>.</strong> ' +
-              'Pandoc calls tectonic by name, so one sitting in your Downloads folder will not be found even though ' +
-              'you can double-click it. Check with <code>where pandoc</code> and <code>where tectonic</code> before ' +
-              'blaming the document.</li>' +
-            '<li><strong>Tectonic needs the internet the first time.</strong> It downloads the TeX packages it needs ' +
-              'into a local cache; after that it works offline. (This tool never touches the network either way — ' +
-              'the conversion is a separate step you run yourself.)</li>' +
-            '<li><strong>Close the PDF in your viewer first.</strong> Acrobat holds an exclusive lock on Windows, and ' +
-              'the build fails at the last step with a permissions error.</li>' +
-          '</ul>' +
-          '<p class="muted">To see what LaTeX complained about, send the log to a file — ' +
-          '<code>… -o report.pdf 2&gt; tex.log</code> — and look for <code>Overfull \\hbox</code>. ' +
-          'Anything over about 1pt means a table is running past the right margin; the sub-0.2pt ones are ' +
-          'longtable rounding and are always there.</p>' +
-          '<p class="muted">Verified against <strong>pandoc 3.1.11</strong> and <strong>tectonic 0.15.0</strong>.</p>' +
         '</div>';
     }
 
@@ -9128,26 +9030,21 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
         '</div>';
     }
 
+    /** Pixels per point in the Preview pane. */
+    var PREVIEW_SCALE = 1;
+
     function panePreview(project) {
-      var p = _rd.preview || (_rd.preview = buildPreview(project));
-      var nav = p.outline.map(function (o) {
-        return '<a class="rd-nav rd-nav-' + o.level + '" href="#' + esc(o.anchor) + '" data-prv-jump="' + esc(o.anchor) + '">' +
-          (o.number ? '<span class="rd-nav-n">' + esc(o.number) + '</span> ' : '') + esc(o.title) + '</a>';
+      var p = _rd.preview || (_rd.preview = laidOut(project));
+      if (p.error) return '<div class="rd-preview"><p class="muted">' + esc(p.error) + '</p></div>';
+      var nav = (p.headings || []).map(function (o) {
+        return '<a class="rd-nav rd-nav-' + Math.max(1, o.level) + '" href="#' + esc(o.anchor) + '" data-prv-jump="' + esc(o.anchor) + '">' + esc(o.title) + '</a>';
       }).join('');
-      var paged = _rd.pages === true;
       return '<div class="rd-preview">' +
         '<div class="rd-addbar"><button type="button" data-rd-refresh-preview>↻ Refresh</button>' +
-          // PRV-4: the toggle. Off is the view this pane has always had — one continuous
-          // sheet — because that is the better one for reading what the document SAYS.
-          // On answers the other question: where does it break, and what is on every page.
-          '<label class="gen-opt"><input type="checkbox" data-rd-pageview' + (paged ? ' checked' : '') + '> Pages</label>' +
-          '<span class="muted">' + (paged
-            ? 'Laid out as it will be printed, with the header and footer on every page.'
-            : 'This is the document the Generate button downloads, rendered from the same markdown.') + '</span></div>' +
+          '<span class="muted">' + p.pages.length + ' page' + (p.pages.length === 1 ? '' : 's') + ', laid out exactly as <strong>Make PDF</strong> writes them.</span></div>' +
         '<div class="rd-preview-body">' +
           '<nav class="rd-preview-nav">' + (nav || '<span class="muted">No sections.</span>') + '</nav>' +
-          '<article class="rd-preview-doc' + (paged ? ' rd-preview-paged' : '') + '" id="rd-preview-doc">' +
-            (paged ? pagedPaper(project, p.html) : paper(project, p.html)) + '</article>' +
+          '<article class="rd-preview-doc rd-preview-pages" id="rd-preview-doc">' + pagesHtml(p.pages, { scale: PREVIEW_SCALE, anchors: p.anchors }) + '</article>' +
         '</div></div>';
     }
 
@@ -9166,8 +9063,7 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
       var paneBody =
         _rd.pane === 'section' ? paneSection(project, view) :
         _rd.pane === 'relevance' ? paneRelevance(project) :
-        _rd.pane === 'formatting' ? paneFormatting(project) :
-        _rd.pane === 'headerfooter' ? paneHeaderFooter(project) :
+        _rd.pane === 'styles' ? paneStyles(project) :
         _rd.pane === 'templates' ? paneTemplates(project) :
         _rd.pane === 'generate' ? paneGenerate(project, view) :
         panePreview(project);
@@ -9377,7 +9273,7 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
     }
     function quietly(fn) { if (_ctx && _ctx.quietEdit) _ctx.quietEdit(fn); else fn(); }
     /** Any project write invalidates the cached preview — it is a render of the project. */
-    function dirty() { _rd.preview = null; }
+    function dirty() { _rd.preview = null; _rd.refs = null; }
 
     /** RPT-3: persist a reorder — move one block id by a step, or before another. */
     function moveSection(project, id, delta, beforeId) {
@@ -10272,11 +10168,12 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
         quietly(function () { logIssues(App.docStore.setFormatId(el.value)); });
         _rd.fmtId = el.value; dirty(); repaint();
       });
-      dom.on(ctx.root, 'change', '[data-rd-fmt-edit]', function (e, el) { _rd.fmtId = el.value; repaint(); });
+      dom.on(ctx.root, 'change', '[data-rd-fmt-edit]', function (e, el) { _rd.fmtId = el.value; _rd.held = null; repaint(); });
+      dom.on(ctx.root, 'click', '[data-rd-style-section]', function (e, el) { _rd.styleSection = el.getAttribute('data-rd-style-section'); _rd.held = null; repaint(); });
       dom.on(ctx.root, 'click', '[data-rd-fmt-new]', function () {
         var project = P(); if (!project) return;
         var from = App.docFormat.list(project).filter(function (x) { return x.id === (_rd.fmtId || App.docFormat.resolve(project).id); })[0];
-        var name = window.prompt('Name for the new profile:', (from ? from.name : 'Standard') + ' copy');
+        var name = window.prompt('Name for the new Style:', (from ? from.name : 'Standard') + ' copy');
         if (name == null || !name.trim()) return;
         var res = logIssues(App.docStore.addFormat(name, from));
         if (res.id) { _rd.fmtId = res.id; App.docStore.setFormatId(res.id); }
@@ -10284,7 +10181,7 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
       });
       dom.on(ctx.root, 'click', '[data-rd-fmt-del]', function () {
         if (!_rd.fmtId || _rd.fmtId === 'standard') return;
-        if (!window.confirm('Delete this formatting profile? Any document using it falls back to Standard.')) return;
+        if (!window.confirm('Delete this Style? Any document using it falls back to Standard.')) return;
         logIssues(App.docStore.removeFormat(_rd.fmtId));
         _rd.fmtId = null; dirty(); repaint();
       });
@@ -10299,6 +10196,8 @@ import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from
         var parts = key.split('.'), o = patch;
         for (var i = 0; i < parts.length - 1; i++) o = o[parts[i]];
         o[parts[parts.length - 1]] = value;
+        // PDF-1: a value the Style cannot use is held to the nearest one that works, and said.
+        _rd.held = normaliseStyle(patch).held;
         quietly(function () { logIssues(App.docStore.updateFormat(id, patch)); });
         dirty(); repaint();
       }
