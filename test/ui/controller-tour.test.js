@@ -125,3 +125,16 @@ test('an edit in the tutorial takes no backup of the sample', async () => {
   await c.dispatch({ type: 'updateHazard', id: 'tour-h2', title: 'Edited in the tutorial' });
   assert.deepEqual(await snapshot(f.handle), before);
 });
+
+test('a try step moves on with its own action only: not with going somewhere, nor another action', async () => {
+  const { c } = await ready();
+  const { TOUR_STEPS } = await import('../../src/ui/tour/steps.js');
+  const n = TOUR_STEPS.findIndex((s) => s.id === 'try-check');
+  await c.dispatch({ type: 'startTour' });
+  await c.dispatch({ type: 'tourTo', step: n });
+  await c.dispatch({ type: 'go', view: 'workflow', id: 'tour-w1', hazardId: 'tour-h1' });
+  await c.dispatch({ type: 'setWorkflowNotes', workflowId: 'tour-w1', notes: 'Not a tick' });
+  assert.equal(c.getState().tour.step, n);
+  await c.dispatch({ type: 'setStep', workflowId: 'tour-w1', hazardId: 'tour-h1', check: 'references', checked: 'true' });
+  assert.equal(c.getState().tour.step, n + 1);
+});
