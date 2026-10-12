@@ -14,7 +14,7 @@ import { FULCRUM_ICON } from '../src/ui/logo.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(HERE, '..');
 const ENTRY = 'src/main.js';
-const EXTRA_SOURCES = ['DocGen/doc-designer.js', 'DocGen/doc-fonts.js', 'DocGen/doc-fonts-data.js'];
+const EXTRA_SOURCES = ['DocGen/doc-designer.js', 'DocGen/doc-fonts.js', 'DocGen/doc-fonts-data.js', 'DocGen/doc-pdf.js'];
 const STYLES = ['DocGen/doc-designer.css', 'src/ui/styles.css'];
 /** Embedded so the page needs no network: [family, file, weight, style]. Licences: assets/fonts/OFL.txt (Atkinson Hyperlegible), OFL-Barlow.txt (Barlow). */
 const FONTS = [
