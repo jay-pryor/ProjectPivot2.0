@@ -88,6 +88,21 @@ test('the designer\'s Generate buttons produce and download for the designer\'s 
   DocGen.ui.views.reportDesign.close();
 });
 
+test('Make PDF then Make HTML from the designer: a report not yet saved does not block the next one', async () => {
+  const f = new MemoryFolder();
+  const c = createController(env(f));
+  await ready(c);
+  await c.dispatch({ type: 'save' });
+  await c.dispatch({ type: 'generateFromDesigner', format: 'pdf' });
+  await c.dispatch({ type: 'generateFromDesigner', format: 'html' });
+  assert.doesNotMatch(c.getState().message.text, /Save your changes/);
+  assert.ok(f.readBytes('Alpha-2026-09-28.pdf'));
+  assert.match(f.read('Alpha-2026-09-28.html'), /Fire/);
+  await c.dispatch({ type: 'createHazard', id: 'h9', title: 'Flood' });
+  await c.dispatch({ type: 'generateFromDesigner', format: 'pdf' });
+  assert.match(c.getState().message.text, /Save your changes/, 'an unsaved change to the register still blocks it');
+});
+
 test('a design change is an unsaved change of the data, but does not block producing a report', async () => {
   const f = new MemoryFolder();
   const c = createController(env(f));

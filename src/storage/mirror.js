@@ -93,10 +93,14 @@ export function hasUnsaved(session) {
 }
 
 /**
- * Whether any record differs from what is stored, leaving out the report design (a design
- * change does not make a report differ from the stored data it is produced from).
- * @param {{ base: { records: unknown }, working: { records: unknown } }} session
+ * Whether any record a report is produced FROM differs from what is stored. Left out: the
+ * report design (a design change does not make a report differ from the stored data) and
+ * the produced reports themselves, so making a PDF and then the HTML does not ask for a save
+ * in between.
+ * @param {{ base: { records: Record<string, unknown> }, working: { records: Record<string, unknown> } }} session
  */
 export function hasUnsavedRecords(session) {
-  return !sameJson(session.base.records, session.working.records);
+  const { report: _b, ...base } = session.base.records;
+  const { report: _w, ...working } = session.working.records;
+  return !sameJson(base, working);
 }
