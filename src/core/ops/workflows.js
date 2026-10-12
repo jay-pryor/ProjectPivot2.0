@@ -5,7 +5,7 @@ import { aestDate } from '../time.js';
 import { commit } from '../apply.js';
 import { dueOf } from '../schedule.js';
 import { seenRec } from './reviews.js';
-import { CHECKS, NONE_CHECKS, ONBOARDING_POSITIONS, workflowHazards, workflowProgress, openPlatformReview, onboardingOf, onboardingProgress, stepOf, TRANSFER_GROUPS, transferGroups, openTransfer, referenceItems, openReferenceUpdate, openTechData, techPairs, pairKey } from '../workflows.js';
+import { CHECKS, NONE_CHECKS, ONBOARDING_POSITIONS, workflowHazards, workflowProgress, openPlatformReview, onboardingOf, onboardingProgress, stepOf, TRANSFER_GROUPS, transferGroups, openTransfer, referenceItems, openReferenceUpdate, openTechData, techPairs, pairKey, TECH_CARDS, techLinks } from '../workflows.js';
 import { createPlatform, linkHazard } from './platforms.js';
 import { createHazard } from './hazards.js';
 import { createReference } from './references.js';
@@ -32,6 +32,12 @@ function needOpen(data, act, workflowId, owner = true) {
 function needHazard(data, wf, hazardId) {
   if (!workflowHazards(data, wf).some((x) => x.hazard.id === hazardId)) throw new PivotError('workflow.hazard', 'That hazard is not on this platform.');
   return /** @type {string} */ (hazardId);
+}
+
+/** Where New Tech Data can stand: its scope, or a pair in scope. @param {Data} data @param {Rec} wf @param {string} at */
+function needPosition(data, wf, at) {
+  if (at !== '@scope' && !techPairs(data, wf).some((x) => x.key === at)) throw new PivotError('workflow.hazard', 'That hazard is not in this workflow’s scope.');
+  return at;
 }
 
 /** An open New Tech Data its owner is working on. @param {Data} data @param {Act} act @param {string} workflowId */
@@ -170,37 +176,39 @@ export function addTechHazard(data, act, { workflowId, platformId, hazardId, tit
 /** Where the owner is in it, kept for resuming: a hazard, or null for the summary. @param {Data} data @param {Act} act @param {{ workflowId: string, hazardId: string | null }} args */
 export function setWorkflowPosition(data, act, { workflowId, hazardId }) {
   const wf = needOpen(data, act, workflowId);
-  const to = !hazardId ? null : wf.type === 'platformOnboarding' && ONBOARDING_POSITIONS.includes(hazardId) ? hazardId : needHazard(data, wf, hazardId);
+  const to = !hazardId ? null
+    : wf.type === 'platformOnboarding' && ONBOARDING_POSITIONS.includes(hazardId) ? hazardId
+    : wf.type === 'newTechData' ? needPosition(data, wf, hazardId)
+    : needHazard(data, wf, hazardId);
   return commit(data, act, 'Move in workflow', [{ kind: 'workflow', rec: changed(wf, act, { at: { hazardId: to } }) }]);
 }
 
 /**
- * Tick or untick one check on a hazard, or change its note; either may be left out. A tick may
- * arrive as the text a checkbox sends.
+ * Tick or untick one check, or change its note or (New Tech Data) its answer; any may be left
+ * out. A tick may arrive as the text a checkbox sends; a blank answer clears it.
  * @param {Data} data @param {Act} act
- * @param {{ workflowId: string, hazardId: string, check: string, checked?: boolean | string, note?: string }} args
+ * @param {{ workflowId: string, hazardId: string, check: string, checked?: boolean | string, note?: string, answer?: string }} args
  */
-export function setStep(data, act, { workflowId, hazardId, check, checked, note }) {
+export function setStep(data, act, { workflowId, hazardId, check, checked, note, answer }) {
   const wf = needOpen(data, act, workflowId);
   if (wf.type === 'transferOwner') {
     if (hazardId !== '-' || !TRANSFER_GROUPS.some(([k]) => `group:${k}` === check)) throw new PivotError('workflow.check', 'That is not one of this transfer’s groups.');
   } else if (wf.type === 'referenceUpdate') {
     if (check !== 'item' || !referenceItems(data, wf.referenceId).some((i) => i.key === hazardId)) throw new PivotError('workflow.check', 'That is not one of the items this reference informs.');
+  } else if (wf.type === 'newTechData') {
+    if (!TECH_CARDS.includes(check) || !techPairs(data, wf).some((x) => x.key === hazardId)) throw new PivotError('workflow.check', 'That is not in this workflow’s scope.');
   } else {
     const allowed = wf.type === 'platformOnboarding' ? NONE_CHECKS : CHECKS;
     if (!allowed.includes(check)) throw new PivotError('workflow.check', 'That is not one of this workflow’s checks.');
     needHazard(data, wf, hazardId);
   }
-  const id = ids.workflowStep(workflowId, hazardId, check);
+  if (answer !== undefined && answer !== '' && answer !== 'changed' && answer !== 'none') throw new PivotError('workflow.answer', 'An answer is Changed or No change.');
   const fields = {
     ...(checked === undefined ? {} : { checked: checked === true || checked === 'true' }),
     ...(note === undefined ? {} : { note: String(note).trim() }),
+    ...(answer === undefined ? {} : { answer: answer || null }),
   };
-  const existing = get(data, 'workflowStep', id);
-  const rec = existing && existing.status === 'live'
-    ? changed(existing, act, fields)
-    : created(act, id, { workflowId, hazardId, check, checked: false, note: '', ...fields });
-  return commit(data, act, 'Check workflow step', [{ kind: 'workflowStep', rec }]);
+  return commit(data, act, 'Check workflow step', [{ kind: 'workflowStep', rec: stepRec(data, act, workflowId, hazardId, check, fields) }]);
 }
 
 /** @param {Data} data @param {Act} act @param {{ workflowId: string, outcome: string }} args */
@@ -284,6 +292,22 @@ export function cancelWorkflow(data, act, { workflowId }) {
  */
 export function completeWorkflow(data, act, { workflowId }) {
   const wf = needOpen(data, act, workflowId);
+  if (wf.type === 'newTechData') {
+    const r = need(data, 'reference', wf.referenceId);
+    const { done, total } = workflowProgress(data, wf);
+    const left = total - done;
+    if (left) throw new PivotError('workflow.unmet', `${left} thing${left === 1 ? ' is' : 's are'} still needed.`);
+    const links = techLinks(data, wf);
+    const recs = links.map((t) => {
+      const lid = ids.referenceLink(r.id, t.targetKind, t.targetId);
+      const was = get(data, 'referenceLink', lid);
+      return { kind: 'referenceLink', rec: was ? changed(was, act, { status: 'live' }) : created(act, lid, { referenceId: r.id, targetKind: t.targetKind, targetId: t.targetId }) };
+    });
+    return commit(data, act, 'Work through new tech data', [
+      ...recs,
+      { kind: 'workflow', rec: changed(wf, act, { state: 'completed', endedBy: act.by, endedAt: act.at, covered: covered(data, wf), linked: links }) },
+    ]);
+  }
   if (wf.type === 'transferOwner') {
     const p = need(data, 'platform', wf.platformId);
     const today = aestDate(act.at);
