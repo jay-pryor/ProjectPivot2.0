@@ -36,13 +36,13 @@ test('each card takes Changed or No change and a note, only on a pair in scope; 
   assert.throws(() => setStep(d, later, { workflowId: 't1', hazardId: 'p1|h1', check: 'sfarp', answer: 'changed' }), code('workflow.owner'));
 });
 
-test('progress: one for having a scope, then four cards on each pair', () => {
-  assert.deepEqual((({ done, total }) => ({ done, total }))(workflowProgress(started(), wf(started()))), { done: 0, total: 1 });
+test('progress: one for the reference (chosen here), one for having a scope, then four cards on each pair', () => {
+  assert.deepEqual((({ done, total }) => ({ done, total }))(workflowProgress(started(), wf(started()))), { done: 1, total: 2 });
   let d = scoped();
-  assert.deepEqual([workflowProgress(d, wf(d)).done, workflowProgress(d, wf(d)).total], [1, 9]);
+  assert.deepEqual([workflowProgress(d, wf(d)).done, workflowProgress(d, wf(d)).total], [2, 10]);
   d = answer(answer(d, 'p1|h1', 'controls', 'none'), 'p1|h1', 'sfarp', 'changed');
   const p = workflowProgress(d, wf(d));
-  assert.deepEqual([p.done, p.perHazard.get('p1|h1'), p.perHazard.get('p2|h1')], [3, 2, 0]);
+  assert.deepEqual([p.done, p.perHazard.get('p1|h1'), p.perHazard.get('p2|h1')], [4, 2, 0]);
 });
 
 test('the position is the scope, a pair in scope, or the summary', () => {

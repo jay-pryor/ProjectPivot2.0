@@ -7,7 +7,7 @@ import { ids } from '../../../src/core/ids.js';
 import { createReference, setReferenceArchived, retireReference, deleteReference } from '../../../src/core/ops/references.js';
 import { retirePlatform, unlinkHazard } from '../../../src/core/ops/platforms.js';
 import { checkRules } from '../../../src/core/rules.js';
-import { startWorkflow, startTechData, setTechScope, addTechHazard, startOnboarding } from '../../../src/core/ops/workflows.js';
+import { startWorkflow, setTechScope, addTechHazard, startOnboarding } from '../../../src/core/ops/workflows.js';
 import { techScope, techPairs } from '../../../src/core/workflows.js';
 import { act, later, seed } from '../../helpers.js';
 
@@ -29,14 +29,6 @@ test('New Tech Data starts on a live, unarchived reference, opens on its scope, 
   assert.throws(() => startWorkflow(d, act, { type: 'newTechData', referenceId: 'r1' }), code('techData.open'));
   assert.throws(() => startWorkflow(setReferenceArchived(d, act, { id: 'r1', archived: true }), act, { type: 'newTechData', referenceId: 'r1' }), code('reference.archived'));
   assert.throws(() => startWorkflow(retireReference(d, act, { id: 'r1' }), act, { type: 'newTechData', referenceId: 'r1' }), code('reference.retired'));
-});
-
-test('starting on a new reference makes it and the workflow in one change, made through the workflow', () => {
-  const d = startTechData(seed(), act, { id: 't2', referenceId: 'r2', title: 'Test report 7', docNumber: 'TR-7', revision: '1', url: 'https://tr7' });
-  assert.deepEqual([d.records.reference.r2.title, d.records.reference.r2.docNumber, d.records.workflow.t2.referenceId, d.records.workflow.t2.type], ['Test report 7', 'TR-7', 'r2', 'newTechData']);
-  const e = entries(d).at(-1);
-  assert.deepEqual([e.action, e.workflow, e.items.map((i) => i.kind).sort()], ['Start new tech data', 't2', ['reference', 'workflow']]);
-  assert.throws(() => startTechData(seed(), act, { title: 'Nowhere' }), code('reference.empty'));
 });
 
 test('scope: platforms first, then hazards on them; unticking a platform hides its hazards until it is ticked again', () => {

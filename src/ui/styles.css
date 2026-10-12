@@ -1281,8 +1281,6 @@ ul.dots { display: grid; gap: 3px; }
 .wf-answer { display: flex; gap: 12px; margin: 0; }
 .wf-warn { margin: 8px 0 0; color: var(--p-warn); }
 .wf-links { margin: 4px 0 12px; }
-.wf-new-ref { margin-top: 8px; }
-.wf-new-ref > summary { cursor: pointer; color: var(--p-muted); }
 .wf-tick { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
 .wf-nav { justify-content: space-between; }
 .wf-banner { padding: 8px 12px; background: var(--p-info-bg); color: var(--p-info-fg); }

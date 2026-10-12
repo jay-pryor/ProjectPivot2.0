@@ -20,6 +20,7 @@ export function workflowsOwnerId(state) {
 
 /** What a workflow is about, as a person reads it. @param {Data} data @param {any} wf */
 export function workflowSubject(data, wf) {
+  if (wf.type === 'newTechData' && !wf.referenceId) return wf.draft?.title || 'New tech data, no reference yet';
   if (wf.type === 'referenceUpdate' || wf.type === 'newTechData') return get(data, 'reference', wf.referenceId)?.title ?? 'A deleted reference';
   return get(data, 'platform', wf.platformId)?.name ?? 'A deleted platform';
 }
@@ -80,14 +81,8 @@ function updateCard(data) {
   return html`<form class="wf-start" data-action="startReferenceUpdate"><div class="wf-fields-col"><select name="referenceId" aria-label="Reference to update" required>${NEUTRAL('Select reference…')}${rs.map((r) => option(r.id, `${referenceLabel(r)} ${r.title}${r.revision ? ` (rev ${r.revision})` : ''}`, ''))}</select></div>${GO}</form>`;
 }
 
-/** The card that works new tech data through: a live reference not archived, or a new one. @param {Data} data */
-function techCard(data) {
-  const rs = live(data, 'reference').filter((r) => !r.archived).sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
-  return html`<form class="wf-start" data-action="beginTechData"><div class="wf-fields-col"><select name="referenceId" aria-label="Reference holding the tech data" required>${NEUTRAL('Select reference…')}${rs.map((r) => option(r.id, `${referenceLabel(r)} ${r.title}${r.revision ? ` (rev ${r.revision})` : ''}`, ''))}</select></div>${GO}</form>
-    <details class="wf-new-ref"><summary>New reference…</summary><form class="wf-start" data-action="beginTechDataNew"><div class="wf-fields-col">
-      <input name="title" required placeholder="Title" aria-label="Title"><input name="docNumber" placeholder="Doc number" aria-label="Doc number"><input name="revision" placeholder="Revision" aria-label="Revision">
-      <input name="url" placeholder="Link" aria-label="Link"><input name="path" placeholder="Path" aria-label="Path"></div>${GO}</form></details>`;
-}
+/** The card that works new tech data through: one click, the reference comes in the workflow. */
+const techCard = () => html`<form class="wf-start" data-action="beginTechData"><div class="wf-fields-col"></div>${GO}</form>`;
 
 /** The card that onboards a new platform: its name and owner. @param {any} state */
 function onboardCard(state) {
@@ -99,7 +94,7 @@ function startCards(state, data) {
   return html`<div class="wf-cards">${WORKFLOW_TYPES.map((t) => html`<section class="dash-card wf-card${t.ready ? '' : ' soon'}" aria-label="${t.name}">
     <h3 class="dash-card-h">${t.name}${t.ready ? '' : html` <span class="tag">Coming soon</span>`}</h3>
     <p class="muted">${t.blurb}</p>
-    ${t.type === 'platformReview' ? reviewCard(state, data) : t.type === 'platformOnboarding' ? onboardCard(state) : t.type === 'transferOwner' ? transferCard(data) : t.type === 'referenceUpdate' ? updateCard(data) : t.type === 'newTechData' ? techCard(data) : ''}
+    ${t.type === 'platformReview' ? reviewCard(state, data) : t.type === 'platformOnboarding' ? onboardCard(state) : t.type === 'transferOwner' ? transferCard(data) : t.type === 'referenceUpdate' ? updateCard(data) : t.type === 'newTechData' ? techCard() : ''}
   </section>`)}</div>`;
 }
 

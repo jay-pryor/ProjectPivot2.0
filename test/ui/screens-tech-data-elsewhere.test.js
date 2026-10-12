@@ -7,12 +7,13 @@ import { createReference, setReferenceArchived } from '../../src/core/ops/refere
 import { state } from './screens-workflows.test.js';
 import { seed, act } from '../helpers.js';
 
-test('the dashboard starts New Tech Data on a reference, or on a new one', () => {
+test('the dashboard starts New Tech Data with one click: the reference comes in the workflow', () => {
   const d = createReference(seed(), act, { id: 'r1', title: 'Service bulletin 12', url: 'x' });
   const out = workflowsView({ ...state, view: { name: 'workflows' } }, d).toString();
   assert.doesNotMatch(out, /Coming soon/);
-  assert.match(out, /data-action="beginTechData"[\s\S]*?Select reference…[\s\S]*?Service bulletin 12/);
-  assert.match(out, /<summary>New reference…<\/summary>[\s\S]*?data-action="beginTechDataNew"[\s\S]*?name="title"[\s\S]*?name="docNumber"[\s\S]*?name="revision"[\s\S]*?name="url"[\s\S]*?name="path"/);
+  const tile = out.slice(out.indexOf('New Tech Data</h3>'), out.indexOf('</section>', out.indexOf('New Tech Data</h3>')));
+  assert.match(tile, /<form class="wf-start" data-action="beginTechData">[\s\S]*?Start/);
+  assert.doesNotMatch(tile, /<select|<input|New reference/);
 });
 
 test('the reference page offers Work through as new tech data… while it is live and not archived', () => {

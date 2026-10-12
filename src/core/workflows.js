@@ -434,14 +434,25 @@ export function techLinks(data, wf) {
     ...hazards.map((h) => ({ targetKind: 'hazard', targetId: h.id })),
     ...controls.map((c) => ({ targetKind: 'control', targetId: /** @type {Rec} */ (c).id })),
   ];
-  return want.filter((t) => get(data, 'referenceLink', ids.referenceLink(wf.referenceId, t.targetKind, t.targetId))?.status !== 'live');
+  return want.filter((t) => get(data, 'referenceLink', ids.referenceLink(wf.referenceId ?? wf.draft?.id, t.targetKind, t.targetId))?.status !== 'live');
 }
 
-/** How far a New Tech Data is: one for having a scope, then each card answered on each pair. @param {Data} data @param {Rec} wf */
+/**
+ * Whether a New Tech Data has its reference: one chosen, or a new one drafted with a title and a
+ * file, link or path.
+ * @param {Rec} wf
+ */
+export function techReferenceDone(wf) {
+  if (wf.referenceId) return true;
+  const d = wf.draft ?? {};
+  return Boolean(String(d.title ?? '').trim() && (d.file || String(d.url ?? '').trim() || String(d.path ?? '').trim()));
+}
+
+/** How far a New Tech Data is: one for its reference, one for having a scope, then each card answered on each pair. @param {Data} data @param {Rec} wf */
 export function techProgress(data, wf) {
   const pairs = techPairs(data, wf);
   /** @type {Map<string, number>} */
   const perHazard = new Map(pairs.map((x) => [x.key, TECH_CARDS.filter((c) => stepOf(data, wf.id, x.key, c)?.answer).length]));
-  const done = Number(pairs.length > 0) + [...perHazard.values()].reduce((a, b) => a + b, 0);
-  return { perHazard, done, total: pairs.length * TECH_CARDS.length + 1 };
+  const done = Number(techReferenceDone(wf)) + Number(pairs.length > 0) + [...perHazard.values()].reduce((a, b) => a + b, 0);
+  return { perHazard, done, total: pairs.length * TECH_CARDS.length + 2 };
 }

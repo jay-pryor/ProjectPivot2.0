@@ -63,7 +63,7 @@ const EDITS = {
   createReviewPolicy: reviews.createReviewPolicy, updateReviewPolicy: reviews.updateReviewPolicy, renameReviewPolicy: reviews.renameReviewPolicy, deleteReviewPolicy: reviews.deleteReviewPolicy,
   startWorkflow: workflows.startWorkflow, startOnboarding: workflows.startOnboarding, setStep: workflows.setStep, setWorkflowOutcome: workflows.setWorkflowOutcome, setWorkflowNotes: workflows.setWorkflowNotes,
   setWorkflowPosition: workflows.setWorkflowPosition, takeOverWorkflow: workflows.takeOverWorkflow,
-  setTransferRecipient: workflows.setTransferRecipient, setReferenceDraft: workflows.setReferenceDraft, markTransferReviewed: workflows.markTransferReviewed, startTechData: workflows.startTechData, setTechScope: workflows.setTechScope, addTechHazard: workflows.addTechHazard, cancelWorkflow: workflows.cancelWorkflow, completeWorkflow: workflows.completeWorkflow,
+  setTransferRecipient: workflows.setTransferRecipient, setReferenceDraft: workflows.setReferenceDraft, markTransferReviewed: workflows.markTransferReviewed, setTechReference: workflows.setTechReference, setTechDraft: workflows.setTechDraft, setTechScope: workflows.setTechScope, addTechHazard: workflows.addTechHazard, cancelWorkflow: workflows.cancelWorkflow, completeWorkflow: workflows.completeWorkflow,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
   retireReference: references.retireReference, setReferenceArchived: references.setReferenceArchived, deleteReference: references.deleteReference,
@@ -832,19 +832,22 @@ export function createController(env) {
       await applyEdit('startWorkflow', { id, type: 'referenceUpdate', referenceId });
       await handlers.go({ view: 'workflow', id });
     },
-    // Work through as new tech data: the reference's one under way, or a new one.
+    // New Tech Data: on a reference (from its page), the one under way or a new one; from the
+    // dashboard, a new one whose reference comes first in the workflow.
     async beginTechData({ referenceId }) {
-      const w = state.session ? openTechData(state.session.working, referenceId) : null;
+      const w = referenceId && state.session ? openTechData(state.session.working, referenceId) : null;
       if (w) return handlers.go({ view: 'workflow', id: w.id });
       const id = newId();
-      await applyEdit('startWorkflow', { id, type: 'newTechData', referenceId });
+      await applyEdit('startWorkflow', { id, type: 'newTechData', ...(referenceId ? { referenceId } : {}) });
       await handlers.go({ view: 'workflow', id });
     },
-    // New Tech Data on a new reference: the two made together, the workflow opened.
-    async beginTechDataNew({ title, docNumber, revision, url, path }) {
-      const id = newId();
-      await applyEdit('startTechData', { id, referenceId: newId(), title, docNumber, revision, url, path });
-      await handlers.go({ view: 'workflow', id });
+    // The new reference's file: copied into the folder now, under the id the reference will have.
+    async uploadTechFile({ workflowId, file }) {
+      const wf = state.session?.working.records.workflow[workflowId];
+      if (!wf || !wf.draft) throw new PivotError('not-found', 'That workflow no longer exists.');
+      const f = chosenFile(file);
+      if (!f) throw new PivotError('reference.file', 'Choose a file to upload.');
+      await applyEdit('setTechDraft', { workflowId, file: await storeFile(wf.draft.id, 1, f) });
     },
     // The new revision's file: copied into the folder now, given to the reference only when the update is confirmed.
     async uploadUpdateFile({ workflowId, file }) {

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { workflowView } from '../../src/ui/screens/workflow.js';
 import { createReference } from '../../src/core/ops/references.js';
-import { startWorkflow, setTechScope, setStep, completeWorkflow, addTechHazard } from '../../src/core/ops/workflows.js';
+import { startWorkflow, setTechScope, setStep, completeWorkflow, addTechHazard, setTechDraft } from '../../src/core/ops/workflows.js';
 import { setSfarp } from '../../src/core/ops/assessment.js';
 import { assignNumbers } from '../../src/core/ops/hazards.js';
 import { TECH_CARDS } from '../../src/core/workflows.js';
@@ -88,4 +88,27 @@ test('completed: the grid, what it linked, the outcome and the changes made thro
   assert.match(out, /Linked to[\s\S]*?Platform: Alpha[\s\S]*?Hazard: HAZ-002 Flood/);
   assert.match(out, /Nothing for us/);
   assert.match(out, /Changes made through WF-/);
+});
+
+test('started with no reference, it opens on the Reference step: a new reference to fill in, or an existing one to choose', () => {
+  const d = startWorkflow(createReference(seed(), act, { id: 'r1', title: 'Service bulletin 12', url: 'x' }), act, { id: 't1', type: 'newTechData' });
+  const out = workflowView(at(), d, 't1').toString();
+  assert.match(out, /New Tech Data · New tech data, no reference yet/);
+  assert.match(out, /class="wf-rail"[\s\S]*?data-hazard-id="@reference"[\s\S]*?Reference[\s\S]*?data-hazard-id="@scope"/);
+  assert.match(out, /<h2>Reference<\/h2>/);
+  for (const f of ['title', 'docNumber', 'revision', 'url', 'path']) assert.match(out, new RegExp(`name="${f}"[^>]*data-change="setTechDraft"`));
+  assert.match(out, /data-action="uploadTechFile"/);
+  assert.match(out, /data-change="setTechReference"[\s\S]*?Service bulletin 12/);
+});
+
+test('a drafted reference names the workflow, and the summary says Complete will make it', () => {
+  const d = setTechDraft(startWorkflow(seed(), act, { id: 't1', type: 'newTechData' }), act, { workflowId: 't1', title: 'Test report 7', url: 'https://tr7' });
+  assert.match(workflowView(at(), d, 't1').toString(), /New Tech Data · Test report 7/);
+  assert.match(workflowView(at('summary'), d, 't1').toString(), /Completing makes the new reference Test report 7 and links it to/);
+});
+
+test('with an existing reference chosen, the Reference step says so and offers the new one back', () => {
+  const out = workflowView(at('@reference'), scoped(), 't1').toString();
+  assert.match(out, /Using[\s\S]*?Service bulletin 12/);
+  assert.match(out, /data-action="setTechReference"[^>]*>Use a new reference instead/);
 });
