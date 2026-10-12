@@ -40,14 +40,18 @@ test('hasUnsaved compares working with base; hasUnsavedRecords ignores the repor
 test('Final review I4: saved reports\' documents are left out of the mirror and put back from the folder on recovery', async () => {
   const { createReport } = await import('../../src/core/ops/reports.js');
   const big = 'x'.repeat(500_000);
-  const saved = createReport(base, act, { id: 'r1', report: { platformId: 'p1', title: 'Old', markdown: big, html: big } });
-  const edited = createReport(saved, act, { id: 'r2', report: { platformId: 'p1', title: 'New', markdown: 'md', html: 'html' } });
+  const doc = { title: 'Old', meta: {}, blocks: [{ kind: 'paragraph', style: 'body', runs: [{ text: big }] }] };
+  const saved = createReport(base, act, { id: 'r1', report: { platformId: 'p1', title: 'Old', document: doc, style: { id: 'standard' } } });
+  const legacy = createReport(saved, act, { id: 'r0', report: { platformId: 'p1', title: 'Older', html: big } });
+  const edited = createReport(legacy, act, { id: 'r2', report: { platformId: 'p1', title: 'New', document: { blocks: [] }, style: { id: 's' } } });
   const s = new MemoryStorage();
-  assert.equal(writeMirror(s, { folderName: 'x', base: saved, working: edited, loadedStamp: null }), null);
+  assert.equal(writeMirror(s, { folderName: 'x', base: legacy, working: edited, loadedStamp: null }), null);
   assert.ok(s.getItem(MIRROR_KEY).length < 50_000, `mirror is ${s.getItem(MIRROR_KEY).length} characters`);
-  const m = restoreReportDocuments(readMirror(s, 'x'), saved);
-  assert.equal(m.base.records.report.r1.html, big);
-  assert.equal(m.working.records.report.r1.markdown, big);
-  assert.equal(m.working.records.report.r2.html, 'html', 'an unsaved report keeps its documents in the mirror');
-  assert.deepEqual(m.base, saved);
+  const m = restoreReportDocuments(readMirror(s, 'x'), legacy);
+  assert.equal(m.base.records.report.r1.document.blocks[0].runs[0].text, big);
+  assert.deepEqual(m.working.records.report.r1.style, { id: 'standard' });
+  assert.equal(m.working.records.report.r0.html, big, 'a report made before PDF keeps its HTML');
+  assert.ok(!('document' in m.working.records.report.r0), 'and gains no document');
+  assert.deepEqual(m.working.records.report.r2.style, { id: 's' }, 'an unsaved report keeps its documents in the mirror');
+  assert.deepEqual(m.base, legacy);
 });

@@ -1,6 +1,7 @@
 import { newId } from './ids.js';
 import { canonicalJson } from './json.js';
 import { PivotError } from './errors.js';
+import { REPORT_DOCUMENTS } from './data.js';
 
 /** @typedef {import('./data.js').Data} Data */
 /** @typedef {import('./data.js').Rec} Rec */
@@ -10,7 +11,7 @@ import { PivotError } from './errors.js';
 export const RESTAMP = Object.freeze(['updatedBy', 'updatedAt']);
 
 /** Fields a history item never copies: a report's documents are the record itself, and large. */
-const NOT_IN_HISTORY = Object.freeze({ report: ['markdown', 'html'] });
+const NOT_IN_HISTORY = Object.freeze({ report: REPORT_DOCUMENTS });
 
 /** @param {Rec | null} before @param {Rec} after */
 export function changeOf(before, after) {

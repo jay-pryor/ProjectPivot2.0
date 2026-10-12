@@ -24,12 +24,17 @@ test('renderApp routes each screen and view', () => {
 });
 
 test('the reports view: produce form (disabled while unsaved), designer button, and produced reports with downloads', () => {
-  const d = createReport(assignHazardNumbers(seed()), act, { id: 'r1', report: { platformId: 'p1', platformName: 'Alpha', producedAt: '2026-09-28T15:00:00+10:00', producedBy: 'u1', title: 'Alpha hazards', classification: 'PROTECTED', rows: [], markdown: '', html: '' } });
+  const d = createReport(assignHazardNumbers(seed()), act, { id: 'r1', report: { platformId: 'p1', platformName: 'Alpha', producedAt: '2026-09-28T15:00:00+10:00', producedBy: 'u1', title: 'Alpha hazards', classification: 'PROTECTED', rows: [], document: { blocks: [] }, style: {} } });
   const clean = reportsView(main(d), d).toString();
   assert.match(clean, /<form data-action="produceReport"/);
   assert.match(clean, /data-action="openDesigner"/);
-  assert.match(clean, /data-action="downloadReport" data-id="r1" data-format="md"/);
-  assert.match(clean, /data-action="downloadReport" data-id="r1" data-format="html"/);
+  assert.match(clean, /data-action="downloadReport" data-id="r1" data-format="pdf">PDF</);
+  assert.match(clean, /data-action="downloadReport" data-id="r1" data-format="html">HTML</);
+  assert.doesNotMatch(clean, /data-format="md"/);
+  const legacy = createReport(d, act, { id: 'r0', report: { platformId: 'p1', platformName: 'Alpha', producedAt: '2026-09-01T15:00:00+10:00', producedBy: 'u1', title: 'Old', classification: '', rows: [], html: '<p>x</p>' } });
+  const old = reportsView(main(legacy), legacy).toString();
+  assert.doesNotMatch(old, /data-id="r0" data-format="pdf"/, 'a report made before PDF offers HTML only');
+  assert.match(old, /data-id="r0" data-format="html"/);
   assert.match(clean, /PROTECTED/);
   assert.doesNotMatch(clean, /Save your changes first/);
   const dirty = reportsView({ ...main(d), session: { base: emptyData(), working: d, loadedStamp: null } }, d).toString();

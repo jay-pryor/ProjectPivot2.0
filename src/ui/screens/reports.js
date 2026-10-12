@@ -49,8 +49,8 @@ export function reportsView(state, data) {
           { key: 'marking', label: 'Marking', width: 170, value: (r) => r.classification || '—' },
           { key: 'by', label: 'By', width: 140, value: (r) => profileName(state, r.producedBy) },
           { key: 'download', label: 'Download', width: 150, sortable: false, render: (r) => html`<div class="actions">
-            <button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'md' })}>.md</button>
-            <button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'html' })}>.html</button></div>` },
+            ${r.document ? html`<button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'pdf' })}>PDF</button>` : ''}
+            <button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'html' })}>HTML</button></div>` },
           removeColumn((r) => removeButton(`Delete ${r.title}`, `Delete ${r.title}?`, `The report produced for ${r.platformName} on ${when(r.producedAt)} will be deleted for everyone using this folder.`, { run: 'deleteReport', id: r.id })),
         ],
       })}

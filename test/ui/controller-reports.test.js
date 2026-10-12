@@ -36,7 +36,7 @@ test('a report cannot be produced over unsaved changes', async () => {
   assert.match(c.getState().message.text, /Save your changes before producing a report/);
 });
 
-test('produce a report, save it, and download it as .md and .html', async () => {
+test('produce a report, save it, and download it as a PDF and as HTML', async () => {
   const f = new MemoryFolder();
   const c = createController(env(f));
   await ready(c);
@@ -45,14 +45,34 @@ test('produce a report, save it, and download it as .md and .html', async () => 
   const reports = Object.values(c.getState().session.working.records.report);
   assert.equal(reports.length, 1);
   assert.equal(reports[0].title, 'Alpha hazard report');
-  assert.ok(reports[0].markdown.includes('Fire'));
+  assert.ok(reports[0].document.blocks.length > 0);
   assert.equal(c.getState().view.name, 'reports');
   await c.dispatch({ type: 'save' });
-  await c.dispatch({ type: 'downloadReport', id: reports[0].id, format: 'md' });
+  await c.dispatch({ type: 'downloadReport', id: reports[0].id, format: 'pdf' });
   await c.dispatch({ type: 'downloadReport', id: reports[0].id, format: 'html' });
-  assert.equal(f.read('Alpha-2026-09-28.md'), reports[0].markdown);
-  assert.equal(f.read('Alpha-2026-09-28.html'), reports[0].html);
+  const pdf = f.readBytes('Alpha-2026-09-28.pdf');
+  assert.equal(new TextDecoder('latin1').decode(pdf.slice(0, 8)), '%PDF-1.4');
+  assert.match(new TextDecoder('latin1').decode(pdf), /\(Fire\) Tj/);
+  assert.match(f.read('Alpha-2026-09-28.html'), /^<!doctype html>[\s\S]*Fire/);
+  assert.match(c.getState().message.text, /Saved Alpha-2026-09-28\.html/);
   assert.equal((await load(f.handle)).data.records.report[reports[0].id].title, 'Alpha hazard report');
+});
+
+test('a report made before PDF downloads its HTML only', async () => {
+  const f = new MemoryFolder();
+  const c = createController(env(f));
+  await ready(c);
+  await c.dispatch({ type: 'save' });
+  await c.dispatch({ type: 'produceReport', platformId: 'p1' });
+  const id = c.getState().lastReportId;
+  const s = c.getState().session;
+  const { document: _d, style: _s, ...legacy } = s.working.records.report[id];
+  s.working.records.report[id] = { ...legacy, html: '<!doctype html><p>Old report</p>' };
+  await c.dispatch({ type: 'downloadReport', id, format: 'pdf' });
+  assert.match(c.getState().message.text, /made before PDF/);
+  assert.equal(f.readBytes('Alpha-2026-09-28.pdf'), null);
+  await c.dispatch({ type: 'downloadReport', id, format: 'html' });
+  assert.equal(f.read('Alpha-2026-09-28.html'), '<!doctype html><p>Old report</p>');
 });
 
 test('the designer\'s Generate buttons produce and download for the designer\'s platform', async () => {
@@ -77,7 +97,7 @@ test('a design change is an unsaved change of the data, but does not block produ
   assert.equal(c.getState().session.working.reportDesign.classification, 'PROTECTED');
   assert.notEqual(c.getState().session.working, c.getState().session.base);
   await c.dispatch({ type: 'generateFromDesigner', format: 'html' });
-  assert.match(f.read('Alpha-2026-09-28.html'), /class="doc-banner">PROTECTED</);
+  assert.match(f.read('Alpha-2026-09-28.html'), /class="marking">PROTECTED</);
 });
 
 test('restore from a backup warns with the unsaved changes it would discard, then replaces the data', async () => {

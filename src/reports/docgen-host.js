@@ -192,17 +192,10 @@ export function createDocHost(ctx) {
       producing = snapshot;
       try {
         const o = { ...options, subjectId: platformId };
-        const utc = toIsoUtc(at);
-        const blocks = App.docGen.reportBlocks(host, o).filter((/** @type {any} */ b) => b.included);
-        const meta = App.docHost.chosenMeta(platformId, utc);
-        const prepared = blocks.map((/** @type {any} */ b) => App.docGen.sectionContent(host, b, o, App.docHost.context(platformId, utc), meta));
-        const base = reportFileBase(snapshot);
-        const md = App.docGen.emitDocument(host, prepared, {
-          title, date: aestDate(at), classification: snapshot.classification,
-          filename: o.filename, tags: o.tags, logicalName: `${base}.md`, fallbackName: `${base}.md`,
+        const { document, style } = App.docGen.documentFor(host, o, {
+          title, date: aestDate(at), platform: snapshot.platformName, classification: snapshot.classification, utc: toIsoUtc(at),
         });
-        const html = App.docGen.emitHtml(host, md, { title, classification: snapshot.classification });
-        return { report: { ...snapshot, markdown: md.text, html: html.text }, markdownName: md.name, htmlName: html.name };
+        return { report: { ...snapshot, document, style }, baseName: reportFileBase(snapshot) };
       } finally {
         producing = null;
       }

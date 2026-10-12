@@ -240,13 +240,13 @@ export async function restore(handle, data, profileId, clock) {
   return { data, stamp, supersededFile };
 }
 
-/** @param {FileSystemFileHandle} fileHandle @param {string} text */
+/** @param {FileSystemFileHandle} fileHandle @param {string | Uint8Array} text a document, or a file's bytes */
 export async function writeExport(fileHandle, text) {
   /** @type {FileSystemWritableFileStream | null} */
   let w = null;
   try {
     w = await fileHandle.createWritable();
-    await w.write(text);
+    await w.write(typeof text === 'string' ? text : new Uint8Array(text));
     await w.close();
   } catch (e) {
     if (w) {
