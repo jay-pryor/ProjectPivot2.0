@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { STANDARD as STYLE_STANDARD, normaliseStyle, fromProfile, isStyle } from './doc-style.js';
   /* App namespace root. Exported at the bottom of this file. */
   var App = {};
 
@@ -1588,6 +1589,70 @@
         .join(CELL_BREAK + CELL_BREAK);
     }
 
+    /**
+     * PDF-1: rich text as RUNS rather than markdown — one array per paragraph. The same
+     * grammar and the same balancing as richPara: an unmatched close is dropped, a code
+     * span and a reference's own words are taken whole, a missing target reads
+     * "[missing reference]" in bold.
+     * @returns {Array<Array<{text?:string,bold?:boolean,italic?:boolean,code?:boolean,br?:boolean,ref?:{anchor:string}}>>}
+     */
+    function runs(s, opts) {
+      opts = opts || {};
+      return String(s == null ? '' : s).split(/\n{2,}/).map(function (p) { return runsPara(p, opts); })
+        .filter(function (rs) { return rs.some(function (r) { return r.text; }); });
+    }
+    function runsPara(p, opts) {
+      var out = [], last = 0, m, open = { b: false, i: false };
+      function run(text, extra) {
+        var r = { text: text };
+        if (open.b) r.bold = true;
+        if (open.i) r.italic = true;
+        Object.keys(extra || {}).forEach(function (k) { r[k] = extra[k]; });
+        return r;
+      }
+      function lit(t) {
+        String(t || '').split('\n').forEach(function (piece, k) {
+          if (k) out.push({ br: true });
+          if (piece) out.push(run(piece));
+        });
+      }
+      TOKEN.lastIndex = 0;
+      while ((m = TOKEN.exec(p)) !== null) {
+        lit(p.slice(last, m.index));
+        var close = m[1] === '/', tag = m[2];
+        if (tag === 'c' && !close) {
+          var at = p.indexOf('{{/c}}', TOKEN.lastIndex);
+          var inner = at === -1 ? p.slice(TOKEN.lastIndex) : p.slice(TOKEN.lastIndex, at);
+          if (inner) out.push(run(inner, { code: true }));
+          last = at === -1 ? p.length : at + 6;
+          TOKEN.lastIndex = last;
+          continue;
+        }
+        if (tag === 'b' || tag === 'i') {
+          if (close === open[tag]) open[tag] = !close;
+        } else if (tag === 'br') {
+          out.push({ br: true });
+        } else if (REF_TAG.test(tag) && !close) {
+          var bits = REF_TAG.exec(tag);
+          var at2 = p.indexOf('{{/ref}}', TOKEN.lastIndex);
+          var wrapped = at2 === -1 ? null : p.slice(TOKEN.lastIndex, at2);
+          if (wrapped !== null) { last = at2 + 8; TOKEN.lastIndex = last; }
+          var r = opts.resolveRef ? opts.resolveRef(bits[2]) : null;
+          if (!r) {
+            if (wrapped !== null) lit(wrapped + ' ');
+            out.push({ text: '[missing reference]', bold: true });
+          } else {
+            out.push(run(wrapped !== null ? wrapped : String(r[REF_READING[bits[1]]] || r.label || ''), { ref: { anchor: r.anchor } }));
+          }
+          if (wrapped !== null) continue;
+        }
+        last = m.index + m[0].length;
+      }
+      lit(p.slice(last));
+      while (out.length && out[out.length - 1].br) out.pop();
+      return out;
+    }
+
     /** The plain-text reading of a token string — for previews, summaries and titles. */
     function plain(s) {
       return String(s == null ? '' : s).replace(TOKEN, function (m0, close, tag) {
@@ -1670,7 +1735,7 @@
       HEAD_SHADE_OPEN: HEAD_SHADE_OPEN, HEAD_SHADE_CLOSE: HEAD_SHADE_CLOSE, COL_SHADE: COL_SHADE,
       HEAD_CELL_SHADE: HEAD_CELL_SHADE,
       human: human, humanInline: humanInline, HUMAN_EMPTY: HUMAN_EMPTY,
-      rich: rich, richCell: richCell, cellText: cellText, plain: plain, TOKEN: TOKEN, REF_TAG: REF_TAG,
+      rich: rich, richCell: richCell, runs: runs, cellText: cellText, plain: plain, TOKEN: TOKEN, REF_TAG: REF_TAG,
       // D-036: exposed so a test can assert where a wrap is allowed to land.
       _safeCut: safeCut,
       // REF-2: turn every mention of a known term into a link to it.
@@ -1855,7 +1920,7 @@
      */
     function levelBreaks(profile) {
       var out = {};
-      normalise(profile).levels.forEach(function (lv) {
+      normaliseProfile(profile).levels.forEach(function (lv) {
         if (lv.pageBreakBefore) out[lv.level] = true;
       });
       return out;
@@ -1993,7 +2058,7 @@
     function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
     /** A fresh copy of the baseline — the starting point for any new profile. */
-    function standard() { return clone(STANDARD); }
+    function standard() { return clone(STYLE_STANDARD); }
 
     /**
      * Fill a partial profile out against the baseline, so a profile written by an
@@ -2001,7 +2066,13 @@
      * than a load failure. Unknown keys are dropped, not carried.
      * @param {Object} p @returns {Object} a complete profile
      */
+    /** PDF-1: any saved profile as a complete Style — an old LaTeX-era profile converted. */
     function normalise(p) {
+      return isStyle(p) ? normaliseStyle(p).style : fromProfile(p);
+    }
+
+    /** The LaTeX-era profile normaliser, kept only until the markdown path is removed. */
+    function normaliseProfile(p) {
       var base = standard();
       p = p || {};
       var out = {
@@ -2503,7 +2574,7 @@
 
     function preamble(profile, opts) {
       opts = opts || {};
-      var f = normalise(profile);
+      var f = normaliseProfile(profile);
       var lines = ['\\usepackage{titlesec}', '\\usepackage{fancyhdr}', '\\usepackage{setspace}',
         // A 64-character SHA-256 and a long package name are single unbreakable words
         // in a typewriter font, and LaTeX will happily run them 50mm past the right
@@ -2624,7 +2695,7 @@
      *            firstHeader:Object, firstFooter:Object}}
      */
     function resolveHeaderFooter(profile, opts) {
-      var hf = normalise(profile).headerFooter;
+      var hf = normaliseProfile(profile).headerFooter;
       var cls = (opts && opts.classification) ? String(opts.classification) : '';
       var out = { firstDifferent: hf.firstDifferent, banner: {} };
       HF_SETS.forEach(function (k) {
@@ -2679,7 +2750,7 @@
      */
     function frontMatter(profile, meta) {
       meta = meta || {};
-      var f = normalise(profile);
+      var f = normaliseProfile(profile);
       var geometry = [
         'top=' + len(f.page.marginTop, '25mm'),
         'bottom=' + len(f.page.marginBottom, '25mm'),
@@ -2728,7 +2799,7 @@
       if (!raw.name || typeof raw.name !== 'string') bad('A formatting profile needs a name.');
       if (raw.levels !== undefined && !Array.isArray(raw.levels)) bad('levels must be an array.');
       if (issues.length) return { ok: false, issues: issues, profile: null };
-      var p = normalise(raw);
+      var p = normaliseProfile(raw);
       delete p.builtin;                       // an imported profile is never the built-in
       return { ok: true, issues: [], profile: p };
     }
@@ -2773,7 +2844,7 @@
     }
     /** The width of the text block, in millimetres — paper less both margins. */
     function textWidthMm(profile) {
-      var f = normalise(profile);
+      var f = normaliseProfile(profile);
       var paper = PAPER_MM[f.page.paper] || PAPER_MM.a4;
       return Math.max(40, paper - mm(f.page.marginLeft, 25) - mm(f.page.marginRight, 25));
     }
@@ -2792,7 +2863,7 @@
      *            right:number}} all in CSS pixels at 96dpi
      */
     function pageMetrics(profile) {
-      var f = normalise(profile);
+      var f = normaliseProfile(profile);
       var px = function (v) { return Math.round(v * PX_PER_MM); };
       return {
         width: px(PAPER_MM[f.page.paper] || PAPER_MM.a4),
@@ -2821,7 +2892,7 @@
      * @returns {{pageEm:number, head:number, body:number, firstCol:number}}
      */
     function tableMetrics(profile) {
-      var f = normalise(profile);
+      var f = normaliseProfile(profile);
       var base = ptNum(f.page.fontSize, 11);
       var body = ptNum(f.tables.fontSize, base);
       return {
@@ -2838,7 +2909,7 @@
      * @param {Object} profile @returns {string} CSS
      */
     function previewCss(profile) {
-      var f = normalise(profile);
+      var f = normaliseProfile(profile);
       var base = ptNum(f.page.fontSize, 11);
       var spacing = Number(f.page.lineSpacing);
       if (!isFinite(spacing) || spacing <= 0) spacing = 1.15;
@@ -2940,7 +3011,7 @@
      */
     function tableStyle(profile, flags) {
       flags = flags || {};
-      var t = normalise(profile).tables;
+      var t = normaliseProfile(profile).tables;
       var out = {};
       // FNT-4: the header row's WEIGHT is a document-wide setting now (tables.headBold),
       // applied to every table through \chTblHeadFont. What opting in still buys is the
@@ -3904,7 +3975,55 @@
       return { body: tableFor(items, ONE_TABLE, capBase, capName), children: [] };
     }
 
-    App.report = { renderTable: renderTable, buildSection: buildSection, metaTable: metaTable, tableOpts: tableOpts,
+    /** PDF-1: buildSection's tables as data, not markdown. Same columns, wording, sorting and grouping. */
+    function tables(sectionLabel, keyCol, columns, items, opts, ctx, groups) {
+      opts = opts || {};
+      var colOpts = opts.columns || {};
+      var visible = (columns || []).filter(function (c) { return columnOn(c, colOpts); });
+      var cols = [Object.assign({ id: '_key' }, keyCol)].concat(visible);
+      function rowsFor(list) {
+        return list.slice().sort(function (a, b) { return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; })
+          .map(function (it) {
+            return cols.map(function (c, i) {
+              var v = c.get(it, ctx);
+              return i === 0 ? { text: v == null ? '' : String(v), code: true } : { text: v == null ? '' : String(v) };
+            });
+          });
+      }
+      function tableFor(list, key, capId, dfltCaption) {
+        var text = tableText(opts, key);
+        var title = String(text.title || '').trim();
+        var rows = rowsFor(list);
+        if (!rows.length) {
+          var empty = [{ text: 'None.' }];
+          for (var i = 1; i < cols.length; i++) empty.push({ text: '' });
+          rows = [empty];
+        }
+        return {
+          captionId: capId, noCaption: text.noCaption === true || !capId,
+          captionText: String(text.caption || '').trim() || title || dfltCaption,
+          titleRow: title, header: cols.map(function (c) { return headerFor(c, text.columns); }), rows: rows,
+          widths: (opts.widths && opts.widths.length === cols.length) ? opts.widths.slice() : null
+        };
+      }
+      var capBase = opts.captionId || '';
+      var capName = opts.captionText || sectionLabel;
+      if (groups && groups.field) {
+        var groupOpts = opts.groups || {};
+        return groups.options.filter(function (g) { return groupOpts[g.value] !== false; }).map(function (g) {
+          return tableFor(items.filter(function (it) { return it.decision && it.decision[groups.field] === g.value; }),
+            g.value, capBase ? capBase + '-' + g.value : '', capName);
+        });
+      }
+      return [tableFor(items, ONE_TABLE, capBase, capName)];
+    }
+    function metaData(meta, headings) {
+      return { header: headings || ['Field', 'Value'], rows: (meta || []).map(function (m) {
+        return [{ text: String(m.label) }, m.code === false ? { text: String(m.value) } : { text: String(m.value), code: true }];
+      }) };
+    }
+
+    App.report = { tables: tables, metaData: metaData, renderTable: renderTable, buildSection: buildSection, metaTable: metaTable, tableOpts: tableOpts,
       // COL-3: the one answer to "is this optional column showing?".
       columnOn: columnOn };
   })(App);
@@ -4164,7 +4283,19 @@
       return { body: out.body || '', children: out.children || [] };
     }
 
-    App.docProviders = { renderSection: renderSection };
+    /** PDF-1: a provider's section as TABLE DATA rather than markdown. A provider that
+     *  renders its own markdown has nothing this format can show, and says so. */
+    function sectionTables(provider, rows, ctx, opts) {
+      if (!provider) return [];
+      if (typeof provider.render === 'function') {
+        return [{ captionId: '', noCaption: true, captionText: '', header: ['Note'],
+          rows: [[{ text: '(This section is produced by its host as text and is not shown in this format.)' }]] }];
+      }
+      var key = provider.keyColumn || { id: '_key', label: 'Key', get: function (r) { return r.key; } };
+      return App.report.tables(provider.label, key, provider.columns || [], rows || [], opts || {}, ctx || {}, provider.groups || null);
+    }
+
+    App.docProviders = { renderSection: renderSection, sectionTables: sectionTables };
   }(App));
 
   /* =============================================================================
@@ -4910,6 +5041,137 @@
       };
     }
 
+    /** PDF-1: one block with its generated content as data — tables, or the contents marker. */
+    function contentOf(host, b, opts, ctx, metaRows) {
+      opts = opts || {};
+      var capText = String(b.title || '').trim() || b.label;
+      var tblOpts = { captionId: b.id, captionText: capText, widths: (b.widths && b.widths.length) ? b.widths : null };
+      if (b.kind === 'toc') return Object.assign({}, b, { content: 'toc' });
+      if (b.kind === 'meta') {
+        var text = App.docBlocks.tableWording(b, '_all');
+        var data = App.report.metaData(metaRows || [], App.docBlocks.headingsFor(['field', 'value'], ['Field', 'Value'], text.columns));
+        var title = String(text.title || '').trim();
+        return Object.assign({}, b, { content: [Object.assign(data, { captionId: text.noCaption === true ? '' : b.id, noCaption: text.noCaption === true,
+          captionText: String(text.caption || '').trim() || title || capText, titleRow: title, widths: tblOpts.widths })] });
+      }
+      var pv = providerOf(opts, b.id, null, host);
+      if (pv) {
+        var ck = columnKey(b, pv);
+        return Object.assign({}, b, { content: App.docProviders.sectionTables(pv, pv.rows ? pv.rows() : [], ctx, Object.assign({
+          columns: (opts.columns || {})[ck], groups: groupTicks(pv, opts, ck), tables: b.tables || null, block: b }, tblOpts)) });
+      }
+      return Object.assign({}, b, { content: [] });
+    }
+
+    /** The heading-number depth a numbering format allows. */
+    function numberDepth(style) { return String(style.numbering.format || '1.1.1').split('.').length; }
+
+    /**
+     * PDF-1: the finished DOCUMENT — blocks of runs — from content-filled blocks. Owns what
+     * App.doc.render owned for markdown: the outline and its numbers, table numbers in
+     * emitted order, the reference index, intros, custom parts, and `/[Tag]` values.
+     */
+    function buildDocument(host, blocks, meta) {
+      meta = meta || {};
+      var state = (host && typeof host.getState === 'function' && host.getState()) || {};
+      var style = App.docFormat.resolve(state);
+      var resolved = App.doc.outline(blocks, { baseLevel: 1, clampSkips: true, numbered: style.numbering.on });
+      var depth = numberDepth(style);
+      // Table numbers, in the order the tables will be emitted.
+      var tableList = [], n = 0;
+      resolved.forEach(function (b) {
+        if (b.kind === 'custom') {
+          (b.parts || []).forEach(function (p) {
+            if (p.kind === 'table' && p.noCaption !== true && (p.header || []).length) {
+              n++; tableList.push({ id: p.id, number: String(n), caption: App.doc.autoCaption(b, p), anchor: App.md.anchor('tbl-' + p.id) });
+            }
+          });
+        } else if (Array.isArray(b.content)) {
+          b.content.forEach(function (t) {
+            if (!t.noCaption && t.captionId) { n++; var anc = App.md.anchor('tbl-' + t.captionId); tableList.push({ id: anc, number: String(n), caption: t.captionText, anchor: anc }); }
+          });
+        }
+      });
+      var resolveRef = App.doc.refResolver(resolved, tableList);
+      var byId = {}; tableList.forEach(function (t) { byId[t.id] = t; });
+      var tags = meta.tags || {};
+      function tag(s) { return applyTags(s, tags, true); }
+      function runs1(s) { var ps = App.md.runs(s, { resolveRef: resolveRef }); return ps.length ? ps.reduce(function (a, p, i) { return i ? a.concat([{ br: true }, { br: true }], p) : p; }, []) : []; }
+      function textRuns(s) { return [{ text: tag(String(s == null ? '' : s)) }]; }
+      function caption(t) { return t ? { runs: [{ text: 'Table ' + t.number + ': ' + tag(t.caption) }] } : null; }
+      var out = [];
+      resolved.forEach(function (b) {
+        if (b.pageBreakBefore) out.push({ kind: 'pageBreak' });
+        var title = String(b.title == null ? b.label : b.title).trim();
+        var heading = b.level !== App.doc.BODY_LEVEL && title;
+        if (heading) {
+          var num = b.number && b.number.split('.').length <= depth ? b.number : '';
+          out.push({ kind: 'heading', level: b.level, number: num, anchor: b.anchor, runs: textRuns(title),
+            centre: !!b.centre, spaceBefore: b.spaceBefore || 0, noToc: b.kind === 'toc' || !!b.noToc });
+        } else if (b.spaceBefore) out.push({ kind: 'space', mm: b.spaceBefore });
+        var intro = App.md.runs(b.intro || '', { resolveRef: resolveRef });
+        intro.forEach(function (rs, i) {
+          out.push({ kind: 'paragraph', style: 'body', centre: !!b.centre,
+            runs: (i === 0 && b.introNumber ? [{ text: b.introNumber + ' ' }] : []).concat(rs) });
+        });
+        if (b.content === 'toc') { out.push({ kind: 'toc' }); return; }
+        if (b.kind === 'custom') {
+          (b.parts || []).forEach(function (p) {
+            var centre = !!(p.centre || b.centre);
+            if (p.kind === 'rule') out.push({ kind: 'rule' });
+            else if (p.kind === 'pagebreak') out.push({ kind: 'pageBreak' });
+            else if (p.kind === 'space') out.push({ kind: 'space', mm: Number(p.height) || 0 });
+            else if (p.kind === 'para') {
+              App.md.runs(p.text, { resolveRef: resolveRef }).forEach(function (rs, i) {
+                out.push({ kind: 'paragraph', style: 'body', centre: centre, anchor: i === 0 && p.id ? App.md.anchor('par-' + p.id) : undefined, runs: rs });
+              });
+            } else if (p.kind === 'table' && (p.header || []).length) {
+              var cols = (p.header || []).map(function (h, k) {
+                return { width: (p.widths && p.widths.length === p.header.length) ? p.widths[k] : undefined, align: (p.align || [])[k] || 'l' };
+              });
+              out.push({ kind: 'table', anchor: App.md.anchor('tbl-' + p.id), caption: caption(byId[p.id]), columns: cols, centre: centre,
+                header: p.header.map(runs1), rows: (p.rows || []).map(function (r) { return p.header.map(function (_, k) { return runs1(r && r[k] != null ? r[k] : ''); }); }),
+                rowHeight: Number(p.rowHeight) || 0, tallRows: (p.tallRows && p.tallRows.length === (p.rows || []).length) ? p.tallRows : null });
+            }
+          });
+          return;
+        }
+        (Array.isArray(b.content) ? b.content : []).forEach(function (t) {
+          out.push({ kind: 'table', anchor: t.captionId ? App.md.anchor('tbl-' + t.captionId) : undefined, caption: t.noCaption ? null : caption(byId[App.md.anchor('tbl-' + t.captionId)]),
+            titleRow: t.titleRow ? textRuns(t.titleRow) : null, centre: !!b.centre,
+            columns: t.header.map(function (_, k) { return { width: t.widths ? t.widths[k] : undefined }; }),
+            header: t.header.map(textRuns), rows: t.rows.map(function (r) { return r.map(function (c) { return c.code ? [{ text: tag(c.text), code: true }] : textRuns(c.text); }); }) });
+        });
+      });
+      // Tags in hand-written runs, too (headings and generated cells were filled above).
+      out.forEach(function (blk) {
+        [blk.runs, blk.caption && blk.caption.runs].concat(blk.header || [], [].concat.apply([], blk.rows || [])).forEach(function (rs) {
+          (rs || []).forEach(function (r) { if (r && r.text) r.text = tag(r.text); });
+        });
+      });
+      var tagged = JSON.parse(JSON.stringify(style));
+      ['header', 'footer', 'firstHeader', 'firstFooter'].forEach(function (k) {
+        ['left', 'centre', 'right'].forEach(function (s) { tagged.headerFooter[k][s] = tag(tagged.headerFooter[k][s]); });
+      });
+      var all = JSON.stringify(out) + JSON.stringify(tagged.headerFooter);
+      var docTitle = tag(String(meta.title || ''));
+      return {
+        document: { title: docTitle, meta: { title: docTitle, platform: meta.platform || '', date: meta.date || '', marking: meta.classification || '' }, blocks: out },
+        style: tagged, tags: findTags(all)
+      };
+    }
+
+    /** PDF-1: the whole document for a run, built the way the host's produce builds it. */
+    function documentFor(host, opts, meta) {
+      var o = opts || {};
+      var blocks = hostBlocks(host, o).filter(function (b) { return b.included; });
+      var utc = (meta && meta.utc) || (host && host.clock && host.clock.nowIso ? host.clock.nowIso() : '');
+      var m = o.subjectId ? App.docHost.chosenMeta(o.subjectId, utc) : null;
+      var ctx = o.subjectId ? App.docHost.context(o.subjectId, utc) : {};
+      var prepared = blocks.map(function (b) { return contentOf(host, b, o, ctx, m); });
+      return buildDocument(host, prepared, Object.assign({}, meta, { tags: (meta && meta.tags) || o.tags || {} }));
+    }
+
     App.docGen = {
       // The three the host's own generator is a shim over.
       reportBlocks: hostBlocks, sectionColumns: hostColumns, sectionContent: hostContent,
@@ -4921,6 +5183,8 @@
       emitDocument: emitDocument,
       // HTML-1: that .md as one standalone, printable HTML page.
       emitHtml: emitHtml,
+      // PDF-1: the document as blocks of runs, for the PDF and HTML writers.
+      contentOf: contentOf, buildDocument: buildDocument, documentFor: documentFor,
       // Exposed for a host that assembles its own run: the sections for a run, and
       // the provider behind one block.
       sectionsOf: sectionsOf, providerOf: providerOf
