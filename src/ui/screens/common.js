@@ -197,7 +197,7 @@ export function shell(state, body) {
       <button type="button" class="folder" ${dataAttrs({ action: 'changeFolder' })} title="Choose a different data folder">Folder: ${state.folderName}</button>
       ${save}
       <button type="button" class="theme" role="switch" aria-checked="${theme === 'dark' ? 'true' : 'false'}" aria-label="Dark mode" ${dataAttrs({ action: 'setTheme', theme: other })} title="Switch to ${other} mode"><span class="theme-track"><span class="theme-knob" aria-hidden="true">${theme === 'dark' ? raw(MOON_SVG) : '☀'}</span></span></button>
-      <button type="button" class="help-button${current === 'help' ? ' on' : ''}" ${dataAttrs({ action: 'go', view: 'help', topic: helpTopicFor(state.view, data) })} title="Help for this page">? Help</button>
+      <button type="button" class="help-button${current === 'help' ? ' on' : ''}" ${dataAttrs({ action: 'go', view: 'help', topic: helpTopicFor(state.view, data) })} title="Help for this page">Help</button>
       <span class="profile" title="Active profile">${profileName(state, state.profileId)}</span>
       <details class="settings-menu${SETTINGS.some(([v]) => v === current) ? ' on' : ''}">
         <summary aria-label="Settings" title="Settings">${raw(MENU_SVG)}</summary>
