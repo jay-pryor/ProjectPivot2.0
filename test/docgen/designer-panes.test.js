@@ -160,3 +160,17 @@ test('the section preview zooms in and out', () => {
   assert.ok(Math.abs(at(dflt) - 595.28 * 0.6) < 0.01);
   assert.ok(Math.abs(at(sectionPane(host(), 'things', 1.2)) - 595.28 * 1.2) < 0.01);
 });
+
+test('the Preview pane zooms too, separately from the section preview', () => {
+  const at = (html) => Number(/class="dp-page"[^>]*style="width:([\d.]+)px/.exec(html)[1]);
+  const dflt = paneOf(host(), 'preview');
+  assert.match(dflt, /data-rd-zoom="in" data-rd-zoom-for="preview"/);
+  assert.match(dflt, /data-rd-zoom="out" data-rd-zoom-for="preview"/);
+  assert.match(dflt, />100%</);
+  assert.ok(Math.abs(at(dflt) - 595.28) < 0.01);
+  RD._rd.prevZoom = 1.5;
+  const big = paneOf(host(), 'preview');
+  RD._rd.prevZoom = null;
+  assert.ok(Math.abs(at(big) - 595.28 * 1.5) < 0.01);
+  assert.match(sectionPane(host(), 'things'), /data-rd-zoom="in" data-rd-zoom-for="section"/);
+});

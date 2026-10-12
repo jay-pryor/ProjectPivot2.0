@@ -253,6 +253,7 @@
   .docgen .rd-metaval { margin-left: auto; font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--c-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%;}
   .docgen .rd-secprev-wrap { margin-top: 12px;}
   .docgen .rd-secprev { max-height: 560px; overflow: auto; border: 1px solid var(--c-border); padding: 8px 12px;}
+  .docgen .rd-preview-doc.rd-preview-pages { align-items: safe center;}  /* zoomed wider than the pane: scroll, never cut off */
   .docgen .rd-secprev.rd-preview-pages { align-items: flex-start; gap: 8px;}
   .docgen .rd-secprev .dp-page::after { content: none;}  /* a band of a page, not a page: no page number */
   .docgen .rd-secprev-head { display: flex; align-items: center; gap: 10px; margin: 0 0 6px;}
