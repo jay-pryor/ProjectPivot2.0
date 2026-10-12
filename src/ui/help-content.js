@@ -370,17 +370,17 @@ Hazards, controls and facet options can be assigned to platform groups, or to [[
 
   reports: {
     title: 'Reports',
-    summary: "Produce a platform's safety report, and design what reports contain.",
+    summary: "Make a platform's safety report, and design what reports contain.",
     body: `
-## Producing a report
+## Making a report
 
-Choose a platform and a title, then **Produce**. Reports are made from saved data, so save first. The report appears in the list below, where anyone can download it as a **PDF** or a web page (**HTML**). Reports made before PDF download as HTML only. Save to keep it.
+Reports are made in the report designer. **Open the report designer**, choose the platform, then on the **Generate** tab press **Make PDF** or **Make HTML**. Reports are made from saved data, so save first. The report is added to the list on the Reports tab, where anyone can download it again as a **PDF** or a web page (**HTML**). Reports made before PDF download as HTML only. Save to keep it.
 
-A report on a platform whose review is overdue is still produced, and marked Overdue.
+A report on a platform whose review is overdue is still made, and marked Overdue in the list.
 
 ## Designing reports
 
-**Open the report designer** sets the sections, wording, layout and classification marking that every report uses. The design is shared by everyone using the data folder.
+The report designer also sets the sections, wording, layout, Styles and classification marking that every report uses. The design is shared by everyone using the data folder.
 
 ## Good to know
 

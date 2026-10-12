@@ -23,10 +23,10 @@ test('renderApp routes each screen and view', () => {
   assert.match(renderApp(main(null, { session: null, view: { name: 'hazards' } })), /<h1>Backups<\/h1>/, 'no data: only backups');
 });
 
-test('the reports view: produce form (disabled while unsaved), designer button, and produced reports with downloads', () => {
+test('the reports view: the designer button, a note while unsaved, and produced reports with downloads', () => {
   const d = createReport(assignHazardNumbers(seed()), act, { id: 'r1', report: { platformId: 'p1', platformName: 'Alpha', producedAt: '2026-09-28T15:00:00+10:00', producedBy: 'u1', title: 'Alpha hazards', classification: 'PROTECTED', rows: [], document: { blocks: [] }, style: {} } });
   const clean = reportsView(main(d), d).toString();
-  assert.match(clean, /<form data-action="produceReport"/);
+  assert.doesNotMatch(clean, /produceReport|Produce a report/, 'reports are made in the designer');
   assert.match(clean, /data-action="openDesigner"/);
   assert.match(clean, /data-action="downloadReport" data-id="r1" data-format="pdf">PDF</);
   assert.match(clean, /data-action="downloadReport" data-id="r1" data-format="html">HTML</);
@@ -39,7 +39,6 @@ test('the reports view: produce form (disabled while unsaved), designer button, 
   assert.doesNotMatch(clean, /Save your changes first/);
   const dirty = reportsView({ ...main(d), session: { base: emptyData(), working: d, loadedStamp: null } }, d).toString();
   assert.match(dirty, /Save your changes first/);
-  assert.match(dirty, /type="submit" class="primary" disabled/);
 });
 
 test('the backups view warns before a restore, listing the changes that would be lost', () => {

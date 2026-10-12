@@ -4557,7 +4557,7 @@ import { toWinAnsi } from './doc-fonts.js';
 
       return '<div class="modal modal-full" role="dialog" aria-modal="true" aria-label="Report Design">' +
         '<div class="modal-head"><div><h3>Report Design</h3>' +
-          '<div class="modal-sub">' + (subj ? esc(subj.label) + ' — what the document contains, in what order, and how it looks.' : 'No ' + esc(noun()) + ' selected.') + '</div></div>' +
+          '<div class="modal-sub">' + (subj ? subjectPicker(selId) + ' — what the document contains, in what order, and how it looks.' : 'No ' + esc(noun()) + ' selected.') + '</div></div>' +
           '<button type="button" class="modal-close" data-rd-close aria-label="Close">×</button></div>' +
         '<div class="modal-body"><div class="rpt-body rd-layout">' +
           renderSectionList(project, view) +
@@ -4577,6 +4577,14 @@ import { toWinAnsi } from './doc-fonts.js';
           // screens away from the two things that decide what it writes.
           '<button type="button" data-rd-close>Close</button>' +
         '</div></div>' + renderConflict();
+    }
+
+    /** Which of the host's subjects (for PIVOT, which platform) the report is about. */
+    function subjectPicker(selId) {
+      var n = noun();
+      return '<select data-rd-subject aria-label="' + esc(n.charAt(0).toUpperCase() + n.slice(1)) + '" class="rd-subject">' +
+        latest().map(function (c) { return '<option value="' + esc(c.id) + '"' + (c.id === selId ? ' selected' : '') + '>' + esc(c.label) + '</option>'; }).join('') +
+        '</select>';
     }
 
     /** @returns {string} the workspace, or '' when closed. */
@@ -4906,6 +4914,8 @@ import { toWinAnsi } from './doc-fonts.js';
       dom.on(ctx.root, 'click', '[data-rd-cf-apply]', function () { applyConflict(); });
       // ---- preview ----------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-refresh-preview]', function () { dirty(); repaint(); });
+      // The subject the report is about: a session choice, and everything shown is redrawn for it.
+      dom.on(ctx.root, 'change', '[data-rd-subject]', function (e, el) { session().subjectId = el.value; dirty(); repaint(); });
       // The page previews' zoom: a way of looking, so the laid-out pages are kept.
       dom.on(ctx.root, 'click', '[data-rd-zoom]', function (e, el) {
         var which = el.getAttribute('data-rd-zoom-for') === 'preview' ? 'preview' : 'section';

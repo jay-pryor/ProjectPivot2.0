@@ -185,10 +185,3 @@ test('the review schedule panel opens from the platform menu and closes again, o
   assert.equal(c.getState().reviewPanel, null);
 });
 
-test('choosing a platform in the report form is remembered on screen only', async () => {
-  const c = await ready();
-  assert.equal(c.getState().reportPlatformId, null);
-  await c.dispatch({ type: 'chooseReportPlatform', platformId: 'p1' });
-  assert.equal(c.getState().reportPlatformId, 'p1');
-  assert.equal(c.getState().busy, false);
-});
