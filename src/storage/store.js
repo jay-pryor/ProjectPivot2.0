@@ -106,6 +106,20 @@ export async function updateProfilePrefs(handle, profileId, patch, clock) {
 }
 
 /**
+ * Retire a profile (null to restore it): who retired it and when, kept on it. Re-reads the file
+ * first, like createProfile, so a profile someone else changed a moment ago is kept.
+ * @param {Dir} handle @param {string} profileId @param {{ by: string, at: string } | null} retired @param {Clock} clock
+ * @returns {Promise<Profile[]>}
+ */
+export async function setProfileRetired(handle, profileId, retired, clock) {
+  const profiles = await readProfiles(handle);
+  if (!profiles.some((p) => p.id === profileId)) throw new PivotError('not-found', 'That profile no longer exists.');
+  const next = profiles.map((p) => (p.id === profileId ? { ...p, retired } : p));
+  await writeWhole(handle, FILES.profiles, serialize(await seal('profiles', { profiles: Object.fromEntries(next.map((p) => [p.id, p])) }, null, clock.now())));
+  return next;
+}
+
+/**
  * Re-reads the file and adds to it, so a profile someone else created a moment ago is kept.
  * @param {Dir} handle @param {string} name @param {Clock} clock @returns {Promise<Profile>}
  */

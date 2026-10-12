@@ -57,7 +57,7 @@ const WORKFLOW_TOPIC = Object.freeze({ platformReview: 'wf-review', platformOnbo
 const PAGE_TOPIC = Object.freeze({
   home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', newControl: 'controls',
   platforms: 'platforms', platform: 'platforms', workflows: 'workflows', reviews: 'reviews', platformReview: 'reviews', bowties: 'bowties',
-  info: 'info', reports: 'reports', references: 'references', reference: 'references', backups: 'backups', historyDeletions: 'history',
+  info: 'info', reports: 'reports', references: 'references', reference: 'references', backups: 'backups', historyDeletions: 'history', profiles: 'saving',
 });
 
 /**
@@ -565,6 +565,8 @@ A few rules must always hold (for example, a platform has only one review open a
 ## Profiles
 
 A [[profile]] is a name, not a login: there are no passwords. Your theme, column widths, favourites and some page settings follow your profile to any computer.
+
+A profile no longer in use can be retired from **Profiles** in the ☰ menu, once it owns no platforms, has no open workflows and no transfer to mark reviewed. It leaves the Log In screen and the lists of people to choose, and its name stays on everything it did. **Restore** brings it back.
 
 ## Good to know
 

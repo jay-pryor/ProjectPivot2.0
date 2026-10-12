@@ -95,7 +95,7 @@ function viewList(state, data, views, own, none) {
 
 /** @param {any} state @param {Rec} v */
 function shareForm(state, v) {
-  const others = state.profiles.filter((/** @type {any} */ p) => p.id !== v.ownerId);
+  const others = state.profiles.filter((/** @type {any} */ p) => p.id !== v.ownerId && (!p.retired || (v.sharedWith ?? []).includes(p.id)));
   return html`<form data-action="shareBowtieView" ${dataAttrs({ id: v.id })} class="bt-share"><p><strong>Share ${v.name} with</strong></p>
     ${others.map((/** @type {any} */ p) => html`<label><input type="checkbox" name="profileId" value="${p.id}"${(v.sharedWith ?? []).includes(p.id) ? raw(' checked') : ''}> ${p.name}</label>`)}
     ${others.length ? '' : html`<p class="muted">There are no other profiles yet.</p>`}

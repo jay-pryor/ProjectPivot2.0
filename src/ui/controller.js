@@ -4,7 +4,7 @@ import { when } from './names.js';
 import * as store from '../storage/store.js';
 import { writeMirror, readMirror, clearMirror, hasUnsaved, hasUnsavedRecords, restoreReportDocuments } from '../storage/mirror.js';
 import { PivotError } from '../core/errors.js';
-import { newId } from '../core/ids.js';
+import { newId, workflowLabel } from '../core/ids.js';
 import { deleteName, bundlePage } from './screens/common.js';
 import { emptyData, NUMBERED, need, normalizeData } from '../core/data.js';
 import { epochOf, aestDate, systemClock, addDays } from '../core/time.js';
@@ -34,7 +34,7 @@ import { App as DocGen } from '../../DocGen/doc-designer.js';
 import { recordName, profileName, KIND_LABEL } from './names.js';
 import { THEMES, MIN_COLUMN_WIDTH, activeProfile, favouritesOf, samePage, FAVOURITE_LAYOUTS, COMING_UP_WINDOWS } from './prefs.js';
 import { mergeData } from '../core/merge.js';
-import { unlistedEntries, listPlatformGroups, openReview } from '../core/queries.js';
+import { unlistedEntries, listPlatformGroups, openReview, profileAssignments } from '../core/queries.js';
 import { DEFAULT_REVIEWS_PREFS, TIMELINE_LENGTHS, readReviewsPrefs, writeReviewsPrefs, reviewsPrefsKey } from './reviews-prefs.js';
 import { asUnit } from './screens/reviews.js';
 import { DEFAULT_WORKFLOWS_PREFS, RECENT_DAYS, readWorkflowsPrefs, writeWorkflowsPrefs, workflowsPrefsKey } from './workflows-prefs.js';
@@ -101,7 +101,7 @@ const QUIET_DATES = new Set(['completeWorkflow', 'acknowledgeReviewDate']);
 
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 /** What the tutorial switches off: anything that would reach the folder or another session. */
-const TOUR_OFF = new Set(['save', 'changeFolder', 'chooseFolder', 'recallFolder', 'selectProfile', 'createProfile', 'showBackups', 'prepareRestore', 'prepareRestoreFromFile', 'confirmRestore',
+const TOUR_OFF = new Set(['retireProfile', 'restoreProfile', 'save', 'changeFolder', 'chooseFolder', 'recallFolder', 'selectProfile', 'createProfile', 'showBackups', 'prepareRestore', 'prepareRestoreFromFile', 'confirmRestore',
   'produceReport', 'addReference', 'uploadReferenceFile', 'uploadTechFile', 'uploadUpdateFile', 'addPlatformImage']);
 /** The page state the tutorial sets aside and puts back, so nothing from the sample follows you out. */
 const TOUR_KEPT = Object.freeze(['sections', 'workspace', 'reviewsPrefs', 'workflowsPrefs', 'homeOwner', 'tables', 'infoTools', 'bowtieDetails', 'openBundles',
@@ -111,7 +111,7 @@ const TOUR_CLOSED = Object.freeze({ picker: null, editing: null, confirmDelete: 
 /** The tutorial's own actions, and going somewhere: never what a try step waits for. */
 const TOUR_ACTIONS = new Set(['startTour', 'endTour', 'tourNext', 'tourBack', 'tourTo', 'tourSkip', 'dismissTourInvite', 'go']);
 
-const QUIET = new Set(['startTour', 'endTour', 'tourNext', 'tourBack', 'tourTo', 'tourSkip', 'dismissTourInvite', 'setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
+const QUIET = new Set(['toggleRetiredProfiles', 'startTour', 'endTour', 'tourNext', 'tourBack', 'tourTo', 'tourSkip', 'dismissTourInvite', 'setColumnWidth', 'resetColumnWidth', 'setTheme', 'newControl', 'setControlDraft', 'toggleFavourite', 'moveFavourite', 'setFavouriteLayout', 'setComingUpDays', 'toggleFavouriteEdit', 'sortTable', 'filterTable', 'startEdit', 'cancelEdit', 'go', 'dismissMessage', 'openPicker', 'closePicker', 'chooseReportPlatform', 'setHomeOwner', 'askDelete', 'cancelDelete', 'recallFolder',
   'openBowtie', 'newBowtie', 'openBowtieView', 'dropBowtie', 'swapBowtiePanes', 'closeBowtiePane', 'setPaneStatus', 'confirmBowtieReplace', 'cancelBowtieReplace', 'toggleBowtieDetails', 'toggleBundling', 'toggleBundleOpen', 'showSection', 'goBack', 'viewBowtie', 'toggleBowtieTags', 'toggleBowtieGaps', 'toggleBowtieNumbers', 'setBowtieLayout', 'setPaneTier', 'resetBowtieView', 'openBowtieHazard', 'dismissUndo', 'dismissWarning', 'askConfirm', 'confirmCancel', 'confirmContinue',
   'startAssignToGroup', 'chooseAssignGroup', 'cancelAssignToGroup', 'toggleInfoGroup', 'showInfoGroups', 'toggleInfoByGroup', 'setReviewsFilter', 'setWorkflowsFilter', 'showReviewPanel', 'closeReviewPanel', 'dismissReviewMoved', 'showPolicy', 'editRule', 'setRuleDraft', 'cancelRule',
 ]);
@@ -858,7 +858,9 @@ export function createController(env) {
       set({
         tour: { step: 0, real: { session: state.session, profiles: state.profiles, view: state.view, viewHistory: state.viewHistory, kept } },
         session: { base: sample, working: sample, loadedStamp: null },
-        profiles: [...state.profiles, SAMPLE_PROFILE], viewHistory: [], sections: {}, ...TOUR_CLOSED,
+        // The page state starts fresh, so nothing of yours (a bow-tie window, a filter) meets the sample.
+        ...Object.fromEntries(TOUR_KEPT.map((k) => [k, initialState()[/** @type {keyof ReturnType<typeof initialState>} */ (k)]])),
+        profiles: [...state.profiles, SAMPLE_PROFILE], viewHistory: [], ...TOUR_CLOSED,
         // Reviews shows everyone's platforms, so Sam's overdue range is there too.
         reviewsPrefs: { ...(state.reviewsPrefs ?? DEFAULT_REVIEWS_PREFS), owner: 'everyone', groupId: null },
       });
@@ -886,6 +888,28 @@ export function createController(env) {
       if (state.tour && Number.isInteger(n) && n >= 0 && n < TOUR_STEPS.length) await enterTourStep(n);
     },
     async dismissTourInvite() { await savePrefs({ tutorialOffered: true }); },
+    // A profile no longer in use, retired once nothing is assigned to it: gone from the lists of
+    // people to choose, its name kept on what it did. Restore brings it back.
+    async retireProfile({ id }) {
+      if (!handle || !state.session) throw new PivotError('no-data', 'Open the data folder first.');
+      const p = state.profiles.find((x) => x.id === id);
+      if (!p) throw new PivotError('not-found', 'That profile no longer exists.');
+      if (id === state.profileId) throw new PivotError('profile.self', 'You cannot retire the profile you are using.');
+      const left = profileAssignments(state.session.working, id);
+      const owns = left.platforms.map((x) => x.name);
+      const has = [...left.workflows.map((w) => `${workflowLabel(w)} open`), ...left.transfers.map((w) => `the transfer of ${state.session?.working.records.platform[w.platformId]?.name ?? 'a platform'} to mark reviewed`)];
+      if (owns.length || has.length) {
+        const and = (/** @type {string[]} */ xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
+        const parts = [owns.length ? `owns ${and(owns)}` : '', has.length ? `has ${and(has)}` : ''].filter(Boolean);
+        throw new PivotError('profile.assigned', `${p.name} still ${parts.join(', and ')}. Transfer or take them over first.`);
+      }
+      set({ profiles: await store.setProfileRetired(handle, id, { by: /** @type {string} */ (state.profileId), at: env.clock.now() }, env.clock), message: { kind: 'info', text: `${p.name} is retired.` } });
+    },
+    async restoreProfile({ id }) {
+      if (!handle) throw new PivotError('no-data', 'Open the data folder first.');
+      set({ profiles: await store.setProfileRetired(handle, id, null, env.clock) });
+    },
+    async toggleRetiredProfiles() { set({ showRetiredProfiles: !state.showRetiredProfiles }); },
     // Update revision: the reference's update under way, or a new one.
     async startReferenceUpdate({ referenceId }) {
       const w = state.session ? openReferenceUpdate(state.session.working, referenceId) : null;

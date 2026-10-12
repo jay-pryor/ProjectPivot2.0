@@ -1,4 +1,5 @@
 import { html } from '../html.js';
+import { activeProfiles } from '../prefs.js';
 import { dataAttrs, option, go, idTag } from './common.js';
 import { dataTable } from './table.js';
 import { get, live } from '../../core/data.js';
@@ -86,7 +87,7 @@ const techCard = () => html`<form class="wf-start" data-action="beginTechData"><
 
 /** The card that onboards a new platform: its name and owner. @param {any} state */
 function onboardCard(state) {
-  return html`<form class="wf-start" data-action="onboardPlatform"><div class="wf-fields-col"><input name="name" required placeholder="New platform name" aria-label="New platform name"><select name="ownerId" aria-label="Owner" required>${NEUTRAL('Select owner…')}${state.profiles.map((/** @type {any} */ p) => option(p.id, p.name, ''))}</select></div><button type="submit" class="wf-go">Start <span class="wf-go-arrow" aria-hidden="true">→</span></button></form>`;
+  return html`<form class="wf-start" data-action="onboardPlatform"><div class="wf-fields-col"><input name="name" required placeholder="New platform name" aria-label="New platform name"><select name="ownerId" aria-label="Owner" required>${NEUTRAL('Select owner…')}${activeProfiles(state).map((/** @type {any} */ p) => option(p.id, p.name, ''))}</select></div><button type="submit" class="wf-go">Start <span class="wf-go-arrow" aria-hidden="true">→</span></button></form>`;
 }
 
 /** @param {any} state @param {Data} data */
@@ -131,7 +132,7 @@ export function workflowsView(state, data) {
   const on = (/** @type {string} */ t) => (tab === t ? ' on' : '');
   const tabs = html`<nav class="tabs">${[['dashboard', 'Dashboard'], ['history', 'History']].map(([t, label]) => html`<button type="button" class="tab${on(t)}" ${dataAttrs({ action: 'go', view: 'workflows', tab: t })}>${label}</button>`)}</nav>`;
   const owner = html`<label class="owner-pick">Owner <select name="owner" ${dataAttrs({ change: 'setWorkflowsFilter' })}>
-    ${option('everyone', 'Everyone', prefs.owner)}${option('me', 'Me', prefs.owner)}${state.profiles.filter((/** @type {any} */ p) => p.id !== state.profileId).map((/** @type {any} */ p) => option(p.id, p.name, prefs.owner))}</select></label>`;
+    ${option('everyone', 'Everyone', prefs.owner)}${option('me', 'Me', prefs.owner)}${activeProfiles(state, prefs.owner).filter((/** @type {any} */ p) => p.id !== state.profileId).map((/** @type {any} */ p) => option(p.id, p.name, prefs.owner))}</select></label>`;
   const head = html`<div class="head"><h1>Workflows</h1>${owner}</div>${tabs}`;
   const ownerId = workflowsOwnerId(state);
   if (tab === 'history') return html`${head}<section class="block">${endedTable(state, data, 'workflowHistory', endedWorkflows(data, { ownerId }))}</section>`;

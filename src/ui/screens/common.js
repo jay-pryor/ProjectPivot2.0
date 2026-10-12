@@ -162,10 +162,10 @@ export function groupTags(groups) {
 const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'], ['platforms', 'Platforms'], ['workflows', 'Workflows'], ['reviews', 'Reviews'], ['bowties', 'Bow-ties'], ['info', 'Info'], ['reports', 'Reports'], ['references', 'References']];
 
 /** The settings menu, opened from the three lines at the end of the top bar. */
-const SETTINGS = [['backups', 'Backups'], ['historyDeletions', 'Deletion history']];
+const SETTINGS = [['profiles', 'Profiles'], ['backups', 'Backups'], ['historyDeletions', 'Deletion history']];
 
 /** The top-bar section each view belongs to. */
-const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', newControl: 'controls', platforms: 'platforms', platform: 'platforms', workflows: 'workflows', workflow: 'workflows', reviews: 'reviews', platformReview: 'reviews', bowties: 'bowties', references: 'references', reference: 'references', info: 'info', reports: 'reports', backups: 'backups', historyDeletions: 'historyDeletions', help: 'help' };
+const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', newControl: 'controls', platforms: 'platforms', platform: 'platforms', workflows: 'workflows', workflow: 'workflows', reviews: 'reviews', platformReview: 'reviews', bowties: 'bowties', references: 'references', reference: 'references', info: 'info', reports: 'reports', backups: 'backups', historyDeletions: 'historyDeletions', help: 'help', profiles: 'profiles' };
 
 /** The three lines that open the settings menu. */
 const MENU_SVG = '<svg viewBox="0 0 20 20" width="20" height="20" focusable="false" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg>';
@@ -274,7 +274,7 @@ export function favouriteLabel(state, f) {
   return { label: withTab(label), kind: sub, gone: false, heading, detail: String(rec.title ?? rec.name ?? '') };
 }
 
-const PAGE_WORD = { home: 'Home', openItems: 'Open items', workflows: 'Workflows', workflow: 'Workflow', reviews: 'Reviews', platformReview: 'Review', hazards: 'Hazards', controls: 'Controls', platforms: 'Platforms', references: 'References', info: 'Info', reports: 'Reports', bowties: 'Bow-ties', backups: 'Backups', historyDeletions: 'Deletion history', newControl: 'New control', help: 'Help' };
+const PAGE_WORD = { home: 'Home', openItems: 'Open items', workflows: 'Workflows', workflow: 'Workflow', reviews: 'Reviews', platformReview: 'Review', hazards: 'Hazards', controls: 'Controls', platforms: 'Platforms', references: 'References', info: 'Info', reports: 'Reports', bowties: 'Bow-ties', backups: 'Backups', historyDeletions: 'Deletion history', newControl: 'New control', help: 'Help', profiles: 'Profiles' };
 
 /**
  * A page as Back names it: a list by its name; a record's page by its own title, e.g.

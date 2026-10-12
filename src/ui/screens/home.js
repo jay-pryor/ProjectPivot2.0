@@ -1,7 +1,7 @@
 import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
 import { html, raw } from '../html.js';
 import { dataAttrs, option, go, reviewTag, changeDetail, idTag, favouriteLabel, unfavouriteStar, groupTags, onboardingTag } from './common.js';
-import { favouritesOf, favouriteLayout, comingUpDays, COMING_UP_WINDOWS } from '../prefs.js';
+import { favouritesOf, favouriteLayout, comingUpDays, COMING_UP_WINDOWS, activeProfiles } from '../prefs.js';
 import { platformImage, statusSelect, rejectionCell } from './platforms.js';
 import { dataTable, shownRows } from './table.js';
 import { sectionRail } from './dashboard.js';
@@ -37,7 +37,7 @@ const platformLink = (p) => go(p.name, 'platform', { id: p.id });
 function ownerPicker(state) {
   const owner = state.homeOwner || 'me';
   return html`<label class="owner-pick">Owner <select name="ownerId" ${dataAttrs({ change: 'setHomeOwner' })}>
-        ${option('me', 'Me', owner)}${state.profiles.filter((/** @type {any} */ p) => p.id !== state.profileId).map((/** @type {any} */ p) => option(p.id, p.name, owner))}${option('everyone', 'Everyone', owner)}
+        ${option('me', 'Me', owner)}${activeProfiles(state, owner).filter((/** @type {any} */ p) => p.id !== state.profileId).map((/** @type {any} */ p) => option(p.id, p.name, owner))}${option('everyone', 'Everyone', owner)}
       </select></label>`;
 }
 

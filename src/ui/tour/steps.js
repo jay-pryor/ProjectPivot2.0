@@ -185,7 +185,7 @@ The list on the left is the review's **menu**: one line per hazard on the platfo
     text: `Each check shows the same information you would see on the hazard's page, so you can fix anything there and then. At the bottom of each check is a box for a note, and a **Checked** tickbox (highlighted, for the first check).
 
 Once every check on every hazard is ticked, the review can be completed from **Summary & complete**.`,
-    try: { action: ['setStep'], says: 'Tick the **Checked** box.' },
+    try: { action: ['setStep'], says: 'Tick the **Checked** box at the right end of this row.' },
   },
   {
     id: 'reviews', view: { name: 'reviews' }, target: ['[data-table="reviewSchedule"]', tab('reviews')], title: 'The Reviews page',

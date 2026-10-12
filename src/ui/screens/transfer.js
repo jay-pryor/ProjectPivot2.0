@@ -1,4 +1,5 @@
 import { html, raw } from '../html.js';
+import { activeProfiles } from '../prefs.js';
 import { dataAttrs, go, option } from './common.js';
 import { get } from '../../core/data.js';
 import { transferGroups, stepOf } from '../../core/workflows.js';
@@ -18,7 +19,7 @@ export function transferBody(state, data, wf, mine) {
     <p class="muted">${p?.name} is owned by ${profileName(state, p?.ownerId)}.</p>
     <select name="toOwnerId" aria-label="New owner" required${dis} ${dataAttrs({ change: 'setTransferRecipient', 'workflow-id': wf.id })}>
       <option value="" disabled${wf.toOwnerId ? '' : raw(' selected')}>Select new owner…</option>
-      ${state.profiles.filter((/** @type {any} */ pr) => pr.id !== p?.ownerId).map((/** @type {any} */ pr) => option(pr.id, pr.name, wf.toOwnerId ?? ''))}</select></section>`;
+      ${activeProfiles(state, wf.toOwnerId).filter((/** @type {any} */ pr) => pr.id !== p?.ownerId).map((/** @type {any} */ pr) => option(pr.id, pr.name, wf.toOwnerId ?? ''))}</select></section>`;
   const cards = groups.map((g) => {
     const s = stepOf(data, wf.id, '-', `group:${g.key}`);
     const at = { change: 'setStep', 'workflow-id': wf.id, 'hazard-id': '-', check: `group:${g.key}` };

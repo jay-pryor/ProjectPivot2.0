@@ -1,4 +1,5 @@
 import { html } from '../html.js';
+import { activeProfiles } from '../prefs.js';
 import { dataAttrs, option, statusTag, stateTag, go, deletePanel, deleteName, levelTag, pageTabs, historyTable, plus, idTag, reviewTag, removeColumn, removeButton, recordMenu, menuItem, stateWord, rowsCounted, groupTags, onboardingTag } from './common.js';
 import { onboardingOf } from '../../core/workflows.js';
 import { ruleWord, driverWord } from '../review-words.js';
@@ -24,7 +25,7 @@ import { RECEPTORS, stageKey } from '../../core/receptors.js';
 /** @param {any} state @param {Data} data */
 export function platformsView(state, data) {
   const count = (/** @type {string} */ id) => live(data, 'hazardPlatform').filter((l) => l.platformId === id).length;
-  const owner = html`<select name="ownerId" aria-label="Owner">${state.profiles.map((/** @type {any} */ p) => option(p.id, p.name, state.profileId))}</select>`;
+  const owner = html`<select name="ownerId" aria-label="Owner">${activeProfiles(state).map((/** @type {any} */ p) => option(p.id, p.name, state.profileId))}</select>`;
   return html`<div class="head"><h1>Platforms</h1>${newRecord(state, 'newPlatform', 'onboardPlatform', 'name', 'New platform name', owner)}</div>
     ${dataTable(state, {
       id: 'platforms',

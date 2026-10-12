@@ -58,3 +58,11 @@ export function favouriteLayout(state) {
   const l = activeProfile(state)?.prefs?.favouriteLayout;
   return FAVOURITE_LAYOUTS.includes(l) ? l : 'table';
 }
+
+/**
+ * The profiles that can be chosen: those not retired, and one already chosen even if it is.
+ * @param {any} state @param {string | null} [keep]
+ */
+export function activeProfiles(state, keep = null) {
+  return (state.profiles ?? []).filter((/** @type {any} */ p) => !p.retired || p.id === keep);
+}

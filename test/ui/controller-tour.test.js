@@ -179,3 +179,23 @@ test('the tutorial waits for a save in progress: it cannot start until the save 
   await saving;
   assert.equal(c.getState().session.base.records.hazard.h1?.title, 'Real hazard', 'the save landed on the real data');
 });
+
+test('a bow-tie open in your real session does not come into the tutorial: its diagram opens on its own, and yours is back after', async () => {
+  const { c } = await ready();
+  await c.dispatch({ type: 'dismissTourInvite' });
+  await c.dispatch({ type: 'createPlatform', id: 'p1', name: 'Alpha', ownerId: c.getState().profileId });
+  await c.dispatch({ type: 'linkHazard', hazardId: 'h1', platformId: 'p1' });
+  await c.dispatch({ type: 'go', view: 'bowties' });
+  await c.dispatch({ type: 'openBowtie', hazardId: 'h1', platformId: 'p1' });
+  const mine = c.getState().workspace;
+  assert.equal(mine.panes[0]?.hazardId, 'h1');
+  const { TOUR_STEPS } = await import('../../src/ui/tour/steps.js');
+  await c.dispatch({ type: 'startTour' });
+  assert.deepEqual(c.getState().workspace.panes.filter(Boolean), [], 'none of your windows comes into the tutorial');
+  await c.dispatch({ type: 'tourTo', step: TOUR_STEPS.findIndex((s) => s.id === 'bowties') });
+  const s = c.getState();
+  assert.equal(s.bowtieReplace, null, 'nothing to ask about replacing');
+  assert.deepEqual(s.workspace.panes.filter(Boolean).map((p) => p.viewId ?? p.hazardId), ['tour-bv1']);
+  await c.dispatch({ type: 'endTour' });
+  assert.deepEqual(c.getState().workspace, mine);
+});
