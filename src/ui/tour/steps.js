@@ -206,7 +206,7 @@ The panel on the left lists your saved diagrams, and **New diagram** draws anoth
     text: `Three more tabs at the top:
 
 - **Info** (open now): the shared lists PIVOT offers choices from, and the groups platforms belong to.
-- **Reports**: produce a platform's safety report as a document.
+- **Reports**: a platform's safety report, made in the report designer as a PDF or web page.
 - **References**: the documents the register relies on, such as manuals and test reports.`,
   },
   {

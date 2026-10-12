@@ -13,7 +13,7 @@ function host(design = {}) {
     commit: (m) => m(state),
     clock: { nowIso: () => '2026-10-12T00:00:00.000Z' },
     classifications: ['OFFICIAL', 'PROTECTED'],
-    subject: { list: () => [{ id: 's1', label: 'Subject One' }], ready: () => true, meta: () => [{ id: 'n', label: 'Name', value: 'One' }] },
+    subject: { noun: 'platform', list: () => [{ id: 's1', label: 'Subject One' }, { id: 's2', label: 'Subject Two' }], ready: () => true, meta: () => [{ id: 'n', label: 'Name', value: 'One' }] },
     sections: () => [{ id: 'things', label: 'Things', keyColumn: { id: '_key', label: 'ID', get: (r) => r.id }, columns: [{ id: 'v', label: 'Value', get: (r) => r.v }],
       rows: () => [{ id: 'T-1', v: 'x ≥ y' }] },
       { id: 'others', label: 'Others', keyColumn: { id: '_key', label: 'ID', get: (r) => r.id }, columns: [{ id: 'v', label: 'Value', get: (r) => r.v }],
@@ -35,8 +35,10 @@ function paneOf(h, pane, styleSection) {
 /** Every value a dotted path names in an object, or undefined. */
 const at = (o, path) => path.split('.').reduce((x, k) => (x == null ? undefined : x[k]), o);
 
-test('the panes: Styles replaces Formatting and Header & Footer', () => {
-  assert.deepEqual(RD.PANES.map((p) => p.id), ['section', 'relevance', 'styles', 'templates', 'preview', 'generate']);
+test('the panes: Sections, Styles, Templates, Preview, Generate', () => {
+  assert.deepEqual(RD.PANES.map((p) => p.label), ['Sections', 'Styles', 'Templates', 'Preview', 'Generate']);
+  assert.deepEqual(RD.PANES.map((p) => p.id), ['section', 'styles', 'templates', 'preview', 'generate']);
+  assert.doesNotMatch(paneOf(host(), 'section'), /data-rd-pane="relevance"|omitted by relevance/);
   assert.equal(RD.PANES.find((p) => p.id === 'styles').label, 'Styles');
 });
 
@@ -173,4 +175,13 @@ test('the Preview pane zooms too, separately from the section preview', () => {
   RD._rd.prevZoom = null;
   assert.ok(Math.abs(at(big) - 595.28 * 1.5) < 0.01);
   assert.match(sectionPane(host(), 'things'), /data-rd-zoom="in" data-rd-zoom-for="section"/);
+});
+
+test('the designer chooses which platform the report is about, in its title bar', () => {
+  const h = host();
+  const first = paneOf(h, 'generate');
+  assert.match(first, /<select data-rd-subject aria-label="Platform"[^>]*><option value="s1" selected>Subject One<\/option><option value="s2">Subject Two<\/option><\/select>/);
+  App.docSession.get().subjectId = 's2';
+  try { assert.match(paneOf(h, 'generate'), /<option value="s2" selected>Subject Two<\/option>/); }
+  finally { App.docSession.get().subjectId = null; }
 });

@@ -124,19 +124,6 @@ test('the platform History tab leaves out a review workflow’s own steps but ke
   assert.doesNotMatch(out, /Check workflow step|Start workflow/);
 });
 
-test('the Reports screen warns about an overdue platform but still lets the report be produced', () => {
-  const d = data();
-  const first = reportsView(state, d).toString();
-  assert.match(first, /<select name="platformId"[^>]*data-change="chooseReportPlatform"/);
-  assert.match(first, /Alpha was due for review on 1 Sep 2026 \(never reviewed\)\. You can still produce the report; it will be marked as produced while overdue\./);
-  assert.match(first, /<button type="submit" class="primary">Produce<\/button>/);
-  const bravo = reportsView({ ...state, reportPlatformId: 'p2' }, d).toString();
-  assert.match(bravo, /<option value="p2" selected>/);
-  assert.match(bravo, /Bravo is due for review on 10 Oct 2026\./);
-  assert.doesNotMatch(bravo, /produced while overdue\./);
-  assert.doesNotMatch(reportsView(state, seed()).toString(), /due for review/);
-});
-
 test('a report produced while overdue carries a badge in the list', () => {
   const report = { platformId: 'p1', platformName: 'Alpha', ownerName: 'Ada', producedAt: act.at, producedBy: 'u1', title: 'Alpha hazards', classification: '', rows: [],
     review: { state: 'overdue', due: '2026-09-01', months: 6, lastReviewed: null }, markdown: '', html: '' };

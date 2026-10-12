@@ -3228,8 +3228,7 @@ import { toWinAnsi } from './doc-fonts.js';
      * ---------------------------------------------------------------------- */
 
     var PANES = [
-      { id: 'section', label: 'Section' },
-      { id: 'relevance', label: 'Relevance' },
+      { id: 'section', label: 'Sections' },
       // PDF-1: one pane for everything about how the document looks — page, text,
       // tables, header and footer, marking, numbering — with the pages beside it.
       { id: 'styles', label: 'Styles' },
@@ -3277,19 +3276,6 @@ import { toWinAnsi } from './doc-fonts.js';
     function providerFor(block) {
       var id = block && block.id;
       return App.docHost.sections(null).filter(function (x) { return x && x.id === id; })[0] || null;
-    }
-    /**
-     * How many rows sit in each of the host's filter categories, for the omission note
-     * and the tick list beside it. Counted UNFILTERED — the whole point is to say how
-     * many the filter is leaving out.
-     */
-    function categoryCounts(selId) {
-      var h = H(); if (!h || !selId || !h.filter) return {};
-      var rows = [];
-      App.docHost.sections({ subjectId: selId, categories: null }).forEach(function (pv) {
-        if (typeof pv.rows === 'function') rows = rows.concat(pv.rows());
-      });
-      return App.docGen.filterCounts(h, rows);
     }
     function selectedSubjectId() { return App.docSession.selectedSubjectId(); }
     /** What the host calls the thing a document is about (`host.subject.noun`), for the UI's wording. */
@@ -4098,40 +4084,6 @@ import { toWinAnsi } from './doc-fonts.js';
         '</div>';
     }
 
-    // ======================================================================
-    // RD-3: relevance (RPT-2, carried over unchanged)
-    // ======================================================================
-
-    function omittedByRelevance(project, selId) {
-      var counts = categoryCounts(selId);
-      var map = opts().relevance || {};
-      var n = 0;
-      Object.keys(counts).forEach(function (k) { if (map[k] === false) n += counts[k]; });
-      return n;
-    }
-
-    function paneRelevance(project) {
-      var selId = selectedSubjectId(project);
-      var counts = categoryCounts(selId);
-      var map = opts().relevance || {};
-      var rows = ((H().filter && H().filter.categories()) || []).map(function (c) {
-        var k = c.key, on = map[k] !== false, num = counts[k] || 0, label = c.label;
-        // The category's own name, styled by the host's stylesheet if it wants to.
-        // It used to borrow CH's register badge, which is a component of the app's
-        // data tables and has no business being reachable from in here.
-        var chip = '<span class="rd-cat rd-cat-' + esc(String(k).toLowerCase()) + '">' + esc(label) + '</span>';
-        return '<label class="rpt-rel"><input type="checkbox" data-rd-rel="' + esc(k) + '"' + (on ? ' checked' : '') +
-          ' aria-label="Include ' + esc(label) + ' items"> ' + chip + '<span class="rpt-rel-count">' + num + ' item' + (num === 1 ? '' : 's') + '</span></label>';
-      }).join('');
-      var omitted = omittedByRelevance(project, selId);
-      return '<p class="muted rpt-note">Which categories of item the document carries. Anything switched off is counted and named in it, so a shorter report never passes for a complete one.</p>' +
-        rows +
-        (omitted
-          ? '<p class="rpt-omit"><strong>' + omitted + '</strong> item' + (omitted === 1 ? '' : 's') + ' will be left out.</p>'
-          : '<p class="rpt-omit muted">Every applicable item is being carried.</p>') +
-        '';
-    }
-
     function num(label, key, val, hint) {
       return '<label class="rd-lab rd-lab-s" title="' + esc(hint || '') + '">' + esc(label) +
         '<input value="' + esc(val == null ? '' : val) + '" data-rd-fmt="' + esc(key) + '" aria-label="' + esc(label) + '"></label>';
@@ -4540,11 +4492,8 @@ import { toWinAnsi } from './doc-fonts.js';
       var ready = selId ? H().subject.ready(selId) : false;
       var view = outlineNow(project);
       var included = view.blocks.filter(function (b) { return b.included; }).length;
-      var omitted = omittedByRelevance(project, selId);
-
       var paneBody =
         _rd.pane === 'section' ? paneSection(project, view) :
-        _rd.pane === 'relevance' ? paneRelevance(project) :
         _rd.pane === 'styles' ? paneStyles(project) :
         _rd.pane === 'templates' ? paneTemplates(project) :
         _rd.pane === 'generate' ? paneGenerate(project, view) :
@@ -4557,7 +4506,7 @@ import { toWinAnsi } from './doc-fonts.js';
 
       return '<div class="modal modal-full" role="dialog" aria-modal="true" aria-label="Report Design">' +
         '<div class="modal-head"><div><h3>Report Design</h3>' +
-          '<div class="modal-sub">' + (subj ? esc(subj.label) + ' — what the document contains, in what order, and how it looks.' : 'No ' + esc(noun()) + ' selected.') + '</div></div>' +
+          '<div class="modal-sub">' + (subj ? subjectPicker(selId) + ' — what the document contains, in what order, and how it looks.' : 'No ' + esc(noun()) + ' selected.') + '</div></div>' +
           '<button type="button" class="modal-close" data-rd-close aria-label="Close">×</button></div>' +
         '<div class="modal-body"><div class="rpt-body rd-layout">' +
           renderSectionList(project, view) +
@@ -4566,7 +4515,6 @@ import { toWinAnsi } from './doc-fonts.js';
         '</div></div>' +
         '<div class="modal-foot">' +
           '<span class="foot-summary">' + included + ' of ' + view.blocks.length + ' section' + (view.blocks.length === 1 ? '' : 's') + ' included' +
-            (omitted ? ' &middot; ' + omitted + ' item' + (omitted === 1 ? '' : 's') + ' omitted by relevance' : '') +
             ' &middot; ' + esc(view.profile.name) +
             (ready ? '' : ' &middot; ' + esc(noun()) + ' not ready') + '</span>' +
           '<span class="spacer"></span>' +
@@ -4577,6 +4525,14 @@ import { toWinAnsi } from './doc-fonts.js';
           // screens away from the two things that decide what it writes.
           '<button type="button" data-rd-close>Close</button>' +
         '</div></div>' + renderConflict();
+    }
+
+    /** Which of the host's subjects (for PIVOT, which platform) the report is about. */
+    function subjectPicker(selId) {
+      var n = noun();
+      return '<select data-rd-subject aria-label="' + esc(n.charAt(0).toUpperCase() + n.slice(1)) + '" class="rd-subject">' +
+        latest().map(function (c) { return '<option value="' + esc(c.id) + '"' + (c.id === selId ? ' selected' : '') + '>' + esc(c.label) + '</option>'; }).join('') +
+        '</select>';
     }
 
     /** @returns {string} the workspace, or '' when closed. */
@@ -4906,6 +4862,8 @@ import { toWinAnsi } from './doc-fonts.js';
       dom.on(ctx.root, 'click', '[data-rd-cf-apply]', function () { applyConflict(); });
       // ---- preview ----------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-refresh-preview]', function () { dirty(); repaint(); });
+      // The subject the report is about: a session choice, and everything shown is redrawn for it.
+      dom.on(ctx.root, 'change', '[data-rd-subject]', function (e, el) { session().subjectId = el.value; dirty(); repaint(); });
       // The page previews' zoom: a way of looking, so the laid-out pages are kept.
       dom.on(ctx.root, 'click', '[data-rd-zoom]', function (e, el) {
         var which = el.getAttribute('data-rd-zoom-for') === 'preview' ? 'preview' : 'section';
@@ -4996,15 +4954,6 @@ import { toWinAnsi } from './doc-fonts.js';
         var k = el.getAttribute('data-rd-tag');
         if (String(el.value).trim()) s.tags[k] = el.value; else delete s.tags[k];
         dirty(); repaint();
-      });
-      dom.on(ctx.root, 'change', '[data-rd-rel]', function (e, el) {
-        var k = el.getAttribute('data-rd-rel');
-        // RPT-2: IRRELEVANT is the one category that starts excluded, so it is the one
-        // whose default is `false` — including it is the departure worth recording.
-        // The category's own declared default, so a tick returned to it stores nothing.
-        var cat = ((H().filter && H().filter.categories()) || []).filter(function (c) { return c.key === k; })[0];
-        var dflt = !cat || cat.defaultOn !== false;
-        include('relevance', k, null, el.checked, dflt);
       });
       // CLS-1: the classification banner is a decision about the DOCUMENT, so it is
       // stored with the project — the same shape as the title block beside it, and the

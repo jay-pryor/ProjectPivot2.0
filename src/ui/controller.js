@@ -124,7 +124,7 @@ export function initialState() {
     filters: { hazards: {}, controls: {} }, backups: [], pendingRestore: null,
     message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
-    today: aestDate(systemClock.now()), reportPlatformId: null, homeOwner: 'me', missingFiles: [],
+    today: aestDate(systemClock.now()), homeOwner: 'me', missingFiles: [],
     workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null, tour: null,
     infoTools: { assigning: null, hidden: [], byGroup: false, groupId: null }, reviewsPrefs: DEFAULT_REVIEWS_PREFS, workflowsPrefs: DEFAULT_WORKFLOWS_PREFS, reviewPanel: null, reviewMoved: null, policyUnits: {}, ruleDraft: null,
   };
@@ -952,9 +952,6 @@ export function createController(env) {
       const id = newId();
       await applyEdit('startWorkflow', { id, type: 'platformReview', platformId });
       await handlers.go({ view: 'workflow', id });
-    },
-    async chooseReportPlatform({ platformId }) {
-      set({ reportPlatformId: platformId });
     },
     async startEdit({ kind, id }) {
       set({ editing: { kind, id } });

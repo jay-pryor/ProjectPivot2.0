@@ -1,40 +1,17 @@
-import { html, raw } from '../html.js';
-import { dataAttrs, option, removeButton, removeColumn } from './common.js';
+import { html } from '../html.js';
+import { dataAttrs, removeButton, removeColumn } from './common.js';
 import { dataTable } from './table.js';
-import { all, live } from '../../core/data.js';
+import { all } from '../../core/data.js';
 import { hasUnsavedRecords } from '../../storage/mirror.js';
-import { profileName, when, day } from '../names.js';
-import { scheduleOf } from '../../core/schedule.js';
-import { lastReviewed } from '../../core/queries.js';
-
-/** What the Produce form says about the chosen platform's review. @param {any} state @param {import('../../core/data.js').Data} data @param {any} p */
-function reviewNote(state, data, p) {
-  const { state: s, due } = scheduleOf(data, p.id, state.today);
-  if (s === 'overdue') {
-    const last = lastReviewed(data, p.id);
-    return html`<p class="note review-warning" role="status">${p.name} was due for review on ${day(due)} (${last ? `last reviewed ${day(last)}` : 'never reviewed'}). You can still produce the report; it will be marked as produced while overdue.</p>`;
-  }
-  if (s === 'dueSoon') return html`<p class="muted">${p.name} is due for review on ${day(due)}.</p>`;
-  return '';
-}
+import { profileName, when } from '../names.js';
 
 /** @param {any} state @param {import('../../core/data.js').Data} data */
 export function reportsView(state, data) {
   const unsaved = state.session ? hasUnsavedRecords(state.session) : false;
-  const platforms = live(data, 'platform');
-  const chosen = platforms.find((p) => p.id === state.reportPlatformId) ?? platforms[0];
   const reports = all(data, 'report').filter((r) => r.status !== 'deleted').reverse();
-  return html`<div class="head"><h1>Reports</h1><button type="button" ${dataAttrs({ action: 'openDesigner' })}>Open the report designer</button></div>
-    <section><h2>Produce a report</h2>
-      ${unsaved ? html`<p class="note">Save your changes first: a report is produced from what is stored.</p>` : ''}
-      ${platforms.length
-        ? html`<form data-action="produceReport" class="row">
-            <label>Platform <select name="platformId" ${dataAttrs({ change: 'chooseReportPlatform' })}>${platforms.map((p) => option(p.id, p.name, chosen?.id))}</select></label>
-            <label>Title <input name="title" placeholder="Platform hazard report"></label>
-            <button type="submit" class="primary"${unsaved ? raw(' disabled') : ''}>Produce</button></form>${chosen ? reviewNote(state, data, chosen) : ''}`
-        : html`<p class="muted">Add a platform first.</p>`}
-      <p class="muted">Sections, wording, layout and the classification marking are set in the report designer, and are shared by everyone using this folder.</p>
-    </section>
+  return html`<div class="head"><h1>Reports</h1><button type="button" class="primary" ${dataAttrs({ action: 'openDesigner' })}>Open the report designer</button></div>
+    <p class="muted">Reports are made in the report designer: choose the platform there, then <strong>Make PDF</strong> or <strong>Make HTML</strong> on its Generate tab. Sections, wording, layout and the classification marking are set there too, and are shared by everyone using this folder.</p>
+    ${unsaved ? html`<p class="note">Save your changes first: a report is made from what is stored.</p>` : ''}
     <section><h2>Produced reports</h2>
       ${dataTable(state, {
         id: 'reports',
