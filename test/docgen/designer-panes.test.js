@@ -35,8 +35,10 @@ function paneOf(h, pane, styleSection) {
 /** Every value a dotted path names in an object, or undefined. */
 const at = (o, path) => path.split('.').reduce((x, k) => (x == null ? undefined : x[k]), o);
 
-test('the panes: Styles replaces Formatting and Header & Footer', () => {
-  assert.deepEqual(RD.PANES.map((p) => p.id), ['section', 'relevance', 'styles', 'templates', 'preview', 'generate']);
+test('the panes: Sections, Styles, Templates, Preview, Generate', () => {
+  assert.deepEqual(RD.PANES.map((p) => p.label), ['Sections', 'Styles', 'Templates', 'Preview', 'Generate']);
+  assert.deepEqual(RD.PANES.map((p) => p.id), ['section', 'styles', 'templates', 'preview', 'generate']);
+  assert.doesNotMatch(paneOf(host(), 'section'), /data-rd-pane="relevance"|omitted by relevance/);
   assert.equal(RD.PANES.find((p) => p.id === 'styles').label, 'Styles');
 });
 
