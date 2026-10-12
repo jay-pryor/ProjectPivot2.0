@@ -182,8 +182,49 @@ function restore(t) {
   else t.value = t.defaultValue;
 }
 
+/**
+ * The tutorial's spotlight over its step's target, and its bubble beside it, kept on screen. A new
+ * step scrolls its target into view; a redraw on the same step does not, so editing does not jump.
+ * @param {HTMLElement} root @param {{ step: string }} last the step last placed
+ */
+function placeTour(root, last) {
+  const bubble = /** @type {HTMLElement | null} */ (root.querySelector('.tour-bubble'));
+  const spot = /** @type {HTMLElement | null} */ (root.querySelector('.tour-spotlight'));
+  for (const el of root.querySelectorAll('.tour-pulse')) el.classList.remove('tour-pulse');
+  if (!bubble || !spot) { last.step = ''; return; }
+  const sel = bubble.dataset.tourTarget;
+  const target = sel ? /** @type {HTMLElement | null} */ (root.querySelector(sel)) : null;
+  const stepNow = String(bubble.dataset.tourStep);
+  if (target && last.step !== stepNow) target.scrollIntoView({ block: 'center', behavior: 'instant' });
+  last.step = stepNow;
+  if (!target) {
+    bubble.classList.add('centred');
+    spot.classList.add('full');
+    return;
+  }
+  spot.classList.remove('full');
+  if (bubble.querySelector('.tour-try')) target.classList.add('tour-pulse');
+  const r = target.getBoundingClientRect();
+  const pad = 6;
+  Object.assign(spot.style, { top: `${r.top - pad}px`, left: `${r.left - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px` });
+  const b = bubble.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight, gap = 12;
+  const fits = { below: r.bottom + gap + b.height <= vh, above: r.top - gap - b.height >= 0, right: r.right + gap + b.width <= vw, left: r.left - gap - b.width >= 0 };
+  let top, left;
+  if (fits.below) { top = r.bottom + gap; left = r.left; }
+  else if (fits.above) { top = r.top - gap - b.height; left = r.left; }
+  else if (fits.right) { top = r.top; left = r.right + gap; }
+  else if (fits.left) { top = r.top; left = r.left - gap - b.width; }
+  else { top = vh - b.height - gap; left = vw - b.width - gap; } // too big to sit beside: the corner, out of the way
+  left = Math.max(gap, Math.min(left, vw - b.width - gap));
+  top = Math.max(gap, Math.min(top, vh - b.height - gap));
+  Object.assign(bubble.style, { top: `${top}px`, left: `${left}px` });
+}
+
 /** @param {HTMLElement} root @param {ReturnType<typeof import('./controller.js').createController>} controller */
 export function mount(root, controller) {
+  /** The tutorial step last placed, so a redraw on the same step does not scroll. */
+  const tourAt = { step: '' };
   root.innerHTML = '<div class="pivot-app"></div><div class="pivot-designer"></div>';
   const appEl = /** @type {HTMLElement} */ (root.querySelector('.pivot-app'));
   const designerEl = /** @type {HTMLElement} */ (root.querySelector('.pivot-designer'));
@@ -258,6 +299,7 @@ export function mount(root, controller) {
       // A text box opened in place has its words selected, ready to type over; a list has none to select.
       if (opened.classList.contains('cell-edit') && opened instanceof HTMLInputElement && opened.type === 'text') opened.select();
     }
+    placeTour(appEl, tourAt);
     // The designer repaints itself as it is edited; the app repaints it only when asked to open it.
     if (state.designerRevision !== designerRevision) {
       designerRevision = state.designerRevision;
@@ -265,6 +307,19 @@ export function mount(root, controller) {
     }
   };
   window.addEventListener('resize', () => { fitAttention(appEl); fitAll(appEl); });
+  window.addEventListener('resize', () => placeTour(appEl, tourAt));
+  window.addEventListener('scroll', () => placeTour(appEl, tourAt), true);
+  // The tutorial's keys: → or Enter for Next, ← for Back, Escape to leave; not while typing.
+  document.addEventListener('keydown', (e) => {
+    if (!appEl.querySelector('.tour-bubble, .tour-card')) return;
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (t.closest?.('input, textarea, select, [contenteditable]')) return;
+    const type = e.key === 'ArrowRight' || (e.key === 'Enter' && !t.closest?.('button')) ? 'tourNext' : e.key === 'ArrowLeft' ? 'tourBack' : e.key === 'Escape' ? 'endTour' : null;
+    if (!type || (type !== 'endTour' && !appEl.querySelector('.tour-bubble'))) return;
+    e.preventDefault();
+    void controller.dispatch({ type });
+  });
+
   // A box of several lines grows (and shrinks back) to fit its text as it is typed in.
   appEl.addEventListener('input', (e) => { const t = /** @type {HTMLElement} */ (e.target); if (t instanceof HTMLTextAreaElement) fit(t); });
   wire(appEl, controller.dispatch, submitting);

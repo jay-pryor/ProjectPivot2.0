@@ -1346,3 +1346,22 @@ ul.dots { display: grid; gap: 3px; }
 .help-term.on { border-left-color: var(--p-accent); background: var(--p-surface-2); }
 .help-related { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 @media (max-width: 760px) { .help-layout { grid-template-columns: 1fr; } .help-rail { position: static; border-right: 0; padding-right: 0; max-height: none; } }
+
+/* The tutorial: a banner, a spotlight that dims everything but its target, a bubble, a corner card. */
+.tour-banner { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 10px; padding: 6px 20px; background: var(--p-accent); color: #1b1b1b; }
+.tour-banner button { margin-left: auto; }
+.tour-spotlight { position: fixed; z-index: 60; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .55); outline: 2px solid var(--p-accent); transition: top .2s, left .2s, width .2s, height .2s; }
+.tour-spotlight.full { top: 0; left: 0; width: 0; height: 0; outline: none; }
+.tour-bubble { position: fixed; z-index: 61; width: min(380px, calc(100vw - 24px)); padding: 14px 16px; background: var(--p-surface); color: var(--p-fg); border: 1px solid var(--p-accent); box-shadow: 0 8px 28px rgba(0, 0, 0, .4); }
+.tour-bubble.centred { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.tour-bubble h2 { margin: 2px 0 6px; font-size: 1.15em; }
+.tour-bubble p { margin: 0 0 8px; line-height: 1.5; }
+.tour-count { font-size: .8em; color: var(--p-muted); text-transform: uppercase; letter-spacing: .04em; }
+.tour-try { padding: 6px 8px; border-left: 3px solid var(--p-accent); background: var(--p-surface-2); }
+.tour-buttons { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.tour-skip { margin-left: auto; }
+.tour-card { position: fixed; z-index: 61; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--p-surface); border: 1px solid var(--p-accent); box-shadow: 0 6px 20px rgba(0, 0, 0, .35); }
+.tour-pulse { animation: tour-pulse 1.4s ease-in-out infinite; }
+@keyframes tour-pulse { 0%, 100% { outline: 2px solid transparent; } 50% { outline: 2px solid var(--p-accent); } }
+.tour-invite { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--p-accent); background: var(--p-surface-2); }
+.tour-invite-buttons { display: flex; gap: 8px; margin-left: auto; }
