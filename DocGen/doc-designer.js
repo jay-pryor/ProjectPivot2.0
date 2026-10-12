@@ -3519,9 +3519,7 @@ import { toWinAnsi } from './doc-fonts.js';
       var targets = (refs ? refs.targets : []).filter(function (t) { return t.id !== ownId; });
       if (!targets.length) return '<div class="rd-refmenu"><em>Nothing to link to yet.</em></div>';
       return '<div class="rd-refmenu">' +
-        '<div class="rd-refmenu-h">Link to&hellip;</div>' +
-        '<p class="muted rd-refmenu-note">Select text first to link the words you have already written. ' +
-        'Otherwise pick what the link should read as — all three follow the target if it is renamed or renumbered.</p>' +
+        '<div class="rd-refmenu-h" title="Select text first to link those words; otherwise pick how the link reads. Links follow renames and renumbering.">Link to&hellip;</div>' +
         targets.map(function (t) {
           return '<div class="rd-reftarget">' +
             '<span class="rd-kind">' + esc(t.kind) + '</span>' +
@@ -3613,11 +3611,11 @@ import { toWinAnsi } from './doc-fonts.js';
         ' title="Hand the columns back to automatic widths">Reset widths</button>';
       if (auto) {
         return '<div class="rd-tablebtns">' + reset +
-          '<span class="muted rd-part-note">Automatic widths — drag a column edge, or double-click a percentage to type one.</span></div>';
+          '<span class="rd-state" title="Drag a column edge, or double-click a percentage to type one">Automatic widths</span></div>';
       }
       var t = App.docStore.widthTotal(widths);
       var msg = t.ok
-        ? '<span class="muted rd-part-note">Columns total ' + t.total + '% — the table fills the page width.</span>'
+        ? '<span class="rd-state">Columns total ' + t.total + '%</span>'
         : t.over
           // Asked for more page than there is. Said in red, because the table WILL be
           // rendered — capped at the full width, with the columns scaled to fit — and a
@@ -3648,11 +3646,9 @@ import { toWinAnsi } from './doc-fonts.js';
           '<span class="rd-wlabel" title="' + esc(c.label) + '">' + esc(c.label) + '</span>' +
           pctChip(target, i, pct, auto) + grip(target, i, i === n - 1) + '</span>';
       }).join('');
-      return '<div class="rd-fieldset"><strong>Column widths</strong>' +
-        '<p class="muted">These are the columns this section’s table will have. Drag an edge to change the split, or double-click a percentage to type one. ' +
-        'The strip is the page’s text width, so a set that does not fill it makes a table narrower than the page.</p>' +
+      return '<div class="rd-fieldset"><strong title="Drag an edge to change the split, or double-click a percentage to type one. The strip is the page\'s text width.">Column widths</strong>' +
         (n < 2
-          ? '<p class="muted">A one-column table has no width to set.</p>'
+          ? '<p class="rd-state">One column: no width to set.</p>'
           : '<div class="rd-widthbar" style="width:' + px + 'px">' + segs + '</div>' +
             widthNote(auto ? null : widths, auto, 'data-rd-block-autowidth="' + esc(blockId) + '"')) +
         '</div>';
@@ -3727,7 +3723,7 @@ import { toWinAnsi } from './doc-fonts.js';
           partControls(sec, part, i, n) + '</div>' +
         refMenu(project, sec, part) +
         (part.noCaption === true
-          ? '<p class="muted rd-part-note">Uncaptioned, so this table takes no number and cannot be cross-referenced.</p>'
+          ? '<p class="rd-state">No caption: this table is not numbered.</p>'
           : '<input class="rd-cap" value="' + esc(part.caption || '') + '" data-rd-caption="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" placeholder="Table caption — left blank, the section’s heading is used" aria-label="Table caption">') +
         '<div class="rd-tablewrap"><div class="rd-tablescale" style="width:' + px + 'px">' +
           '<table class="rd-table rd-table-fixed" style="width:' + tablePx + 'px">' + group +
@@ -3767,15 +3763,13 @@ import { toWinAnsi } from './doc-fonts.js';
         : tall === 0
           ? 'No row is currently ticked, so nothing is'
           : tall + ' of the ' + n + ' body rows are';
-      return '<p class="muted rd-part-note">' + which + ' <strong>' + esc(String(mm)) +
-        'mm</strong> taller than its content, with the content at the top — space to sign or write in. ' +
-        'The ticks in the last column choose which.</p>';
+      return '<p class="rd-state" title="The ticks in the last column choose which rows">' + which + ' <strong>' + esc(String(mm)) + 'mm</strong> taller.</p>';
     }
 
     function simplePart(sec, part, i, n, label, note) {
       return '<div class="rd-part rd-part-simple" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
         '<div class="rd-part-head"><span class="rd-part-kind">' + esc(label) + '</span>' +
-          '<span class="muted rd-part-note">' + esc(note) + '</span>' + partControls(sec, part, i, n) + '</div></div>';
+          partControls(sec, part, i, n) + '</div></div>';
     }
 
     /**
@@ -3794,7 +3788,6 @@ import { toWinAnsi } from './doc-fonts.js';
               ' value="' + esc(String(mm || '')) + '" data-rd-space="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' +
               ' aria-label="Height of this space in millimetres"> mm' +
           '</label>' +
-          '<span class="muted rd-part-note">Empty space down the page. Survives a page break, so a section pushed to the middle of its own page stays there.</span>' +
           partControls(sec, part, i, n) + '</div>' +
         (mm ? '<div class="rd-mmshow" style="height:' + Math.round(mm * 96 / 25.4) + 'px"></div>' : '') +
         '</div>';
@@ -3822,12 +3815,12 @@ import { toWinAnsi } from './doc-fonts.js';
      */
     function sectionPreview(project, block) {
       var p = _rd.preview || (_rd.preview = laidOut(project));
-      if (p.error) return '<p class="muted">' + esc(p.error) + '</p>';
+      if (p.error) return '<p class="rd-state">' + esc(p.error) + '</p>';
       var view = outlineNow(project);
       var included = view.resolved.filter(function (r) { return r.included !== false; });
       var at = included.map(function (r) { return r.id; }).indexOf(block.id);
       var mine = at === -1 ? null : p.anchors[included[at].anchor];
-      if (!mine) return '<p class="muted">' + (at === -1 ? 'This section is not in the document.' : 'This section is not on the page — see the <strong>Preview</strong>.') + '</p>';
+      if (!mine) return '<p class="rd-state">' + (at === -1 ? 'This section is not in the document.' : 'This section is not on the page.') + '</p>';
       var end = null;
       for (var i = at + 1; i < included.length && !end; i++) end = p.anchors[included[i].anchor] || null;
       var m = p.style.page.margins, MMPT = 72 / 25.4;
@@ -3842,20 +3835,19 @@ import { toWinAnsi } from './doc-fonts.js';
       var k = zoomOf('section');
       var zoom = zoomBar('section');
       var pages = lastPage - mine.page + 1;
-      return '<div class="rd-secprev-head"><span class="muted rd-hint">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
+      return '<div class="rd-secprev-head"><span class="rd-state">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
         ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
         '<div class="rd-secprev rd-preview-pages">' + pagesHtml(bands, { scale: k }) + '</div>';
     }
 
     function metaPane(project) {
       var selId = selectedSubjectId(project);
-      if (!selId) return '<p class="muted">No ' + esc(noun()) + ' selected.</p>';
+      if (!selId) return '<p class="rd-state">No ' + esc(noun()) + ' selected.</p>';
       var chosen = (bag(project).meta) || {};
       // Every row the host CAN state, ticked or not — this is the picker, so a row
       // switched off still has to appear in it.
       var rows = H().subject.meta(selId);
       return '<div class="rd-fieldset"><strong>Rows</strong>' +
-        '<p class="muted">Which lines of provenance this block carries. Saved with the project, so it travels in a report template.</p>' +
         rows.map(function (r) {
           var v = String(r.value);
           return '<label class="gen-opt rd-metarow"><input type="checkbox" data-rd-meta="' + esc(r.id) + '"' +
@@ -3880,15 +3872,9 @@ import { toWinAnsi } from './doc-fonts.js';
           'Centre this section\u2019s content \u2014 heading included', block.centre === true) +
         cb('data-rd-pagebreak="' + esc(block.id) + '"',
           'Start this section on a new page', byLevel || block.pageBreakBefore === true, byLevel) +
-        (byLevel
-          ? '<p class="muted rd-hint">Already on: <strong>' + esc(App.doc.levelLabel(lvl)) +
-            '</strong> starts a new page under <strong>Formatting \u2192 Fonts</strong>, for every section at that level. ' +
-            'Change it there, or give this section a different level.</p>'
-          : '') +
+        (byLevel ? '<p class="rd-state">' + esc(levelName(lvl)) + ' starts a new page in this Style.</p>' : '') +
         cb('data-rd-notoc="' + esc(block.id) + '"',
           'Leave this section out of the contents list', block.noToc === true) +
-        '<p class="muted rd-hint">A section left out of the contents still prints its heading and keeps its number, ' +
-        'so a cross-reference to it still reads correctly \u2014 it is simply not listed.</p>' +
         /* SPC-1: space ABOVE the heading, which is the one gap no part can make \u2014 every
          * part a section has is already below it. With the page break above, this is how
          * a signature page is composed: its own page, and its heading two thirds down. */
@@ -3896,9 +3882,6 @@ import { toWinAnsi } from './doc-fonts.js';
           App.docStore.MAX_SPACE_MM + '" step="5" value="' + esc(String(App.docStore.mmValue(block.spaceBefore) || '')) +
           '" data-rd-space-block="' + esc(block.id) + '" placeholder="0" aria-label="Millimetres of space above this section"> mm ' +
           'further down the page</label>' +
-        '<p class="muted rd-hint">Empty space above the heading, which the page break above composes with: a new page, ' +
-        'then this far down it. It survives being at the top of a page, so the gap is there whether or not the section ' +
-        'happened to break.</p>' +
         '</div>';
     }
 
@@ -3935,7 +3918,7 @@ import { toWinAnsi } from './doc-fonts.js';
           // CAP-4: the caption box is hidden rather than disabled when there is to be no
           // caption — a box you may type into that will not be printed is a trap.
           (e.noCaption === true
-            ? '<p class="muted rd-hint">Uncaptioned, so this table takes no number and cannot be cross-referenced.</p>'
+            ? '<p class="rd-state">No caption: this table is not numbered.</p>'
             : '<label class="rd-lab">Caption' +
               '<input class="rd-title" value="' + esc(e.caption || '') + '" ' + attrs + ' data-rd-tbl-field="caption"' +
                 ' placeholder="' + esc(String(e.title || '').trim() || block.title || block.label) + '" aria-label="Caption"></label>') +
@@ -3946,10 +3929,7 @@ import { toWinAnsi } from './doc-fonts.js';
                 ' placeholder="' + esc(c.label) + '" aria-label="Heading for the ' + esc(c.label) + ' column"></label>';
           }).join('') + '</div></div>';
       }).join('');
-      return '<div class="rd-fieldset"><strong>Table wording</strong>' +
-        '<p class="muted">What each of this section\u2019s tables calls itself and its columns. Blank means the standard wording. ' +
-        'The caption follows the title row unless you give it one of its own.</p>' +
-        body + '</div>';
+      return '<div class="rd-fieldset"><strong title="Blank means the standard wording">Table wording</strong>' + body + '</div>';
     }
 
     /**
@@ -3971,7 +3951,7 @@ import { toWinAnsi } from './doc-fonts.js';
           '<label class="rd-lab">Heading in the document' +
             '<input class="rd-title" value="' + esc(heading === dflt ? '' : heading) + '" data-rd-sec-heading="' + esc(block.id) + '"' +
               ' placeholder="' + esc(dflt) + '" aria-label="Heading for ' + esc(block.label) + '"></label>' +
-          '<p class="muted rd-hint">What the document prints. Leave it blank for the standard wording, <strong>' + esc(dflt) + '</strong>.</p>');
+          '');
     }
 
     /** SEC-1: prose between this section's heading and its generated table. */
@@ -3985,7 +3965,6 @@ import { toWinAnsi } from './doc-fonts.js';
        * that produces "[missing reference]". */
       var refOpen = _rd.refFor === 'intro:' + block.id;
       return '<div class="rd-fieldset"><strong>Introduction</strong>' +
-        '<p class="muted">Your own words, printed between the heading and the table. Written once for the section, so a register split into groups is introduced once rather than once per group.</p>' +
         '<div class="rd-part-head"><span class="rd-tbs">' + toolbar('data-rd-block="' + esc(block.id) + '"') +
           '<button type="button" class="rd-tb" data-rd-ref-open="' + esc('intro:' + block.id) + '"' +
             ' title="Insert a cross-reference that survives renaming and reordering">\ud83d\udd17 Link</button>' +
@@ -3995,8 +3974,7 @@ import { toWinAnsi } from './doc-fonts.js';
           ' aria-label="Introduction for ' + esc(block.label) + '"', block.intro, '',
           'Optional. A blank line starts a new paragraph.') +
         hostileHint(block.intro || '') +
-        cb('data-rd-intro-num="' + esc(block.id) + '"', 'Number it', block.introNumbered === true) +
-        '<p class="muted rd-hint">A numbered introduction takes the first of this section\u2019s numbers \u2014 <em>5 Packages</em>, then <em>5.1</em> the introduction, then <em>5.2 Packages \u2014 Removed</em>. Unnumbered, it is simply the prose under the heading.</p>' +
+        '<span title="The introduction takes the section\'s first number, such as 5.1">' + cb('data-rd-intro-num="' + esc(block.id) + '"', 'Number it', block.introNumbered === true) + '</span>' +
         '</div>';
     }
 
@@ -4060,7 +4038,7 @@ import { toWinAnsi } from './doc-fonts.js';
           if (p.kind === 'space') return spaceEditor(sec, p, i, parts.length);
           return simplePart(sec, p, i, parts.length, 'Page break', 'Forces what follows onto a new page.');
         }).join('');
-        return '<div class="rd-sec-edit"><div class="rd-parts">' + (body || '<p class="muted">Nothing in this section yet.</p>') + '</div>' +
+        return '<div class="rd-sec-edit"><div class="rd-parts">' + (body || '<p class="rd-state">Nothing in this section yet.</p>') + '</div>' +
           '<div class="rd-addbar">' +
             '<button type="button" data-rd-addpart="para" data-rd-sec="' + esc(sec.id) + '">+ Paragraph</button>' +
             '<button type="button" data-rd-addpart="table" data-rd-sec="' + esc(sec.id) + '">+ Table</button>' +
@@ -4083,7 +4061,7 @@ import { toWinAnsi } from './doc-fonts.js';
     function paneSection(project, view) {
       var id = _rd.selected;
       var block = view.blocks.filter(function (b) { return b.id === id; })[0] || view.blocks[0];
-      if (!block) return '<p class="muted">There are no sections yet.</p>';
+      if (!block) return '<p class="rd-state">There are no sections yet.</p>';
       _rd.selected = block.id;
       var resolved = view.resolved.filter(function (r) { return r.id === block.id; })[0];
       var cats = categoriesFor(block);
@@ -4174,6 +4152,7 @@ import { toWinAnsi } from './doc-fonts.js';
         '<div class="rd-hf-slots">' + ['left', 'centre', 'right'].map(function (s) {
           return '<label class="rd-lab rd-lab-s">' + esc(s === 'centre' ? 'Centre' : s === 'left' ? 'Left' : 'Right') +
             '<input value="' + esc(hfv[s] || '') + '" data-rd-hf-set="' + esc(set) + '" data-rd-hf-slot="' + s + '"' +
+              ' title="Filled in on each page: #page, #pages, #title, #platform, #date, #marking" placeholder="e.g. Page #page of #pages"' +
               ' aria-label="' + esc(label + ', ' + s) + '"></label>';
         }).join('') + '</div></div>';
     }
@@ -4187,17 +4166,15 @@ import { toWinAnsi } from './doc-fonts.js';
             pick('Orientation', 'page.orientation', f.page.orientation, [{ value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Landscape' }]) +
             num('Top margin (mm)', 'page.margins.top', m.top) + num('Bottom margin (mm)', 'page.margins.bottom', m.bottom) +
             num('Left margin (mm)', 'page.margins.left', m.left) + num('Right margin (mm)', 'page.margins.right', m.right) +
-          '</div><p class="muted rd-hint">The header and footer sit in the top and bottom margins, so leave room for them.</p>';
+          '</div>';
       }
       if (/^(title|h[1-4])$/.test(section)) return textFields(f, section, { heading: true });
       if (section === 'body' || section === 'caption' || section === 'code') {
-        return textFields(f, section) + (section === 'caption'
-          ? '<p class="muted rd-hint">Table captions. Where they go is set under <strong>Tables</strong>.</p>' : '');
+        return textFields(f, section);
       }
       if (section === 'tables') {
         var t = f.tables;
-        return '<p class="muted">These settings apply to every table in the document.</p>' +
-          '<div class="rd-grid">' +
+        return '<div class="rd-grid">' +
             pick('Borders', 'tables.borders', t.borders, [{ value: 'all', label: 'All lines' }, { value: 'horizontal', label: 'Between rows only' }, { value: 'outer', label: 'Outside only' }, { value: 'none', label: 'None' }]) +
             colourField('Border colour', 'tables.borderColour', t.borderColour) +
             num('Border weight (pt)', 'tables.borderWidth', t.borderWidth) +
@@ -4219,15 +4196,13 @@ import { toWinAnsi } from './doc-fonts.js';
       }
       if (section === 'headerFooter') {
         var first = f.headerFooter.firstDifferent;
-        return '<p class="muted">What each line reads. These words are replaced on each page: <code>#page</code> (the page number), <code>#pages</code> (the total), ' +
-            '<code>#title</code>, <code>#platform</code>, <code>#date</code> and <code>#marking</code>. So <code>Page #page of #pages</code> prints “Page 3 of 12”.</p>' +
-          hfRow(f, 'header', 'Header') + hfRow(f, 'footer', 'Footer') +
+        return hfRow(f, 'header', 'Header') + hfRow(f, 'footer', 'Footer') +
           '<div class="rd-flags">' + flagField('A line under the header', 'headerFooter.ruleUnderHeader', f.headerFooter.ruleUnderHeader) +
             flagField('A line over the footer', 'headerFooter.ruleOverFooter', f.headerFooter.ruleOverFooter) + '</div>' +
           '<div class="rd-fieldset"><strong>The first page</strong>' +
             cb('data-rd-hf-first', 'Give the first page its own header and footer', first) +
             (first ? hfRow(f, 'firstHeader', 'First-page header') + hfRow(f, 'firstFooter', 'First-page footer')
-              : '<p class="muted rd-hint">A title page usually wants neither: tick this and leave its slots empty.</p>') +
+              : '') +
           '</div>' +
           '<div class="rd-fieldset"><strong>How the header and footer look</strong>' + textFields(f, 'headerFooter') + '</div>';
       }
@@ -4238,7 +4213,6 @@ import { toWinAnsi } from './doc-fonts.js';
             '<option value=""' + (marking ? '' : ' selected') + '>None</option>' +
             markings.map(function (x) { return '<option value="' + esc(x) + '"' + (x === marking ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') +
           '</select></label>' +
-          '<p class="muted rd-hint">The marking is saved with the report design. The Style decides whether and how it is printed, at the top and bottom of every page.</p>' +
           '<div class="rd-flags">' + flagField('Print the marking on every page', 'marking.show', f.marking.show) + '</div>' +
           textFields(f, 'marking');
       }
@@ -4298,8 +4272,7 @@ import { toWinAnsi } from './doc-fonts.js';
       var pages = '<div class="rd-style-preview" data-rd-style-preview>' + (laid.error
         ? '<p class="rd-err">' + esc(laid.error) + '</p>'
         : pagesHtml(laid.pages, { scale: 0.5 })) + '</div>';
-      return head + locked + '<div class="rd-styles">' + list + fields + pages + '</div>' +
-        '<p class="muted rd-hint">Styles travel with the project file. To share one between projects, export it from the <strong>Templates</strong> pane.</p>';
+      return head + locked + '<div class="rd-styles">' + list + fields + pages + '</div>';
     }
 
     /**
@@ -4335,7 +4308,7 @@ import { toWinAnsi } from './doc-fonts.js';
     // ======================================================================
 
     function templateList(items, kind, emptyNote) {
-      if (!items.length) return '<p class="muted">' + esc(emptyNote) + '</p>';
+      if (!items.length) return '<p class="rd-state">' + esc(emptyNote) + '</p>';
       return '<ul class="rd-tpl-list">' + items.map(function (t) {
         return '<li><span class="rd-tpl-name">' + esc(t.name) + '</span>' +
           (kind === 'sections'
@@ -4349,32 +4322,28 @@ import { toWinAnsi } from './doc-fonts.js';
       var b = bag(project);
       var profiles = (b.formats || []);
       return '<div class="rd-fieldset"><strong>Styles</strong>' +
-          '<p class="muted">How the document looks, saved under a name. Edit them in the <strong>Styles</strong> pane; export them here to reuse in another project.</p>' +
           (profiles.length
             ? '<ul class="rd-tpl-list">' + profiles.map(function (f) {
                 return '<li><span class="rd-tpl-name">' + esc(f.name) + '</span></li>';
               }).join('') + '</ul>'
-            : '<p class="muted">Only the built-in Standard style so far. Duplicate it in the Styles pane to make your own.</p>') +
+            : '<p class="rd-state">Only the built-in Standard style so far.</p>') +
           '<div class="rd-addbar">' +
             '<button type="button" data-rd-export="formats"' + (profiles.length ? '' : ' disabled') + '>Export</button>' +
-            '<label class="rd-filebtn">Import<input type="file" accept=".json,application/json" data-rd-import="formats"></label>' +
+            '<label class="rd-filebtn" title="An import never deletes what you have; a clash of names asks which to keep">Import<input type="file" accept=".json,application/json" data-rd-import="formats"></label>' +
           '</div></div>' +
         '<div class="rd-fieldset"><strong>Section templates</strong>' +
-          '<p class="muted">A saved section — its heading and every paragraph, table and rule in it. Use one to drop a ready-made section into this document. Save one from the <strong>Section</strong> pane.</p>' +
           templateList(b.sectionTemplates || [], 'sections', 'No section templates yet.') +
           '<div class="rd-addbar">' +
             '<button type="button" data-rd-export="sections"' + ((b.sectionTemplates || []).length ? '' : ' disabled') + '>Export</button>' +
-            '<label class="rd-filebtn">Import<input type="file" accept=".json,application/json" data-rd-import="sections"></label>' +
+            '<label class="rd-filebtn" title="An import never deletes what you have; a clash of names asks which to keep">Import<input type="file" accept=".json,application/json" data-rd-import="sections"></label>' +
           '</div></div>' +
         '<div class="rd-fieldset"><strong>Report templates</strong>' +
-          '<p class="muted">The whole design: the section order, the pinned levels, every custom section and the Style. Applying one <strong>replaces</strong> the current arrangement.</p>' +
           templateList(b.reportTemplates || [], 'reports', 'No report templates yet.') +
           '<div class="rd-addbar">' +
             '<button type="button" class="primary" data-rd-rpt-save>Save current design&hellip;</button>' +
             '<button type="button" data-rd-export="reports"' + ((b.reportTemplates || []).length ? '' : ' disabled') + '>Export</button>' +
-            '<label class="rd-filebtn">Import<input type="file" accept=".json,application/json" data-rd-import="reports"></label>' +
-          '</div></div>' +
-        '<p class="muted rd-hint">An import never deletes what you already have. If a name collides you are asked, one by one, which to keep.</p>';
+            '<label class="rd-filebtn" title="An import never deletes what you have; a clash of names asks which to keep">Import<input type="file" accept=".json,application/json" data-rd-import="reports"></label>' +
+          '</div></div>';
     }
 
     /** TPL-3: the conflict resolver, shown over the workspace while a merge is pending. */
@@ -4425,7 +4394,7 @@ import { toWinAnsi } from './doc-fonts.js';
      */
     function paneGenerate(project, view) {
       var selId = selectedSubjectId(project);
-      if (!selId) return '<p class="muted">No ' + esc(noun()) + ' selected — nothing to generate.</p>';
+      if (!selId) return '<p class="rd-state">No ' + esc(noun()) + ' selected.</p>';
       var ready = H().subject.ready(selId);
       var o = opts();
       // Laid out with no values, so every tag written anywhere is found, and the characters
@@ -4443,13 +4412,9 @@ import { toWinAnsi } from './doc-fonts.js';
               '<input value="' + esc(v) + '" data-rd-tag="' + esc(t) + '"' +
                 ' placeholder="What should this read?" aria-label="Value for the ' + esc(t) + ' tag"></label>';
           }).join('')
-        : '<p class="muted">None written yet. Type <code>/[Date]</code> — a slash, then a name in square brackets — ' +
-          'in any heading, paragraph, table or header slot and it will be listed here.</p>';
+        : '<p class="rd-state">None yet. Write <code>/[Date]</code> in any text to add one.</p>';
 
-      return '<div class="rd-fieldset"><strong>Placeholders</strong>' +
-          '<p class="muted">Every <code>/[Tag]</code> written anywhere in the document, filled in once here and ' +
-          'replaced everywhere it appears. A tag left blank is printed as it stands, so an unfinished document ' +
-          'looks unfinished rather than merely incomplete.</p>' +
+      return '<div class="rd-fieldset"><strong title="Each /[Tag] in the document is replaced by what you write here; one left blank prints as it stands.">Placeholders</strong>' +
           tagRows +
           (unfilled.length
             ? '<p class="rpt-omit"><strong>' + unfilled.length + '</strong> placeholder' + (unfilled.length === 1 ? '' : 's') +
@@ -4457,15 +4422,11 @@ import { toWinAnsi } from './doc-fonts.js';
             : (tags.length ? '<p class="rpt-omit muted">Every placeholder has a value.</p>' : '')) +
         '</div>' +
         (replaced.length
-          ? '<div class="rd-fieldset rd-replaced"><strong>Characters the PDF cannot show</strong>' +
-              '<p class="muted">The PDF uses the standard fonts every PDF reader has, which cannot show these. ' +
-              'They are written another way (≥ as &gt;=, ✓ as Yes) or as ?. The HTML shows them as they are.</p>' +
+          ? '<div class="rd-fieldset rd-replaced"><strong title="The PDF\'s standard fonts write these another way (≥ as >=, ✓ as Yes) or as ?. The HTML shows them as they are.">Characters the PDF cannot show</strong>' +
               '<p>' + replaced.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(' ') + '</p></div>'
           : '') +
         '<div class="rd-fieldset"><strong>Make the report</strong>' +
-          '<p class="muted">' + (ready
-            ? 'A PDF laid out exactly as the Preview shows it, or the same document as one web page (HTML).'
-            : 'This ' + esc(noun()) + ' is not ready — the host reports it incomplete.') + '</p>' +
+          (ready ? '' : '<p class="rd-state">This ' + esc(noun()) + ' is not ready.</p>') +
           (laid.error ? '<p class="rd-err">' + esc(laid.error) + '</p>' : '') +
           '<div class="rd-addbar">' +
             // The HOST wires these ([data-generate-action], reading data-generate-format):
@@ -4482,16 +4443,16 @@ import { toWinAnsi } from './doc-fonts.js';
 
     function panePreview(project) {
       var p = _rd.preview || (_rd.preview = laidOut(project));
-      if (p.error) return '<div class="rd-preview"><p class="muted">' + esc(p.error) + '</p></div>';
+      if (p.error) return '<div class="rd-preview"><p class="rd-state">' + esc(p.error) + '</p></div>';
       var nav = (p.headings || []).map(function (o) {
         return '<a class="rd-nav rd-nav-' + Math.max(1, o.level) + '" href="#' + esc(o.anchor) + '" data-prv-jump="' + esc(o.anchor) + '">' + esc(o.title) + '</a>';
       }).join('');
       return '<div class="rd-preview">' +
         '<div class="rd-addbar"><button type="button" data-rd-refresh-preview>↻ Refresh</button>' +
-          '<span class="muted">' + p.pages.length + ' page' + (p.pages.length === 1 ? '' : 's') + '</span>' +
+          '<span class="rd-state">' + p.pages.length + ' page' + (p.pages.length === 1 ? '' : 's') + '</span>' +
           zoomBar('preview') + '</div>' +
         '<div class="rd-preview-body">' +
-          '<nav class="rd-preview-nav">' + (nav || '<span class="muted">No sections.</span>') + '</nav>' +
+          '<nav class="rd-preview-nav">' + (nav || '<span class="rd-state">No sections.</span>') + '</nav>' +
           '<article class="rd-preview-doc rd-preview-pages" id="rd-preview-doc">' + pagesHtml(p.pages, { scale: zoomOf('preview'), anchors: p.anchors }) + '</article>' +
         '</div></div>';
     }
@@ -4520,7 +4481,7 @@ import { toWinAnsi } from './doc-fonts.js';
 
       return '<div class="modal modal-full" role="dialog" aria-modal="true" aria-label="Report Design">' +
         '<div class="modal-head"><div><h3>Report Design</h3>' +
-          '<div class="modal-sub">' + (subj ? subjectPicker(selId) + ' — what the document contains, in what order, and how it looks.' : 'No ' + esc(noun()) + ' selected.') + '</div></div>' +
+          '<div class="modal-sub">' + (subj ? subjectPicker(selId) : 'No ' + esc(noun()) + ' selected.') + '</div></div>' +
           '<button type="button" class="modal-close" data-rd-close aria-label="Close">×</button></div>' +
         '<div class="modal-body"><div class="rpt-body rd-layout">' +
           renderSectionList(project, view) +

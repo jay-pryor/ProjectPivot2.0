@@ -293,3 +293,18 @@ test('the list uses plain level names and tags: Auto-populated, Meta, Table of C
   assert.doesNotMatch(row('mine'), /rd-kind/);
   assert.doesNotMatch(html, /Drag, or use/);
 });
+test('no one-line explanations anywhere in the designer: only messages about state remain', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'p1', kind: 'para', text: 'x' }, { id: 't1', kind: 'table', header: ['A'], rows: [['1']], align: ['l'] }, { id: 's1', kind: 'space', height: 10 }] }] });
+  const pages = [];
+  for (const pane of ['styles', 'templates', 'preview', 'generate']) pages.push(paneOf(h, pane));
+  for (const sec of ['styles']) for (const s of ['page', 'body', 'tables', 'headerFooter', 'marking', 'numbering']) pages.push(paneOf(h, sec, s));
+  for (const [id, cs] of [['things', ['heading', 'placement', 'introduction', 'table']], ['meta', ['rows']], ['toc', ['heading']], ['mine', ['heading', 'placement', 'content']]]) for (const c of cs) pages.push(sectionAt(h, id, c));
+  const ALLOWED = [/^Nothing in this section yet\.$/, /^No .+ selected/, /^There are no sections yet\.$/, /^None written yet/, /page(s)? of \d+/i, /^Page \d+/, /^\d+ pages?$/];
+  const notes = pages.flatMap((p) => [...p.matchAll(/<p class="muted[^"]*">([\s\S]*?)<\/p>/g)].map((m) => m[1].replace(/<[^>]+>/g, '').trim()));
+  const stray = [...new Set(notes.filter((t) => t && !ALLOWED.some((re) => re.test(t))))];
+  assert.deepEqual(stray, []);
+});
+
+test('the title bar is the title and the platform picker, with no description after it', () => {
+  assert.doesNotMatch(paneOf(host(), 'section'), /what the document contains|in what order, and how it looks/);
+});
