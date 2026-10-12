@@ -33,3 +33,20 @@ test('no Options box on the Controls or References lists: the number, or a doubl
     assert.doesNotMatch(out, /class="row-menu"|data-col="options"/);
   }
 });
+
+test('a reference’s title is plain text on the References list: its number and the row open it', async () => {
+  const { referencesView } = await import('../../src/ui/screens/references.js');
+  const { createReference } = await import('../../src/core/ops/references.js');
+  const out = referencesView({ ...state, view: { name: 'references' } }, assignNumbers(createReference(seed(), { by: 'u1', at: '2026-09-28T10:00:00+10:00' }, { id: 'r1', title: 'Manual', url: 'x' }))).toString();
+  assert.match(out, /data-view="reference"[^>]*>REF-001</);
+  assert.doesNotMatch(out, /<button[^>]*>Manual<\/button>/);
+  assert.match(out, />Manual</);
+});
+
+test('a platform’s name is plain text on the Platforms list: its number and the row open it', async () => {
+  const { platformsView } = await import('../../src/ui/screens/platforms.js');
+  const out = platformsView({ ...state, view: { name: 'platforms' } }, assignNumbers(seed())).toString();
+  assert.match(out, /data-view="platform"[^>]*>P-001</);
+  assert.doesNotMatch(out, /<button[^>]*>Alpha<\/button>/);
+  assert.match(out, />Alpha</);
+});

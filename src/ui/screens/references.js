@@ -78,7 +78,7 @@ export function referencesView(state, data) {
       columns: [
         idColumn((r) => r, referenceLabel, (r) => go(idTag(referenceLabel(r)), 'reference', { id: r.id })),
         { key: 'title', label: 'Reference', width: 560, minWidth: 200, value: (r) => r.title, filter: 'text',
-          render: (r) => html`${go(r.title, 'reference', { id: r.id })}${missingTag(r, missing)}` },
+          render: (r) => html`${r.title}${missingTag(r, missing)}` },
         { key: 'docNumber', label: 'Doc number', width: 260, minWidth: 120, value: (r) => r.docNumber, filter: 'text' },
         { key: 'revision', label: 'Revision', width: 180, minWidth: 100, value: (r) => r.revision },
         { key: 'points', label: 'Points at', width: 240, minWidth: 180, sortable: false, render: (r) => pointsAt(r) },
