@@ -28,7 +28,7 @@ const SUBS = new Map([['≥', '>='], ['≤', '<='], ['≠', '!='], ['✓', 'Yes'
 
 /**
  * Text as WinAnsi: each character of the result is one byte, its code the WinAnsi code.
- * A tab is a space; anything else the fonts cannot show is substituted (or `?`), and
+ * A tab or a line break is a space; anything else the fonts cannot show is substituted (or `?`), and
  * listed in `replaced`, once each, in the order first met.
  * @param {string} text
  */
@@ -38,7 +38,7 @@ export function toWinAnsi(text) {
   const replaced = [];
   for (const ch of String(text ?? '')) {
     const cp = /** @type {number} */ (ch.codePointAt(0));
-    if (ch === '\t') { out += ' '; continue; }
+    if (ch === '\t' || ch === '\n' || ch === '\r') { out += ' '; continue; }
     if ((cp >= 0x20 && cp <= 0x7E) || (cp >= 0xA0 && cp <= 0xFF)) { out += ch; continue; }
     const hi = HIGH.get(cp);
     if (hi !== undefined) { out += String.fromCharCode(hi); continue; }

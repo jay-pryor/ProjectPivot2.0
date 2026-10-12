@@ -30,3 +30,7 @@ test('what the fonts cannot show is substituted, and listed once each', () => {
   assert.equal(r.text, 'a >= b, Yes done, Yes again, ? x');
   assert.deepEqual(r.replaced, ['≥', '✓', '中']);
 });
+
+test('Final review I1: a line break that reaches the encoder is a space, never words run together', () => {
+  assert.equal(toWinAnsi('a\nb\r\nc').text, 'a b  c');
+});

@@ -120,3 +120,14 @@ test('a squeezed column with nothing in it still keeps room for a few letters of
   const pieces = texts(p).filter((t) => /^[Description]+$/.test(t.text) && t.text.length < 11 && 'Description'.includes(t.text));
   assert.ok(pieces.length <= 3, `the heading is cut into ${pieces.length} lines: ${pieces.map((t) => t.text).join('|')}`);
 });
+
+test('Final review I3: a row taller than a page under a repeated header stays above the margin, and no page holds only the header', () => {
+  const tall = Array.from({ length: 300 }, (_, i) => [{ text: `L${i}` }, { br: true }]).flat();
+  const b = { ...tbl([]), titleRow: [{ text: 'Title row' }], rows: [[cell('a'), tall, cell('c')]] };
+  const r = layout(doc([{ kind: 'paragraph', style: 'body', runs: [{ text: 'x' }] }, b]), style());
+  for (const p of r.pages) for (const t of texts(p)) assert.ok(t.y < 841.89 - 25 * MM + 0.01, `"${t.text}" at ${t.y} is below the margin`);
+  for (const p of r.pages) {
+    const ws = texts(p).map((t) => t.text);
+    if (ws.includes('Notes')) assert.ok(ws.some((w) => /^L\d+$|^a$|continues/.test(w)), `a page holds only the header: ${ws.join(' ')}`);
+  }
+});

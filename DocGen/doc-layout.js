@@ -64,15 +64,18 @@ export function breakLines(atoms, width) {
     if (a.space) { push(false); continue; }
     if (line.length) push(false);
     if (a.width <= width + EPS) { line = [a]; w = a.width; continue; }
-    let rest = a.text;
-    while (rest) {
-      let n = rest.length;
-      while (n > 1 && textWidth(a.font, a.size, rest.slice(0, n)) > width + EPS) n--;
-      const part = { ...a, text: rest.slice(0, n), width: textWidth(a.font, a.size, rest.slice(0, n)) };
-      rest = rest.slice(n);
-      if (rest) lines.push({ atoms: [part], width: part.width, hard: false });
-      else { line = [part]; w = part.width; }
+    // Broken by characters, measured once each as it goes (linear in the word's length).
+    let from = 0, acc = 0;
+    for (let i = 0; i < a.text.length; i++) {
+      const cw = textWidth(a.font, a.size, a.text[i]);
+      if (i > from && acc + cw > width + EPS) {
+        lines.push({ atoms: [{ ...a, text: a.text.slice(from, i), width: textWidth(a.font, a.size, a.text.slice(from, i)) }], width: acc, hard: false });
+        from = i; acc = 0;
+      }
+      acc += cw;
     }
+    const tail = { ...a, text: a.text.slice(from), width: textWidth(a.font, a.size, a.text.slice(from)) };
+    line = [tail]; w = tail.width;
   }
   if (line.length || !lines.length) push(true);
   return lines;
@@ -161,7 +164,10 @@ function flow(doc, style, pageOf) {
   const replaced = [];
   const ctx = {
     encode: (/** @type {string} */ s) => { const r = toWinAnsi(s); for (const c of r.replaced) if (!replaced.includes(c)) replaced.push(c); return r.text; },
-    refSuffix: (/** @type {string} */ anchor) => (style.refs.pageInPdf ? ` (page ${pageOf && pageOf[anchor] !== undefined ? pageOf[anchor] + 1 : '00'})` : ''),
+    // The first pass has no pages yet, so it holds the place with '00'; after that a target
+    // that never landed gets no page at all rather than a wrong one.
+    refSuffix: (/** @type {string} */ anchor) => (!style.refs.pageInPdf ? '' : !pageOf ? ' (page 00)'
+      : pageOf[anchor] !== undefined ? ` (page ${pageOf[anchor] + 1})` : ''),
   };
   const newPage = () => { page = { size: [pw, ph], items: [] }; pages.push(page); y = top; };
   const atTop = () => y <= top + EPS;
@@ -267,7 +273,7 @@ function flow(doc, style, pageOf) {
     else if (b.kind === 'table') layoutTable(b, { style, ctx, left, W, get y() { return y; }, set y(v) { y = v; }, get page() { return page; }, newPage, atTop, room, mark });
     else if (b.kind === 'toc') toc();
     else if (b.kind === 'pageBreak') { if (!atTop()) newPage(); }
-    else if (b.kind === 'space') { y += (Number(b.mm) || 0) * MM; if (y > bottom) newPage(); }
+    else if (b.kind === 'space') { mark(b.anchor); y += (Number(b.mm) || 0) * MM; if (y > bottom) newPage(); }
     else if (b.kind === 'rule') {
       if (room() < 12) newPage();
       y += 6;
@@ -363,7 +369,7 @@ export function layoutTable(b, f) {
 
   /** @typedef {{ cells: { lines: any[], ts: any, align: string, fill?: string }[], h: number, kind: string, span?: boolean }} Row */
   /** A row laid out: each cell's lines, and the row's height (cut to the page if it must be). */
-  const rowOf = (/** @type {any[][]} */ cells, /** @type {string} */ kind, /** @type {number} */ idx) => {
+  const rowOf = (/** @type {any[][]} */ cells, /** @type {string} */ kind, /** @type {number} */ idx, limit = pageH) => {
     /** @type {Row} */
     const row = { cells: [], h: 0, kind };
     for (let k = 0; k < n; k++) {
@@ -375,15 +381,15 @@ export function layoutTable(b, f) {
     }
     const extra = kind === 'body' && b.rowHeight > 0 && (!b.tallRows || b.tallRows[idx]) ? b.rowHeight * MM : 0;
     row.h += 2 * pad + extra;
-    if (row.h > pageH) {
+    if (row.h > limit) {
       for (const c of row.cells) {
-        const keep = Math.max(1, Math.floor((pageH - 2 * pad) / c.ts.leading) - 1);
+        const keep = Math.max(1, Math.floor((limit - 2 * pad) / c.ts.leading) - 1);
         if (c.lines.length > keep) {
           c.lines = c.lines.slice(0, keep);
           c.lines.push(breakLines(atomsOf([{ text: '[this cell continues beyond the page]', italic: true }], c.ts, f.ctx), Math.max(1, widths[0] * 4))[0]);
         }
       }
-      row.h = pageH;
+      row.h = limit;
     }
     return row;
   };
@@ -393,9 +399,11 @@ export function layoutTable(b, f) {
     return /** @type {Row} */ ({ cells: [{ lines, ts, align: 'centre' }], h: lines.length * ts.leading + 2 * pad, kind: 'title', span: true });
   })() : null;
   const headRow = rowOf(b.header ?? [], 'head', 0);
-  const bodyRows = (b.rows ?? []).map((/** @type {any[][]} */ r, /** @type {number} */ i) => rowOf(r, 'body', i));
   const heads = /** @type {Row[]} */ ([titleRow, headRow].filter(Boolean));
   const headsH = heads.reduce((a, r) => a + r.h, 0);
+  // A row taller than a page is cut to what fits UNDER the header rows, which sit above it
+  // on its page — so it never runs into the footer, and never leaves the header alone.
+  const bodyRows = (b.rows ?? []).map((/** @type {any[][]} */ r, /** @type {number} */ i) => rowOf(r, 'body', i, Math.max(pageH / 4, pageH - headsH)));
 
   const lw = tb.borders === 'none' ? 0 : tb.borderWidth;
   const line = (/** @type {number} */ x1, /** @type {number} */ y1, /** @type {number} */ x2, /** @type {number} */ y2) => {

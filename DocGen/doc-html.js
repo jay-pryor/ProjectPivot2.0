@@ -83,7 +83,7 @@ export function renderHtml(doc, style) {
       return `<nav class="toc">${headings.map((h) => `<p class="toc${Math.min(3, Math.max(1, h.level))}"><a href="#${esc(h.anchor)}">${style.numbering.inToc && h.number ? `${esc(h.number)} ` : ''}${esc(plain(h.runs))}</a></p>`).join('')}</nav>`;
     }
     if (b.kind === 'pageBreak') return '<div class="page-break"></div>';
-    if (b.kind === 'space') return `<div style="height:${Number(b.mm) || 0}mm"></div>`;
+    if (b.kind === 'space') return `<div${id} style="height:${Number(b.mm) || 0}mm"></div>`;
     if (b.kind === 'rule') return '<hr>';
     return '';
   }).join('\n');

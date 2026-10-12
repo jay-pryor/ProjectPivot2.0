@@ -124,3 +124,7 @@ test('every wiring function that reads the project takes P from the helper bag (
   assert.ok(fns.length >= 4);
   for (const [, name, body] of fns) if (/\bP\(\)/.test(body)) assert.match(body, /var P = h\.P;/, `${name} calls P() without defining it`);
 });
+
+test('Final review I5: the contents section offers no title box — the contents heading is the section\'s own title', () => {
+  assert.doesNotMatch(paneOf(host(), 'styles', 'numbering'), /data-rd-fmt="toc\.title"/);
+});

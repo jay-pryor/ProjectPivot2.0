@@ -184,3 +184,23 @@ test('App.md.runs balances a stray close and drops trailing breaks', () => {
   assert.deepEqual(App.md.runs('a{{/b}}b{{i}}c{{br}}'), [[{ text: 'a' }, { text: 'b' }, { text: 'c', italic: true }]]);
   assert.deepEqual(App.md.runs('one\n\ntwo').map((p) => p.map((r) => r.text)), [['one'], ['two']]);
 });
+
+test('Final review I1: a line break in register text is a line break in the cell, not words run together', () => {
+  const blocks = [{ id: 's', kind: 'section', label: 'S', title: 'S', included: true, level: 1,
+    content: [{ captionId: 's', captionText: 'S', header: ['A'], rows: [[{ text: 'one\ntwo\r\nthree' }]] }] }];
+  const t = App.docGen.buildDocument(null, blocks, {}).document.blocks.find((b) => b.kind === 'table');
+  assert.deepEqual(t.rows[0][0], [{ text: 'one' }, { br: true }, { text: 'two' }, { br: true }, { text: 'three' }]);
+});
+
+test('Final review I4: a section with a level but no title is still a reference target with a place on the page', () => {
+  const blocks = [{ id: 'c1', kind: 'custom', label: '', title: '', included: true, level: 1, parts: [{ id: 'p1', kind: 'para', text: 'Body text.' }] },
+    { id: 'c2', kind: 'custom', label: 'Two', title: 'Two', included: true, level: 1, parts: [{ id: 'p2', kind: 'para', text: 'See {{ref:c1}}.' }] }];
+  const built = App.docGen.buildDocument(null, blocks, {});
+  const first = built.document.blocks[0];
+  assert.equal(first.anchor, 'sec-c1', 'the untitled section\'s anchor sits on its first block');
+});
+
+test('Final review I5: a Style that leaves out the contents list leaves out the contents section', () => {
+  const r = build({ formats: [{ id: 's1', name: 'S', page: { margins: {} }, text: {}, toc: { include: false } }], formatId: 's1' });
+  assert.ok(!r.document.blocks.some((b) => b.kind === 'toc'));
+});

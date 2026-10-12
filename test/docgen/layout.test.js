@@ -170,3 +170,15 @@ test('headings are reported in order for bookmarks, with their levels', () => {
 test('landscape swaps the page', () => {
   assert.deepEqual(layout(doc([para('a')]), style({ page: { orientation: 'landscape' } })).pages[0].size, [841.89, 595.28]);
 });
+
+test('Final review I2: a very long unbroken word lays out in linear time', () => {
+  const t0 = performance.now();
+  const r = layout(doc([para('x'.repeat(16000))]), style());
+  assert.ok(performance.now() - t0 < 1500, `took ${Math.round(performance.now() - t0)} ms`);
+  assert.equal(r.pages.flatMap(texts).map((t) => t.text).join('').replace(/[^x]/g, '').length >= 16000, true);
+});
+
+test('Final review I4: a reference whose target never lands prints no "(page 00)"', () => {
+  const r = layout(doc([{ kind: 'paragraph', style: 'body', runs: [{ text: 'See ' }, { text: 'nowhere', ref: { anchor: 'sec-gone' } }] }]), style());
+  assert.doesNotMatch(words(r.pages[0]), /page 00/);
+});

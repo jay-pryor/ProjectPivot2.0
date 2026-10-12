@@ -1414,7 +1414,15 @@ import { toWinAnsi } from './doc-fonts.js';
       var tags = meta.tags || {};
       function tag(s) { return applyTags(s, tags); }
       function runs1(s) { var ps = App.md.runs(s, { resolveRef: resolveRef }); return ps.length ? ps.reduce(function (a, p, i) { return i ? a.concat([{ br: true }, { br: true }], p) : p; }, []) : []; }
-      function textRuns(s) { return [{ text: tag(String(s == null ? '' : s)) }]; }
+      // A line break typed into register text (a description, a justification) is a break in the cell.
+      function textRuns(s, extra) {
+        var out = [];
+        tag(String(s == null ? '' : s)).split(/\r?\n/).forEach(function (line, i) {
+          if (i) out.push({ br: true });
+          if (line) out.push(Object.assign({ text: line }, extra || {}));
+        });
+        return out.length ? out : [Object.assign({ text: '' }, extra || {})];
+      }
       function caption(t) { return t ? { runs: [{ text: 'Table ' + t.number + ': ' + tag(t.caption) }] } : null; }
       var out = [];
       resolved.forEach(function (b) {
@@ -1425,7 +1433,7 @@ import { toWinAnsi } from './doc-fonts.js';
           var num = b.number && b.number.split('.').length <= depth ? b.number : '';
           out.push({ kind: 'heading', level: b.level, number: num, anchor: b.anchor, runs: textRuns(title),
             centre: !!b.centre, spaceBefore: b.spaceBefore || 0, noToc: b.kind === 'toc' || !!b.noToc });
-        } else if (b.spaceBefore) out.push({ kind: 'space', mm: b.spaceBefore });
+        } else out.push({ kind: 'space', mm: b.spaceBefore || 0, anchor: b.anchor });   // where a reference to it lands
         var intro = App.md.runs(b.intro || '', { resolveRef: resolveRef });
         intro.forEach(function (rs, i) {
           out.push({ kind: 'paragraph', style: 'body', centre: !!b.centre,
@@ -1457,7 +1465,7 @@ import { toWinAnsi } from './doc-fonts.js';
           out.push({ kind: 'table', anchor: t.captionId ? App.md.anchor('tbl-' + t.captionId) : undefined, caption: t.noCaption ? null : caption(byId[App.md.anchor('tbl-' + t.captionId)]),
             titleRow: t.titleRow ? textRuns(t.titleRow) : null, centre: !!b.centre,
             columns: t.header.map(function (_, k) { return { width: t.widths ? t.widths[k] : undefined }; }),
-            header: t.header.map(textRuns), rows: t.rows.map(function (r) { return r.map(function (c) { return c.code ? [{ text: tag(c.text), code: true }] : textRuns(c.text); }); }) });
+            header: t.header.map(function (h) { return textRuns(h); }), rows: t.rows.map(function (r) { return r.map(function (c) { return c.code ? textRuns(c.text, { code: true }) : textRuns(c.text); }); }) });
         });
       });
       // Tags in hand-written runs, too (headings and generated cells were filled above).
@@ -4250,7 +4258,7 @@ import { toWinAnsi } from './doc-fonts.js';
           '<div class="rd-fieldset"><strong>Contents</strong><div class="rd-flags">' +
             flagField('Include a contents list', 'toc.include', f.toc.include) + flagField('Page numbers', 'toc.pageNumbers', f.toc.pageNumbers) +
             flagField('Dot leaders to the page numbers', 'toc.leaders', f.toc.leaders) + '</div>' +
-            '<div class="rd-grid">' + num('Contents title', 'toc.title', f.toc.title) +
+            '<div class="rd-grid">' +
               pick('Headings listed', 'toc.depth', f.toc.depth, [{ value: 1, label: 'Heading 1' }, { value: 2, label: 'Down to heading 2' }, { value: 3, label: 'Down to heading 3' }, { value: 4, label: 'Down to heading 4' }]) + '</div>' +
             ['toc1', 'toc2', 'toc3'].map(function (k, i) { return '<div class="rd-fieldset"><strong>Contents level ' + (i + 1) + '</strong>' + textFields(f, k) + '</div>'; }).join('') +
           '</div>' +
