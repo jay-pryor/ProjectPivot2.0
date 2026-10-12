@@ -276,3 +276,20 @@ test('a column unticked in Table leaves the report: the ticks are stored under t
   App.docStore.setReportInclude('columns', key, 'extra', false, true);
   assert.deepEqual(header(), ['ID', 'Value']);
 });
+test('the list uses plain level names and tags: Auto-populated, Meta, Table of Contents, none for your own', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  App.docHost.set(h); RD.open(); RD.select('things');
+  const html = RD.render(h.getState()); RD.close();
+  const list = html.slice(html.indexOf('rd-order-host'), html.indexOf('rd-split'));
+  assert.match(list, /<option value="1"[^>]*>Heading 1<\/option>/);
+  assert.match(list, /<option value="0"[^>]*>Title<\/option>/);
+  assert.match(list, /<option value="5"[^>]*>Normal text<\/option>/);
+  assert.match(list, />Auto \(Heading 1\)</);
+  assert.doesNotMatch(list, />H1<|>T<|>N</);
+  const row = (id) => list.slice(list.indexOf(`data-rd-block="${id}"`), list.indexOf('</li>', list.indexOf(`data-rd-block="${id}"`)));
+  assert.match(row('things'), /class="rd-kind">Auto-populated</);
+  assert.match(row('meta'), /class="rd-kind">Meta</);
+  assert.match(row('toc'), /class="rd-kind">Table of Contents</);
+  assert.doesNotMatch(row('mine'), /rd-kind/);
+  assert.doesNotMatch(html, /Drag, or use/);
+});

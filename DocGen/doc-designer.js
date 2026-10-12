@@ -3327,20 +3327,24 @@ import { toWinAnsi } from './doc-fonts.js';
     // RD-1: the section list
     // ======================================================================
 
+    /** A heading level by its plain name. */
+    function levelName(lv) {
+      return lv === App.doc.TITLE_LEVEL ? 'Title' : lv === App.doc.BODY_LEVEL ? 'Normal text' : 'Heading ' + lv;
+    }
     var LEVEL_OPTS = [{ value: '', label: 'Auto' }].concat(App.doc.LEVELS.map(function (l) {
-      return { value: String(l.value), label: l.label };
+      return { value: String(l.value), label: levelName(l.value) };
     }));
 
     function levelSelect(b, resolvedFor) {
       var cur = b.level == null ? '' : String(b.level);
       var shown = resolvedFor ? resolvedFor.level : null;
       var title = b.level == null
-        ? 'Automatic — currently ' + (shown === App.doc.BODY_LEVEL ? 'normal text' : App.doc.levelLabel(shown)) + '. Pick a level to pin it.'
+        ? 'Automatic — currently ' + levelName(shown) + '. Pick a level to pin it.'
         : 'Pinned. Choose Auto to let it follow the section above.';
       return '<select class="rd-level" data-rd-level="' + esc(b.id) + '" title="' + esc(title) + '" aria-label="Heading level for ' + esc(b.label) + '">' +
         LEVEL_OPTS.map(function (o) {
           var label = (o.value === '' && shown != null)
-            ? 'Auto (' + App.doc.levelLabel(shown) + ')'
+            ? 'Auto (' + levelName(shown) + ')'
             : o.label;
           return '<option value="' + o.value + '"' + (o.value === cur ? ' selected' : '') + '>' + esc(label) + '</option>';
         }).join('') + '</select>';
@@ -3373,11 +3377,10 @@ import { toWinAnsi } from './doc-fonts.js';
 
         // A level skip is reported rather than silently reinterpreted (DOC-2).
         var warn = (r && r.skipped)
-          ? '<span class="rd-warn" title="There is no heading one level above this one. It has been pulled up to H' + r.level + '.">↰ H' + r.level + '</span>'
+          ? '<span class="rd-warn" title="There is no heading one level above this one. It has been pulled up to ' + levelName(r.level) + '.">↰ ' + levelName(r.level) + '</span>'
           : '';
-        var kind = b.kind === 'custom'
-          ? '<span class="rd-kind rd-kind-custom">custom</span>'
-          : '<span class="rd-kind">' + esc(b.kind === 'dataset' ? 'register' : b.kind) + '</span>';
+        var kind = b.kind === 'custom' ? ''
+          : '<span class="rd-kind">' + esc(b.kind === 'meta' ? 'Meta' : b.kind === 'toc' ? 'Table of Contents' : 'Auto-populated') + '</span>';
         var sel = _rd.selected === b.id ? ' sel' : '';
 
         return '<li class="ord-step rd-row' + (off ? ' off' : '') + sel + '" draggable="true" data-rd-block="' + esc(b.id) + '">' +
@@ -3403,8 +3406,6 @@ import { toWinAnsi } from './doc-fonts.js';
         : '';
 
       return '<div class="rpt-pane rpt-pane-main" style="flex-basis:' + listWidth() + 'px"><h4>Sections</h4>' +
-        '<p class="muted rpt-note">Drag, or use ▲/▼, to set the order. The level box sets the heading — <strong>Auto</strong> makes a section a sibling of the one above it, and numbering follows the levels. ' +
-        'Untick one to leave it out.</p>' +
         '<div class="rd-addbar"><button type="button" class="primary" data-rd-add-section>+ Add section</button>' + tplPicker + '</div>' +
         '<div id="rd-order-host"><ol class="ord-list">' + rows + '</ol></div></div>';
     }

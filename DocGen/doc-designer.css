@@ -144,8 +144,7 @@
   .docgen .rd-row .rd-open { font: inherit; background: none; border: 0; padding: 0; color: var(--c-text); cursor: pointer; text-align: left; text-decoration: underline dotted;}
   .docgen .rd-row.sel { outline: 2px solid var(--c-accent); outline-offset: -2px; border-radius: 6px;}
   .docgen .rd-row .rd-meta { display: flex; gap: 6px; align-items: center; margin-left: 8px;}
-  .docgen .rd-kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--c-text-muted); border: 1px solid var(--c-border); border-radius: 3px; padding: 0 4px;}
-  .docgen .rd-kind-custom { color: var(--c-accent); border-color: var(--c-accent);}
+  .docgen .rd-kind { font-size: 11px; color: var(--c-text-muted); border: 1px solid var(--c-border); border-radius: 3px; padding: 0 4px;}
   .docgen .rd-warn { font-size: 11px; color: var(--c-warn); white-space: nowrap;}
   .docgen .rd-level { font: inherit; font-size: 11px; padding: 2px 4px; flex: 0 0 auto; background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 4px;}
   .docgen .rd-lab { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--c-text-muted);}
