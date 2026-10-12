@@ -53,3 +53,12 @@ test('Getting started has Start the tutorial, and the invitation for a new profi
   assert.doesNotMatch(helpView({ ...base, view }, seed()).toString(), /tour-invite/, 'older profiles are not invited');
   assert.doesNotMatch(helpView({ ...invited, view: { name: 'help', topic: 'hazards' } }, seed()).toString(), /startTour/, 'only on Getting started');
 });
+
+test('Start the tutorial sits in Getting started’s Getting help section; the invitation stays at the top', () => {
+  const view = { name: 'help', topic: 'getting-started' };
+  const out = helpView({ ...base, view, profiles: [{ id: 'u1', name: 'Ada', createdAt: '', prefs: { tutorialOffered: false } }] }, seed()).toString();
+  const help = out.indexOf('<h3>Getting help</h3>');
+  assert.ok(help > 0);
+  assert.ok(out.indexOf('class="primary tour-start"') > help, 'the button comes after the Getting help heading');
+  assert.ok(out.indexOf('class="tour-invite"') < out.indexOf('<h3>'), 'the invitation is above the first section');
+});

@@ -120,7 +120,7 @@ The ☰ menu at the top right has Backups and Deletion history. **← Back** und
 
 ## Getting help
 
-**Start the tutorial** at the top of this page for a 5-minute guided tour on sample data. The **Help** button in the top bar opens the help for the page you are on. Use the search box on this page to find any topic or word, and the {{glossary|Glossary}} for what the terms mean.
+The **Help** button in the top bar opens the help for the page you are on. Use the search box on this page to find any topic or word, and the {{glossary|Glossary}} for what the terms mean. For a 5-minute guided tour on sample data, start the tutorial:
 `,
     related: ['home', 'saving', 'glossary'],
   },
