@@ -1,4 +1,5 @@
 import { html, raw, esc } from '../html.js';
+import { helpTopicFor } from '../help-content.js';
 import { dataTable } from './table.js';
 import { historyOf, commentsOn, hazardOfItem, bundlesOf } from '../../core/history.js';
 import { hasUnsaved } from '../../storage/mirror.js';
@@ -163,7 +164,7 @@ const NAV = [['home', 'Home'], ['hazards', 'Hazards'], ['controls', 'Controls'],
 const SETTINGS = [['backups', 'Backups'], ['historyDeletions', 'Deletion history']];
 
 /** The top-bar section each view belongs to. */
-const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', newControl: 'controls', platforms: 'platforms', platform: 'platforms', workflows: 'workflows', workflow: 'workflows', reviews: 'reviews', platformReview: 'reviews', bowties: 'bowties', references: 'references', reference: 'references', info: 'info', reports: 'reports', backups: 'backups', historyDeletions: 'historyDeletions' };
+const SECTION = { home: 'home', openItems: 'home', hazards: 'hazards', hazard: 'hazards', controls: 'controls', control: 'controls', newControl: 'controls', platforms: 'platforms', platform: 'platforms', workflows: 'workflows', workflow: 'workflows', reviews: 'reviews', platformReview: 'reviews', bowties: 'bowties', references: 'references', reference: 'references', info: 'info', reports: 'reports', backups: 'backups', historyDeletions: 'historyDeletions', help: 'help' };
 
 /** The three lines that open the settings menu. */
 const MENU_SVG = '<svg viewBox="0 0 20 20" width="20" height="20" focusable="false" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg>';
@@ -196,6 +197,7 @@ export function shell(state, body) {
       <button type="button" class="folder" ${dataAttrs({ action: 'changeFolder' })} title="Choose a different data folder">Folder: ${state.folderName}</button>
       ${save}
       <button type="button" class="theme" role="switch" aria-checked="${theme === 'dark' ? 'true' : 'false'}" aria-label="Dark mode" ${dataAttrs({ action: 'setTheme', theme: other })} title="Switch to ${other} mode"><span class="theme-track"><span class="theme-knob" aria-hidden="true">${theme === 'dark' ? raw(MOON_SVG) : '☀'}</span></span></button>
+      <button type="button" class="help-button${current === 'help' ? ' on' : ''}" ${dataAttrs({ action: 'go', view: 'help', topic: helpTopicFor(state.view, data) })} title="Help for this page">? Help</button>
       <span class="profile" title="Active profile">${profileName(state, state.profileId)}</span>
       <details class="settings-menu${SETTINGS.some(([v]) => v === current) ? ' on' : ''}">
         <summary aria-label="Settings" title="Settings">${raw(MENU_SVG)}</summary>
@@ -270,7 +272,7 @@ export function favouriteLabel(state, f) {
   return { label: withTab(label), kind: sub, gone: false, heading, detail: String(rec.title ?? rec.name ?? '') };
 }
 
-const PAGE_WORD = { home: 'Home', openItems: 'Open items', workflows: 'Workflows', workflow: 'Workflow', reviews: 'Reviews', platformReview: 'Review', hazards: 'Hazards', controls: 'Controls', platforms: 'Platforms', references: 'References', info: 'Info', reports: 'Reports', bowties: 'Bow-ties', backups: 'Backups', historyDeletions: 'Deletion history', newControl: 'New control' };
+const PAGE_WORD = { home: 'Home', openItems: 'Open items', workflows: 'Workflows', workflow: 'Workflow', reviews: 'Reviews', platformReview: 'Review', hazards: 'Hazards', controls: 'Controls', platforms: 'Platforms', references: 'References', info: 'Info', reports: 'Reports', bowties: 'Bow-ties', backups: 'Backups', historyDeletions: 'Deletion history', newControl: 'New control', help: 'Help' };
 
 /**
  * A page as Back names it: a list by its name; a record's page by its own title, e.g.
