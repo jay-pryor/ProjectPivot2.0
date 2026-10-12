@@ -90,3 +90,19 @@ test('Help in the top bar opens the topic for the page you are on, a workflow by
   const top = shell({ ...state, session: { base: d, working: d, loadedStamp: null }, view: { name: 'platform', id: 'p1' } }, '').toString();
   assert.match(top, /class="help-button"[^>]*data-view="help"[^>]*data-topic="platforms"|data-topic="platforms"[^>]*class="help-button"/);
 });
+
+test('no block of help text mixes list lines with other lines, so every list renders as a list', () => {
+  for (const [id, t] of Object.entries(HELP_TOPICS)) {
+    for (const block of t.body.trim().split(/\n\s*\n/)) {
+      const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+      const listy = lines.filter((l) => /^(- |\d+\. )/.test(l)).length;
+      assert.ok(listy === 0 || (listy === lines.length && (lines.every((l) => l.startsWith('- ')) || lines.every((l) => /^\d+\. /.test(l)))), `${id}: ${lines[0]}`);
+    }
+  }
+});
+
+test('a link inside bold text is still a link', () => {
+  const out = renderHelpText('**You work as a [[profile]].**').toString();
+  assert.match(out, /<strong>You work as a <button[^>]*data-term="profile"[^>]*>profile<\/button>.<\/strong>/);
+  assert.doesNotMatch(out, /\[\[/);
+});
