@@ -57,6 +57,15 @@ test('recently completed within the chosen range, with no All history link (the 
   assert.match(hist, /WF-002[\s\S]*Cancelled/);
 });
 
+test('a workflow cancelled within the range is left out of Recently completed: History lists it', () => {
+  let d = finishPlatformReview(data(), act, { workflowId: 'w1' });
+  d = cancelWorkflow(d, later, { workflowId: 'w2' });
+  const recent = workflowsView(state, d).toString().split('<h2>Recently completed</h2>')[1];
+  assert.match(recent, /WF-001/);
+  assert.doesNotMatch(recent, /WF-002|tag wf-cancelled/);
+  assert.match(workflowsView({ ...state, view: { name: 'workflows', tab: 'history' } }, d).toString(), /WF-002[\s\S]*Cancelled/);
+});
+
 test('a workflow not yet saved shows a TBC tag', () => {
   const d = beginPlatformReview(seed(), act, { id: 'w9', platformId: 'p1' });
   assert.match(workflowsView(state, d).toString(), /tag-tbc/);
