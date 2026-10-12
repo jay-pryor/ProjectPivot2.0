@@ -297,6 +297,9 @@ section { margin: 0 0 22px; }
 .docgen .rd-style-sec { background: transparent; border: 0; padding: 6px 10px; color: var(--p-fg); }
 .docgen .rd-style-sec:hover:not(:disabled) { background: var(--p-surface-2); border: 0; color: var(--p-accent); }
 .docgen .rd-style-sec.on { background: var(--p-surface-2); border: 0; box-shadow: inset 3px 0 0 var(--p-accent); font-weight: 700; }
+.docgen .rd-cat { background: transparent; border: 0; padding: 6px 10px; color: var(--p-fg); }
+.docgen .rd-cat:hover:not(:disabled) { background: var(--p-surface-2); border: 0; color: var(--p-accent); }
+.docgen .rd-cat.on { background: var(--p-surface-2); border: 0; box-shadow: inset 3px 0 0 var(--p-accent); font-weight: 700; }
 .docgen .rd-locked, .docgen .rd-held { background: var(--p-warn-bg); border-color: var(--p-warn); color: var(--p-fg); }
 .docgen .rd-subject { font-size: 13px; padding: 2px 6px; background: var(--p-surface); border: 1px solid var(--p-line); color: var(--p-fg); }
 

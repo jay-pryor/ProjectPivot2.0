@@ -14,7 +14,7 @@ function host(design = {}) {
     clock: { nowIso: () => '2026-10-12T00:00:00.000Z' },
     classifications: ['OFFICIAL', 'PROTECTED'],
     subject: { noun: 'platform', list: () => [{ id: 's1', label: 'Subject One' }, { id: 's2', label: 'Subject Two' }], ready: () => true, meta: () => [{ id: 'n', label: 'Name', value: 'One' }] },
-    sections: () => [{ id: 'things', label: 'Things', keyColumn: { id: '_key', label: 'ID', get: (r) => r.id }, columns: [{ id: 'v', label: 'Value', get: (r) => r.v }],
+    sections: () => [{ id: 'things', label: 'Things', keyColumn: { id: '_key', label: 'ID', get: (r) => r.id }, columns: [{ id: 'v', label: 'Value', get: (r) => r.v }, { id: 'extra', label: 'Extra', optional: true, get: (r) => r.v }],
       rows: () => [{ id: 'T-1', v: 'x ≥ y' }] },
       { id: 'others', label: 'Others', keyColumn: { id: '_key', label: 'ID', get: (r) => r.id }, columns: [{ id: 'v', label: 'Value', get: (r) => r.v }],
       rows: () => [{ id: 'O-1', v: 'other' }] }],
@@ -184,4 +184,179 @@ test('the designer chooses which platform the report is about, in its title bar'
   App.docSession.get().subjectId = 's2';
   try { assert.match(paneOf(h, 'generate'), /<option value="s2" selected>Subject Two<\/option>/); }
   finally { App.docSession.get().subjectId = null; }
+});
+
+test('a section has no "Name in this list" box, and the list shows each section by its heading', () => {
+  const h = host({ names: { things: 'Old shorthand' } });
+  const html = sectionPane(h, 'things');
+  App.docHost.set(h); RD.open(); RD.select('things');
+  const all = RD.render(h.getState()); RD.close();
+  assert.doesNotMatch(all, /Name in this list|data-rd-sec-name/);
+  assert.match(all, /data-rd-sec-heading="things"/);
+  assert.doesNotMatch(all, /Old shorthand/, 'a name saved before is no longer shown');
+  assert.ok(html);
+});
+
+test('the Sections list is resizable: a grip, a default width, held between a minimum and a maximum', () => {
+  const width = (w) => {
+    const h = host();
+    App.docHost.set(h); RD.open(); RD._rd.listWidth = w;
+    const html = RD.render(h.getState()); RD.close(); RD._rd.listWidth = null;
+    return html;
+  };
+  const dflt = width(null);
+  assert.match(dflt, /<div class="rd-split" data-rd-split role="separator" aria-orientation="vertical"/);
+  assert.match(dflt, /class="rpt-pane rpt-pane-main" style="flex-basis:420px"/);
+  assert.match(width(300), /style="flex-basis:300px"/);
+  assert.match(width(50), /style="flex-basis:260px"/, 'held at the minimum');
+  assert.equal(RD.LIST_WIDTH.min, 260);
+});
+/** The Sections pane for a section, on a category. */
+function sectionAt(h, id, cat) {
+  App.docHost.set(h); RD.open(); RD.select(id); RD._rd.secCat = cat ?? null;
+  const html = RD.render(h.getState()); RD.close(); RD._rd.secCat = null;
+  return html;
+}
+const cats = (html) => [...html.matchAll(/data-rd-sec-cat="([a-z]+)"/g)].map((m) => m[1]);
+
+test('Sections: three columns — categories, their fields, and the preview beside them', () => {
+  const html = sectionAt(host(), 'things');
+  assert.match(html, /class="rd-secgrid"[\s\S]*class="rd-cat-list"[\s\S]*data-rd-sec-fields[\s\S]*data-rd-sec-prev[\s\S]*class="dp-page"/);
+});
+
+test('each kind of section offers its own categories', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  assert.deepEqual(cats(sectionAt(h, 'things')), ['heading', 'placement', 'introduction', 'table']);
+  assert.deepEqual(cats(sectionAt(h, 'meta')), ['heading', 'placement', 'introduction', 'table', 'rows']);
+  assert.deepEqual(cats(sectionAt(h, 'toc')), ['heading', 'placement']);
+  assert.deepEqual(cats(sectionAt(h, 'mine')), ['heading', 'placement', 'content']);
+});
+
+test('each category holds its existing controls', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  const at = (id, cat) => sectionAt(h, id, cat).slice(sectionAt(h, id, cat).indexOf('data-rd-sec-fields'));
+  assert.match(at('things', 'heading'), /data-rd-sec-heading="things"[\s\S]*data-rd-level="things"/);
+  assert.match(at('mine', 'heading'), /data-rd-sec-title="mine"[\s\S]*data-rd-level="mine"/);
+  assert.match(at('things', 'placement'), /data-rd-centre="things"[\s\S]*data-rd-pagebreak="things"[\s\S]*data-rd-notoc="things"[\s\S]*data-rd-space-block="things"/);
+  assert.match(at('things', 'introduction'), /data-rd-intro="things"[\s\S]*data-rd-intro-num="things"/);
+  assert.match(at('things', 'table'), /data-rd-tbl-field="title"[\s\S]*data-rd-tbl-col=/);
+  assert.match(at('meta', 'rows'), /data-rd-meta=/);
+  assert.match(at('mine', 'content'), /data-rd-addpart="para"[\s\S]*data-rd-del-section="mine"/);
+});
+
+test('the column and group ticks are in Table, and the ☰ button on the list is gone', () => {
+  const html = sectionAt(host(), 'things', 'table');
+  assert.doesNotMatch(html, /data-rd-optmenu/);
+  assert.match(html.slice(html.indexOf('data-rd-sec-fields')), /data-rd-dsmap="columns" data-rd-ds="things" data-rd-key="extra"/);
+});
+
+test('a category the section lacks falls back to the first; with nothing chosen the first section opens', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  assert.match(sectionAt(h, 'mine', 'table'), /class="rd-cat on"[^>]*data-rd-sec-cat="heading"/);
+  App.docHost.set(h); RD.open(); RD._rd.selected = null;
+  const first = RD.render(h.getState()); RD.close();
+  assert.match(first, /data-rd-sec-fields/);
+  assert.doesNotMatch(first, /Pick a section on the left/);
+  App.docHost.set(h); RD.open(); RD._rd.selected = 'gone';
+  assert.match(RD.render(h.getState()), /data-rd-sec-fields/, 'a vanished section opens the first one');
+  RD.close();
+});
+
+test('a column unticked in Table leaves the report: the ticks are stored under the key the report reads', () => {
+  const h = host();
+  App.docHost.set(h);
+  const header = () => {
+    const t = App.docGen.documentFor(h, Object.assign({}, App.docSession.options(), { subjectId: 's1' }), {}).document.blocks
+      .filter((b) => b.kind === 'table').find((x) => x.anchor === 'tbl-things');
+    return t.header.map((c) => c[0].text);
+  };
+  assert.deepEqual(header(), ['ID', 'Value', 'Extra']);
+  const html = sectionAt(h, 'things', 'table');
+  const key = /data-rd-dsmap="columns" data-rd-ds="([^"]+)" data-rd-key="extra"/.exec(html)[1];
+  App.docStore.setReportInclude('columns', key, 'extra', false, true);
+  assert.deepEqual(header(), ['ID', 'Value']);
+});
+test('the list uses plain level names and tags: Auto-populated, Meta, Table of Contents, none for your own', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  App.docHost.set(h); RD.open(); RD.select('things');
+  const html = RD.render(h.getState()); RD.close();
+  const list = html.slice(html.indexOf('rd-order-host'), html.indexOf('rd-split'));
+  assert.match(list, /<option value="1"[^>]*>Heading 1<\/option>/);
+  assert.match(list, /<option value="0"[^>]*>Title<\/option>/);
+  assert.match(list, /<option value="5"[^>]*>Normal text<\/option>/);
+  assert.match(list, />Auto \(Heading 1\)</);
+  assert.doesNotMatch(list, />H1<|>T<|>N</);
+  const row = (id) => list.slice(list.indexOf(`data-rd-block="${id}"`), list.indexOf('</li>', list.indexOf(`data-rd-block="${id}"`)));
+  assert.match(row('things'), /class="rd-kind">Auto-populated</);
+  assert.match(row('meta'), /class="rd-kind">Meta</);
+  assert.match(row('toc'), /class="rd-kind">Table of Contents</);
+  assert.doesNotMatch(row('mine'), /rd-kind/);
+  assert.doesNotMatch(html, /Drag, or use/);
+});
+test('no one-line explanations anywhere in the designer: only messages about state remain', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'p1', kind: 'para', text: 'x' }, { id: 't1', kind: 'table', header: ['A'], rows: [['1']], align: ['l'] }, { id: 's1', kind: 'space', height: 10 }] }] });
+  const pages = [];
+  for (const pane of ['styles', 'templates', 'preview', 'generate']) pages.push(paneOf(h, pane));
+  for (const sec of ['styles']) for (const s of ['page', 'body', 'tables', 'headerFooter', 'marking', 'numbering']) pages.push(paneOf(h, sec, s));
+  for (const [id, cs] of [['things', ['heading', 'placement', 'introduction', 'table']], ['meta', ['rows']], ['toc', ['heading']], ['mine', ['heading', 'placement', 'content']]]) for (const c of cs) pages.push(sectionAt(h, id, c));
+  const ALLOWED = [/^Nothing in this section yet\.$/, /^No .+ selected/, /^There are no sections yet\.$/, /^None written yet/, /page(s)? of \d+/i, /^Page \d+/, /^\d+ pages?$/];
+  const notes = pages.flatMap((p) => [...p.matchAll(/<p class="muted[^"]*">([\s\S]*?)<\/p>/g)].map((m) => m[1].replace(/<[^>]+>/g, '').trim()));
+  const stray = [...new Set(notes.filter((t) => t && !ALLOWED.some((re) => re.test(t))))];
+  assert.deepEqual(stray, []);
+});
+
+test('the title bar is the title and the platform picker, with no description after it', () => {
+  assert.doesNotMatch(paneOf(host(), 'section'), /what the document contains|in what order, and how it looks/);
+});
+test('the Sections preview follows typing: a debounced input saves the box and redraws only the preview', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../DocGen/doc-designer.js', import.meta.url), 'utf8');
+  const fn = /function liveSave\(el\) \{([\s\S]*?)\n    \}\n/.exec(src);
+  assert.ok(fn, 'liveSave exists');
+  for (const attr of ['data-rd-sec-heading', 'data-rd-sec-title', 'data-rd-tbl-block', 'data-rd-rich']) assert.match(fn[1], new RegExp(attr), attr);
+  const wire = /dom\.on\(ctx\.root, 'input', '\[data-rd-live\]'[\s\S]*?\n      \}\);/.exec(src);
+  assert.ok(wire, 'an input listener on [data-rd-live]');
+  assert.match(wire[0], /setTimeout\([\s\S]*500\)/);
+  assert.match(wire[0], /refreshSectionPreview\(\)/);
+  assert.doesNotMatch(wire[0], /repaint\(\)/);
+});
+test('the boxes that drive the live preview are marked', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'p1', kind: 'para', text: 'x' }] }] });
+  assert.match(sectionAt(h, 'things', 'heading'), /data-rd-sec-heading="things"[^>]*data-rd-live|data-rd-live[^>]*data-rd-sec-heading="things"/);
+  assert.match(sectionAt(h, 'mine', 'heading'), /data-rd-live[^>]*data-rd-sec-title|data-rd-sec-title[^>]*data-rd-live/);
+  assert.match(sectionAt(h, 'things', 'introduction'), /data-rd-intro="things"[^>]*data-rd-live|data-rd-live[^>]*data-rd-intro="things"/);
+  assert.match(sectionAt(h, 'things', 'table'), /data-rd-tbl-field="title"[^>]*data-rd-live|data-rd-live[^>]*data-rd-tbl-field="title"/);
+  assert.match(sectionAt(h, 'mine', 'content'), /data-rd-text="p1"[^>]*data-rd-live|data-rd-live[^>]*data-rd-text="p1"/);
+});
+
+test('a redraw asked for while a button is being pressed waits for the release, so the click lands on the button', () => {
+  assert.ok(RD._gate, 'the press gate is exposed');
+  RD._gate.pressing = true; RD._gate.pending = false;
+  RD._repaint();                                   // would touch the DOM if it did not wait
+  assert.equal(RD._gate.pending, true);
+  RD._gate.pressing = false; RD._gate.pending = false;
+});
+
+test('Final review I1: leaving a live box cancels its pending save, and a late save on a box no longer on screen is skipped', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../DocGen/doc-designer.js', import.meta.url), 'utf8');
+  assert.match(src, /dom\.on\(ctx\.root, 'focusout', '\[data-rd-live\]', function \(\) \{ clearTimeout\(liveTimer\); \}\);/);
+  assert.match(src, /if \(!el\.isConnected\) return;/);
+});
+
+test('Final review I2: only a plain left press outside form fields holds redraws, and the hold always lets go', () => {
+  const t = (sel) => ({ closest: (q) => (q.split(',').map((x) => x.trim()).includes(sel) ? {} : null) });
+  assert.equal(RD._holds({ button: 0, target: t('button') }), true);
+  assert.equal(RD._holds({ button: 0, target: t('select') }), false);
+  assert.equal(RD._holds({ button: 0, target: t('input') }), false);
+  assert.equal(RD._holds({ button: 2, target: t('button') }), false, 'a right-click opens a menu that eats the release');
+  assert.deepEqual(RD._releaseOn, ['pointerup', 'pointercancel', 'dragend', 'drop', 'click', 'contextmenu']);
+});
+
+test('Final review I3: the three columns stack by the pane\'s own width, not the window\'s', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../../DocGen/doc-designer.css', import.meta.url), 'utf8');
+  assert.match(css, /\.docgen \.rd-pane \{[^}]*container-type: inline-size/);
+  assert.match(css, /@container \(max-width: 820px\) \{ \.docgen \.rd-secgrid/);
+  assert.doesNotMatch(css, /@media \(max-width: 1400px\) \{ \.docgen \.rd-secgrid/);
 });

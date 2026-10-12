@@ -120,7 +120,16 @@
   .docgen .rpt-rel .rpt-rel-count { margin-left: auto; color: var(--c-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap;}
   .docgen .rpt-omit { font-size: 12px; margin: 8px 0 0;}
   .docgen .rd-layout { height: 100%; align-items: stretch;}
-  .docgen .rd-layout > .rpt-pane-main { flex: 0 0 42%; max-width: 560px; display: flex; flex-direction: column; min-height: 0;}
+  .docgen .rd-layout { gap: 0;}
+  .docgen .rd-layout > .rpt-pane-main { flex: 0 0 420px; min-width: 260px; max-width: calc(100% - 360px); display: flex; flex-direction: column; min-height: 0;}
+  .docgen .rd-split { flex: 0 0 12px; align-self: stretch; cursor: col-resize; position: relative; touch-action: none;}
+  .docgen .rd-split::after { content: ""; position: absolute; top: 0; bottom: 0; left: 5px; width: 2px; background: transparent; transition: background-color .12s;}
+  .docgen .rd-split:hover::after { background: var(--c-accent);}
+  /* A narrow list wraps a row's controls onto a second line rather than squeezing the name;
+     the name breaks only inside a word too long for the row. */
+  .docgen .rd-layout .ord-step { flex-wrap: wrap; row-gap: 6px;}
+  .docgen .rd-layout .ord-body { flex: 1 1 7em; min-width: auto;}
+  .docgen .ord-label, .docgen .rd-row .rd-open { overflow-wrap: break-word;}
   .docgen .rd-layout > .rpt-pane-main > #rd-order-host { overflow-y: auto; flex: 1 1 auto; min-height: 0;}
   .docgen .rd-right { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 0;}
   .docgen .rd-tabs { display: flex; gap: 2px; flex-wrap: wrap; margin-bottom: 8px;}
@@ -135,8 +144,7 @@
   .docgen .rd-row .rd-open { font: inherit; background: none; border: 0; padding: 0; color: var(--c-text); cursor: pointer; text-align: left; text-decoration: underline dotted;}
   .docgen .rd-row.sel { outline: 2px solid var(--c-accent); outline-offset: -2px; border-radius: 6px;}
   .docgen .rd-row .rd-meta { display: flex; gap: 6px; align-items: center; margin-left: 8px;}
-  .docgen .rd-kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--c-text-muted); border: 1px solid var(--c-border); border-radius: 3px; padding: 0 4px;}
-  .docgen .rd-kind-custom { color: var(--c-accent); border-color: var(--c-accent);}
+  .docgen .rd-kind { font-size: 11px; color: var(--c-text-muted); border: 1px solid var(--c-border); border-radius: 3px; padding: 0 4px;}
   .docgen .rd-warn { font-size: 11px; color: var(--c-warn); white-space: nowrap;}
   .docgen .rd-level { font: inherit; font-size: 11px; padding: 2px 4px; flex: 0 0 auto; background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 4px;}
   .docgen .rd-lab { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--c-text-muted);}
@@ -236,18 +244,6 @@
   .docgen .rd-wflag { font-size: 11px; color: var(--c-error); font-weight: 600;}
   .docgen .rd-wnote { font-size: 11px; color: var(--c-text-muted);}
   .docgen .rd-row { position: relative;}
-  .docgen .rd-opt { position: relative; display: inline-flex;}
-  .docgen .rd-optbtn { font-size: 12px; line-height: 1; padding: 3px 6px; border: 1px solid var(--c-border);
-    border-radius: 4px; background: var(--c-surface); color: var(--c-text-muted); cursor: pointer;}
-  .docgen .rd-optbtn:hover, .docgen .rd-optbtn.on { color: var(--c-text); border-color: var(--c-accent, #4a7fd0);}
-  .docgen .rd-optmenu { position: absolute; top: 100%; right: 0; z-index: 30; margin-top: 4px; min-width: 190px;
-    max-height: 300px; overflow-y: auto; padding: 6px 8px; border: 1px solid var(--c-border);
-    border-radius: 6px; background: var(--c-surface); box-shadow: 0 4px 14px rgba(0,0,0,.22);
-    display: flex; flex-direction: column; gap: 1px; text-align: left;}
-  .docgen .rd-optmenu-h { font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
-    color: var(--c-text-muted); margin: 4px 0 2px;}
-  .docgen .rd-optmenu-h:first-child { margin-top: 0;}
-  .docgen .rd-optmenu .gen-opt { margin: 0; white-space: nowrap;}
   .docgen .rd-shade { width: 38px; height: 20px; padding: 0; border: 1px solid var(--c-border); border-radius: 3px; background: var(--c-surface); cursor: pointer;}
   .docgen .rd-metarow { display: flex; align-items: center; gap: 8px;}
   .docgen .rd-metaval { margin-left: auto; font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--c-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%;}
@@ -299,3 +295,17 @@
   .docgen .rd-style-preview { max-height: calc(100vh - 220px); overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; background: var(--c-surface-alt); padding: 10px;}
   .docgen .rd-replaced code { font-size: 15px; margin-right: 6px;}
   .docgen .rd-subject { font: inherit; font-size: 13px; padding: 2px 6px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text);}
+  .docgen .rd-state { font-size: 12px; color: var(--c-text-muted); margin: 0 0 6px;}
+  .docgen span.rd-state { margin: 0;}
+  .docgen [title] > strong, .docgen strong[title] { cursor: help;}
+  /* The Sections pane: categories | their fields | the section on the page. */
+  .docgen .rd-secgrid { display: grid; grid-template-columns: 140px minmax(300px, 1fr) minmax(320px, 1fr); gap: 12px; align-items: start;}
+  .docgen .rd-pane { container-type: inline-size;}
+  @container (max-width: 820px) { .docgen .rd-secgrid { grid-template-columns: 140px minmax(0, 1fr); } .docgen .rd-sec-prev { grid-column: 1 / -1; } }
+  .docgen .rd-cat-list { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0;}
+  .docgen .rd-cat { text-align: left; border: 1px solid transparent; background: none; padding: 5px 8px; font: inherit; font-size: 13px; color: var(--c-text); cursor: pointer;}
+  .docgen .rd-cat.on { border-color: var(--c-accent); background: var(--c-surface-alt); font-weight: 600;}
+  .docgen .rd-sec-fields { min-width: 0;}
+  .docgen .rd-sec-fields > h5 { margin: 0 0 8px;}
+  .docgen .rd-sec-prev { position: sticky; top: 0; max-height: calc(100vh - 230px); overflow: auto; min-width: 0;}
+  .docgen .rd-sec-prev .rd-secprev { max-height: none;}

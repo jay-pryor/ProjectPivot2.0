@@ -1234,7 +1234,8 @@ import { toWinAnsi } from './doc-fonts.js';
           // The wording the platform declares, so the designer can offer it as the
           // placeholder and tell a reworded heading from an untouched one.
           defaultTitle: dflt,
-          label: name || String(heading).trim() || b.label,
+          // The list shows each section by its heading (a separate list name was more confusing than useful).
+          label: String(heading).trim() || b.label,
           name: name,
           // TOC-1: a contents list starts as a TITLE — "1 Contents" numbered ahead of
           // the section it lists reads as a section of the report, which it is not. It
@@ -1283,10 +1284,20 @@ import { toWinAnsi } from './doc-fonts.js';
      * @returns {?{fixed:Array<{id,label}>, optional:Array<{id,label}>, all:Array<{id,label}>}}
      *          null for a hand-authored section, whose parts carry their own columns
      */
+    /**
+     * The key a section's column ticks are stored under: the provider's own (its
+     * include key, which is its id unless it says otherwise) — the key the document
+     * builder reads them back under. Unbound, so the designer can ask with no run.
+     */
+    function sectionColumnKey(host, block, opts) {
+      var pv = providerOf(opts || {}, block.id, block, host) || providerOf({ providers: sectionsOf(host, null) }, block.id, block);
+      return columnKey(block, pv);
+    }
+
     function hostColumns(host, block, opts) {
       opts = opts || {};
       if (!block || block.kind === 'custom') return null;
-      var colOpts = (opts.columns || {})[columnKey(block)] || {};
+      var colOpts = (opts.columns || {})[sectionColumnKey(host, block, opts)] || {};
       function pack(fixed, optional) {
         // COL-3: the same predicate the builders use, so the designer's column list and
         // the table it is describing cannot disagree about what a blank answer means.
@@ -1501,7 +1512,7 @@ import { toWinAnsi } from './doc-fonts.js';
 
     App.docGen = {
       // The blocks a document is made of, and the columns a generated one prints.
-      reportBlocks: hostBlocks, sectionColumns: hostColumns,
+      reportBlocks: hostBlocks, sectionColumns: hostColumns, sectionColumnKey: sectionColumnKey,
       // How many rows sit in each of the host's filter categories.
       filterCounts: filterCounts,
       // GEN-TAB: `/[Tag]` placeholders — finding them and filling them.
@@ -3247,11 +3258,12 @@ import { toWinAnsi } from './doc-fonts.js';
       fmtId: null,           // Style being edited in the Styles pane
       styleSection: null,    // which part of that Style is open (PDF-1)
       held: null,            // what the last edit asked for that the Style could not use
+      secCat: null,          // the open category of the Sections pane
+      listWidth: null,       // the Sections list's width, once dragged
       secZoom: null,         // the section preview's zoom, when changed from the default
       prevZoom: null,        // the Preview pane's zoom, likewise
       conflict: null,        // { kindKey, plan, decisions } while an import is being resolved
       refFor: null,          // part id whose "insert reference" menu is open
-      optMenu: null,         // block id whose columns/groups menu is open (OPT-1)
       preview: null,         // cached layout of the document, so switching panes is not a re-layout
       refs: null             // cached reference targets of the built document
     };
@@ -3315,62 +3327,37 @@ import { toWinAnsi } from './doc-fonts.js';
     // RD-1: the section list
     // ======================================================================
 
+    /** A heading level by its plain name. */
+    function levelName(lv) {
+      return lv === App.doc.TITLE_LEVEL ? 'Title' : lv === App.doc.BODY_LEVEL ? 'Normal text' : 'Heading ' + lv;
+    }
     var LEVEL_OPTS = [{ value: '', label: 'Auto' }].concat(App.doc.LEVELS.map(function (l) {
-      return { value: String(l.value), label: l.label };
+      return { value: String(l.value), label: levelName(l.value) };
     }));
 
     function levelSelect(b, resolvedFor) {
       var cur = b.level == null ? '' : String(b.level);
       var shown = resolvedFor ? resolvedFor.level : null;
       var title = b.level == null
-        ? 'Automatic — currently ' + (shown === App.doc.BODY_LEVEL ? 'normal text' : App.doc.levelLabel(shown)) + '. Pick a level to pin it.'
+        ? 'Automatic — currently ' + levelName(shown) + '. Pick a level to pin it.'
         : 'Pinned. Choose Auto to let it follow the section above.';
       return '<select class="rd-level" data-rd-level="' + esc(b.id) + '" title="' + esc(title) + '" aria-label="Heading level for ' + esc(b.label) + '">' +
         LEVEL_OPTS.map(function (o) {
           var label = (o.value === '' && shown != null)
-            ? 'Auto (' + App.doc.levelLabel(shown) + ')'
+            ? 'Auto (' + levelName(shown) + ')'
             : o.label;
           return '<option value="' + o.value + '"' + (o.value === cur ? ' selected' : '') + '>' + esc(label) + '</option>';
         }).join('') + '</select>';
     }
 
-    /**
-     * OPT-1: a section's columns and groups, on the section ROW rather than in the
-     * Section pane.
-     *
-     * They were in the pane, which meant switching what a register carries cost a trip
-     * away from whatever was on the right — and the pane worth being on while doing it
-     * is the Preview, which is exactly the one you had to leave. On the row they are two
-     * clicks from anywhere, and the pane behind them does not move.
-     *
-     * @returns {string} '' when the section has nothing to choose
-     */
-    function optionsMenu(project, b) {
-      var cols = App.docGen.sectionColumns(H(), b, opts());
-      var optional = (cols && cols.optional) || [];
-      var groups = b.groups || [];
-      if (!optional.length && !groups.length) return '';
-      var key = b.dsId || b.kind;
-      var open = _rd.optMenu === b.id;
-      var body = '';
-      if (groups.length) {
-        body += '<div class="rd-optmenu-h">Groups</div>' + groups.map(function (g) {
-          return cb('data-rd-dsmap="datasetSections" data-rd-ds="' + esc(b.dsId) + '" data-rd-key="' + esc(g.value) + '"', g.label, g.included);
-        }).join('');
-      }
-      if (optional.length) {
-        // COL-3: ticked iff the column will actually be there — which for an untouched
-        // project is the column's own declaration, not a blanket yes.
-        var colOpts = (opts().columns || {})[key] || {};
-        body += '<div class="rd-optmenu-h">Columns</div>' + optional.map(function (c) {
-          return cb('data-rd-dsmap="columns" data-rd-ds="' + esc(key) + '" data-rd-key="' + esc(c.id) + '"', c.label, App.report.columnOn(c, colOpts));
-        }).join('');
-      }
-      return '<span class="rd-opt">' +
-        '<button type="button" class="rd-optbtn' + (open ? ' on' : '') + '" data-rd-optmenu="' + esc(b.id) + '"' +
-          ' aria-expanded="' + (open ? 'true' : 'false') + '"' +
-          ' title="Which columns' + (groups.length ? ' and groups' : '') + ' this section carries">&#9776;</button>' +
-        (open ? '<span class="rd-optmenu">' + body + '</span>' : '') + '</span>';
+
+    /** The Sections list's width in pixels: dragged by its grip, remembered in this browser. */
+    var LIST_WIDTH = { dflt: 420, min: 260, max: 900 };
+    var LIST_KEY = 'docgen.rd.listWidth';
+    function listWidth() {
+      var w = _rd.listWidth;
+      if (w == null) { try { w = Number(window.localStorage.getItem(LIST_KEY)) || null; } catch (e) { w = null; } }
+      return Math.round(Math.min(LIST_WIDTH.max, Math.max(LIST_WIDTH.min, w || LIST_WIDTH.dflt)));
     }
 
     function renderSectionList(project, view) {
@@ -3390,11 +3377,10 @@ import { toWinAnsi } from './doc-fonts.js';
 
         // A level skip is reported rather than silently reinterpreted (DOC-2).
         var warn = (r && r.skipped)
-          ? '<span class="rd-warn" title="There is no heading one level above this one. It has been pulled up to H' + r.level + '.">↰ H' + r.level + '</span>'
+          ? '<span class="rd-warn" title="There is no heading one level above this one. It has been pulled up to ' + levelName(r.level) + '.">↰ ' + levelName(r.level) + '</span>'
           : '';
-        var kind = b.kind === 'custom'
-          ? '<span class="rd-kind rd-kind-custom">custom</span>'
-          : '<span class="rd-kind">' + esc(b.kind === 'dataset' ? 'register' : b.kind) + '</span>';
+        var kind = b.kind === 'custom' ? ''
+          : '<span class="rd-kind">' + esc(b.kind === 'meta' ? 'Meta' : b.kind === 'toc' ? 'Table of Contents' : 'Auto-populated') + '</span>';
         var sel = _rd.selected === b.id ? ' sel' : '';
 
         return '<li class="ord-step rd-row' + (off ? ' off' : '') + sel + '" draggable="true" data-rd-block="' + esc(b.id) + '">' +
@@ -3404,7 +3390,6 @@ import { toWinAnsi } from './doc-fonts.js';
             '<button type="button" class="rd-open" data-rd-select="' + esc(b.id) + '" title="Select this section. The pane on the right stays where it is.">' + esc(b.label) + '</button>' +
             '<span class="rd-meta">' + kind + warn + '</span>' +
           '</span>' +
-          optionsMenu(project, b) +
           levelSelect(b, r) +
           '<span class="ord-move">' +
             '<button type="button" data-rd-up="' + esc(b.id) + '"' + (i === 0 ? ' disabled' : '') + ' title="Move earlier" aria-label="Move ' + esc(b.label) + ' earlier">▲</button>' +
@@ -3420,9 +3405,7 @@ import { toWinAnsi } from './doc-fonts.js';
           '</select>'
         : '';
 
-      return '<div class="rpt-pane rpt-pane-main"><h4>Sections</h4>' +
-        '<p class="muted rpt-note">Drag, or use ▲/▼, to set the order. The level box sets the heading — <strong>Auto</strong> makes a section a sibling of the one above it, and numbering follows the levels. ' +
-        'Untick one to leave it out.</p>' +
+      return '<div class="rpt-pane rpt-pane-main" style="flex-basis:' + listWidth() + 'px"><h4>Sections</h4>' +
         '<div class="rd-addbar"><button type="button" class="primary" data-rd-add-section>+ Add section</button>' + tplPicker + '</div>' +
         '<div id="rd-order-host"><ol class="ord-list">' + rows + '</ol></div></div>';
     }
@@ -3482,7 +3465,7 @@ import { toWinAnsi } from './doc-fonts.js';
      */
     function richBox(project, attrs, tokens, cls, placeholder) {
       return '<div class="rd-rich ' + (cls || '') + '" contenteditable="true" role="textbox"' +
-        ' aria-multiline="true" spellcheck="true" data-rd-rich ' + attrs +
+        ' aria-multiline="true" spellcheck="true" data-rd-rich data-rd-live ' + attrs +
         (placeholder ? ' data-rd-ph="' + esc(placeholder) + '"' : '') + '>' +
         App.ui.richText.toHtml(tokens || '', { resolveRef: refResolver(project) }) + '</div>';
     }
@@ -3536,9 +3519,7 @@ import { toWinAnsi } from './doc-fonts.js';
       var targets = (refs ? refs.targets : []).filter(function (t) { return t.id !== ownId; });
       if (!targets.length) return '<div class="rd-refmenu"><em>Nothing to link to yet.</em></div>';
       return '<div class="rd-refmenu">' +
-        '<div class="rd-refmenu-h">Link to&hellip;</div>' +
-        '<p class="muted rd-refmenu-note">Select text first to link the words you have already written. ' +
-        'Otherwise pick what the link should read as — all three follow the target if it is renamed or renumbered.</p>' +
+        '<div class="rd-refmenu-h" title="Select text first to link those words; otherwise pick how the link reads. Links follow renames and renumbering.">Link to&hellip;</div>' +
         targets.map(function (t) {
           return '<div class="rd-reftarget">' +
             '<span class="rd-kind">' + esc(t.kind) + '</span>' +
@@ -3630,11 +3611,11 @@ import { toWinAnsi } from './doc-fonts.js';
         ' title="Hand the columns back to automatic widths">Reset widths</button>';
       if (auto) {
         return '<div class="rd-tablebtns">' + reset +
-          '<span class="muted rd-part-note">Automatic widths — drag a column edge, or double-click a percentage to type one.</span></div>';
+          '<span class="rd-state" title="Drag a column edge, or double-click a percentage to type one">Automatic widths</span></div>';
       }
       var t = App.docStore.widthTotal(widths);
       var msg = t.ok
-        ? '<span class="muted rd-part-note">Columns total ' + t.total + '% — the table fills the page width.</span>'
+        ? '<span class="rd-state">Columns total ' + t.total + '%</span>'
         : t.over
           // Asked for more page than there is. Said in red, because the table WILL be
           // rendered — capped at the full width, with the columns scaled to fit — and a
@@ -3665,11 +3646,9 @@ import { toWinAnsi } from './doc-fonts.js';
           '<span class="rd-wlabel" title="' + esc(c.label) + '">' + esc(c.label) + '</span>' +
           pctChip(target, i, pct, auto) + grip(target, i, i === n - 1) + '</span>';
       }).join('');
-      return '<div class="rd-fieldset"><strong>Column widths</strong>' +
-        '<p class="muted">These are the columns this section’s table will have. Drag an edge to change the split, or double-click a percentage to type one. ' +
-        'The strip is the page’s text width, so a set that does not fill it makes a table narrower than the page.</p>' +
+      return '<div class="rd-fieldset"><strong title="Drag an edge to change the split, or double-click a percentage to type one. The strip is the page\'s text width.">Column widths</strong>' +
         (n < 2
-          ? '<p class="muted">A one-column table has no width to set.</p>'
+          ? '<p class="rd-state">One column: no width to set.</p>'
           : '<div class="rd-widthbar" style="width:' + px + 'px">' + segs + '</div>' +
             widthNote(auto ? null : widths, auto, 'data-rd-block-autowidth="' + esc(blockId) + '"')) +
         '</div>';
@@ -3744,7 +3723,7 @@ import { toWinAnsi } from './doc-fonts.js';
           partControls(sec, part, i, n) + '</div>' +
         refMenu(project, sec, part) +
         (part.noCaption === true
-          ? '<p class="muted rd-part-note">Uncaptioned, so this table takes no number and cannot be cross-referenced.</p>'
+          ? '<p class="rd-state">No caption: this table is not numbered.</p>'
           : '<input class="rd-cap" value="' + esc(part.caption || '') + '" data-rd-caption="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" placeholder="Table caption — left blank, the section’s heading is used" aria-label="Table caption">') +
         '<div class="rd-tablewrap"><div class="rd-tablescale" style="width:' + px + 'px">' +
           '<table class="rd-table rd-table-fixed" style="width:' + tablePx + 'px">' + group +
@@ -3784,15 +3763,13 @@ import { toWinAnsi } from './doc-fonts.js';
         : tall === 0
           ? 'No row is currently ticked, so nothing is'
           : tall + ' of the ' + n + ' body rows are';
-      return '<p class="muted rd-part-note">' + which + ' <strong>' + esc(String(mm)) +
-        'mm</strong> taller than its content, with the content at the top — space to sign or write in. ' +
-        'The ticks in the last column choose which.</p>';
+      return '<p class="rd-state" title="The ticks in the last column choose which rows">' + which + ' <strong>' + esc(String(mm)) + 'mm</strong> taller.</p>';
     }
 
     function simplePart(sec, part, i, n, label, note) {
       return '<div class="rd-part rd-part-simple" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
         '<div class="rd-part-head"><span class="rd-part-kind">' + esc(label) + '</span>' +
-          '<span class="muted rd-part-note">' + esc(note) + '</span>' + partControls(sec, part, i, n) + '</div></div>';
+          partControls(sec, part, i, n) + '</div></div>';
     }
 
     /**
@@ -3811,7 +3788,6 @@ import { toWinAnsi } from './doc-fonts.js';
               ' value="' + esc(String(mm || '')) + '" data-rd-space="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' +
               ' aria-label="Height of this space in millimetres"> mm' +
           '</label>' +
-          '<span class="muted rd-part-note">Empty space down the page. Survives a page break, so a section pushed to the middle of its own page stays there.</span>' +
           partControls(sec, part, i, n) + '</div>' +
         (mm ? '<div class="rd-mmshow" style="height:' + Math.round(mm * 96 / 25.4) + 'px"></div>' : '') +
         '</div>';
@@ -3839,12 +3815,12 @@ import { toWinAnsi } from './doc-fonts.js';
      */
     function sectionPreview(project, block) {
       var p = _rd.preview || (_rd.preview = laidOut(project));
-      if (p.error) return '<p class="muted">' + esc(p.error) + '</p>';
+      if (p.error) return '<p class="rd-state">' + esc(p.error) + '</p>';
       var view = outlineNow(project);
       var included = view.resolved.filter(function (r) { return r.included !== false; });
       var at = included.map(function (r) { return r.id; }).indexOf(block.id);
       var mine = at === -1 ? null : p.anchors[included[at].anchor];
-      if (!mine) return '<p class="muted">' + (at === -1 ? 'This section is not in the document.' : 'This section is not on the page — see the <strong>Preview</strong>.') + '</p>';
+      if (!mine) return '<p class="rd-state">' + (at === -1 ? 'This section is not in the document.' : 'This section is not on the page.') + '</p>';
       var end = null;
       for (var i = at + 1; i < included.length && !end; i++) end = p.anchors[included[i].anchor] || null;
       var m = p.style.page.margins, MMPT = 72 / 25.4;
@@ -3859,20 +3835,19 @@ import { toWinAnsi } from './doc-fonts.js';
       var k = zoomOf('section');
       var zoom = zoomBar('section');
       var pages = lastPage - mine.page + 1;
-      return '<div class="rd-secprev-head"><span class="muted rd-hint">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
+      return '<div class="rd-secprev-head"><span class="rd-state">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
         ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
         '<div class="rd-secprev rd-preview-pages">' + pagesHtml(bands, { scale: k }) + '</div>';
     }
 
     function metaPane(project) {
       var selId = selectedSubjectId(project);
-      if (!selId) return '<p class="muted">No ' + esc(noun()) + ' selected.</p>';
+      if (!selId) return '<p class="rd-state">No ' + esc(noun()) + ' selected.</p>';
       var chosen = (bag(project).meta) || {};
       // Every row the host CAN state, ticked or not — this is the picker, so a row
       // switched off still has to appear in it.
       var rows = H().subject.meta(selId);
       return '<div class="rd-fieldset"><strong>Rows</strong>' +
-        '<p class="muted">Which lines of provenance this block carries. Saved with the project, so it travels in a report template.</p>' +
         rows.map(function (r) {
           var v = String(r.value);
           return '<label class="gen-opt rd-metarow"><input type="checkbox" data-rd-meta="' + esc(r.id) + '"' +
@@ -3897,15 +3872,9 @@ import { toWinAnsi } from './doc-fonts.js';
           'Centre this section\u2019s content \u2014 heading included', block.centre === true) +
         cb('data-rd-pagebreak="' + esc(block.id) + '"',
           'Start this section on a new page', byLevel || block.pageBreakBefore === true, byLevel) +
-        (byLevel
-          ? '<p class="muted rd-hint">Already on: <strong>' + esc(App.doc.levelLabel(lvl)) +
-            '</strong> starts a new page under <strong>Formatting \u2192 Fonts</strong>, for every section at that level. ' +
-            'Change it there, or give this section a different level.</p>'
-          : '') +
+        (byLevel ? '<p class="rd-state">' + esc(levelName(lvl)) + ' starts a new page in this Style.</p>' : '') +
         cb('data-rd-notoc="' + esc(block.id) + '"',
           'Leave this section out of the contents list', block.noToc === true) +
-        '<p class="muted rd-hint">A section left out of the contents still prints its heading and keeps its number, ' +
-        'so a cross-reference to it still reads correctly \u2014 it is simply not listed.</p>' +
         /* SPC-1: space ABOVE the heading, which is the one gap no part can make \u2014 every
          * part a section has is already below it. With the page break above, this is how
          * a signature page is composed: its own page, and its heading two thirds down. */
@@ -3913,9 +3882,6 @@ import { toWinAnsi } from './doc-fonts.js';
           App.docStore.MAX_SPACE_MM + '" step="5" value="' + esc(String(App.docStore.mmValue(block.spaceBefore) || '')) +
           '" data-rd-space-block="' + esc(block.id) + '" placeholder="0" aria-label="Millimetres of space above this section"> mm ' +
           'further down the page</label>' +
-        '<p class="muted rd-hint">Empty space above the heading, which the page break above composes with: a new page, ' +
-        'then this far down it. It survives being at the top of a page, so the gap is there whether or not the section ' +
-        'happened to break.</p>' +
         '</div>';
     }
 
@@ -3947,26 +3913,23 @@ import { toWinAnsi } from './doc-fonts.js';
         return '<div class="rd-tblword">' +
           (k.label ? '<div class="rd-tblword-h">' + esc(k.label) + '</div>' : '') +
           '<label class="rd-lab">Title row' +
-            '<input class="rd-title" value="' + esc(e.title || '') + '" ' + attrs + ' data-rd-tbl-field="title"' +
+            '<input class="rd-title" value="' + esc(e.title || '') + '" ' + attrs + ' data-rd-live data-rd-tbl-field="title"' +
               ' placeholder="Optional \u2014 a row above the column headings" aria-label="Title row"></label>' +
           // CAP-4: the caption box is hidden rather than disabled when there is to be no
           // caption — a box you may type into that will not be printed is a trap.
           (e.noCaption === true
-            ? '<p class="muted rd-hint">Uncaptioned, so this table takes no number and cannot be cross-referenced.</p>'
+            ? '<p class="rd-state">No caption: this table is not numbered.</p>'
             : '<label class="rd-lab">Caption' +
-              '<input class="rd-title" value="' + esc(e.caption || '') + '" ' + attrs + ' data-rd-tbl-field="caption"' +
+              '<input class="rd-title" value="' + esc(e.caption || '') + '" ' + attrs + ' data-rd-live data-rd-tbl-field="caption"' +
                 ' placeholder="' + esc(String(e.title || '').trim() || block.title || block.label) + '" aria-label="Caption"></label>') +
           cb(attrs + ' data-rd-tbl-nocap', 'No caption', e.noCaption === true) +
           '<div class="rd-grid">' + cols.all.map(function (c) {
             return '<label class="rd-lab rd-lab-s">' + esc(c.label) +
-              '<input value="' + esc(custom[c.id] || '') + '" ' + attrs + ' data-rd-tbl-col="' + esc(c.id) + '"' +
+              '<input value="' + esc(custom[c.id] || '') + '" ' + attrs + ' data-rd-live data-rd-tbl-col="' + esc(c.id) + '"' +
                 ' placeholder="' + esc(c.label) + '" aria-label="Heading for the ' + esc(c.label) + ' column"></label>';
           }).join('') + '</div></div>';
       }).join('');
-      return '<div class="rd-fieldset"><strong>Table wording</strong>' +
-        '<p class="muted">What each of this section\u2019s tables calls itself and its columns. Blank means the standard wording. ' +
-        'The caption follows the title row unless you give it one of its own.</p>' +
-        body + '</div>';
+      return '<div class="rd-fieldset"><strong title="Blank means the standard wording">Table wording</strong>' + body + '</div>';
     }
 
     /**
@@ -3986,13 +3949,9 @@ import { toWinAnsi } from './doc-fonts.js';
           // NAM-2: a generated section has a heading too, and once the name stopped
           // being it there was nowhere to say what it should read.
           '<label class="rd-lab">Heading in the document' +
-            '<input class="rd-title" value="' + esc(heading === dflt ? '' : heading) + '" data-rd-sec-heading="' + esc(block.id) + '"' +
+            '<input class="rd-title" value="' + esc(heading === dflt ? '' : heading) + '" data-rd-live data-rd-sec-heading="' + esc(block.id) + '"' +
               ' placeholder="' + esc(dflt) + '" aria-label="Heading for ' + esc(block.label) + '"></label>' +
-          '<p class="muted rd-hint">What the document prints. Leave it blank for the standard wording, <strong>' + esc(dflt) + '</strong>.</p>') +
-        '<label class="rd-lab">Name in this list' +
-        '<input class="rd-title" value="' + esc(block.name || '') + '" data-rd-sec-name="' + esc(block.id) + '"' +
-          ' placeholder="' + esc(heading || 'Same as the heading') + '" aria-label="Name for ' + esc(block.label) + '"></label>' +
-        '<p class="muted rd-hint">Shorthand for the section list only \u2014 the document still prints the heading. Leave it blank and the name <em>is</em> the heading.</p>';
+          '');
     }
 
     /** SEC-1: prose between this section's heading and its generated table. */
@@ -4006,7 +3965,6 @@ import { toWinAnsi } from './doc-fonts.js';
        * that produces "[missing reference]". */
       var refOpen = _rd.refFor === 'intro:' + block.id;
       return '<div class="rd-fieldset"><strong>Introduction</strong>' +
-        '<p class="muted">Your own words, printed between the heading and the table. Written once for the section, so a register split into groups is introduced once rather than once per group.</p>' +
         '<div class="rd-part-head"><span class="rd-tbs">' + toolbar('data-rd-block="' + esc(block.id) + '"') +
           '<button type="button" class="rd-tb" data-rd-ref-open="' + esc('intro:' + block.id) + '"' +
             ' title="Insert a cross-reference that survives renaming and reordering">\ud83d\udd17 Link</button>' +
@@ -4016,72 +3974,106 @@ import { toWinAnsi } from './doc-fonts.js';
           ' aria-label="Introduction for ' + esc(block.label) + '"', block.intro, '',
           'Optional. A blank line starts a new paragraph.') +
         hostileHint(block.intro || '') +
-        cb('data-rd-intro-num="' + esc(block.id) + '"', 'Number it', block.introNumbered === true) +
-        '<p class="muted rd-hint">A numbered introduction takes the first of this section\u2019s numbers \u2014 <em>5 Packages</em>, then <em>5.1</em> the introduction, then <em>5.2 Packages \u2014 Removed</em>. Unnumbered, it is simply the prose under the heading.</p>' +
+        '<span title="The introduction takes the section\'s first number, such as 5.1">' + cb('data-rd-intro-num="' + esc(block.id) + '"', 'Number it', block.introNumbered === true) + '</span>' +
         '</div>';
     }
 
+    /** The categories of a section's settings, by kind. */
+    var SEC_CATEGORIES = { heading: 'Heading', placement: 'Placement', introduction: 'Introduction', table: 'Table', rows: 'Rows', content: 'Content' };
+    function categoriesFor(block) {
+      var ids = block.kind === 'toc' ? ['heading', 'placement']
+        : block.kind === 'custom' ? ['heading', 'placement', 'content']
+        : ['heading', 'placement', 'introduction'].concat(
+            ((App.docGen.sectionColumns(H(), block, opts()) || { all: [] }).all.length ? ['table'] : []),
+            block.kind === 'meta' ? ['rows'] : []);
+      return ids.map(function (id) { return { id: id, label: SEC_CATEGORIES[id] }; });
+    }
+
+    /** Which groups and optional columns a generated section carries (the former ☰ menu). */
+    function tableChoices(project, b) {
+      var cols = App.docGen.sectionColumns(H(), b, opts());
+      var optional = (cols && cols.optional) || [];
+      var groups = b.groups || [];
+      var out = '';
+      if (groups.length) {
+        out += '<div class="rd-fieldset"><strong>Groups</strong>' + groups.map(function (g) {
+          return cb('data-rd-dsmap="datasetSections" data-rd-ds="' + esc(b.dsId) + '" data-rd-key="' + esc(g.value) + '"', g.label, g.included);
+        }).join('') + '</div>';
+      }
+      if (optional.length) {
+        // COL-3: ticked iff the column will actually be there; stored under the key the builder reads.
+        var key = App.docGen.sectionColumnKey(H(), b, opts());
+        var colOpts = (opts().columns || {})[key] || {};
+        out += '<div class="rd-fieldset"><strong>Columns</strong>' + optional.map(function (c) {
+          return cb('data-rd-dsmap="columns" data-rd-ds="' + esc(key) + '" data-rd-key="' + esc(c.id) + '"', c.label, App.report.columnOn(c, colOpts));
+        }).join('') + '</div>';
+      }
+      return out;
+    }
+
+    /** The fields of one category of a section. */
+    function categoryFields(project, view, block, resolved, cat) {
+      var level = '<label class="rd-lab">Level ' + levelSelect(block, resolved) + '</label>';
+      var sec = block.kind === 'custom' ? customSection(project, block.id) : null;
+      if (cat === 'heading') {
+        return (sec
+          ? '<label class="rd-lab">Heading<input class="rd-title" value="' + esc(sec.title || '') + '" data-rd-live data-rd-sec-title="' + esc(sec.id) + '"' +
+              ' placeholder="None: the section is body text" aria-label="Section heading"></label>'
+          : nameField(block, block.defaultTitle)) + level;
+      }
+      if (cat === 'placement') return centreToggle(project, block, resolved);
+      if (cat === 'introduction') return introField(project, block);
+      if (cat === 'rows') return metaPane(project);
+      if (cat === 'table') {
+        var cols = App.docGen.sectionColumns(H(), block, opts());
+        return tableChoices(project, block) + tableWordingEditor(project, block) +
+          (cols && cols.all.length ? widthStrip(project, block.id, cols.all, block.widths) : '');
+      }
+      if (cat === 'content' && sec) {
+        var parts = sec.parts || [];
+        var body = parts.map(function (p, i) {
+          if (p.kind === 'para') return paraEditor(project, sec, p, i, parts.length);
+          if (p.kind === 'table') return tableEditor(project, sec, p, i, parts.length);
+          if (p.kind === 'rule') return simplePart(sec, p, i, parts.length, 'Horizontal line', 'A rule across the page.');
+          if (p.kind === 'space') return spaceEditor(sec, p, i, parts.length);
+          return simplePart(sec, p, i, parts.length, 'Page break', 'Forces what follows onto a new page.');
+        }).join('');
+        return '<div class="rd-sec-edit"><div class="rd-parts">' + (body || '<p class="rd-state">Nothing in this section yet.</p>') + '</div>' +
+          '<div class="rd-addbar">' +
+            '<button type="button" data-rd-addpart="para" data-rd-sec="' + esc(sec.id) + '">+ Paragraph</button>' +
+            '<button type="button" data-rd-addpart="table" data-rd-sec="' + esc(sec.id) + '">+ Table</button>' +
+            '<button type="button" data-rd-addpart="rule" data-rd-sec="' + esc(sec.id) + '">+ Line</button>' +
+            '<button type="button" data-rd-addpart="space" data-rd-sec="' + esc(sec.id) + '" title="A measured gap down the page">+ Space</button>' +
+            '<button type="button" data-rd-addpart="pagebreak" data-rd-sec="' + esc(sec.id) + '">+ Page break</button>' +
+            '<span class="spacer"></span>' +
+            '<button type="button" data-rd-save-template="' + esc(sec.id) + '" title="Save this section\'s shape for reuse in any project">Save as template&hellip;</button>' +
+            '<button type="button" class="danger" data-rd-del-section="' + esc(sec.id) + '">Delete section</button>' +
+          '</div></div>';
+      }
+      return '';
+    }
+
+    /**
+     * The Sections pane: the chosen section's settings in categories, with the section
+     * as it lands on the page beside them. With nothing chosen (or the chosen section
+     * gone) it opens the first section; a category the section lacks opens its first.
+     */
     function paneSection(project, view) {
       var id = _rd.selected;
-      if (!id) return '<p class="muted">Pick a section on the left to open it.</p>';
-      var block = view.blocks.filter(function (b) { return b.id === id; })[0];
-      if (!block) return '<p class="muted">That section is no longer in the document.</p>';
-
-      // --- a generated section: its groups, its columns, and a preview of it
-      if (block.kind !== 'custom') {
-        var out = ['<h5>' + esc(block.label) + '</h5>'];
-        if (block.kind === 'meta') out.push('<p class="muted">The details the host gives about this ' + esc(noun()) + ', one row each. Untick a row below to leave it out.</p>');
-        out.push(nameField(block, block.defaultTitle));
-        out.push(centreToggle(project, block, view.resolved.filter(function (r) { return r.id === block.id; })[0]));
-        out.push(introField(project, block));
-        out.push(tableWordingEditor(project, block));
-        if (block.kind === 'meta') out.push(metaPane(project));
-        // OPT-1: the column and group ticks are on the section ROW now, not here — see
-        // optionsMenu. What stays is the width strip, which is drawn against whatever
-        // those ticks have left switched on.
-        var cols = App.docGen.sectionColumns(H(), block, opts());
-        if (cols && cols.all.length) out.push(widthStrip(project, block.id, cols.all, block.widths));
-        out.push('<p class="muted rd-hint">This section\'s content is generated from the register. Its <strong>columns</strong>' +
-          (block.groups ? ' and <strong>groups</strong>' : '') + ' are on the &#9776; button beside it in the list, so they can be changed without leaving whatever pane you are on. ' +
-          'Add a <strong>custom section</strong> if you need prose or a table of your own.</p>');
-        out.push('<div class="rd-fieldset rd-secprev-wrap"><strong>Preview</strong>' +
-          '<p class="muted">This section as it will appear, for the selected ' + esc(noun()) + '.</p>' +
-          sectionPreview(project, block) + '</div>');
-        return out.join('');
-      }
-
-      // --- a hand-authored section
-      var sec = customSection(project, id);
-      if (!sec) return '<p class="muted">That section is no longer in the document.</p>';
-      var parts = sec.parts || [];
-      var body = parts.map(function (p, i) {
-        if (p.kind === 'para') return paraEditor(project, sec, p, i, parts.length);
-        if (p.kind === 'table') return tableEditor(project, sec, p, i, parts.length);
-        if (p.kind === 'rule') return simplePart(sec, p, i, parts.length, 'Horizontal line', 'A rule across the page.');
-        if (p.kind === 'space') return spaceEditor(sec, p, i, parts.length);
-        return simplePart(sec, p, i, parts.length, 'Page break', 'Forces what follows onto a new page.');
-      }).join('');
-
-      return '<div class="rd-sec-edit">' +
-        centreToggle(project, block, view.resolved.filter(function (r) { return r.id === block.id; })[0]) +
-        '<label class="rd-lab">Heading<input class="rd-title" value="' + esc(sec.title || '') + '" data-rd-sec-title="' + esc(sec.id) + '" placeholder="Leave blank for a paragraph with no heading" aria-label="Section heading"></label>' +
-        '<p class="muted rd-hint">With no heading this becomes body text and keeps the level of the section above it — unless you pin a level on the left.</p>' +
-        nameField(block) +
-        '<div class="rd-parts">' + (body || '<p class="muted">Nothing in this section yet.</p>') + '</div>' +
-        '<div class="rd-addbar">' +
-          '<button type="button" data-rd-addpart="para" data-rd-sec="' + esc(sec.id) + '">+ Paragraph</button>' +
-          '<button type="button" data-rd-addpart="table" data-rd-sec="' + esc(sec.id) + '">+ Table</button>' +
-          '<button type="button" data-rd-addpart="rule" data-rd-sec="' + esc(sec.id) + '">+ Line</button>' +
-          '<button type="button" data-rd-addpart="space" data-rd-sec="' + esc(sec.id) + '" title="A measured gap down the page">+ Space</button>' +
-          '<button type="button" data-rd-addpart="pagebreak" data-rd-sec="' + esc(sec.id) + '">+ Page break</button>' +
-          '<span class="spacer"></span>' +
-          '<button type="button" data-rd-save-template="' + esc(sec.id) + '" title="Save this section\'s shape for reuse in any project">Save as template&hellip;</button>' +
-          '<button type="button" class="danger" data-rd-del-section="' + esc(sec.id) + '">Delete section</button>' +
-        '</div>' +
-        '<div class="rd-fieldset rd-secprev-wrap"><strong>Preview</strong>' +
-          '<p class="muted">This section as it will appear, numbered as it will be numbered.</p>' +
-          sectionPreview(project, block) + '</div>' +
-        '</div>';
+      var block = view.blocks.filter(function (b) { return b.id === id; })[0] || view.blocks[0];
+      if (!block) return '<p class="rd-state">There are no sections yet.</p>';
+      _rd.selected = block.id;
+      var resolved = view.resolved.filter(function (r) { return r.id === block.id; })[0];
+      var cats = categoriesFor(block);
+      var cat = cats.filter(function (c) { return c.id === _rd.secCat; })[0] || cats[0];
+      var list = '<nav class="rd-cat-list">' + cats.map(function (c) {
+        return '<button type="button" class="rd-cat' + (c.id === cat.id ? ' on' : '') + '" data-rd-sec-cat="' + c.id + '"' +
+          (c.id === cat.id ? ' aria-current="true"' : '') + '>' + esc(c.label) + '</button>';
+      }).join('') + '</nav>';
+      return '<div class="rd-secgrid">' + list +
+        '<div class="rd-sec-fields" data-rd-sec-fields><h5>' + esc(block.label) + ' \u2014 ' + esc(cat.label) + '</h5>' +
+          categoryFields(project, view, block, resolved, cat.id) + '</div>' +
+        '<div class="rd-sec-prev" data-rd-sec-prev>' + sectionPreview(project, block) + '</div></div>';
     }
 
     function num(label, key, val, hint) {
@@ -4160,6 +4152,7 @@ import { toWinAnsi } from './doc-fonts.js';
         '<div class="rd-hf-slots">' + ['left', 'centre', 'right'].map(function (s) {
           return '<label class="rd-lab rd-lab-s">' + esc(s === 'centre' ? 'Centre' : s === 'left' ? 'Left' : 'Right') +
             '<input value="' + esc(hfv[s] || '') + '" data-rd-hf-set="' + esc(set) + '" data-rd-hf-slot="' + s + '"' +
+              ' title="Filled in on each page: #page, #pages, #title, #platform, #date, #marking" placeholder="e.g. Page #page of #pages"' +
               ' aria-label="' + esc(label + ', ' + s) + '"></label>';
         }).join('') + '</div></div>';
     }
@@ -4173,17 +4166,15 @@ import { toWinAnsi } from './doc-fonts.js';
             pick('Orientation', 'page.orientation', f.page.orientation, [{ value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Landscape' }]) +
             num('Top margin (mm)', 'page.margins.top', m.top) + num('Bottom margin (mm)', 'page.margins.bottom', m.bottom) +
             num('Left margin (mm)', 'page.margins.left', m.left) + num('Right margin (mm)', 'page.margins.right', m.right) +
-          '</div><p class="muted rd-hint">The header and footer sit in the top and bottom margins, so leave room for them.</p>';
+          '</div>';
       }
       if (/^(title|h[1-4])$/.test(section)) return textFields(f, section, { heading: true });
       if (section === 'body' || section === 'caption' || section === 'code') {
-        return textFields(f, section) + (section === 'caption'
-          ? '<p class="muted rd-hint">Table captions. Where they go is set under <strong>Tables</strong>.</p>' : '');
+        return textFields(f, section);
       }
       if (section === 'tables') {
         var t = f.tables;
-        return '<p class="muted">These settings apply to every table in the document.</p>' +
-          '<div class="rd-grid">' +
+        return '<div class="rd-grid">' +
             pick('Borders', 'tables.borders', t.borders, [{ value: 'all', label: 'All lines' }, { value: 'horizontal', label: 'Between rows only' }, { value: 'outer', label: 'Outside only' }, { value: 'none', label: 'None' }]) +
             colourField('Border colour', 'tables.borderColour', t.borderColour) +
             num('Border weight (pt)', 'tables.borderWidth', t.borderWidth) +
@@ -4205,15 +4196,13 @@ import { toWinAnsi } from './doc-fonts.js';
       }
       if (section === 'headerFooter') {
         var first = f.headerFooter.firstDifferent;
-        return '<p class="muted">What each line reads. These words are replaced on each page: <code>#page</code> (the page number), <code>#pages</code> (the total), ' +
-            '<code>#title</code>, <code>#platform</code>, <code>#date</code> and <code>#marking</code>. So <code>Page #page of #pages</code> prints “Page 3 of 12”.</p>' +
-          hfRow(f, 'header', 'Header') + hfRow(f, 'footer', 'Footer') +
+        return hfRow(f, 'header', 'Header') + hfRow(f, 'footer', 'Footer') +
           '<div class="rd-flags">' + flagField('A line under the header', 'headerFooter.ruleUnderHeader', f.headerFooter.ruleUnderHeader) +
             flagField('A line over the footer', 'headerFooter.ruleOverFooter', f.headerFooter.ruleOverFooter) + '</div>' +
           '<div class="rd-fieldset"><strong>The first page</strong>' +
             cb('data-rd-hf-first', 'Give the first page its own header and footer', first) +
             (first ? hfRow(f, 'firstHeader', 'First-page header') + hfRow(f, 'firstFooter', 'First-page footer')
-              : '<p class="muted rd-hint">A title page usually wants neither: tick this and leave its slots empty.</p>') +
+              : '') +
           '</div>' +
           '<div class="rd-fieldset"><strong>How the header and footer look</strong>' + textFields(f, 'headerFooter') + '</div>';
       }
@@ -4224,7 +4213,6 @@ import { toWinAnsi } from './doc-fonts.js';
             '<option value=""' + (marking ? '' : ' selected') + '>None</option>' +
             markings.map(function (x) { return '<option value="' + esc(x) + '"' + (x === marking ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') +
           '</select></label>' +
-          '<p class="muted rd-hint">The marking is saved with the report design. The Style decides whether and how it is printed, at the top and bottom of every page.</p>' +
           '<div class="rd-flags">' + flagField('Print the marking on every page', 'marking.show', f.marking.show) + '</div>' +
           textFields(f, 'marking');
       }
@@ -4284,8 +4272,7 @@ import { toWinAnsi } from './doc-fonts.js';
       var pages = '<div class="rd-style-preview" data-rd-style-preview>' + (laid.error
         ? '<p class="rd-err">' + esc(laid.error) + '</p>'
         : pagesHtml(laid.pages, { scale: 0.5 })) + '</div>';
-      return head + locked + '<div class="rd-styles">' + list + fields + pages + '</div>' +
-        '<p class="muted rd-hint">Styles travel with the project file. To share one between projects, export it from the <strong>Templates</strong> pane.</p>';
+      return head + locked + '<div class="rd-styles">' + list + fields + pages + '</div>';
     }
 
     /**
@@ -4321,7 +4308,7 @@ import { toWinAnsi } from './doc-fonts.js';
     // ======================================================================
 
     function templateList(items, kind, emptyNote) {
-      if (!items.length) return '<p class="muted">' + esc(emptyNote) + '</p>';
+      if (!items.length) return '<p class="rd-state">' + esc(emptyNote) + '</p>';
       return '<ul class="rd-tpl-list">' + items.map(function (t) {
         return '<li><span class="rd-tpl-name">' + esc(t.name) + '</span>' +
           (kind === 'sections'
@@ -4335,32 +4322,28 @@ import { toWinAnsi } from './doc-fonts.js';
       var b = bag(project);
       var profiles = (b.formats || []);
       return '<div class="rd-fieldset"><strong>Styles</strong>' +
-          '<p class="muted">How the document looks, saved under a name. Edit them in the <strong>Styles</strong> pane; export them here to reuse in another project.</p>' +
           (profiles.length
             ? '<ul class="rd-tpl-list">' + profiles.map(function (f) {
                 return '<li><span class="rd-tpl-name">' + esc(f.name) + '</span></li>';
               }).join('') + '</ul>'
-            : '<p class="muted">Only the built-in Standard style so far. Duplicate it in the Styles pane to make your own.</p>') +
+            : '<p class="rd-state">Only the built-in Standard style so far.</p>') +
           '<div class="rd-addbar">' +
             '<button type="button" data-rd-export="formats"' + (profiles.length ? '' : ' disabled') + '>Export</button>' +
-            '<label class="rd-filebtn">Import<input type="file" accept=".json,application/json" data-rd-import="formats"></label>' +
+            '<label class="rd-filebtn" title="An import never deletes what you have; a clash of names asks which to keep">Import<input type="file" accept=".json,application/json" data-rd-import="formats"></label>' +
           '</div></div>' +
         '<div class="rd-fieldset"><strong>Section templates</strong>' +
-          '<p class="muted">A saved section — its heading and every paragraph, table and rule in it. Use one to drop a ready-made section into this document. Save one from the <strong>Section</strong> pane.</p>' +
           templateList(b.sectionTemplates || [], 'sections', 'No section templates yet.') +
           '<div class="rd-addbar">' +
             '<button type="button" data-rd-export="sections"' + ((b.sectionTemplates || []).length ? '' : ' disabled') + '>Export</button>' +
-            '<label class="rd-filebtn">Import<input type="file" accept=".json,application/json" data-rd-import="sections"></label>' +
+            '<label class="rd-filebtn" title="An import never deletes what you have; a clash of names asks which to keep">Import<input type="file" accept=".json,application/json" data-rd-import="sections"></label>' +
           '</div></div>' +
         '<div class="rd-fieldset"><strong>Report templates</strong>' +
-          '<p class="muted">The whole design: the section order, the pinned levels, every custom section and the Style. Applying one <strong>replaces</strong> the current arrangement.</p>' +
           templateList(b.reportTemplates || [], 'reports', 'No report templates yet.') +
           '<div class="rd-addbar">' +
             '<button type="button" class="primary" data-rd-rpt-save>Save current design&hellip;</button>' +
             '<button type="button" data-rd-export="reports"' + ((b.reportTemplates || []).length ? '' : ' disabled') + '>Export</button>' +
-            '<label class="rd-filebtn">Import<input type="file" accept=".json,application/json" data-rd-import="reports"></label>' +
-          '</div></div>' +
-        '<p class="muted rd-hint">An import never deletes what you already have. If a name collides you are asked, one by one, which to keep.</p>';
+            '<label class="rd-filebtn" title="An import never deletes what you have; a clash of names asks which to keep">Import<input type="file" accept=".json,application/json" data-rd-import="reports"></label>' +
+          '</div></div>';
     }
 
     /** TPL-3: the conflict resolver, shown over the workspace while a merge is pending. */
@@ -4411,7 +4394,7 @@ import { toWinAnsi } from './doc-fonts.js';
      */
     function paneGenerate(project, view) {
       var selId = selectedSubjectId(project);
-      if (!selId) return '<p class="muted">No ' + esc(noun()) + ' selected — nothing to generate.</p>';
+      if (!selId) return '<p class="rd-state">No ' + esc(noun()) + ' selected.</p>';
       var ready = H().subject.ready(selId);
       var o = opts();
       // Laid out with no values, so every tag written anywhere is found, and the characters
@@ -4429,13 +4412,9 @@ import { toWinAnsi } from './doc-fonts.js';
               '<input value="' + esc(v) + '" data-rd-tag="' + esc(t) + '"' +
                 ' placeholder="What should this read?" aria-label="Value for the ' + esc(t) + ' tag"></label>';
           }).join('')
-        : '<p class="muted">None written yet. Type <code>/[Date]</code> — a slash, then a name in square brackets — ' +
-          'in any heading, paragraph, table or header slot and it will be listed here.</p>';
+        : '<p class="rd-state">None yet. Write <code>/[Date]</code> in any text to add one.</p>';
 
-      return '<div class="rd-fieldset"><strong>Placeholders</strong>' +
-          '<p class="muted">Every <code>/[Tag]</code> written anywhere in the document, filled in once here and ' +
-          'replaced everywhere it appears. A tag left blank is printed as it stands, so an unfinished document ' +
-          'looks unfinished rather than merely incomplete.</p>' +
+      return '<div class="rd-fieldset"><strong title="Each /[Tag] in the document is replaced by what you write here; one left blank prints as it stands.">Placeholders</strong>' +
           tagRows +
           (unfilled.length
             ? '<p class="rpt-omit"><strong>' + unfilled.length + '</strong> placeholder' + (unfilled.length === 1 ? '' : 's') +
@@ -4443,15 +4422,11 @@ import { toWinAnsi } from './doc-fonts.js';
             : (tags.length ? '<p class="rpt-omit muted">Every placeholder has a value.</p>' : '')) +
         '</div>' +
         (replaced.length
-          ? '<div class="rd-fieldset rd-replaced"><strong>Characters the PDF cannot show</strong>' +
-              '<p class="muted">The PDF uses the standard fonts every PDF reader has, which cannot show these. ' +
-              'They are written another way (≥ as &gt;=, ✓ as Yes) or as ?. The HTML shows them as they are.</p>' +
+          ? '<div class="rd-fieldset rd-replaced"><strong title="The PDF\'s standard fonts write these another way (≥ as >=, ✓ as Yes) or as ?. The HTML shows them as they are.">Characters the PDF cannot show</strong>' +
               '<p>' + replaced.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(' ') + '</p></div>'
           : '') +
         '<div class="rd-fieldset"><strong>Make the report</strong>' +
-          '<p class="muted">' + (ready
-            ? 'A PDF laid out exactly as the Preview shows it, or the same document as one web page (HTML).'
-            : 'This ' + esc(noun()) + ' is not ready — the host reports it incomplete.') + '</p>' +
+          (ready ? '' : '<p class="rd-state">This ' + esc(noun()) + ' is not ready.</p>') +
           (laid.error ? '<p class="rd-err">' + esc(laid.error) + '</p>' : '') +
           '<div class="rd-addbar">' +
             // The HOST wires these ([data-generate-action], reading data-generate-format):
@@ -4468,16 +4443,16 @@ import { toWinAnsi } from './doc-fonts.js';
 
     function panePreview(project) {
       var p = _rd.preview || (_rd.preview = laidOut(project));
-      if (p.error) return '<div class="rd-preview"><p class="muted">' + esc(p.error) + '</p></div>';
+      if (p.error) return '<div class="rd-preview"><p class="rd-state">' + esc(p.error) + '</p></div>';
       var nav = (p.headings || []).map(function (o) {
         return '<a class="rd-nav rd-nav-' + Math.max(1, o.level) + '" href="#' + esc(o.anchor) + '" data-prv-jump="' + esc(o.anchor) + '">' + esc(o.title) + '</a>';
       }).join('');
       return '<div class="rd-preview">' +
         '<div class="rd-addbar"><button type="button" data-rd-refresh-preview>↻ Refresh</button>' +
-          '<span class="muted">' + p.pages.length + ' page' + (p.pages.length === 1 ? '' : 's') + '</span>' +
+          '<span class="rd-state">' + p.pages.length + ' page' + (p.pages.length === 1 ? '' : 's') + '</span>' +
           zoomBar('preview') + '</div>' +
         '<div class="rd-preview-body">' +
-          '<nav class="rd-preview-nav">' + (nav || '<span class="muted">No sections.</span>') + '</nav>' +
+          '<nav class="rd-preview-nav">' + (nav || '<span class="rd-state">No sections.</span>') + '</nav>' +
           '<article class="rd-preview-doc rd-preview-pages" id="rd-preview-doc">' + pagesHtml(p.pages, { scale: zoomOf('preview'), anchors: p.anchors }) + '</article>' +
         '</div></div>';
     }
@@ -4506,10 +4481,11 @@ import { toWinAnsi } from './doc-fonts.js';
 
       return '<div class="modal modal-full" role="dialog" aria-modal="true" aria-label="Report Design">' +
         '<div class="modal-head"><div><h3>Report Design</h3>' +
-          '<div class="modal-sub">' + (subj ? subjectPicker(selId) + ' — what the document contains, in what order, and how it looks.' : 'No ' + esc(noun()) + ' selected.') + '</div></div>' +
+          '<div class="modal-sub">' + (subj ? subjectPicker(selId) : 'No ' + esc(noun()) + ' selected.') + '</div></div>' +
           '<button type="button" class="modal-close" data-rd-close aria-label="Close">×</button></div>' +
         '<div class="modal-body"><div class="rpt-body rd-layout">' +
           renderSectionList(project, view) +
+          '<div class="rd-split" data-rd-split role="separator" aria-orientation="vertical" aria-label="Drag to widen or narrow the Sections list" title="Drag to resize"></div>' +
           '<div class="rd-right"><div class="rd-tabs">' + tabs + '</div>' +
             '<div class="rpt-pane rd-pane">' + paneBody + '</div></div>' +
         '</div></div>' +
@@ -4566,7 +4542,20 @@ import { toWinAnsi } from './doc-fonts.js';
       if (pane2) pane2.scrollTop = paneTop;
       return true;
     }
+    /* Leaving a text box saves it and redraws — on the press of whatever was clicked
+     * next. Redrawn then, the button under the pointer is a new one by the release, and
+     * the click is lost. So a redraw asked for while a button is held waits for the
+     * release; the click's own handler then runs on the button that was pressed. */
+    var _gate = { pressing: false, pending: false };
+    /** Whether a press holds redraws: a plain left press on something other than a form
+     *  field. A drop-down or a right-click opens a menu that can eat the release. */
+    function holds(e) {
+      return e.button === 0 && !(e.target && e.target.closest && e.target.closest('select, input, textarea, [contenteditable]'));
+    }
+    /** Every event that ends a press, whatever became of it. */
+    var RELEASE_ON = ['pointerup', 'pointercancel', 'dragend', 'drop', 'click', 'contextmenu'];
     function repaint() {
+      if (_gate.pressing) { _gate.pending = true; return; }
       if (!refresh() && _ctx) _ctx.refreshMain();
     }
     function quietly(fn) { if (_ctx && _ctx.quietEdit) _ctx.quietEdit(fn); else fn(); }
@@ -4702,6 +4691,28 @@ import { toWinAnsi } from './doc-fonts.js';
       return function () { return { ok: true, issues: [] }; };
     }
 
+    /** The store write a live box makes, without any repaint: the same calls its change/blur handler makes. */
+    function liveSave(el) {
+      if (el.hasAttribute('data-rd-rich')) return boxSaver(el)(RT.fromNode(el));
+      if (el.hasAttribute('data-rd-sec-heading')) return App.docStore.setBlockHeading(el.getAttribute('data-rd-sec-heading'), el.value);
+      if (el.hasAttribute('data-rd-sec-title')) return App.docStore.updateSection(el.getAttribute('data-rd-sec-title'), { title: el.value });
+      if (el.hasAttribute('data-rd-tbl-block')) {
+        var block = el.getAttribute('data-rd-tbl-block'), key = el.getAttribute('data-rd-tbl-key'), col = el.getAttribute('data-rd-tbl-col');
+        return col ? App.docStore.setTableColumnLabel(block, key, col, el.value)
+          : App.docStore.setTableText(block, key, el.getAttribute('data-rd-tbl-field'), el.value);
+      }
+      return { ok: true, issues: [] };
+    }
+    /** Redraw the Sections pane's preview column alone, so focus and the caret stay where they are. */
+    function refreshSectionPreview() {
+      var col = document.querySelector('[data-rd-sec-prev]');
+      var project = App.docHost.get() && App.docHost.get().getState();
+      if (!col || !project) return;
+      var view = outlineNow(project);
+      var block = view.blocks.filter(function (b) { return b.id === _rd.selected; })[0];
+      if (block) col.innerHTML = sectionPreview(project, block);
+    }
+
     /** The document's reference resolver, for re-rendering a box after an edit. */
     function boxHtml(tokens) {
       var p = App.docHost.get().getState();
@@ -4818,6 +4829,23 @@ import { toWinAnsi } from './doc-fonts.js';
     function wireShell(h) {
       var dom = h.dom, ctx = h.ctx;
 
+      var holdTimer = null;
+      ctx.root.addEventListener('pointerdown', function (e) {
+        if (!holds(e)) return;
+        _gate.pressing = true;
+        // However the press ends, the hold never outlasts a second and a half.
+        clearTimeout(holdTimer);
+        holdTimer = setTimeout(release, 1500);
+      }, true);
+      function release() {
+        if (!_gate.pressing) return;
+        _gate.pressing = false;
+        if (_gate.pending) setTimeout(function () { _gate.pending = false; repaint(); }, 0);
+      }
+      // A press that becomes a drag (reordering sections) ends without a pointerup.
+      RELEASE_ON.forEach(function (t) { document.addEventListener(t, release, true); });
+      window.addEventListener('blur', release);
+
       dom.on(ctx.root, 'click', '[data-rd-open]', function () {
         _rd.open = true; dirty(); ctx.refreshMain();
       });
@@ -4836,11 +4864,6 @@ import { toWinAnsi } from './doc-fonts.js';
        * thing it is best at: clicking down the list and watching the document change.
        * Every trip cost two more clicks to get back. The row still shows as selected,
        * and the Section pane still follows the selection when it is the one on screen. */
-      dom.on(ctx.root, 'click', '[data-rd-optmenu]', function (e, el) {
-        var id = el.getAttribute('data-rd-optmenu');
-        _rd.optMenu = _rd.optMenu === id ? null : id;
-        repaint();
-      });
       dom.on(ctx.root, 'click', '[data-rd-select]', function (e, el) {
         _rd.selected = el.getAttribute('data-rd-select');
         repaint();
@@ -4862,6 +4885,30 @@ import { toWinAnsi } from './doc-fonts.js';
       dom.on(ctx.root, 'click', '[data-rd-cf-apply]', function () { applyConflict(); });
       // ---- preview ----------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-refresh-preview]', function () { dirty(); repaint(); });
+      dom.on(ctx.root, 'click', '[data-rd-sec-cat]', function (e, el) { _rd.secCat = el.getAttribute('data-rd-sec-cat'); repaint(); });
+      // The Sections list's grip: dragging resizes the list in place; the width is kept on release.
+      dom.on(ctx.root, 'pointerdown', '[data-rd-split]', function (e, el) {
+        var pane = el.previousElementSibling, layout = el.parentNode;
+        if (!pane || !layout) return;
+        e.preventDefault();
+        var startX = e.clientX, startW = pane.getBoundingClientRect().width;
+        var most = Math.min(LIST_WIDTH.max, layout.getBoundingClientRect().width - 360);
+        var w = startW;
+        document.body.classList.add('resizing');
+        function move(ev) {
+          w = Math.max(LIST_WIDTH.min, Math.min(most, startW + ev.clientX - startX));
+          pane.style.flexBasis = Math.round(w) + 'px';
+        }
+        function up() {
+          document.removeEventListener('pointermove', move);
+          document.removeEventListener('pointerup', up);
+          document.body.classList.remove('resizing');
+          _rd.listWidth = Math.round(w);
+          try { window.localStorage.setItem(LIST_KEY, String(_rd.listWidth)); } catch (err) { /* kept for this session only */ }
+        }
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', up);
+      });
       // The subject the report is about: a session choice, and everything shown is redrawn for it.
       dom.on(ctx.root, 'change', '[data-rd-subject]', function (e, el) { session().subjectId = el.value; dirty(); repaint(); });
       // The page previews' zoom: a way of looking, so the laid-out pages are kept.
@@ -4939,7 +4986,7 @@ import { toWinAnsi } from './doc-fonts.js';
         // declaration rather than assumed to be "on".
         var dflt = true;
         if (map === 'columns') {
-          var block = (outlineNow(P()).blocks || []).filter(function (b) { return (b.dsId || b.kind) === ds; })[0];
+          var block = (outlineNow(P()).blocks || []).filter(function (b) { return App.docGen.sectionColumnKey(H(), b, opts()) === ds; })[0];
           var cols = block ? App.docGen.sectionColumns(H(), block, opts()) : null;
           var col = ((cols && cols.optional) || []).filter(function (c) { return c.id === key; })[0];
           dflt = !col || col.defaultOff !== true;
@@ -5172,6 +5219,21 @@ import { toWinAnsi } from './doc-fonts.js';
 
     function wireText(h) {
       var dom = h.dom, ctx = h.ctx;
+
+      // The Sections preview follows typing: half a second after a live box stops
+      // changing, its value is saved and the preview column alone is redrawn.
+      var liveTimer = null;
+      dom.on(ctx.root, 'input', '[data-rd-live]', function (e, el) {
+        clearTimeout(liveTimer);
+        liveTimer = setTimeout(function () {
+          if (!el.isConnected) return;               // already saved by leaving it, and redrawn
+          quietly(function () { logIssues(liveSave(el)); });
+          dirty();
+          refreshSectionPreview();
+        }, 500);
+      });
+      // Leaving a live box saves it there and then, so a save still waiting is dropped.
+      dom.on(ctx.root, 'focusout', '[data-rd-live]', function () { clearTimeout(liveTimer); });
 
       /* Keep the caret and the selection where the author put them.
        *
@@ -5539,7 +5601,7 @@ import { toWinAnsi } from './doc-fonts.js';
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
-      laidOut: laidOut,
+      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _holds: holds, _releaseOn: RELEASE_ON,
       PANES: PANES, _rd: _rd
     };
   })(App);
