@@ -859,3 +859,17 @@ export function controlOnPlatform(data, controlId, platformId) {
     })
     .sort((a, b) => byNumber(a.hazard, b.hazard));
 }
+
+/**
+ * What a profile still has assigned to it, so it cannot be retired: the live platforms it owns, the
+ * open workflows it owns, and transfers handed to it that it has not yet marked reviewed.
+ * @param {Data} data @param {string} profileId
+ */
+export function profileAssignments(data, profileId) {
+  const workflows = live(data, 'workflow');
+  return {
+    platforms: live(data, 'platform').filter((p) => p.ownerId === profileId),
+    workflows: workflows.filter((w) => w.state === 'open' && w.ownerId === profileId),
+    transfers: workflows.filter((w) => w.type === 'transferOwner' && w.state === 'completed' && w.toOwnerId === profileId && !w.reviewed),
+  };
+}

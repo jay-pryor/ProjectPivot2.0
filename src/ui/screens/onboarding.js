@@ -1,4 +1,5 @@
 import { html, raw } from '../html.js';
+import { activeProfiles } from '../prefs.js';
 import { dataAttrs, go, idTag, option, groupTags, plus } from './common.js';
 import { platformImage } from './platforms.js';
 import { get } from '../../core/data.js';
@@ -32,7 +33,7 @@ function detailsStep(state, data, wf, p) {
   return html`<h2>Details</h2>
     <label class="field-block"><span class="field-label">Name</span><input name="name" value="${p.name}" required aria-label="Platform name" ${dataAttrs({ change: 'updatePlatform', id: p.id })}></label>
     <label class="field-block"><span class="field-label">Description</span><textarea class="doc-text boxed" name="description" rows="3" placeholder="What the platform is, and what it is for…" aria-label="Platform description" ${dataAttrs({ change: 'updatePlatform', id: p.id })}>${p.description ?? ''}</textarea></label>
-    <label class="field-block"><span class="field-label">Owner</span><select name="ownerId" aria-label="Platform owner" ${dataAttrs({ change: 'setOwner', id: p.id })}>${state.profiles.map((/** @type {any} */ pr) => option(pr.id, pr.name, p.ownerId))}</select></label>
+    <label class="field-block"><span class="field-label">Owner</span><select name="ownerId" aria-label="Platform owner" ${dataAttrs({ change: 'setOwner', id: p.id })}>${activeProfiles(state, p.ownerId).map((/** @type {any} */ pr) => option(pr.id, pr.name, p.ownerId))}</select></label>
     <div class="field-block"><span class="field-label">Image <span class="muted">(optional)</span></span>${p.image ? platformImage(p, 'wf-image') : ''}
       <label class="button-like">${p.image ? 'Change image' : 'Add image'}<input type="file" accept="image/png,image/svg+xml,.png,.svg" hidden ${dataAttrs({ 'image-for': p.id })}></label></div>
     <div class="actions wf-nav"><span></span>${navButton(wf, 'Groups →', '@groups')}</div>`;

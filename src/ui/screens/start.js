@@ -31,12 +31,16 @@ export function checkScreen(state) {
 
 /** @param {any} state */
 export function profileScreen(state) {
+  // Retired profiles are left out unless asked for.
+  const retired = state.profiles.filter((/** @type {any} */ p) => p.retired).length;
+  const shown = state.showRetiredProfiles ? state.profiles : state.profiles.filter((/** @type {any} */ p) => !p.retired);
   return html`<div class="start front">${frontBrand()}<div class="front-body">
     <h2 class="front-title">Log In</h2>
     ${messages(state)}
-    <ul class="profiles">${state.profiles.map((/** @type {any} */ p, /** @type {number} */ i) => html`<li style="--i: ${i}"><button type="button" class="profile-tile" ${dataAttrs({ action: 'selectProfile', id: p.id })}><span class="initial" aria-hidden="true">${[...p.name.trim()][0]?.toUpperCase() ?? '?'}</span><span class="name">${p.name}</span></button></li>`)}
-      <li style="--i: ${state.profiles.length}"><form data-action="createProfile" class="profile-tile new"><span class="initial" aria-hidden="true">+</span><label>New profile <input name="name" required autocomplete="off"></label><button type="submit" class="primary">Create</button></form></li></ul>
+    <ul class="profiles">${shown.map((/** @type {any} */ p, /** @type {number} */ i) => html`<li style="--i: ${i}"><button type="button" class="profile-tile${p.retired ? ' retired' : ''}" ${dataAttrs({ action: 'selectProfile', id: p.id })}><span class="initial" aria-hidden="true">${[...p.name.trim()][0]?.toUpperCase() ?? '?'}</span><span class="name">${p.name}</span>${p.retired ? html`<span class="tag">Retired</span>` : ''}</button></li>`)}
+      <li style="--i: ${shown.length}"><form data-action="createProfile" class="profile-tile new"><span class="initial" aria-hidden="true">+</span><label>New profile <input name="name" required autocomplete="off"></label><button type="submit" class="primary">Create</button></form></li></ul>
     ${state.profiles.length ? null : html`<p>No profiles yet. Create yours.</p>`}
+    ${retired ? html`<p><button type="button" class="link" ${dataAttrs({ action: 'toggleRetiredProfiles' })}>${state.showRetiredProfiles ? 'Hide retired profiles' : `Show retired profiles (${retired})`}</button></p>` : ''}
   </div></div>`;
 }
 

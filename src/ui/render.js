@@ -1,4 +1,5 @@
 import { helpView } from './screens/help.js';
+import { profilesView } from './screens/profiles.js';
 import { workflowsView } from './screens/workflows.js';
 import { workflowView } from './screens/workflow.js';
 import * as start from './screens/start.js';
@@ -38,6 +39,7 @@ function mainView(state) {
     case 'workflow': return workflowView(state, data, v.id);
     case 'references': return referencesView(state, data);
     case 'help': return helpView(state, data);
+    case 'profiles': return profilesView(state, data);
     case 'reference': return referenceView(state, data, v.id);
     case 'info': return infoView(state, data);
     case 'reports': return reportsView(state, data);

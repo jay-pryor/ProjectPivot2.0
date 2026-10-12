@@ -1,4 +1,5 @@
 import { RECEPTORS, RECEPTOR_LETTER, stageKey } from '../../core/receptors.js';
+import { activeProfiles } from '../prefs.js';
 import { html, raw } from '../html.js';
 import { dataAttrs, confirmButton, reviewTag, go, bandTag, idTag, option } from './common.js';
 import { dataTable } from './table.js';
@@ -172,7 +173,7 @@ function reviewsFilters(state, data) {
   const groups = listPlatformGroups(data);
   return html`<div class="rv-filters">
     <label class="owner-pick">Owner <select name="owner" ${dataAttrs({ change: 'setReviewsFilter' })}>
-      ${option('me', 'Me', prefs.owner)}${state.profiles.filter((/** @type {any} */ p) => p.id !== state.profileId).map((/** @type {any} */ p) => option(p.id, p.name, prefs.owner))}${option('everyone', 'Everyone', prefs.owner)}
+      ${option('me', 'Me', prefs.owner)}${activeProfiles(state, prefs.owner).filter((/** @type {any} */ p) => p.id !== state.profileId).map((/** @type {any} */ p) => option(p.id, p.name, prefs.owner))}${option('everyone', 'Everyone', prefs.owner)}
     </select></label>
     ${groups.length ? html`<label class="owner-pick">Group <select name="groupId" ${dataAttrs({ change: 'setReviewsFilter' })}>
       ${option('', 'All', prefs.groupId ?? '')}${groups.map((g) => option(g.id, g.name, prefs.groupId ?? ''))}</select></label>` : ''}
