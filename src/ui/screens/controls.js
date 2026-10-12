@@ -1,7 +1,7 @@
 import { html, raw } from '../html.js';
 import { dataAttrs, option, statusTag, stateTag, go, pageTabs, historyTable, historyCount, idTag, recordMenu, menuItem } from './common.js';
 import { sectionRail, stateCounts, glance } from './dashboard.js';
-import { optionsMenu, plus } from './common.js';
+import { plus } from './common.js';
 import { dataTable } from './table.js';
 import { referencesCard } from './references.js';
 import { statusColumn, idColumn, notFound } from './hazards.js';
@@ -41,27 +41,22 @@ export function controlsView(state, data) {
       rowAttrs: (r) => ({ dblclick: 'go', view: 'control', id: r.control.id }),
       columns: [
         { ...idColumn((r) => r.control, controlLabel, (r) => go(idTag(controlLabel(r.control)), 'control', { id: r.control.id })), width: 130 },
-        { key: 'control', label: 'Control', width: 300, minWidth: 180, value: (r) => r.control.title, filter: 'text',
-          render: (r) => go(r.control.title, 'control', { id: r.control.id }) },
+        { key: 'control', label: 'Control', width: 300, minWidth: 180, value: (r) => r.control.title, filter: 'text' },
         { key: 'origin', label: 'Origin', width: 200, minWidth: 140, filter: 'text', value: (r) => r.control.origin || null, render: (r) => originBox(r.control) },
         { ...tierColumn((r) => r.control), width: 180 },
         { key: 'hazards', label: 'Hazards', width: 290, minWidth: 200, sortable: false, filter: 'text',
           value: (r) => r.hazards.map((/** @type {any} */ h) => `${hazardLabel(h)} ${h.title}`).join(' '),
           render: (r) => (r.hazards.length
-            ? html`<ul class="plain">${r.hazards.map((/** @type {any} */ h) => html`<li>${go(`${hazardLabel(h)} ${h.title}`, 'hazard', { id: h.id })}</li>`)}</ul>`
+            ? html`<ul class="plain dots">${r.hazards.map((/** @type {any} */ h) => html`<li>${go(hazardLabel(h), 'hazard', { id: h.id })} ${h.title}</li>`)}</ul>`
             : html`<span class="muted">None</span>`) },
         { key: 'platforms', label: 'Platforms', width: 240, minWidth: 140, sortable: false, filter: 'select',
           options: live(data, 'platform').map((p) => /** @type {[string, string]} */ ([p.id, p.name])),
           match: (r, v) => r.platforms.some((/** @type {any} */ p) => p.id === v),
           render: (r) => (r.platforms.length
-            ? html`<ul class="plain">${r.platforms.map((/** @type {any} */ p) => html`<li>${go(p.name, 'platform', { id: p.id })}</li>`)}</ul>`
+            ? html`<ul class="plain dots">${r.platforms.map((/** @type {any} */ p) => html`<li>${p.name}</li>`)}</ul>`
             : html`<span class="muted">None</span>`) },
         statusColumn((r) => r.control.status),
       ],
-      rowEnd: (r) => optionsMenu(`Options for ${r.control.title}`, [
-        html`<button type="button" ${dataAttrs({ action: 'go', view: 'control', id: r.control.id })}>Open</button>`,
-        r.control.status === 'live' ? html`<button type="button" ${dataAttrs({ action: 'openPicker', picker: 'controlHazards', 'control-id': r.control.id })}>Link to hazards…</button>` : '',
-      ]),
     })}${originList(data)}`;
 }
 

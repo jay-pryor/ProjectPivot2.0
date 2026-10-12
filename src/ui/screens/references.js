@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { dataAttrs, go, idTag, statusTag, pageTabs, historyTable, historyCount, plus, removeColumn, removeButton, recordMenu, menuItem, optionsMenu } from './common.js';
+import { dataAttrs, go, idTag, statusTag, pageTabs, historyTable, historyCount, plus, removeColumn, removeButton, recordMenu, menuItem } from './common.js';
 import { dataTable } from './table.js';
 import { statusColumn, idColumn, notFound } from './hazards.js';
 import { all, get } from '../../core/data.js';
@@ -75,10 +75,6 @@ export function referencesView(state, data) {
       rows,
       empty: archived ? 'Nothing is archived.' : 'No references yet.',
       rowAttrs: (r) => ({ dblclick: 'go', view: 'reference', id: r.id }),
-      rowEnd: (r) => (r.status === 'deleted' ? '' : optionsMenu(`Options for ${r.title}`, [
-        html`<button type="button" ${dataAttrs({ action: 'go', view: 'reference', id: r.id })}>Open</button>`,
-        html`<button type="button" ${dataAttrs({ action: 'setReferenceArchived', id: r.id, archived: archived ? 'false' : 'true' })}>${archived ? 'Move to Active' : 'Move to Archived'}</button>`,
-      ])),
       columns: [
         idColumn((r) => r, referenceLabel, (r) => go(idTag(referenceLabel(r)), 'reference', { id: r.id })),
         { key: 'title', label: 'Reference', width: 560, minWidth: 200, value: (r) => r.title, filter: 'text',
