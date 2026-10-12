@@ -111,3 +111,12 @@ test('when even the data cannot all fit, only the widest columns are squeezed; s
   const words = new Set(texts(layout(doc([b]), style()).pages[0]).map((t) => t.text));
   for (const w of ['HAZ-001', 'Fire']) assert.ok(words.has(w), `${w} is broken across lines`);
 });
+
+test('a squeezed column with nothing in it still keeps room for a few letters of its heading', () => {
+  const n = 10;
+  const b = { kind: 'table', columns: Array.from({ length: n }, () => ({})), header: [...Array.from({ length: n - 1 }, (_, k) => cell(`H${k}`)), cell('Description')],
+    rows: [[...Array(n - 1).fill('Uncategorised'), ''].map(cell)] };
+  const p = layout(doc([b]), style()).pages[0];
+  const pieces = texts(p).filter((t) => /^[Description]+$/.test(t.text) && t.text.length < 11 && 'Description'.includes(t.text));
+  assert.ok(pieces.length <= 3, `the heading is cut into ${pieces.length} lines: ${pieces.map((t) => t.text).join('|')}`);
+});

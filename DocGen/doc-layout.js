@@ -316,7 +316,12 @@ export function columnWidths(b, n, W, pad, body, head, ctx) {
   if (sumMin > W) {
     // Not every word fits: the body's words first, then what is left shared towards the
     // headings' longest words; past that, everything is squeezed alike.
-    if (sumBody >= W) {
+    // However hard a table is squeezed, a column keeps room for about four letters of
+    // its heading, so a heading wraps rather than standing one letter to a line.
+    const least = headMin.map((h) => Math.min(h, 2 * pad + 2.2 * head.size));
+    for (let k = 0; k < n; k++) bodyMin[k] = Math.max(bodyMin[k], least[k]);
+    const sumBody2 = sum(bodyMin);
+    if (sumBody2 >= W) {
       // Even the data's words do not all fit: the widest columns are cut down to one
       // common width, so the short words (an id, a one-word title) stay whole.
       let lo = 0, hi = Math.max(...bodyMin);
@@ -327,7 +332,7 @@ export function columnWidths(b, n, W, pad, body, head, ctx) {
       return capped.map((x, k) => x + (x < bodyMin[k] && cut ? spare / cut : 0));
     }
     const want = minW.map((m, k) => m - bodyMin[k]);
-    const k2 = (W - sumBody) / sum(want);
+    const k2 = (W - sumBody2) / sum(want);
     return bodyMin.map((x, k) => x + want[k] * k2);
   }
   const slack = prefW.map((p, k) => Math.max(0, p - minW[k]));
