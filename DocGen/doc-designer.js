@@ -2,6 +2,7 @@
 import { STANDARD as STYLE_STANDARD, PAPER_MM as STYLE_PAPER_MM, normaliseStyle, fromProfile, isStyle } from './doc-style.js';
 import { layout } from './doc-layout.js';
 import { pagesHtml } from './doc-preview.js';
+import { toWinAnsi } from './doc-fonts.js';
   /* App namespace root. Exported at the bottom of this file. */
   var App = {};
 
@@ -203,1397 +204,24 @@ import { pagesHtml } from './doc-preview.js';
   })(App);
 
   /* =============================================================================
-   * MODULE: App.md  — MD-1: LaTeX-safe markdown primitives
-   * PURPOSE: The single choke point through which every data-derived string passes
-   *          on its way into a generated document, exactly as App.util.html.esc is
-   *          for the HTML outputs. Emits pandoc-flavoured markdown that survives
-   *          conversion to LaTeX source without hand-repair.
-   * PURITY:  pure (string -> string). No DOM, no I/O, no clock.
+   * MODULE: App.md  — rich text: the token grammar a designer's prose is written in
+   * PURPOSE: Read the {{b}} {{i}} {{c}} {{br}} {{ref:ID}} token markup the editors
+   *          store into RUNS of text for the document, its plain reading for titles
+   *          and summaries, and the anchor names references point at.
+   * PURITY:  pure. No DOM, no I/O, no clock.
    * DEPENDS: (none)
-   * INVARIANTS: ALL data-derived text reaches a document through text(), code() or
-   *             rich() — never by concatenation. Escaping happens ON THE WAY OUT;
-   *             the register keeps whatever the device actually reported.
    * ============================================================================= */
   (function (App) {
     'use strict';
 
-    /* -------------------------------------------------------------------------
-     * Why escape at all, and why here.
-     *
-     * The captured registers are full of characters that are load-bearing in LaTeX:
-     * a settings key is `wifi_sleep_policy`, a package is `com.samsung.android.app_x`,
-     * a captured value can hold `$HOME`, `50%` or `a & b`. Emitted raw into markdown
-     * those break twice over — markdown may read `_..._` as emphasis and eat the
-     * underscores, and once the text reaches LaTeX `%` comments out the rest of the
-     * line, `&` is a column separator, `$` opens math mode and `_` is a subscript.
-     * The failure is silent in the first case and a compile error in the second.
-     *
-     * The fix belongs in the writer, not in the data. Stripping these characters at
-     * input would mean the register no longer matches the device, and the
-     * implementation script generated from that register would name a package that
-     * does not exist. So the bytes are kept intact and escaped at the last moment.
-     *
-     * Two escape strategies, chosen by what the string IS:
-     *   text()  backslash-escapes. For prose and free-text values.
-     *   code()  wraps in a code span. For identifiers — package names, settings
-     *           keys, paths, commands. Everything inside a code span is literal by
-     *           definition, it survives to LaTeX as \texttt{}, and monospace is the
-     *           correct typography for an identifier in a configuration report.
-     * ---------------------------------------------------------------------- */
-
-    // The user-named LaTeX-hostile set (\ { } $ & # ^ _ ~ %) UNION the characters
-    // that are structural in markdown and would otherwise silently restructure the
-    // document (` * [ ] | < >). Backslash is first in the class and handled first by
-    // the replace, so an escaped backslash is never re-escaped.
-    var HOSTILE = /[\\`*_{}\[\]<>#|$&^~%]/g;
-
-    // Line-start-only troublemakers: these are ordinary punctuation mid-line but
-    // start a list, a block quote or a setext heading in column 1.
-    var LINE_START = /^(\s*)([-+=])/;
-    var LINE_START_NUM = /^(\s*)(\d+)([.)])/;
-
-    /**
-     * Escape a data-derived string for use as markdown TEXT.
-     *
-     * Safe to hand any string, including one already containing backslashes — the
-     * character class puts `\` first and the single pass never revisits its own
-     * output, so text(text(s)) is double-escaped (as it should be) rather than
-     * corrupt. Callers must escape exactly once.
-     *
-     * @param {*} s  coerced; null/undefined become ''
-     * @returns {string} markdown-safe, pandoc-safe, LaTeX-safe
-     */
-    function text(s) {
-      var str = String(s == null ? '' : s);
-      if (!str) return '';
-      var out = str.replace(HOSTILE, function (ch) { return '\\' + ch; });
-      // Now neutralise the column-1 constructs, line by line. `#`, `>` and `|` are
-      // already gone via HOSTILE; what is left is `- + =` and an ordered-list marker.
-      out = out.split('\n').map(function (line) {
-        return line.replace(LINE_START, '$1\\$2').replace(LINE_START_NUM, '$1$2\\$3');
-      }).join('\n');
-      return out;
-    }
-
-    /* -------------------------------------------------------------------------
-     * The OTHER escaper, and why there has to be one.
-     *
-     * text() above escapes for MARKDOWN, and everything in a generated document goes
-     * through it because everything in a generated document is markdown — pandoc reads
-     * it and produces the LaTeX. The two escapes overlap enough to be mistaken for each
-     * other (`\%`, `\&`, `\#`, `\$`, `\_` are correct in both) and they are not the same
-     * escape: `\<`, `\>`, `\[`, `\|`, `\+` are ordinary markdown and are not commands
-     * that LaTeX has, and `\~`, `\^`, `\.`, `\=` are accents rather than characters.
-     *
-     * One thing in this file does not travel as markdown: the header and footer, which
-     * reach the page as `\fancyhead[C]{…}` inside `header-includes`. Pandoc passes that
-     * block through VERBATIM, so nothing downstream is going to fix an escape — and a
-     * header reading `<---- Security classification` compiled to `\<` and stopped the
-     * build with "Undefined control sequence". Reported, and reproduced in four lines.
-     *
-     * So text destined for a raw-LaTeX context is escaped here instead. ONE pass, from a
-     * table: several of the replacements contain braces of their own, and a second pass
-     * over the output would escape those and leave `\textbackslash\{\}` on the page.
-     * ---------------------------------------------------------------------- */
-    var LATEX_MAP = {
-      '\\': '\\textbackslash{}', '~': '\\textasciitilde{}', '^': '\\textasciicircum{}',
-      '<': '\\textless{}', '>': '\\textgreater{}', '|': '\\textbar{}',
-      '&': '\\&', '%': '\\%', '$': '\\$', '#': '\\#', '_': '\\_', '{': '\\{', '}': '\\}'
-    };
-    var LATEX_HOSTILE = /[\\~^<>|&%$#_{}]/g;
-
-    /**
-     * Escape a string for a place where LaTeX reads it directly — never for markdown.
-     * @param {*} s @returns {string}
-     */
-    function latex(s) {
-      return String(s == null ? '' : s).replace(LATEX_HOSTILE, function (ch) { return LATEX_MAP[ch]; });
-    }
-
-    /**
-     * Wrap a string as a markdown code span — the right emission for an identifier.
-     *
-     * Content is NOT escaped: inside a code span markdown does no interpretation, so
-     * escaping would put visible backslashes in the output. What the fence has to
-     * survive instead is backticks in the content, which is what CommonMark's
-     * variable-length fence rule is for: pick a fence longer than the longest run
-     * inside, and pad with a space when the content itself starts or ends with a
-     * backtick (otherwise the pad is consumed as part of the fence).
-     *
-     * @param {*} s @returns {string} '' for empty input (an empty code span renders as ``)
-     */
-    function code(s) {
-      var str = String(s == null ? '' : s);
-      if (!str) return '';
-      // A code span cannot carry a newline; a multi-line identifier is not an
-      // identifier, so fall back to escaped text rather than emit a broken span.
-      if (str.indexOf('\n') !== -1) return text(str);
-      var longest = 0;
-      (str.match(/`+/g) || []).forEach(function (run) { longest = Math.max(longest, run.length); });
-      var fence = new Array(longest + 2).join('`');
-      var pad = (str.charAt(0) === '`' || str.charAt(str.length - 1) === '`') ? ' ' : '';
-      return fence + pad + str + pad + fence;
-    }
-
-    /**
-     * A table CELL. Same escaping as text(), but a pipe table cell cannot hold a
-     * newline — the row would terminate early and the table would lose its shape.
-     * Multi-line content is joined with a hard line break token the grid-table
-     * writer understands; pipeTable() collapses it, gridTable() honours it.
-     */
-    // A sentinel standing in for "line break inside a cell" while a row is still a
-    // flat string. U+0001 cannot occur in captured device output or be typed into the
-    // designer, so it can never collide with real content.
-    var CELL_BREAK = '\u0001';
-
-    /* -------------------------------------------------------------------------
-     * BRK-1: a long run with no space in it has to be MARKED, or it cannot wrap.
-     *
-     * `io.sdsasolutions.tacticalsettings` in a table cell is one word as far as the
-     * typesetter is concerned, and there is no way to break it that does not have to be
-     * asked for. TeX hyphenates letter sequences and a package name is not one; a
-     * zero-width space is NOT a break opportunity in XeTeX (measured — a `\parbox` with
-     * one and one without overflow identically); and `\raggedright` puts a word that
-     * does not fit on the line anyway, out past the column edge and into its neighbour.
-     *
-     * So the only question is which mark, and one already in this file works: a CODE
-     * SPAN reaches LaTeX as `\texttt`, and the formatting profile routes every `\texttt`
-     * through `\seqsplit`, which offers a breakpoint between every character. It is
-     * markdown-native, it needs no second escaping path (a code span is verbatim by
-     * definition, so nothing inside it can be mis-escaped), and the width model already
-     * knows a code span can break — so marking these also stops them demanding a column
-     * wide enough to hold them whole, which was the other half of the problem.
-     *
-     * The cost is that such a run is set in monospace. For a package name, a path or a
-     * settings key that is the right typography anyway, and it is what the register's
-     * key column has always done.
-     *
-     * Deliberately narrow: 18 characters or more AND shaped like an identifier — a
-     * `. _ - /` or a camelCase hump. Ordinary prose wraps at its spaces and needs no help.
-     * ---------------------------------------------------------------------- */
-    var IDENT_MIN = 18;
-    var IDENT_RUN = /\S{18,}/g;
-    var IDENT_SHAPE = /[._\/-]|[a-z][A-Z]/;
-
-    /** Is this space-free run one that must be marked before it can break? */
-    function isLongIdentifier(run) {
-      return String(run).length >= IDENT_MIN && IDENT_SHAPE.test(run);
-    }
-
-    /** cell() without the line-separator conversion — the escaping half on its own, so
-     *  the rich-text writer can decide for itself what a line break looks like. */
-    function cellText(s) {
-      var str = String(s == null ? '' : s);
-      var out = '', last = 0, m;
-      IDENT_RUN.lastIndex = 0;
-      while ((m = IDENT_RUN.exec(str)) !== null) {
-        if (!isLongIdentifier(m[0])) continue;
-        // Escaped text either side, the run itself verbatim. `code()` sizes its own
-        // fence, so a backtick inside the run cannot break out of it.
-        out += text(str.slice(last, m.index)) + code(m[0]);
-        last = m.index + m[0].length;
-      }
-      return out + text(str.slice(last));
-    }
-
-    function cell(s) {
-      return cellText(s).split('\n').join(CELL_BREAK);
-    }
-
-    // ---- block builders ------------------------------------------------------
-
-    /** ATX heading. `attrs` becomes a pandoc header-attribute block: `# Title {#id}`. */
-    function heading(level, body, id, classes) {
-      var n = Math.max(1, Math.min(6, level | 0));
-      var cls = (classes || []).map(function (c) { return ' .' + c; }).join('');
-      var attrs = (id ? '#' + id : '') + cls;
-      return new Array(n + 1).join('#') + ' ' + body + (attrs ? ' {' + attrs.trim() + '}' : '');
-    }
-
-    /** A paragraph. Blank-line separation is the caller's job (see join()). */
-    function para(body) { return String(body == null ? '' : body); }
-
-    /**
-     * A horizontal rule. Pandoc turns `* * *` into a LaTeX rule; the spaced form is
-     * used rather than `---` because three bare hyphens under a paragraph is a setext
-     * heading, and the designer lets a rule sit anywhere.
-     */
-    function rule() { return '* * *'; }
-
-    /**
-     * A hard page break that survives to LaTeX. `\newpage` in a raw-LaTeX block is
-     * the only construct pandoc passes through verbatim to a PDF writer; a markdown
-     * form for this does not exist.
-     */
-    function pageBreak() { return rawLatex('\\newpage'); }
-
-    /* -------------------------------------------------------------------------
-     * SPC-1: whitespace as a MEASUREMENT.
-     *
-     * Markdown has exactly one way to make vertical space — end a paragraph — and it
-     * has no size. Repeating it does nothing either: consecutive blank lines are one
-     * paragraph break however many you write, and LaTeX's `\parskip` is the same
-     * whether one or six were asked for. So "leave 40mm here for a signature" was not
-     * expressible at all, and the attempt (a run of line breaks) came out as the single
-     * blank line it always was.
-     *
-     * A length is expressible, in the same raw-LaTeX fences the page break and the
-     * centring already travel in. Two shapes, because vertical space between blocks and
-     * vertical space inside a table row are different constructs on the page:
-     *
-     *   * `\vspace*` — a gap between blocks. STARRED, so it is not discarded at a page
-     *     break: a section pushed 60mm down its own page has to survive being the first
-     *     thing on that page, which is the whole point of asking.
-     *   * `\rule[-h]{0pt}{0pt}` — a strut with depth and no height or width, at the end
-     *     of a row's first cell. Depth rather than height: a strut with height pushes
-     *     the cell's own text DOWN to sit on the bottom of the box, and a signature line
-     *     wants its label at the top and the empty space beneath it.
-     *
-     * The number is interpolated into LaTeX, which is the one place this file's escaping
-     * does not reach — so it is a NUMBER, clamped and rounded here, never a string that
-     * came from a text box. (Same rule, and the same precedent, as narrowOpen's scale.)
-     * ---------------------------------------------------------------------- */
-    var MAX_MM = 500;   // two A4 pages of gap; past this it is a mistake, not a layout
-
-    /** A sanitised millimetre length, or '' for "no space asked for". */
-    function mmLen(v) {
-      var n = Number(v);
-      if (!isFinite(n) || n <= 0) return '';
-      return (Math.round(Math.min(n, MAX_MM) * 100) / 100) + 'mm';
-    }
-
-    /** SPC-1: a vertical gap of `v` millimetres between blocks. '' when none. */
-    function vspace(v) {
-      var len = mmLen(v);
-      return len ? rawLatex('\\vspace*{' + len + '}') : '';
-    }
-
-    /** SPC-1: the strut that makes a table row `v` millimetres taller. '' when none. */
-    function rowStrut(v) {
-      var len = mmLen(v);
-      return len ? '`\\rule[-' + len + ']{0pt}{0pt}`{=latex}' : '';
-    }
-
-    /**
-     * A raw-LaTeX block, passed through verbatim by pandoc's LaTeX writer and shown as
-     * machinery (never as content) by the preview.
-     *
-     * Callers pass a MACRO NAME, not a body of LaTeX built from data: everything
-     * data-derived in this file goes through text()/cell(), and a raw block is the one
-     * place that escaping does not reach. The macros themselves are defined once, in
-     * App.docFormat's preamble, which is also what keeps their behaviour a formatting
-     * decision rather than something smeared through the document.
-     */
-    function rawLatex(s) { return '```{=latex}\n' + String(s == null ? '' : s) + '\n```'; }
-
-    /**
-     * Centre a block of already-emitted markdown.
-     *
-     * A fenced div (`::: {.center}`) is the tidy-looking way to write this and it does
-     * NOT work: pandoc's LaTeX writer drops the div and emits the contents unchanged,
-     * so the centring silently did nothing in the PDF. (The `data-latex` attribute is a
-     * convention of the pandoc-latex-environment FILTER, not native pandoc — and a
-     * filter is a dependency this pipeline should not need.) Raw `{=latex}` fences
-     * around the block are passed through verbatim, and the markdown between them is
-     * still parsed as markdown, which is what a centred TABLE needs.
-     */
-    function centred(body) {
-      return '```{=latex}\n\\begin{center}\n```\n\n' + body + '\n\n```{=latex}\n\\end{center}\n```';
-    }
-
-    /**
-     * A pipe table. Cells must be single-line — any CELL_BREAK is collapsed to a
-     * space, because a pipe table physically cannot represent one.
-     * @param {string[]} headers  already cell()-escaped
-     * @param {string[][]} rows   already cell()-escaped
-     * @param {{align?:string[]}} [opts]  'l'|'c'|'r' per column
-     */
-    function pipeTable(headers, rows, opts) {
-      opts = opts || {};
-      var align = opts.align || [];
-      // A run of breaks (HUM-1 puts a blank line between list entries) collapses to one
-      // space — two would show as a gap the grid form does not have.
-      function flat(c) { return String(c == null ? '' : c).split(CELL_BREAK).filter(function (x, i) { return x.length || i === 0; }).join(' ').replace(/\s+/g, ' '); }
-      var head = '| ' + headers.map(flat).join(' | ') + ' |';
-      var sep = '| ' + headers.map(function (h, i) {
-        return align[i] === 'c' ? ':---:' : align[i] === 'r' ? '---:' : '---';
-      }).join(' | ') + ' |';
-      var body = rows.map(function (r) { return '| ' + r.map(flat).join(' | ') + ' |'; }).join('\n');
-      return head + '\n' + sep + (body ? '\n' + body : '');
-    }
-
-    /* -------------------------------------------------------------------------
-     * TW-1: how a column width reaches the PDF.
-     *
-     * Markdown has one place to put a column width and it is not an attribute: pandoc
-     * derives each column's RELATIVE width from the dash count on a grid table's
-     * border row. A pipe table carries no widths at all. So a table with widths must
-     * always be drawn as a grid table, and every cell must be wrapped to fit its
-     * column — a line that overruns its border does not make a wide column, it stops
-     * the block being read as a table.
-     *
-     * Measured against the pandoc in use (3.1.11): column i arrives in the LaTeX
-     * writer as (dashes_i + 1) / lineLength, where dashes_i is the field width plus
-     * the two padding spaces and lineLength is the whole border row. Solving that for
-     * the field width is what widthsFor does, so the fraction the operator dragged is
-     * the fraction `\real{…}` carries into the longtable column spec.
-     * ---------------------------------------------------------------------- */
-
-    // The source width a width-bearing table is drawn to. Only the FRACTIONS reach the
-    // PDF, so this number decides nothing but how legible the .md is to a human.
-    var WIDTH_BUDGET = 96;
-    var MIN_COL = 3;
-    // Pandoc's `--columns` default. Past it, a pipe table's widths stop being LaTeX's
-    // business and become pandoc's, which reads them off the separator row (see table()).
-    var PIPE_MAX = 72;
-
-    /** Field widths for `n` columns from fractions summing to ~1. */
-    function widthsFor(fracs, n) {
-      var total = WIDTH_BUDGET + 3 * n + 1;
-      // The stored widths are relative SHARES, not a partition: typing 60% into one
-      // column and 50% into another is a thing the designer can do, and it means "give
-      // the first six-elevenths of whatever there is". Normalising here is what makes
-      // an over- or under-committed set render as something rather than as nothing.
-      var sum = 0, i;
-      for (i = 0; i < n; i++) {
-        var v = Number((fracs || [])[i]);
-        if (isFinite(v) && v > 0) sum += v;
-      }
-      var out = [];
-      for (i = 0; i < n; i++) {
-        var f = Number((fracs || [])[i]);
-        if (!isFinite(f) || f <= 0) f = sum > 0 ? 0 : 1 / n;
-        else if (sum > 0) f = f / sum;
-        out.push(Math.max(MIN_COL, Math.round(f * total) - 3));
-      }
-      return out;
-    }
-
-    /* -------------------------------------------------------------------------
-     * AUTO-1: what "automatic" width means when the content will not fit.
-     *
-     * Sizing every column to its widest line is right while the table is narrow enough
-     * to hold them all, and badly wrong once it is not — because pandoc reads the
-     * source widths as PROPORTIONS. One column of long prose (the control-coverage
-     * "Items" cell, which lists every package satisfying a control) then claims almost
-     * the whole page and squeezes "Control", "Status" and "Justification" into a few
-     * characters each. That is the mashed-up table: not a rendering fault, a
-     * measurement one.
-     *
-     * So a table that does not fit is laid out the way any table layout does it: every
-     * column first gets the width it CANNOT go below — its longest unbreakable word,
-     * since wrapping cannot break one — and only the slack above that is shared out, in
-     * proportion to how much each column actually wants. A heading is never squeezed
-     * below itself, and the long column takes the surplus instead of taking everything.
-     *
-     * A table that DOES fit is untouched, byte for byte, which is most of them.
-     * ---------------------------------------------------------------------- */
-
-    /**
-     * The longest run in a cell with no space in it — what a wrap cannot break without
-     * breaking the content itself.
-     *
-     * Measured on the SOURCE, markup and all, because that is what the wrapper has to
-     * fit. It is tempting to discount a code span, on the grounds that `\seqsplit` will
-     * break the identifier on the page anyway — but the break here happens in the
-     * MARKDOWN, and a fence cut in half stops being a fence: `` `appInstall `` on one
-     * line and `` Whitelist` `` on the next is rejoined by pandoc as one span with a
-     * space through the middle of the package name, and the emphasis markers around it
-     * come out as literal asterisks. So the floor is the whole token. It costs source
-     * width, which is cosmetic, and it buys the guarantee that the auto path never cuts
-     * a token in half.
-     */
-    function longestWord(s) {
-      var w = 0;
-      String(s == null ? '' : s).split(CELL_BREAK).forEach(function (line) {
-        line.split(/\s+/).forEach(function (t) { w = Math.max(w, t.length); });
-      });
-      return w;
-    }
-
-    /* -------------------------------------------------------------------------
-     * AUTO-2: the columns are measured in EMS, not in characters.
-     *
-     * Counting characters is the wrong currency, and it fails in one specific,
-     * visible way: a column gets a share of the page proportional to its character
-     * count, but spends that share in POINTS, and a character does not cost a fixed
-     * number of points. `i` is a third of the width of `m`; a monospace package name
-     * costs 0.6em a character while prose averages half that; bold costs another few
-     * per cent. In a register table — one monospace key column beside four of prose —
-     * the rate that falls out is well under what prose actually needs, so everything is
-     * squeezed. Prose absorbs it by wrapping. A single unbreakable word cannot, and
-     * pushes past its column into the next one, which is exactly the symptom.
-     *
-     * So each column is measured in ems: what it WANTS (its widest line) and what it
-     * cannot go below (its longest unbreakable run). The budget is the page in ems, less
-     * what pandoc spends on inter-column padding — it writes the fractions against
-     * `(\columnwidth - 2(n-1)\tabcolsep)`, so that padding is not the columns' to share
-     * and counting it would over-promise every one of them.
-     *
-     * The result is converted back to source characters at the end, because that is what
-     * a grid table is drawn in. The conversion is uniform, so it cannot reintroduce the
-     * bias — and the character floor is applied on top of the em floor, so a run of
-     * narrow letters is still never cut in half.
-     * ---------------------------------------------------------------------- */
-
-    /* Advance widths in ems, MEASURED from Latin Modern at 11pt rather than guessed —
-     * `\savebox`/`\the\wd` over representative strings, which is the only way to get
-     * these right and cheap to redo if the shipped font ever changes:
-     *
-     *   a-z 12.70em/26 = 0.489    A-Z 18.54em/26 = 0.713    0-9 4.98em/10 = 0.498
-     *   i 0.277   m 0.829   e 0.442   . 0.277   space 0.331   ttfamily 0.523
-     *   bold/regular over the whole lowercase alphabet = 1.151
-     *
-     * The first guess at these had bold at 1.06 and monospace at 0.6, and it put
-     * "Description" 8pt past its column — which is how the numbers came to be measured.
-     */
-    var EM_NARROW = 'iljtfrI().,;:\'"!|[]-';
-    var EM_WIDE = 'mwMW@%';
-    var EM_UPPER = 'ABCDEFGHJKLNOPQRSTUVXYZ';
-    var EM_MONO = 0.53;         // \texttt advance, fixed by definition
-    var EM_BOLD = 1.15;         // bold over regular, across the lowercase alphabet
-    var EM_PER_CHAR = 0.5;      // the rate used to turn ems back into source characters
-    // The measurements are within about 6% either way on a short word, and being short
-    // is the direction that shows: a floor a little too generous costs a wrappable
-    // column a few points, one a little too mean puts a heading through its border.
-    var FLOOR_SAFETY = 1.08;
-    // Pandoc writes the column fractions against `\columnwidth - 2(n-1)\tabcolsep`, and
-    // \tabcolsep is 6pt against an 11pt em — that padding is not the columns' to share.
-    var EM_GUTTER = 2 * 6 / 11;
-    // The text block of the shipped profile — A4 less 25mm each side — in ems at 11pt.
-    var PAGE_EM = 160 / 25.4 * 72 / 11;
-
-    function charEm(c) {
-      if (EM_NARROW.indexOf(c) !== -1) return 0.3;
-      if (EM_WIDE.indexOf(c) !== -1) return 0.85;
-      if (EM_UPPER.indexOf(c) !== -1) return 0.66;
-      return 0.5;
-    }
-
-    /**
-     * The typeset width of one already-escaped source line, in ems.
-     *
-     * Walks it rather than measuring it flat, because the markup is not printed and the
-     * characters inside it are not all charged at the same rate: a backslash escape
-     * costs only the character it escapes, a code fence costs nothing and puts what it
-     * contains on the monospace rate, and `**` costs nothing but makes what it contains
-     * bold.
-     */
-    /* REF-2: a link is measured by what it PRINTS, not by what it is written as.
-     *
-     * `[AHG-001](#ctl-ahg-001)` is 23 characters of source and seven of page. Measuring
-     * the source charged the column three times what the link costs, which moved the
-     * proportions of every table carrying a control mention — measured in a built PDF as
-     * a 3pt overfull box that was not there before the mentions became links.
-     *
-     * The SOURCE width is a separate question and is still counted in full (a link cut
-     * in half stops being one, D-036); that is what `atomicRun` is for. This is the
-     * page, and on the page the destination is not set.
-     */
-    var LINK_TEXT = /\[([^\]\n]*)\]\([^)\s\n]*\)/g;
-    function printed(s) { return String(s == null ? '' : s).replace(LINK_TEXT, '$1'); }
-
-    function lineEm(s) {
-      var str = printed(s), out = 0, mono = false, bold = false;
-      for (var i = 0; i < str.length; i++) {
-        var c = str.charAt(i);
-        if (c === '\\' && i + 1 < str.length) { out += charEm(str.charAt(++i)); continue; }
-        if (c === '`') { mono = !mono; continue; }
-        if (c === '*' && !mono) {
-          if (str.charAt(i + 1) === '*') { i++; bold = !bold; } // ** toggles bold
-          continue;                                             // a single * is emphasis
-        }
-        out += mono ? EM_MONO : charEm(c) * (bold ? EM_BOLD : 1);
-      }
-      return out;
-    }
-
-    /**
-     * The widest run with no space in it, in ems — what the PAGE cannot go below.
-     *
-     * A code span is skipped, and this is the one place that distinction belongs: the
-     * formatting profile routes every `\texttt` through `\seqsplit`, so a 40-character
-     * package name has a breakpoint between every character once it reaches the page and
-     * is not a floor at all. In the SOURCE it still is one (a cut fence stops being a
-     * fence — D-021), which is why that floor is counted separately, in characters.
-     * Charging the page for both is what made the floors exceed the page and left every
-     * column, including the prose ones that genuinely could not wrap, below its need.
-     */
-    function longestWordEm(s, includeCode) {
-      var w = 0;
-      // REF-2: the destination is not set on the page, so it is not a run on the page.
-      printed(s).split(CELL_BREAK).forEach(function (line) {
-        var text = includeCode ? line : line.replace(/`+[^`]*`+/g, ' ');
-        text.split(/\s+/).forEach(function (t) { w = Math.max(w, lineEm(t)); });
-      });
-      return w;
-    }
-
-    /**
-     * Auto widths for `n` columns of `all` rows: natural where they fit, shared out
-     * against the page where they do not. Returned in SOURCE CHARACTERS.
-     *
-     * @param {{pageEm?:number, head?:number, body?:number, firstCol?:number}} [metrics]
-     *        The page in ems and each table font size relative to the document's.
-     *        They have to be passed in because a table set at 12pt in an 11pt document
-     *        needs a ninth more room than the same table set at 11pt, and this module
-     *        has no business knowing which profile is in force. Absent, everything is
-     *        the shipped profile at one size — which is what it was before FNT-1.
-     *        FNT-6: `firstCol` is the first column's own size, on the same rule — a key
-     *        column set smaller needs less room than the body, and one set larger needs
-     *        more, which is exactly the arithmetic D-027 was about.
-     */
-    function autoWidths(all, n, metrics) {
-      metrics = metrics || {};
-      var pageEm = metrics.pageEm > 0 ? metrics.pageEm : PAGE_EM;
-      var headScale = metrics.head > 0 ? metrics.head : 1;
-      var bodyScale = metrics.body > 0 ? metrics.body : 1;
-      var colScale = metrics.firstCol > 0 ? metrics.firstCol : bodyScale;
-      return layout(all, n, pageEm, headScale, bodyScale, colScale);
-    }
-
-    function layout(all, n, PAGE_EM, headScale, bodyScale, colScale) {
-      if (!(colScale > 0)) colScale = bodyScale;
-      var wantEm = [], floorEm = [], softEm = [], floorChars = [], natural = [], i;
-      for (i = 0; i < n; i++) {
-        var line = 0, word = 0, soft = 0, chars = MIN_COL, cols = MIN_COL;
-        all.forEach(function (r, ri) {
-          // Row 0 is the header, which may be set at its own size (FNT-1); column 0's
-          // body cells may be set at theirs (FNT-6).
-          var k = ri === 0 ? headScale : (i === 0 ? colScale : bodyScale);
-          splitCell(r && r[i]).forEach(function (l) { line = Math.max(line, lineEm(l) * k); cols = Math.max(cols, l.length); });
-          word = Math.max(word, longestWordEm(r && r[i], false) * k);
-          soft = Math.max(soft, longestWordEm(r && r[i], true) * k);
-          chars = Math.max(chars, longestWord(r && r[i]));
-        });
-        natural.push(cols);
-        wantEm.push(Math.max(line, soft, MIN_COL * EM_PER_CHAR));
-        // The safety margin is about FLOORS — the widths below which something visibly
-        // breaks — not about how wide a column would like to be.
-        word = word * FLOOR_SAFETY;
-        soft = soft * FLOOR_SAFETY;
-        floorEm.push(Math.max(word, MIN_COL * EM_PER_CHAR));
-        /* The SOFT floor is what an identifier would like: a code span can be broken on
-         * the page (`\seqsplit`), so it is not a floor — but broken every six characters
-         * it stops being readable, and "it can be broken" is not the same as "break it
-         * as far as you like". So it is asked for after the hard floors are met and
-         * before anything is spent on the columns that merely want to be wider. */
-        softEm.push(Math.max(soft, floorEm[i]));
-        // The em floors govern the PAGE; this one governs the SOURCE, and both have to
-        // hold or a narrow-lettered token would still be cut in half (D-021).
-        floorChars.push(chars);
-      }
-
-      /* Ems decide the PROPORTIONS; characters only decide how the .md is drawn.
-       *
-       * Both floors have to hold at once and they pull opposite ways: the source floor
-       * includes code spans (a cut fence corrupts the identifier — D-021) while the page
-       * floor excludes them (`\seqsplit` breaks them on the page). Taking the larger of
-       * the two per column would let the source floor set the FRACTION, which is what
-       * gave the key column a third of the page and squeezed the prose headings through
-       * their borders.
-       *
-       * Since only ratios reach the PDF, the whole table can be scaled up instead —
-       * uniformly, by just enough that the widest source floor fits. Every fraction is
-       * preserved exactly and every token stays whole. The cost is a wide .md, which is
-       * cosmetic.
-       */
-      function toChars(ems) {
-        var scale = 1;
-        ems.forEach(function (em, j) {
-          if (em > 0) scale = Math.max(scale, floorChars[j] * EM_PER_CHAR / em);
-        });
-        return ems.map(function (em, j) {
-          return Math.max(MIN_COL, floorChars[j], Math.round(em * scale / EM_PER_CHAR));
-        });
-      }
-
-      var wantTotal = wantEm.reduce(function (a, w) { return a + w; }, 0);
-      var budget = PAGE_EM - EM_GUTTER * (n - 1);
-      // It fits: every column takes its widest line and there is nothing to decide. The
-      // measured widths are the natural ones, in characters — the em model exists to
-      // settle a competition, and there is no competition here. It also keeps a small
-      // table's markdown exactly as tidy as it always was.
-      if (wantTotal <= budget) return natural;
-
-      /* Three claims on the page, settled in order of how badly they fail:
-       *   1. the HARD floors — a word with nothing to break it, which overflows into the
-       *      next column if it is short-changed. Met first, always.
-       *   2. the SOFT floors — an identifier that can be broken but should not be minced.
-       *   3. APPETITE — a column that would simply rather be wider, and wraps if it is not.
-       * Anything left after the hard floors goes to 2, then to 3. */
-      var floorTotal = floorEm.reduce(function (a, w) { return a + w; }, 0);
-      // Even the unbreakable words do not fit. Nothing can be honoured, so they share
-      // the page in proportion and something will overflow — there is no layout that
-      // avoids it, and pretending otherwise would only hide which one.
-      if (floorTotal >= budget) {
-        return toChars(floorEm.map(function (w) { return w / floorTotal * budget; }));
-      }
-      var out = floorEm.slice();
-      var room = budget - floorTotal;
-
-      function share(need) {
-        var total = need.reduce(function (a, w) { return a + w; }, 0);
-        if (total <= 0 || room <= 0) return;
-        var spend = Math.min(room, total);
-        need.forEach(function (w, j) { out[j] += w / total * spend; });
-        room -= spend;
-      }
-      share(softEm.map(function (w, j) { return Math.max(0, w - floorEm[j]); }));
-      share(wantEm.map(function (w, j) { return Math.max(0, w - out[j]); }));
-      return toChars(out);
-    }
-
-    /**
-     * Where a cut at `at` would land inside a backslash escape, step back off it.
-     * The text being wrapped has already been through text(), so `\_` is one unit; a
-     * break between the two halves would free the `_` to start emphasis on the next
-     * line. Counts the run because `\\` is an escaped backslash, not an escaper.
-     */
-    /* REF-2: the spans a cut must not land inside, as [start, end) pairs.
-     *
-     * A markdown link is the case that matters: pandoc rejoins a cell's lines with a
-     * SPACE, so a break anywhere inside `[AHG-001](#ctl-ahg-001)` produces
-     * `](#ctl-ahg- 001)` — a destination with a space in it, which is not a link at all.
-     * The reader gets the raw brackets printed at them and no link in the PDF. Exactly
-     * the shape of D-021, which was the same rejoin breaking a `**` pair.
-     */
-    var LINK_SPAN = /\[[^\]\n]*\]\([^)\s\n]*\)/g;
-    function noCutZones(s) {
-      var out = [], m;
-      LINK_SPAN.lastIndex = 0;
-      while ((m = LINK_SPAN.exec(s)) !== null) out.push([m.index, m.index + m[0].length]);
-      return out;
-    }
-
-    function safeCut(s, at) {
-      var zones = noCutZones(s);
-      var i = at;
-      while (i > 0) {
-        var run = 0, j = i - 1;
-        while (j >= 0 && s.charAt(j) === '\\') { run++; j--; }
-        // A cut between the two asterisks of `**` leaves a lone `*` on each line, which
-        // is not emphasis at all. Never land inside a marker run.
-        var inMarker = s.charAt(i - 1) === '*' && s.charAt(i) === '*';
-        var inLink = zones.some(function (z) { return i > z[0] && i < z[1]; });
-        if (run % 2 === 0 && !inMarker && !inLink) return i;
-        i--;
-      }
-      return at;
-    }
-
-    /**
-     * The longest run in a cell that must survive whole — a link, or any space-free
-     * token (a code fence cut in half corrupts the identifier inside it, D-021).
-     */
-    function atomicRun(cell) {
-      var w = 0;
-      splitCell(cell).forEach(function (line) {
-        noCutZones(line).forEach(function (z) { w = Math.max(w, z[1] - z[0]); });
-        line.split(/\s+/).forEach(function (t) { w = Math.max(w, t.length); });
-      });
-      return w;
-    }
-
-    /**
-     * Scale a set of widths up until every column can hold what must survive whole.
-     *
-     * Uniform, so the proportions are untouched — the .md simply gets wider. That is the
-     * same trade `layout`'s toChars makes, and for the same reason: only the RATIOS
-     * reach the PDF, so source width is free and re-proportioning is not.
-     *
-     * @param {number[]} widths field widths in characters
-     * @param {Array} rows all rows, header included
-     * @param {number[]} [claims] extra per-column runs that must fit (a shading prefix,
-     *        a row anchor) — source text that is emitted on a line of its own
-     */
-    function holdWhole(widths, rows, claims) {
-      var need = widths.map(function (_, i) {
-        var w = (claims && claims[i]) || 0;
-        rows.forEach(function (r) { w = Math.max(w, atomicRun(r && r[i])); });
-        return w;
-      });
-      var scale = 1;
-      widths.forEach(function (w, i) { if (w > 0 && need[i] > w) scale = Math.max(scale, need[i] / w); });
-      if (scale === 1) return widths;
-      return widths.map(function (w, i) { return Math.max(MIN_COL, need[i], Math.round(w * scale)); });
-    }
-
-    /**
-     * Hard-wrap one line to a character width. Breaks at spaces; a single run longer
-     * than the column is broken mid-run, because a column that grew to fit it would
-     * silently be a different width from the one that was asked for.
-     * @returns {string[]} at least one line
-     */
-    function wrapLine(s, width) {
-      var w = Math.max(1, width | 0);
-      var str = String(s == null ? '' : s);
-      if (str.length <= w) return [str];
-      var out = [], rest = str;
-      while (rest.length > w) {
-        var at = rest.lastIndexOf(' ', w);
-        // No space to break at (or one only at the very start) — break the run itself.
-        if (at <= 0) at = safeCut(rest, w);
-        out.push(rest.slice(0, at).replace(/\s+$/, ''));
-        rest = rest.slice(at).replace(/^\s+/, '');
-        if (!rest.length) break;
-      }
-      if (rest.length) out.push(rest);
-      return out.length ? out : [''];
-    }
-
-    function splitCell(c) { return String(c == null ? '' : c).split(CELL_BREAK); }
-
-    /* -------------------------------------------------------------------------
-     * TBL-2: a grid table is measured against pandoc's `--columns`, not against itself.
-     *
-     * A pipe table narrower than `--columns` (72 by default) is handed to LaTeX with no
-     * widths at all — `@{}lll@{}` — and LaTeX sizes each column to its content, which is
-     * what a small table should look like. A GRID table is never handed over that way:
-     * pandoc always writes explicit `p{}` fractions for one, and it divides the segment
-     * lengths by **max(line length, --columns)** rather than by the line length. So a
-     * 32-character grid table came out as three columns of 0.1389 + 0.1250 + 0.1667 —
-     * a table 43% of the width of the page, with every column squeezed to match.
-     * Measured on pandoc 3.1.11, not read.
-     *
-     * That is invisible until something forces a small table into the grid form, and
-     * TBL-1's title row is exactly such a thing: adding a title to a table that fitted
-     * on a line shrank it to under half the page and re-proportioned its columns. The
-     * columns were not the fault — the table's SOURCE WIDTH was.
-     *
-     * So an automatic grid table is drawn to the same source budget an explicit one is.
-     * The ratios between the columns are untouched (this is a uniform scale, the same
-     * trade holdWhole and layout's toChars already make); what changes is that the
-     * fractions now add up to the page, so a grid table fills the text block the way its
-     * pipe-form twin does. Only widths BELOW the budget are scaled: a table already wider
-     * than it has been laid out by autoWidths and is not second-guessed here.
-     * ---------------------------------------------------------------------- */
-    function fillLine(widths, n) {
-      var total = widths.reduce(function (a, w) { return a + (w > 0 ? w : 0); }, 0);
-      if (!(total > 0) || total >= WIDTH_BUDGET) return widths;
-      var scale = WIDTH_BUDGET / total;
-      return widths.map(function (w) { return Math.max(MIN_COL, Math.round(w * scale)); });
-    }
-
-    /**
-     * A grid table — the only markdown table that can hold a multi-line cell, which
-     * is what a hand-authored table in a custom section needs.
-     *
-     * Without `opts.widths` nothing is wrapped and each column is made as wide as its
-     * widest line, exactly as before: guessing a wrap width would only fight the LaTeX
-     * layout that actually decides the final line breaks. With widths, the columns are
-     * the ones asked for and the content is wrapped into them (see TW-1 above).
-     *
-     * @param {{align?:string[], widths?:number[], cellPrefix?:string[], rowAnchors?:string[]}} [opts]
-     *        cellPrefix is a per-column raw-LaTeX span placed on its OWN first line of
-     *        every body cell (TBS-1 shading). Its own line so that it costs the column
-     *        no width: pandoc folds a cell's consecutive lines into one paragraph.
-     *        rowAnchors is the same idea per ROW rather than per column — one anchor
-     *        span at the head of each body row's first cell (REF-2), so a link can land
-     *        on a particular row of a table rather than on the table.
-     */
-    function gridTable(headers, rows, opts) {
-      opts = opts || {};
-      var align = opts.align || [];
-      var pre = opts.cellPrefix || [];
-      /* SPC-1: the row-height strut, at the END of the first cell rather than the head of
-       * it — see rowStrut. One per row is enough: a row is as tall as its tallest cell.
-       *
-       * `suffixRows` says WHICH rows take it: an array of booleans, one per row, or null
-       * for all of them. Null rather than an array of trues, because "every row" is the
-       * ordinary case and an absent list is how the rest of this file writes a default. */
-      var suf = opts.cellSuffix || '';
-      var sufRows = Array.isArray(opts.suffixRows) ? opts.suffixRows : null;
-      function wantsSuffix(i) { return !!suf && (!sufRows || sufRows[i] !== false); }
-      var anchors = opts.rowAnchors || [];
-      var headPre = opts.headPrefix || '';
-      var n = headers.length;
-      var explicit = !!(opts.widths && opts.widths.length === n);
-      var widths = explicit ? widthsFor(opts.widths, n) : fillLine(autoWidths([headers].concat(rows), n, opts.metrics), n);
-      // A prefix is literal source text, so a column carrying one can never be
-      // narrower than it — otherwise the raw-LaTeX span would be wrapped and broken.
-      // A row anchor is the same kind of claim on the FIRST column: it is emitted whole,
-      // on its own line, and a column too narrow to hold it would break it in half.
-      /* What each column must be able to hold WHOLE, on its own line: a shading prefix,
-       * a row anchor, and any run in its cells that cannot be broken.
-       *
-       * Widened by SCALING THE TABLE, never by widening the one column. Pandoc reads a
-       * column's share of the page off its share of the border row, so making column 0
-       * bigger to fit a 19-character anchor takes that width from every other column —
-       * and the anchor costs nothing on the page (`\hypertarget` is zero-width), so the
-       * page was being re-proportioned to make room for something that is not there.
-       * Measured: it put a 10pt overfull box in the Control coverage table. Scaling
-       * uniformly leaves every proportion exactly as it was and only widens the .md.
-       */
-      var widest = anchors.reduce(function (a, s) { return Math.max(a, String(s || '').length); }, 0);
-      widths = holdWhole(widths, [headers].concat(rows), widths.map(function (_, i) {
-        // SPC-1: the strut is the same kind of claim on column 0 as the anchor above —
-        // emitted whole on a line of its own, costing the page nothing (it is zero-width)
-        // but costing the SOURCE the characters it is written in.
-        return Math.max(pre[i] ? pre[i].length : 0, headPre.length,
-          i === 0 ? Math.max(widest, rows.some(function (_, ri) { return wantsSuffix(ri); }) ? suf.length : 0) : 0);
-      }));
-      /* A HAND-SET width must still hold what cannot be broken.
-       *
-       * The automatic path has honoured this since D-021 (see layout/toChars): a column
-       * is never narrower than its longest unbreakable run, and the whole table is
-       * scaled up until that fits, because only the RATIOS reach the PDF. The explicit
-       * path had no such floor at all — it wrapped to whatever was dragged — so a
-       * narrow column cut a package name in half, or a cross-reference through its own
-       * destination (`](#ctl-ahg- 001)`), which stops being a link.
-       *
-       * The same answer, applied to the same numbers: find the ratio by which the
-       * tightest column falls short, scale every column by it, and the .md gets wider
-       * while the fractions the operator dragged are preserved exactly.
-       */
-
-      function padTo(s, w) { return s + new Array(Math.max(0, w - s.length) + 1).join(' '); }
-      /* TBL-1: the width INSIDE the outer borders — what a spanning row has to fill.
-       * Every column plus its two padding spaces, plus the internal `+` each join costs. */
-      var spanWidth = widths.reduce(function (a, w) { return a + w + 2; }, 0) + (n - 1);
-      function border(ch) {
-        return '+' + widths.map(function (w, i) {
-          var bar = new Array(w + 3).join(ch);
-          // Alignment is carried by the `:` markers on the HEADER separator, and only
-          // there. Putting them on the `-` borders too made pandoc 3.1.11 silently drop
-          // every body row — the table compiled to a header and nothing else, which is
-          // worse than a broken table because it looks deliberate. Measured, not read:
-          // the same table with colons on the header row alone reads all its rows.
-          if (ch === '=') {
-            if (align[i] === 'c') return ':' + bar.slice(1, -1) + ':';
-            if (align[i] === 'r') return bar.slice(0, -1) + ':';
-            if (align[i] === 'l') return ':' + bar.slice(1);
-          }
-          return bar;
-        }).join('+') + '+';
-      }
-      // Wrapping is unconditional: against a natural width it is a no-op (a line that
-      // already fits comes back unchanged), and against a narrowed one it is the whole
-      // point. One path rather than two means the auto and explicit cases cannot drift.
-      function linesFor(c, i, isHeader, anchor, tall) {
-        var out = [];
-        splitCell(c).forEach(function (l) {
-          wrapLine(l, widths[i]).forEach(function (x) { out.push(x); });
-        });
-        if (!isHeader && i === 0 && anchor) out.unshift(anchor);
-        if (!isHeader && pre[i]) out.unshift(pre[i]);
-        // SPC-1: last, and in the first column only — pandoc folds a cell's consecutive
-        // lines into one paragraph, so this lands at the end of that paragraph, which is
-        // the line whose depth decides where the bottom of the row falls.
-        if (!isHeader && i === 0 && tall) out.push(suf);
-        // TBL-1: on its own line, so it costs the column no width — pandoc folds a
-        // cell's consecutive lines into one paragraph.
-        if (isHeader && headPre) out.unshift(headPre);
-        return out;
-      }
-      function rowBlock(r, isHeader, anchor, tall) {
-        var cellLines = widths.map(function (_, j) { return linesFor(r && r[j], j, isHeader, anchor, tall); });
-        var h = cellLines.reduce(function (a, c) { return Math.max(a, c.length); }, 1);
-        var out = [];
-        for (var i = 0; i < h; i++) {
-          out.push('| ' + widths.map(function (w, j) { return padTo(cellLines[j][i] || '', w); }).join(' | ') + ' |');
-        }
-        return out.join('\n');
-      }
-      /* TBL-1: a title row is a REAL merged row, and pandoc does support one.
-       *
-       * A grid table's header is every row above the `=` separator, and a row whose
-       * internal `|` are omitted is read as a cell spanning those columns — verified on
-       * pandoc 3.1.11, which emits it as `\multicolumn{3}{…}`. So the title is the first
-       * of two header rows rather than a paragraph balanced on top of the table, which
-       * is what it was and what could never be the right width: a paragraph has to be
-       * given one, and a table's width is not known until it is typeset.
-       */
-      var parts = [];
-      if (opts.titleRow) {
-        parts.push('+' + new Array(spanWidth + 1).join('-') + '+');
-        wrapLine(String(opts.titleRow), spanWidth - 2).forEach(function (l) {
-          parts.push('| ' + padTo(l, spanWidth - 2) + ' |');
-        });
-      }
-      parts.push(border('-'), rowBlock(headers, true), border('='));
-      rows.forEach(function (r, i) { parts.push(rowBlock(r, false, anchors[i], wantsSuffix(i)), border('-')); });
-      if (!rows.length) parts.push(border('-'));
-      return parts.join('\n');
-    }
-
-    /* -------------------------------------------------------------------------
-     * TBS-1: a styled header row / first column.
-     *
-     * Bold and italic are markdown and cost nothing. SHADING is not expressible in
-     * markdown at all, so it travels the same way the page break and the centring
-     * already do — as raw `{=latex}` fences pandoc passes through verbatim:
-     *
-     *   * the header row, by locally redefining `\toprule` (which pandoc emits
-     *     immediately before the header of every longtable) to also emit `\rowcolor`.
-     *     Wrapped in `\begingroup`/`\endgroup`, so the redefinition reaches exactly
-     *     this table and nothing after it.
-     *   * the first column, by a `\cellcolor` at the head of each body cell —
-     *     `\columncolor` would have to be in the column spec, which pandoc writes and
-     *     we do not. `\rowcolor` cannot do a column.
-     *
-     * Both were verified against pandoc 3.1.11 + tectonic 0.15, not assumed: pandoc's
-     * LaTeX writer honours neither a fenced div nor a cell attribute here.
-     * The macros themselves are defined by App.docFormat's preamble.
-     * ---------------------------------------------------------------------- */
-
-    var HEAD_SHADE_OPEN = '```{=latex}\n\\begingroup\\chTblHeadShade\n```';
-    var HEAD_SHADE_CLOSE = '```{=latex}\n\\endgroup\n```';
-    var COL_SHADE = '`\\chTblColShade`{=latex}';
-    /* FNT-6: the first column's SIZE, by the same route as its shade.
-     *
-     * Weight and slope travel as markdown emphasis on the cell, and markdown has no way
-     * to say "and set this column two points smaller" — which is why the first column
-     * was the one kind of text in the document with no size of its own. A size is
-     * expressible the way the shade already is: a raw-LaTeX span at the head of each
-     * body cell, calling a macro the profile defines. `\raggedright` (which is where the
-     * row-font machinery lives, see App.docFormat) runs from the column spec, before the
-     * cell's content, so a `\selectfont` inside the cell is the later word and wins.
-     *
-     * The macro is named rather than expanded here: what size it is remains a formatting
-     * question, and App.md has no business knowing which profile is in force. */
-    var COL_FONT = '`\\chTblColFont`{=latex}';
-    // TBL-1: the same, for a header cell — needed only when a title row has taken the
-    // one `\rowcolor` that `\toprule` can carry. See App.docFormat's tablePreamble.
-    var HEAD_CELL_SHADE = '`\\chTblHeadCell`{=latex}';
-    var GROUP_CLOSE = '```{=latex}\n\\endgroup\n```';
-
-    /* -------------------------------------------------------------------------
-     * TW-3: a table narrower than the page.
-     *
-     * Three columns at 20% each should make a table 60% of the text width, not three
-     * equal columns filling it. Markdown cannot say that: pandoc derives a column's
-     * width from its share of the BORDER ROW, so the shares it reads always add up to
-     * the whole line however the table is drawn. The total is simply not expressible
-     * there.
-     *
-     * What is expressible is the thing the widths are measured against. Pandoc emits
-     * every column as `p{(\columnwidth - N\tabcolsep) * \real{f}}`, so shrinking
-     * `\columnwidth` for the duration of one table scales all of them together and the
-     * table comes out that fraction of the page — centred, which is what longtable does
-     * with a table narrower than the text block. Verified on pandoc 3.1.11 + tectonic.
-     *
-     * Over 100% is clamped rather than honoured: a table wider than the page is not a
-     * layout, it is an overflow, and the designer is told in red instead.
-     * ---------------------------------------------------------------------- */
-    function narrowOpen(scale) {
-      return '```{=latex}\n\\begingroup\\setlength{\\columnwidth}{' + scale.toFixed(4) + '\\columnwidth}\n```';
-    }
-
-    /** Wrap already-escaped cell text in emphasis, per line, leaving blanks alone. */
-    function emphasise(c, style) {
-      if (!style || (!style.bold && !style.italic)) return c;
-      var mark = (style.bold ? '**' : '') + (style.italic ? '*' : '');
-      if (!mark) return c;
-      return splitCell(c).map(function (seg) {
-        return seg.trim() ? mark + seg + mark.split('').reverse().join('') : seg;
-      }).join(CELL_BREAK);
-    }
-
-    /**
-     * Emit a table, choosing the representation from the content: a grid table when
-     * any cell is multi-line, when widths are set, or when a shaded first column needs
-     * a prefix line; a pipe table otherwise. Callers do not have to know which — they
-     * hand over cell()-escaped strings and get a table that holds.
-     *
-     * @param {{align?:string[], widths?:number[],
-     *          style?:{head?:Object, firstColumn?:Object},
-     *          caption?:{id:string, text:string}}} [opts]
-     */
-    function table(headers, rows, opts) {
-      opts = opts || {};
-      var st = opts.style || {};
-      var head = st.head ? headers.map(function (c) { return emphasise(c, st.head); }) : headers;
-      var body = st.firstColumn
-        ? rows.map(function (r) { return (r || []).map(function (c, i) { return i === 0 ? emphasise(c, st.firstColumn) : c; }); })
-        : rows;
-
-      var pre = [];
-      var shadeCol = !!(st.firstColumn && st.firstColumn.shade);
-      // FNT-6: `fontSize` is a FLAG here, not a number — the size itself is in the macro.
-      var fontCol = !!(st.firstColumn && st.firstColumn.fontSize);
-      if (shadeCol || fontCol) pre[0] = (shadeCol ? COL_SHADE : '') + (fontCol ? COL_FONT : '');
-
-      /* Which form, and why it is not just about newlines.
-       *
-       * A pipe table becomes a LaTeX `tabular` of `l` columns, which do not wrap: a long
-       * justification or description runs straight off the right of the page. A grid
-       * table becomes `p{}` columns, which do. So the deciding question is not "does a
-       * cell contain a line break" but "will this fit on a line" — a table wider than
-       * the budget goes to the grid form so its content can wrap, whatever its cells
-       * look like. That is what was mashing the control-coverage table: four columns of
-       * one-line prose, no wrapping available to any of them.
-       */
-      var multi = false, natural = headers.length + 1;
-      [head].concat(body).forEach(function (r) {
-        (r || []).forEach(function (c) { if (String(c == null ? '' : c).indexOf(CELL_BREAK) !== -1) multi = true; });
-      });
-      headers.forEach(function (_, i) {
-        var w = 0;
-        [head].concat(body).forEach(function (r) {
-          splitCell(r && r[i]).forEach(function (l) { w = Math.max(w, l.length); });
-        });
-        natural += w + 3;
-      });
-      var widthed = !!(opts.widths && opts.widths.length === headers.length);
-      // REF-2: one anchor span per body row. A pipe table cannot carry one — the span
-      // has to sit on a line of its own so it costs the column no width — so a table
-      // with row anchors takes the grid form whatever else it looks like.
-      var anchored = !!(opts.rowAnchors && opts.rowAnchors.length);
-      // TBL-1: a spanning row needs the grid form too — a pipe table has no way to say
-      // that a cell covers more than one column.
-      var titled = !!opts.titleRow;
-      /* TBL-1: with a title row, the one `\rowcolor` that `\toprule` can carry goes to
-       * the TITLE — so the column headings need their shade cell by cell, or the row
-       * comes out white under a shaded title. Without a title row nothing changes: the
-       * row colour reaches the headings as it always has. */
-      var headCells = !!(opts.titleRow && st.head && st.head.shade);
-      /* SPC-1: extra height on the body rows that asked for it, for a table that is a
-       * form to write on rather than a table of readings.
-       *
-       * `tallRows` is per row, and ABSENT means all of them — which is what a height with
-       * no rows named meant before the ticks existed, and what a project written then
-       * still says. A list of the wrong length is ignored for the same reason a width
-       * array of the wrong length is: it cannot be applied to anything. */
-      var strut = rowStrut(opts.rowHeight);
-      var tallRows = (Array.isArray(opts.tallRows) && opts.tallRows.length === rows.length)
-        ? opts.tallRows.map(function (v) { return v !== false; }) : null;
-      var anyTall = !!strut && (!tallRows || tallRows.some(Boolean));
-      var sub = { align: opts.align || [], cellPrefix: pre, metrics: opts.metrics,
-        rowAnchors: opts.rowAnchors || [], titleRow: opts.titleRow || '',
-        cellSuffix: strut, suffixRows: tallRows,
-        headPrefix: headCells ? HEAD_CELL_SHADE : '' };
-      if (widthed) sub.widths = opts.widths;
-      // A prefix cannot live on its own line in a pipe table, so a shaded first column
-      // is one more reason the grid form is the only one that can carry it.
-      /* PIPE_MAX is pandoc's `--columns` default, and it is the real limit on the pipe
-       * form — not the page budget. Up to it, pandoc leaves a pipe table's columns to
-       * LaTeX, which sizes them to their content. Past it, pandoc invents widths from
-       * the SEPARATOR row, and `| --- | --- |` gives every column an equal share
-       * regardless of what is in it — seven equal columns with a heading in each that
-       * does not fit. Measured on 3.1.11, not read: an 83-character pipe table comes out
-       * as seven `\real{0.1429}` columns. So a table that would cross that line takes
-       * the grid form instead, where the widths are ours to decide. */
-      // SPC-1: a strut has to sit on a line of its own so it costs the column no width,
-      // and a pipe table has no lines inside a cell — so a sized row takes the grid form
-      // whatever else the table looks like, exactly as a shaded first column does.
-      var grid = multi || widthed || shadeCol || fontCol || anchored || titled || anyTall || natural > PIPE_MAX;
-      var out = (grid ? gridTable : pipeTable)(head, body, sub);
-
-      // The caption must sit directly under the table for pandoc to attach it, so every
-      // group closes AFTER it. The anchor goes before the whole thing: pandoc does not
-      // read `{#id}` on a caption as an identifier (it printed literally), and an empty
-      // span becomes \phantomsection\label{…}, which \hyperref can reach.
-      if (opts.caption) out = out + '\n\n: ' + text(opts.caption.text || '');
-
-      // One group carries both the shading and the narrowing rather than two nested
-      // ones — same effect, half the raw-LaTeX noise in a file people read.
-      var scale = 1;
-      if (widthed) {
-        var sum = opts.widths.reduce(function (a, w) { return a + (Number(w) > 0 ? Number(w) : 0); }, 0);
-        if (isFinite(sum) && sum > 0 && sum < 0.995) scale = sum;
-      }
-      var prologue = [];
-      if (scale < 1) prologue.push('\\setlength{\\columnwidth}{' + scale.toFixed(4) + '\\columnwidth}');
-      if (st.head && st.head.shade) prologue.push('\\chTblHeadShade');
-      if (prologue.length) {
-        out = '```{=latex}\n\\begingroup' + prologue.join('') + '\n```\n\n' + out + '\n\n' + GROUP_CLOSE;
-      }
-      if (opts.caption && opts.caption.id) out = '[]{#' + anchor('tbl-' + opts.caption.id) + '}\n\n' + out;
-      return out;
-    }
-
-    /* -------------------------------------------------------------------------
-     * HUM-1: a captured value is data, not a JSON document.
-     *
-     * A decision value is whatever the device reported — a boolean, a number, a string,
-     * a whitelist, or a list of firewall-rule records. Through the canonical
-     * stringifier it reaches the PDF as JSON: braces, quotes and commas spread down a
-     * dozen lines of a table cell. That is the right form for the artifact a device
-     * consumes and the wrong one for a document a person signs off.
-     *
-     * human() is the READING, and deliberately not reversible — nothing parses it back,
-     * so it is free to drop the punctuation only a machine needs. The generated
-     * `tactical.json` and the verification script still carry the canonical form; this
-     * is used where a person is the reader.
-     *
-     * Entries are separated by a BLANK line rather than a newline, because that is what
-     * survives to the page: a grid-table cell folds consecutive lines into one
-     * paragraph, so only a blank line keeps a list looking like a list.
-     * ---------------------------------------------------------------------- */
-
-    var HUMAN_EMPTY = '(none)';
-
-    /** One value on ONE line — the form used for a nested value inside a list entry. */
-    function humanInline(v) {
-      if (v === null || v === undefined) return '';
-      if (typeof v === 'boolean') return v ? 'true' : 'false';
-      if (typeof v === 'number') return isFinite(v) ? String(v) : '';
-      if (typeof v === 'string') return v;
-      if (Array.isArray(v)) return v.length ? v.map(humanInline).join(', ') : HUMAN_EMPTY;
-      if (typeof v !== 'object') return '';
-      var keys = Object.keys(v).sort();
-      return keys.length ? keys.map(function (k) { return k + ': ' + humanInline(v[k]); }).join('; ') : HUMAN_EMPTY;
-    }
-
-    /**
-     * The reading of a whole value, over as many lines as it needs.
-     * @param {*} v @returns {string} plain text — NOT escaped; pass it through cell()
-     */
-    function human(v) {
-      if (v === null || v === undefined) return '';
-      if (Array.isArray(v)) {
-        if (!v.length) return HUMAN_EMPTY;
-        var records = v.some(function (x) { return x && typeof x === 'object'; });
-        // A list of records is numbered: without an ordinal, two adjacent firewall
-        // rules carrying the same fields are indistinguishable once printed.
-        return records
-          ? v.map(function (x, i) { return (i + 1) + '. ' + humanInline(x); }).join('\n\n')
-          : v.map(humanInline).join('\n\n');
-      }
-      if (typeof v === 'object') {
-        var keys = Object.keys(v).sort();
-        if (!keys.length) return HUMAN_EMPTY;
-        return keys.map(function (k) { return k + ': ' + humanInline(v[k]); }).join('\n\n');
-      }
-      return humanInline(v);
-    }
-
-    // ---- rich text -----------------------------------------------------------
-
-    /* The designer's paragraph boxes accept a token markup rather than raw markdown,
-     * for one reason: raw markdown cannot coexist with the escaping above. If the
-     * user typed `**bold**` the asterisks would be escaped and they would see literal
-     * asterisks in the PDF; if the asterisks were left unescaped, a package name
-     * containing one would silently start emphasis.
-     *
-     * So inline formatting travels as {{...}} tokens, which the editor's toolbar
-     * inserts around the selection. Tokens are extracted BEFORE escaping and the
-     * surrounding literal text is escaped after, so anything that is NOT one of the
-     * known tokens — `{{zzz}}`, a stray brace — escapes to literal characters
-     * and can never restructure the document. The set is deliberately small: bold,
-     * italic, code, line break, and a cross-reference.
-     *
-     * REF-1: the id charset carries a DOT.
-     *
-     * It did not, and a block id is `ds:android.packages` — so the one reference a
-     * designer is most likely to insert, a link to a register section, did not match
-     * this pattern at all. It was therefore never recognised as a token, fell through
-     * to text() with everything else, and printed in the PDF as the literal string
-     * `{{ref:ds:android.packages}}`. Every reference to a hand-authored section (`sec1`)
-     * worked, which is what made it read as "references are broken sometimes".
-     *
-     * REF-1: three reference tokens rather than one, because a reference has three
-     * useful readings and the designer picks between them when inserting it:
-     *
-     *   {{ref:ID}}   the full label   — "Table 4: Packages removed"
-     *   {{refn:ID}}  the number alone — "Table 4"
-     *   {{reft:ID}}  the title alone  — "Packages removed"
-     *
-     * and a fourth form, `{{ref:ID}}…{{/ref}}`, which links whatever text is between
-     * the two — for when the sentence already reads "see the packages table".
-     *
-     * All four store nothing but the target's ID, so every visible part of the link is
-     * derived at render time and a renumber or a rename is picked up for free. */
     var TOKEN = /\{\{(\/?)(b|i|c|br|(?:ref|refn|reft):[A-Za-z0-9:._-]+|ref)\}\}/g;
     var REF_TAG = /^(ref|refn|reft):(.+)$/;
-    var MARK = { b: '**', i: '*', c: '`' };
     /** What a resolved reference reads as, per token. */
     var REF_READING = { ref: 'label', refn: 'numberLabel', reft: 'titleLabel' };
 
-    /* REF-2: a term that links itself wherever it is written.
-     *
-     * A control is named in prose ("AHG-001 is met by …"), in a Rationale cell and in
-     * the Control column of every register table. Asking the author to insert a
-     * cross-reference at each of those is asking them not to bother, so the mentions
-     * are found rather than marked: a caller hands over the terms it knows about and
-     * every occurrence becomes a link to that term's anchor.
-     *
-     * Applied to ALREADY-ESCAPED markdown, and that is deliberate. The link text has to
-     * be the escaped form (a control called `AHG_001` must still print an underscore),
-     * and matching on the escaped string is also what keeps this out of the way of the
-     * escaper — one pass, one place, no second escaping route to get wrong.
-     *
-     * Terms are matched longest-first so `ISM-1416` is not eaten by a control called
-     * `ISM-141`, and a match must not sit inside a longer word, or `AHG-0011` would be
-     * linked as `AHG-001` with a stray `1` after it.
-     */
-    var WORDY = /[A-Za-z0-9]/;
-    function autoLink(escaped, terms) {
-      var s = String(escaped == null ? '' : escaped);
-      if (!s || !terms || !terms.length) return s;
-      var sorted = terms.slice().sort(function (a, b) { return String(b.text).length - String(a.text).length; });
-      var out = '', i = 0;
-      outer: while (i < s.length) {
-        for (var t = 0; t < sorted.length; t++) {
-          var term = String(sorted[t].text);
-          if (!term) continue;
-          if (s.substr(i, term.length) !== term) continue;
-          var before = i > 0 ? s.charAt(i - 1) : '';
-          var after = s.charAt(i + term.length) || '';
-          // Not mid-word, and not already inside a link's label or destination.
-          if (WORDY.test(before) || WORDY.test(after)) continue;
-          if (before === '[' || before === '#' || after === ']') continue;
-          out += '[' + term + '](#' + sorted[t].anchor + ')';
-          i += term.length;
-          continue outer;
-        }
-        out += s.charAt(i);
-        i++;
-      }
-      return out;
-    }
-
     /**
-     * One paragraph of rich text -> markdown.
-     *
-     * Emphasis is BALANCED here, per paragraph. A hand-typed or half-deleted `{{b}}`
-     * with no closing partner would otherwise emit a lone `**`, which pandoc reads as
-     * emphasis running to the end of the block — one damaged token silently bolding
-     * the rest of the document. So an unmatched close is dropped, a redundant re-open
-     * is dropped, and anything still open at the end of the paragraph is closed. The
-     * worst a broken token can do is affect the paragraph it sits in.
-     */
-    function richPara(p, opts) {
-      var out = '', last = 0, m;
-      var open = { b: false, i: false, c: false };
-      // REF-2: literal prose is the only place a control mention can be found — never
-      // inside a code span (taken whole below) and never inside a reference's own label.
-      /* RTX-2: the same writer serves a paragraph and a TABLE CELL.
-       *
-       * The two differ in exactly two places and in nothing else: what escaping the
-       * literal text takes (a cell marks long identifiers so they can wrap — BRK-1), and
-       * what a line break is written as (a cell's lines are separated by CELL_BREAK, a
-       * paragraph's by a newline). Everything between — the emphasis balancing, the code
-       * spans, the references, the trailing-break rule — is the same question with the
-       * same answer, so it is answered once. */
-      var escape = opts.cell ? cellText : text;
-      var lit = function (s) { return autoLink(escape(s), opts.linkTerms); };
-      TOKEN.lastIndex = 0;
-      while ((m = TOKEN.exec(p)) !== null) {
-        out += lit(p.slice(last, m.index));
-        var close = m[1] === '/', tag = m[2];
-        if (tag === 'c' && !close) {
-          // A code span is taken WHOLE rather than as an open/close pair, because the
-          // text inside it must not be escaped — emitting `` `a\_b` `` puts a visible
-          // backslash in the PDF (\texttt{a\textbackslash{}\_b}). Taking the run in one
-          // piece also lets code() size the fence against any backticks inside it.
-          var at = p.indexOf('{{/c}}', TOKEN.lastIndex);
-          var inner = at === -1 ? p.slice(TOKEN.lastIndex) : p.slice(TOKEN.lastIndex, at);
-          out += code(inner);
-          last = at === -1 ? p.length : at + 6;
-          TOKEN.lastIndex = last;
-          continue;
-        }
-        if (MARK[tag] && tag !== 'c') {
-          // `close === open[tag]` is the balanced case in both directions: closing
-          // something open, or opening something closed. Anything else is noise.
-          if (close === open[tag]) { open[tag] = !close; out += MARK[tag]; }
-        } else if (tag === 'br') {
-          // Emitted as a bare newline and turned into a hard break by the pass below,
-          // so there is exactly one place that decides what a line break looks like.
-          out += '\n';
-        } else if (REF_TAG.test(tag) && !close) {
-          var bits = REF_TAG.exec(tag);
-          var r = opts.resolveRef ? opts.resolveRef(bits[2]) : null;
-          /* REF-1: a reference may carry its own words.
-           *
-           * `{{ref:ID}}see the packages table{{/ref}}` links what is between the two,
-           * which is what the designer gets when text was selected before the button was
-           * pressed. The inner run is taken WHOLE, like a code span, because it is the
-           * link's label — an emphasis token inside it would have to be balanced against
-           * a closing brace that belongs to the reference, and a half-formatted label is
-           * not worth the machinery. */
-          var at = p.indexOf('{{/ref}}', TOKEN.lastIndex);
-          var wrapped = at === -1 ? null : p.slice(TOKEN.lastIndex, at);
-          if (wrapped !== null) { last = at + 8; TOKEN.lastIndex = last; }
-          // An unresolvable reference is STATED, never dropped: a dangling link in a
-          // report is a finding, and a silently empty one is a worse finding.
-          if (!r) {
-            out += wrapped !== null ? lit(wrapped) + ' **\\[missing reference\\]**' : '**\\[missing reference\\]**';
-          } else {
-            var shown = wrapped !== null ? wrapped : String(r[REF_READING[bits[1]]] || r.label || '');
-            out += '[' + escape(shown) + '](#' + r.anchor + ')';
-          }
-          if (wrapped !== null) continue;
-        }
-        last = m.index + m[0].length;
-      }
-      out += lit(p.slice(last));
-      /* A single newline inside a paragraph is a deliberate line break — the box is a
-       * plain textarea, so it is the only way to ask for one. Trailing backslash is
-       * pandoc's hard break; a blank line already split the paragraph above.
-       *
-       * BR-1: a trailing break is a break like any other, and it needs a line to start.
-       *
-       * D-037 dropped them, because `\` with nothing after it is not a hard break to
-       * pandoc — it reads the backslash as a literal and prints one. Dropping the break
-       * also threw away the blank line the writer had asked for, which is why a spacer
-       * at the foot of a title page did nothing. So the break is KEPT and given an empty
-       * line to land on: one non-breaking space, which pandoc writes as `~` and which
-       * occupies a line without putting a mark on the page. The lone backslash D-037 was
-       * about never appears, because the last line is now the spacer rather than a break.
-       *
-       * Emphasis is closed BEFORE the trailing run rather than after it, or the closing
-       * `**` would land on a line of its own below the break it was meant to close.
-       */
-      var tail = (/\n+$/.exec(out) || [''])[0];
-      if (tail) out = out.slice(0, out.length - tail.length);
-      ['i', 'b'].forEach(function (t) { if (open[t]) out += MARK[t]; });
-      if (tail) out += tail + BLANK_LINE;
-      /* RTX-2: a hard break is a trailing backslash in BOTH forms. What differs is the
-       * separator that follows it — a newline in a paragraph, a CELL_BREAK in a cell,
-       * which gridTable turns into a line of its own inside the cell. Without the
-       * backslash pandoc folds a cell's consecutive lines into one paragraph, which is
-       * why a line break typed into a cell used to do nothing at all on the page. */
-      return out.split('\n').join('\\' + (opts.cell ? CELL_BREAK : '\n'));
-    }
-
-    /* BR-1: what a trailing line break lands on — a line that exists and prints nothing.
-     * U+00A0 rather than a space, because a line of ordinary whitespace is stripped by
-     * every markdown reader there is; a non-breaking space is CONTENT, and pandoc writes
-     * it as `~`. */
-    var BLANK_LINE = String.fromCharCode(0xA0);
-
-    /**
-     * Render rich text to markdown.
-     * @param {string} s  the stored token text
-     * @param {{resolveRef?:(id:string)=>?{label:string,numberLabel:string,titleLabel:string,anchor:string},
-     *          linkTerms?:Array<{text:string,anchor:string}>}} [opts]
-     * @returns {string}
-     */
-    function rich(s, opts) {
-      opts = opts || {};
-      return String(s == null ? '' : s).split(/\n{2,}/)
-        .map(function (p) { return richPara(p, opts); })
-        .filter(function (p) { return p.length; })
-        .join('\n\n');
-    }
-
-    /**
-     * RTX-2: the same rich text, written into a TABLE CELL.
-     *
-     * A hand-authored table's cells hold the same token markup a paragraph does, so bold,
-     * italic, code, line breaks and cross-references work in a cell exactly as they do
-     * above it. What a cell cannot have is markdown BLOCKS, so a blank line — a paragraph
-     * in a paragraph box — is written as the blank line inside a cell that gridTable and
-     * pandoc both already understand: two CELL_BREAKs.
-     *
-     * @param {string} s @param {Object} [opts] as rich(), minus the paragraph structure
-     */
-    function richCell(s, opts) {
-      var o = {};
-      Object.keys(opts || {}).forEach(function (k) { o[k] = opts[k]; });
-      o.cell = true;
-      return String(s == null ? '' : s).split(/\n{2,}/)
-        .map(function (p) { return richPara(p, o); })
-        .filter(function (p) { return p.length; })
-        .join(CELL_BREAK + CELL_BREAK);
-    }
-
-    /**
-     * PDF-1: rich text as RUNS rather than markdown — one array per paragraph. The same
-     * grammar and the same balancing as richPara: an unmatched close is dropped, a code
+     * PDF-1: rich text as RUNS — one array per paragraph. Emphasis is BALANCED per
+     * paragraph, so one damaged token cannot bold the rest of the document: an unmatched close is dropped, a code
      * span and a reference's own words are taken whole, a missing target reads
      * "[missing reference]" in bold.
      * @returns {Array<Array<{text?:string,bold?:boolean,italic?:boolean,code?:boolean,br?:boolean,ref?:{anchor:string}}>>}
@@ -1662,1414 +290,76 @@ import { pagesHtml } from './doc-preview.js';
       });
     }
 
-    // ---- document assembly ---------------------------------------------------
-
-    /** Join blocks with exactly one blank line, dropping empties. Deterministic. */
-    function join(blocks) {
-      return (blocks || []).filter(function (b) { return b != null && String(b).length; })
-        .map(function (b) { return String(b).replace(/\s+$/, ''); }).join('\n\n');
-    }
-
     /**
-     * A YAML metadata block for pandoc. Values are emitted as double-quoted scalars
-     * with only `\` and `"` escaped, which is the whole of YAML's double-quoted
-     * escaping rule — the markdown escaping above must NOT be applied here, because
-     * this text is consumed by the YAML parser and never by the markdown reader.
-     * @param {Array<{key:string,value:*}>} entries  ordered; arrays emit as lists,
-     *        a value of `{block:string}` emits as a literal block scalar
-     */
-    function yaml(entries) {
-      function scalar(v) { return '"' + String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'; }
-      var lines = ['---'];
-      (entries || []).forEach(function (e) {
-        if (e.value == null || e.value === '') return;
-        if (Array.isArray(e.value)) {
-          if (!e.value.length) return;
-          lines.push(e.key + ':');
-          e.value.forEach(function (v) { lines.push('  - ' + scalar(v)); });
-        } else if (e.value && e.value.block != null) {
-          if (!String(e.value.block).trim()) return;
-          lines.push(e.key + ': |');
-          String(e.value.block).split('\n').forEach(function (l) { lines.push('  ' + l); });
-        } else if (typeof e.value === 'boolean' || typeof e.value === 'number') {
-          lines.push(e.key + ': ' + e.value);
-        } else {
-          lines.push(e.key + ': ' + scalar(e.value));
-        }
-      });
-      lines.push('---');
-      return lines.join('\n');
-    }
-
-    /**
-     * Slugify to a pandoc-legal anchor. Anchors are DERIVED FROM IDS, never from
+     * An anchor name, from an id. Anchors are DERIVED FROM IDS, never from
      * titles — that is what lets a cross-reference survive a rename (see App.doc).
      */
     function anchor(id) {
       return String(id == null ? '' : id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
     }
 
-    /**
-     * Which characters in a string WOULD be escaped — what the designer shows under a
-     * paragraph box so the author can see the transformation rather than be surprised
-     * by it in the PDF.
-     * @returns {string[]} the distinct hostile characters present, in first-seen order
-     */
-    function hostileChars(s) {
-      var seen = {}, out = [];
-      String(s == null ? '' : s).replace(TOKEN, '').replace(HOSTILE, function (ch) {
-        if (!seen[ch]) { seen[ch] = 1; out.push(ch); }
-        return ch;
-      });
-      return out;
-    }
-
-    App.md = {
-      text: text, latex: latex, code: code, cell: cell, CELL_BREAK: CELL_BREAK,
-      // BRK-1: which space-free runs get marked so they can break on the page.
-      isLongIdentifier: isLongIdentifier, IDENT_MIN: IDENT_MIN,
-      heading: heading, para: para, rule: rule, pageBreak: pageBreak, rawLatex: rawLatex, centred: centred,
-      // SPC-1: vertical space as a length — between blocks, and inside a table row.
-      vspace: vspace, rowStrut: rowStrut, mmLen: mmLen, MAX_MM: MAX_MM,
-      table: table, pipeTable: pipeTable, gridTable: gridTable,
-      // TW-1 (column widths) / TBS-1 (header + first-column styling) / HUM-1 (values)
-      widthsFor: widthsFor, autoWidths: autoWidths, wrapLine: wrapLine, WIDTH_BUDGET: WIDTH_BUDGET,
-      HEAD_SHADE_OPEN: HEAD_SHADE_OPEN, HEAD_SHADE_CLOSE: HEAD_SHADE_CLOSE, COL_SHADE: COL_SHADE,
-      HEAD_CELL_SHADE: HEAD_CELL_SHADE,
-      human: human, humanInline: humanInline, HUMAN_EMPTY: HUMAN_EMPTY,
-      rich: rich, richCell: richCell, runs: runs, cellText: cellText, plain: plain, TOKEN: TOKEN, REF_TAG: REF_TAG,
-      // D-036: exposed so a test can assert where a wrap is allowed to land.
-      _safeCut: safeCut,
-      // REF-2: turn every mention of a known term into a link to it.
-      autoLink: autoLink,
-      join: join, yaml: yaml, anchor: anchor, hostileChars: hostileChars
-    };
+    App.md = { runs: runs, plain: plain, anchor: anchor, TOKEN: TOKEN, REF_TAG: REF_TAG, REF_READING: REF_READING };
   })(App);
   /* =============================================================================
-   * MODULE: App.docFormat  — FMT-1..FMT-4: named formatting profiles
-   * PURPOSE: Everything about how the finished document PRESENTS itself — heading
-   *          styling per level, page size and margins, page numbers, table of
-   *          contents — as a named, saveable, exportable profile. Emits the pandoc
-   *          YAML metadata block (and the LaTeX preamble inside it) that carries
-   *          those choices through to the PDF.
-   * PURITY:  pure. Same profile in, same bytes out.
-   * DEPENDS: App.md
-   * INVARIANTS: the built-in profile is never mutated in place — editing it
-   *             duplicates it first, so a project can always be read against a
-   *             known-good baseline.
+   * MODULE: App.docFormat  — named Styles: how the finished document looks
+   * PURPOSE: The Styles a project has — the built-in Standard first, then its own —
+   *          and the one it is set to use. What a Style holds, and the limits each
+   *          setting is held to, live in doc-style.js; an old LaTeX-era formatting
+   *          profile found in a project or an import is converted on the way in.
+   * PURITY:  pure.
+   * INVARIANTS: the built-in Style is never edited in place — editing it duplicates
+   *             it first, so a project can always be read against a known-good one.
    * ============================================================================= */
   (function (App) {
     'use strict';
-    var MD = App.md;
-
-    /* -------------------------------------------------------------------------
-     * Why the formatting lives in the .md at all.
-     *
-     * Markdown has no opinion about margins. Pandoc does: a YAML metadata block at
-     * the top of the file sets document variables, and `header-includes` injects raw
-     * LaTeX into the preamble. That is the only honest way to make "25mm margins,
-     * numbered headings, page numbers bottom-centre" mean something once the file
-     * leaves this tool — so a profile is compiled to exactly those two things and
-     * nothing in the body is styled.
-     *
-     * Heading styling goes through `titlesec` because it is the one package that
-     * restyles \section..\paragraph without redefining the class. Section NUMBERS
-     * are supplied by App.doc, not by LaTeX (`numbersections` stays off), so that
-     * what the preview shows, what the .md contains and what the PDF prints are the
-     * same string — and so a cross-reference can name a number that actually exists.
-     * ---------------------------------------------------------------------- */
-
-    var PAPERS = ['a4', 'letter', 'a5', 'legal'];
-    /* HDR-1: `page.numberPosition` is a MIGRATION path now, not a setting.
-     *
-     * It offered five fixed answers to "where does the page number go", and the header
-     * and footer offer six slots you can put anything in — including the page number.
-     * Two mechanisms competing for the same three positions is how a document ends up
-     * with the number printed twice, so this one is read once, on load, into the slots
-     * it corresponds to, and then dropped (see normalise).
-     */
-    var NUMBER_POSITIONS = [
-      { value: 'none', label: 'No page numbers' },
-      { value: 'footer-centre', label: 'Footer, centred' },
-      { value: 'footer-right', label: 'Footer, right' },
-      { value: 'footer-outer', label: 'Footer, outer edge (double-sided)' },
-      { value: 'header-right', label: 'Header, right' }
-    ];
-    /** Which slot of which set an old `numberPosition` names. */
-    var NUMBER_SLOTS = {
-      'footer-centre': ['footer', 'centre'],
-      'footer-right': ['footer', 'right'],
-      // The outer edge alternates with the binding, which a three-slot model cannot
-      // express — the right-hand page is the common case and is where it lands.
-      'footer-outer': ['footer', 'right'],
-      'header-right': ['header', 'right']
-    };
-    /* HDR-1: the header and footer, as four sets of three slots.
-     *
-     * `HF_SETS` is the running pair plus the optional first-page pair; `HF_SLOTS` is
-     * fancyhdr's own three positions. Listed once and iterated everywhere — normalise,
-     * the preamble, the preview and the designer all walk the same two arrays, so a slot
-     * cannot exist in one of them and not the others.
-     */
-    var HF_SETS = ['header', 'footer', 'firstHeader', 'firstFooter'];
-    var HF_SLOTS = ['left', 'centre', 'right'];
-    /** The fancyhdr position letter for one slot. */
-    var HF_LETTER = { left: 'L', centre: 'C', right: 'R' };
-    /* HDR-1: what a slot may say beyond its own words.
-     *
-     * Two markers, and they carry a `#` for a reason that was found rather than
-     * reasoned about: the first cut used the bare words `page` and `pages`, and a
-     * first-page header reading "Title page" came out as "Title 1". A reserved word that
-     * is also an ordinary English word will be typed as an ordinary English word.
-     *
-     * `#page` is not prose, and `\b` at the end keeps `#pages` from being read as `#page`
-     * followed by an `s`. Substituted BEFORE escaping, since `#` is one of the characters
-     * the escaper neutralises — see slotParts, which is the one place either happens.
-     */
-    /* Braced, because TeX eats the space after a control word.
-     *
-     * `Page #page of #pages` compiled to `Page \thepage of \pageref{LastPage}`, and the
-     * space between `\thepage` and `of` is consumed as part of reading the control word
-     * — so the footer printed "Page 1of 7". Measured in a built PDF, which is the only
-     * place it shows. A closing brace is not a control word, so the space after `}`
-     * survives.
-     */
-    var HF_MACROS = { page: '{\\thepage}', pages: '{\\pageref{LastPage}}' };
-    var HF_TOKEN = /#(pages|page)\b/g;
-
-    /**
-     * HDR-1: one slot split into literal runs and markers, so each half can be treated
-     * the way it needs to be — the literals escaped, the markers replaced.
-     * @returns {Array<{text:string}|{token:string}>}
-     */
-    function slotParts(text) {
-      var s = String(text == null ? '' : text).trim();
-      var out = [], last = 0, m;
-      if (!s) return out;
-      HF_TOKEN.lastIndex = 0;
-      while ((m = HF_TOKEN.exec(s)) !== null) {
-        if (m.index > last) out.push({ text: s.slice(last, m.index) });
-        out.push({ token: m[1] });
-        last = m.index + m[0].length;
-      }
-      if (last < s.length) out.push({ text: s.slice(last) });
-      return out;
-    }
-    // LaTeX sectioning commands, in the order App.doc's levels 1..4 map onto them.
-    var LATEX_LEVELS = ['section', 'subsection', 'subsubsection', 'paragraph'];
-    /* TTL-3: the styling row for App.doc's TITLE level. Stated here rather than read
-     * from App.doc.TITLE_LEVEL because this module loads BEFORE that one (spec §14) —
-     * the two must agree, and the self-test that asserts they do is the lock. */
-    var TITLE_STYLE_LEVEL = 0;
-
-    /* FNT-2: the body font, named as a LaTeX font PACKAGE rather than as a system font.
-     *
-     * Pandoc offers two ways to set a font and they are not interchangeable. `mainfont:`
-     * takes the name of a font installed on the machine building the PDF, and only
-     * XeTeX and LuaTeX understand it — a document carrying one fails, or silently
-     * substitutes something else, anywhere that font is missing. This .md is meant to
-     * travel. `fontfamily:` names a package from the TeX distribution itself, which
-     * every engine can load and which tectonic fetches on demand, so the file carries
-     * its own font wherever it goes.
-     *
-     * Hence a FIXED LIST: the value reaches LaTeX as a package name, and a package that
-     * does not exist is a hard compile failure with an unhelpful error, so a profile
-     * naming anything not in this table falls back to the default (see normalise).
-     * That is also what keeps the value safe to interpolate into the preview CSS.
-     *
-     * `sans: true` marks the sans-serif packages. Loading one of those sets \sfdefault
-     * and nothing else — the body text would stay in the roman default — so the
-     * preamble switches \familydefault as well. See preamble().
-     *
-     * `css` is the nearest browser stack, for the preview. Substituting a screen font
-     * for a metal one is an approximation and is meant to be; what it gets right is the
-     * shape class — serif against sans, wide against narrow — which is the question the
-     * preview is actually being asked.
-     */
-    var FONTS = [
-      { value: '', label: 'Default (Latin Modern)',
-        css: '"Latin Modern Roman", "CMU Serif", Cambria, Georgia, "Times New Roman", serif' },
-      { value: 'tgtermes', label: 'Times (TeX Gyre Termes)',
-        css: '"Nimbus Roman", "Times New Roman", Times, serif' },
-      { value: 'tgpagella', label: 'Palatino (TeX Gyre Pagella)',
-        css: '"Palatino Linotype", Palatino, "URW Palladio L", "Book Antiqua", Georgia, serif' },
-      { value: 'tgschola', label: 'Century Schoolbook (TeX Gyre Schola)',
-        css: '"Century Schoolbook", "New Century Schoolbook", "URW Schoolbook L", Georgia, serif' },
-      { value: 'tgbonum', label: 'Bookman (TeX Gyre Bonum)',
-        css: '"Bookman Old Style", "URW Bookman L", Bookman, Georgia, serif' },
-      { value: 'charter', label: 'Charter',
-        css: 'Charter, "Bitstream Charter", XCharter, Georgia, serif' },
-      { value: 'libertine', label: 'Linux Libertine',
-        css: '"Linux Libertine O", "Linux Libertine", "Libertinus Serif", Georgia, serif' },
-      { value: 'tgheros', label: 'Helvetica (TeX Gyre Heros)', sans: true,
-        css: 'Helvetica, "Nimbus Sans", "Helvetica Neue", Arial, sans-serif' },
-      { value: 'tgadventor', label: 'Avant Garde (TeX Gyre Adventor)', sans: true,
-        css: '"Century Gothic", "URW Gothic", "Avant Garde", "Trebuchet MS", sans-serif' },
-      { value: 'sourcesanspro', label: 'Source Sans Pro', sans: true,
-        css: '"Source Sans Pro", "Source Sans 3", "Segoe UI", Helvetica, sans-serif' }
-    ];
-
-    /**
-     * SEC-4: the heading levels whose own styling starts a new page.
-     *
-     * The profile says this per LEVEL — a house rule, "every H1 starts a page" — and it
-     * reaches the PDF as titlesec's `\sectionbreak`, which is LaTeX's hook and invisible
-     * to everything else. Three places need to know about it and could not: App.doc,
-     * which must not emit a second break for a section whose level already breaks; the
-     * preview, which paginates and would otherwise never break at all; and the designer,
-     * which should not offer a per-section switch for something already switched on.
-     * @returns {Object<number,boolean>} keyed by App.doc's level number
-     */
-    function levelBreaks(profile) {
-      var out = {};
-      normaliseProfile(profile).levels.forEach(function (lv) {
-        if (lv.pageBreakBefore) out[lv.level] = true;
-      });
-      return out;
-    }
-
-    /** The FONTS row a profile has chosen; the default row for anything unrecognised. */
-    function font(profile) {
-      var want = String((profile && profile.page && profile.page.fontFamily) || '');
-      return FONTS.filter(function (f) { return f.value === want; })[0] || FONTS[0];
-    }
-
-    /** FMT-1: the shipped baseline. Deliberately plain, and sized for a report that
-     *  will be read on paper as often as on screen. */
-    var STANDARD = {
-      id: 'standard',
-      name: 'Standard',
-      builtin: true,
-      page: {
-        paper: 'a4', marginTop: '25mm', marginBottom: '25mm',
-        marginLeft: '25mm', marginRight: '25mm',
-        fontSize: '11pt', lineSpacing: 1.15,
-        // FNT-2: blank is the default font, not a missing setting — the shipped profile
-        // adds no `fontfamily` to the YAML at all, so pandoc's own default stands.
-        fontFamily: '',
-        // FNT-4: the body text's own weight and slope. A heading sets its own (see
-        // levelFont) and a table sets its own (see fontPreamble), so these are exactly
-        // "the prose", which is what the Fonts table calls Regular.
-        bold: false, italic: false,
-        // CODE-1: the background a code span wears. Blank is no shading at all.
-        codeShade: '#f2f2f2'
-      },
-      headings: { numbered: true, clampSkips: true },
-      /* TTL-3: the TITLE has a row of its own, and it is the first one.
-       *
-       * A title (App.doc's `T` level) prints at the top level and takes no number. Until
-       * now it also took H1's styling, because both emit a `#` and titlesec styles the
-       * COMMAND — so a title page and a first section could not be set differently even
-       * though nobody wants them the same.
-       *
-       * It ships identical to H1, so no existing document moves until the row is edited,
-       * and normalise() falls back POSITIONALLY for a profile written before this row
-       * existed — which lands a saved profile's own H1 styling on its title, i.e. exactly
-       * what that profile was already producing.
-       */
-      levels: [
-        { level: 0, size: 18, leading: 22, bold: true, italic: false, pageBreakBefore: true, spaceBefore: 0, spaceAfter: 10 },
-        { level: 1, size: 18, leading: 22, bold: true, italic: false, pageBreakBefore: true, spaceBefore: 0, spaceAfter: 10 },
-        { level: 2, size: 14, leading: 17, bold: true, italic: false, pageBreakBefore: false, spaceBefore: 14, spaceAfter: 6 },
-        { level: 3, size: 12, leading: 15, bold: true, italic: false, pageBreakBefore: false, spaceBefore: 12, spaceAfter: 5 },
-        { level: 4, size: 11, leading: 14, bold: true, italic: true, pageBreakBefore: false, spaceBefore: 10, spaceAfter: 4 }
-      ],
-      /* HDR-1: the running header and footer, each configured on its own.
-       *
-       * Three slots a side, because that is what fancyhdr offers and what a document
-       * actually needs — a classification centred, a document title left, a page number
-       * right. `page` in any slot is replaced by the page number, so the old
-       * `numberPosition` picker becomes one of the things you can type rather than a
-       * separate mechanism competing for the same slots (see headerFooterPreamble).
-       *
-       * `firstDifferent` gives page 1 its own set. A title page usually wants no running
-       * header at all, and until now the only way to get one was to have none anywhere.
-       */
-      headerFooter: {
-        firstDifferent: false,
-        header: { left: '', centre: '', right: '' },
-        footer: { left: '', centre: '#page', right: '' },
-        firstHeader: { left: '', centre: '', right: '' },
-        firstFooter: { left: '', centre: '', right: '' }
-      },
-      // TOC-2: `entrySpacing` is the gap between one contents line and the next, in
-      // points. LaTeX's own is 1em plus stretch between top-level entries, which on a
-      // report whose sections are mostly one line each reads as a gappy, half-empty
-      // page. Nested entries take half of it, as they do in the class.
-      toc: { include: true, depth: 3, entrySpacing: 2 },
-      // TBS-1: what a styled header row / first column LOOKS like is a house decision,
-      // so it belongs to the profile. WHICH tables wear it is a per-table decision and
-      // lives with the table (report.tableStyles / a table part's own flags).
-      tables: {
-        centre: false,
-        // CAP-2: the caption's own alignment, independent of the table's. A caption
-        // shorter than the table is centred by LaTeX anyway; one that wraps is not, and
-        // that inconsistency is what this switch settles.
-        captionCentre: false,
-        // CAP-3: where the caption sits, and how far it sits from the table. Below is
-        // the default because it is where the preview has always drawn it, and because
-        // a caption under the thing it names is what a reader scanning a page expects.
-        captionPosition: 'below', captionSkip: 4,
-        // FNT-1: a table usually wants to be set smaller than the prose around it, and
-        // its header row bigger than its body. Blank means "the document size", so the
-        // shipped profile still sets everything at one size until told otherwise.
-        // FNT-4: a caption is a third size, for the same reason the other two are —
-        // it is a distinct kind of text and was the only one with no row of its own.
-        fontSize: '', headFontSize: '', captionFontSize: '',
-        /* FNT-4: weight and slope for the three kinds of table text, document-wide.
-         *
-         * These are DIFFERENT in kind from `head.bold` below, which is why they are not
-         * there. `head`/`firstColumn` are the look a table OPTS IN to, per section; these
-         * are what every table is set in, like a font size. Since a header row is bold in
-         * essentially every house style, `headBold` ships on — and `tableStyle()` no
-         * longer hands emphasis to the opt-in, so ticking "style the header row" adds the
-         * shading and nothing else. One switch per question.
-         */
-        bold: false, italic: false,
-        headBold: true, headItalic: false,
-        captionBold: false, captionItalic: false,
-        /* FNT-5: the first column's weight and slope, on the same footing as the header
-         * row's — a kind of text the document sets, not a thing a section opts into.
-         *
-         * They lived on `firstColumn` below, which meant they only reached the sections
-         * that had ticked "style the first column", and the shade they arrived with was
-         * #F2F2F2 — a 5% grey nobody can see on a printed page. Between the two, opting a
-         * section in appeared to do nothing at all. The weight is document-wide now (one
-         * switch per question, as FNT-4 settled for the header row) and what opting in
-         * buys is the SHADE, which is genuinely a per-section decision.
-         *
-         * Shipped OFF, unlike `headBold`: a bold header row is every house style, a bold
-         * first column in every table is a choice, and the shipped profile had never
-         * actually delivered one outside the sections that opted in. A profile saved
-         * before this that DID ask for one keeps it — see normalise. */
-        firstColBold: false, firstColItalic: false,
-        /* FNT-6: and its SIZE, which it had none of until now.
-         *
-         * Blank means the table body's size, on the same rule the other three sizes
-         * follow. It reaches the page as a macro called at the head of each first-column
-         * body cell (see App.md's COL_FONT), because markdown emphasis — which is how
-         * the weight above travels — cannot carry a size. */
-        firstColFontSize: '',
-        head: { shade: '#D9E2F3' },
-        // A shade a reader can actually see. #F2F2F2 measured under 5% away from white,
-        // which on paper is nothing at all.
-        firstColumn: { shade: '#E7E6E6' }
-      }
-    };
 
     function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
-    /** A fresh copy of the baseline — the starting point for any new profile. */
+    /** A fresh copy of the built-in Style — the starting point for any new one. */
     function standard() { return clone(STYLE_STANDARD); }
 
-    /**
-     * Fill a partial profile out against the baseline, so a profile written by an
-     * older version of the tool (or hand-edited in an exported file) is usable rather
-     * than a load failure. Unknown keys are dropped, not carried.
-     * @param {Object} p @returns {Object} a complete profile
-     */
-    /** PDF-1: any saved profile as a complete Style — an old LaTeX-era profile converted. */
+    /** PDF-1: any saved Style as a complete one — an old LaTeX-era profile converted. */
     function normalise(p) {
       return isStyle(p) ? normaliseStyle(p).style : fromProfile(p);
     }
 
-    /** The LaTeX-era profile normaliser, kept only until the markdown path is removed. */
-    function normaliseProfile(p) {
-      var base = standard();
-      p = p || {};
-      var out = {
-        id: String(p.id || 'standard'),
-        name: String(p.name || base.name),
-        page: Object.assign({}, base.page, p.page || {}),
-        headings: Object.assign({}, base.headings, p.headings || {}),
-        levels: base.levels.map(function (lv, i) {
-          var got = (p.levels || []).filter(function (x) { return x && x.level === lv.level; })[0] || (p.levels || [])[i];
-          return Object.assign({}, lv, got || {}, { level: lv.level });
-        }),
-        toc: Object.assign({}, base.toc, p.toc || {}),
-        tables: Object.assign({}, base.tables, p.tables || {}),
-        headerFooter: Object.assign({}, base.headerFooter, p.headerFooter || {})
-      };
-      // HDR-1: the four slot sets merge field by field, on the same rule as the table
-      // styles — a profile that pins only the footer's centre keeps the rest.
-      HF_SETS.forEach(function (k) {
-        out.headerFooter[k] = Object.assign({}, base.headerFooter[k], (p.headerFooter || {})[k] || {});
-        HF_SLOTS.forEach(function (s) { out.headerFooter[k][s] = String(out.headerFooter[k][s] == null ? '' : out.headerFooter[k][s]); });
-      });
-      out.headerFooter.firstDifferent = out.headerFooter.firstDifferent === true;
-      /* HDR-1: an older profile's page-number position, read into the slots.
-       *
-       * Only when the profile carries no header/footer of its own — a profile saved
-       * since has already said where everything goes, and letting a leftover field
-       * overwrite that would move the number back to where it used to be. The default
-       * footer-centre lands exactly where the shipped profile already puts `page`, so
-       * an untouched profile is unchanged by this.
-       */
-      if (!p.headerFooter && p.page && p.page.numberPosition !== undefined) {
-        HF_SETS.forEach(function (k) { HF_SLOTS.forEach(function (s) { out.headerFooter[k][s] = ''; }); });
-        var slot = NUMBER_SLOTS[p.page.numberPosition];
-        if (slot) out.headerFooter[slot[0]][slot[1]] = '#page';
-      }
-      delete out.page.numberPosition;
-      if (p.builtin) out.builtin = true;
-      if (PAPERS.indexOf(out.page.paper) === -1) out.page.paper = base.page.paper;
-      // FNT-2: the font is a LaTeX package name on its way to the preamble and a CSS
-      // family on its way to the preview. Both are places where an unchecked string
-      // does damage, so an unrecognised one becomes the default here, once, rather
-      // than being guarded at each of the three places that read it.
-      out.page.fontFamily = font(out).value;
-      // CODE-1: a colour on its way to both \definecolor and a stylesheet, on the same
-      // rule as the table shades — malformed means none rather than a compile error.
-      out.page.codeShade = normaliseShade(out.page.codeShade);
-      // CAP-3: anything but 'above' is 'below', which is the default and the safe read.
-      out.tables.captionPosition = out.tables.captionPosition === 'above' ? 'above' : 'below';
-      // TBS-1: the two table styles merge FIELD BY FIELD. A profile that pins only
-      // `firstColumn.bold` must keep the baseline's shade rather than lose it to a
-      // shallow overwrite — the same rule the levels above already follow.
-      ['head', 'firstColumn'].forEach(function (k) {
-        out.tables[k] = Object.assign({}, base.tables[k], (p.tables && p.tables[k]) || {});
-        out.tables[k].shade = normaliseShade(out.tables[k].shade);
-      });
-      /* FNT-4: a profile written before the header row's weight moved out of the opt-in.
-       *
-       * `tables.head.bold` used to be BOTH "what a styled header looks like" and the only
-       * way a header row could be bold at all. It is now a document-wide setting
-       * (`tables.headBold`), so a saved profile that pinned the old field keeps the
-       * appearance it already had rather than silently losing its bold. Read only when
-       * the new field is absent, so a profile that has been edited since is not overruled
-       * by a leftover.
-       */
-      var oldHead = (p.tables && p.tables.head) || {};
-      if ((!p.tables || p.tables.headBold === undefined) && oldHead.bold !== undefined) out.tables.headBold = !!oldHead.bold;
-      if ((!p.tables || p.tables.headItalic === undefined) && oldHead.italic !== undefined) out.tables.headItalic = !!oldHead.italic;
-      delete out.tables.head.bold;
-      delete out.tables.head.italic;
-      /* FNT-5: the same move, one round later, for the first column.
-       *
-       * A profile saved before this carries `tables.firstColumn.bold` and no
-       * `firstColBold`, and it must keep the appearance it already had rather than
-       * silently losing it. Read only when the new field is absent, so a profile edited
-       * since is not overruled by a leftover — exactly the rule above.
-       */
-      var oldCol = (p.tables && p.tables.firstColumn) || {};
-      if ((!p.tables || p.tables.firstColBold === undefined) && oldCol.bold !== undefined) out.tables.firstColBold = !!oldCol.bold;
-      if ((!p.tables || p.tables.firstColItalic === undefined) && oldCol.italic !== undefined) out.tables.firstColItalic = !!oldCol.italic;
-      delete out.tables.firstColumn.bold;
-      delete out.tables.firstColumn.italic;
-      return out;
-    }
-
-    /** A shade is `#rrggbb` or nothing. Anything else is dropped rather than passed to
-     *  LaTeX, where a malformed colour is a compile error rather than a wrong colour. */
-    function normaliseShade(v) {
-      var s = String(v == null ? '' : v).trim();
-      if (!s) return '';
-      if (s.charAt(0) !== '#') s = '#' + s;
-      return /^#[0-9A-Fa-f]{6}$/.test(s) ? s.toLowerCase() : '';
-    }
-
-    /** Every profile available to a project: the built-in first, then the saved ones. */
+    /** Every Style available to a project: the built-in first, then the saved ones. */
     function list(project) {
       var saved = ((project && project.report && project.report.formats) || []).map(normalise);
       return [standard()].concat(saved.filter(function (f) { return f.id !== 'standard'; }));
     }
 
-    /** FMT-2: the profile the project is currently set to use. Falls back to the
-     *  built-in when the saved id no longer resolves — a deleted profile must never
-     *  block generation. */
+    /** FMT-2: the Style the project is set to use. Falls back to the built-in when the
+     *  saved id no longer resolves — a deleted Style must never block a report. */
     function resolve(project) {
       var want = (project && project.report && project.report.formatId) || 'standard';
       var found = list(project).filter(function (f) { return f.id === want; })[0];
       return found || standard();
     }
 
-    // ---- compilation to pandoc -----------------------------------------------
-
-    /** `12` -> `12pt`; passes an already-suffixed string through untouched. */
-    function pt(v, dflt) {
-      if (v == null || v === '') return dflt;
-      var s = String(v).trim();
-      return /^[\d.]+$/.test(s) ? s + 'pt' : s;
-    }
-    /** A length for `geometry`; bare numbers are read as millimetres. */
-    function len(v, dflt) {
-      if (v == null || v === '') return dflt;
-      var s = String(v).trim();
-      return /^[\d.]+$/.test(s) ? s + 'mm' : s;
-    }
-
-    /** The font selection one level's styling implies. */
-    function levelFont(lv) {
-      return '\\normalfont\\fontsize{' + pt(lv.size, '12pt') + '}{' + pt(lv.leading || (Number(lv.size) + 3), '15pt') + '}\\selectfont' +
-        (lv.bold ? '\\bfseries' : '\\mdseries') + (lv.italic ? '\\itshape' : '\\upshape');
-    }
-
-    /**
-     * TTL-3: one level's styling as a MACRO the body can call, rather than as a
-     * preamble declaration.
-     *
-     * A title and an H1 are the same LaTeX command — both are `\section`, because both
-     * are a `#` — so titlesec cannot tell them apart and a single `\titleformat` has to
-     * serve both. The way out is to restyle `\section` in the document: App.doc emits
-     * `\chTitleStyle` before a title's heading and `\chSectionStyle` after it, so the
-     * one command wears two looks.
-     *
-     * Deliberately NOT wrapped in `\begingroup`/`\endgroup`, which would be the obvious
-     * way to scope it: `\section` ends by putting the indent suppression for the
-     * paragraph after it into `\everypar`, which is a LOCAL assignment — closing a group
-     * straight after the heading throws it away, and the first paragraph under a title
-     * would then be indented where the same paragraph under an H1 is not. Two plain
-     * declarations either side leave the heading itself at the outer level, exactly as
-     * an ordinary heading is.
-     */
-    function styleMacro(name, lv, centred) {
-      return '\\newcommand{\\' + name + '}{' +
-        '\\titleformat{\\section}{' + levelFont(lv) + (centred ? '\\centering' : '') + '}{}{0pt}{}' +
-        '\\titlespacing*{\\section}{0pt}{' + pt(lv.spaceBefore, '0pt') + '}{' + pt(lv.spaceAfter, '0pt') + '}' +
-        // \def rather than \newcommand: this runs in the body, where \sectionbreak may
-        // already carry whichever of the two set it last.
-        '\\def\\sectionbreak{' + (lv.pageBreakBefore ? '\\clearpage' : '') + '}}';
-    }
-
-    /* CTR-1: a centred heading is a `\titleformat` with `\centering` in it, NOT a
-     * heading inside a `center` environment.
-     *
-     * The environment was the obvious way and it was wrong twice over, both measurable
-     * on the page:
-     *
-     *   * titlesec typesets a heading's text in a box of its own, and `\centering` set
-     *     outside that box does not reach inside it — so the heading came out
-     *     JUSTIFIED across the full measure rather than centred, which is what a
-     *     centred title page actually looked like;
-     *   * `\begin{center}` contributes its `\topsep` glue BEFORE `\section` runs, and
-     *     `\section` is where `\sectionbreak` fires. With the Title level asking for a
-     *     page break (the shipped profile does), that glue landed on a page of its own
-     *     and `\clearpage` then ended it — an entirely blank page ahead of the section.
-     *
-     * Putting `\centering` in the format argument is where titlesec expects alignment,
-     * and it leaves the break machinery exactly where it was. One macro per level, named
-     * by ordinal rather than by LaTeX command so App.doc does not have to know the
-     * mapping (it already emits \chTitleStyle by name, on the same reasoning).
-     */
-    var LEVEL_WORDS = ['One', 'Two', 'Three', 'Four'];
-    function centreMacros(lv) {
-      var cmd = LATEX_LEVELS[lv.level - 1], word = LEVEL_WORDS[lv.level - 1];
-      if (!cmd || !word) return [];
-      function fmt(centred) {
-        return '\\titleformat{\\' + cmd + '}{' + levelFont(lv) + (centred ? '\\centering' : '') + '}{}{0pt}{}';
-      }
-      return ['\\newcommand{\\chCentre' + word + '}{' + fmt(true) + '}',
-        '\\newcommand{\\chPlain' + word + '}{' + fmt(false) + '}'];
-    }
-
-    /* SPC-1: space above a HEADING, which is not the same problem as space between two
-     * paragraphs.
-     *
-     * A `\vspace*` written before the heading is contributed to the page the heading is
-     * leaving, not the one it is arriving on — and when the level starts a new page
-     * (`\sectionbreak` is `\clearpage`, fired BY the heading, after our glue) the gap was
-     * simply spent at the foot of the previous page and the heading came out flush with
-     * the top margin. Which is exactly the case worth asking for: a signature page whose
-     * heading sits two thirds of the way down.
-     *
-     * The same trap the CTR-1 comment above records, from the other side. The way out is
-     * the same one this file uses everywhere: the document calls a macro by name and the
-     * PROFILE decides what it means. A level that breaks does its own `\clearpage` first
-     * and then eats the one titlesec is about to fire; a level that does not simply
-     * leaves the glue.
-     *
-     * `\gdef\HOOK{\gdef\HOOK{...}}` is a one-shot: called once by this heading, it puts
-     * the level's real break straight back for the next one. No group is opened, because
-     * a group closed around a heading throws away the `\everypar` it set (see styleMacro).
-     * `\titlespacing`'s own beforeskip cannot be used for this: LaTeX discards vertical
-     * glue at the top of a page, which is the only place it would ever matter.
-     */
-    function gapMacro(name, hook, breaks) {
-      return '\\newcommand{\\' + name + '}[1]{' + (breaks
-        ? '\\clearpage\\vspace*{#1}\\gdef\\' + hook + '{\\gdef\\' + hook + '{\\clearpage}}'
-        : '\\vspace*{#1}') + '}';
-    }
-
-    /** The `titlesec` block for one heading level. */
-    function levelPreamble(lv) {
-      // TTL-3: the title is not a sectioning command of its own — it is a `\section`
-      // wearing another face, so it compiles to a macro rather than to a declaration.
-      if (lv.level === TITLE_STYLE_LEVEL) {
-        // CTR-1: a title gets a centred face too — a title page is the commonest thing
-        // anybody centres, and it is the level they will have picked for it.
-        // SPC-1: a title is a `\section`, so its break hook is `\sectionbreak` — but
-        // whether it breaks is the TITLE level's own answer, not H1's.
-        return [styleMacro('chTitleStyle', lv), styleMacro('chTitleStyleCentred', lv, true),
-          gapMacro('chGapTitle', 'sectionbreak', !!lv.pageBreakBefore)];
-      }
-      var cmd = LATEX_LEVELS[lv.level - 1];
-      if (!cmd) return [];
-      var out = [
-        // The empty {}{0pt}{} is deliberate: App.doc has already written the number
-        // into the heading text, so LaTeX must not add a second one.
-        '\\titleformat{\\' + cmd + '}{' + levelFont(lv) + '}{}{0pt}{}',
-        '\\titlespacing*{\\' + cmd + '}{0pt}{' + pt(lv.spaceBefore, '0pt') + '}{' + pt(lv.spaceAfter, '0pt') + '}'
-      ];
-      if (lv.pageBreakBefore) out.push('\\newcommand{\\' + cmd + 'break}{\\clearpage}');
-      // SPC-1: this level's "start further down the page", which has to know whether the
-      // level breaks — see gapMacro.
-      out.push(gapMacro('chGap' + LEVEL_WORDS[lv.level - 1], cmd + 'break', !!lv.pageBreakBefore));
-      // The counterpart to \chTitleStyle: what a heading goes back to afterwards.
-      if (lv.level === 1) out.push(styleMacro('chSectionStyle', lv));
-      // CTR-1: the centred face for this level, and the plain one to go back to.
-      return out.concat(centreMacros(lv));
-    }
-
-    /**
-     * TBS-1: the two macros App.md's shading fences call, plus the colours behind them.
-     *
-     * `colortbl` rather than `\usepackage[table]{xcolor}` because pandoc's default
-     * template has already loaded xcolor by the time `header-includes` is read, and a
-     * second load with an option is an "Option clash" — a hard failure, measured on
-     * pandoc 3.1.11 + tectonic, not guessed.
-     *
-     * `\chTblHeadShade` redefines `\toprule`, which is what pandoc emits immediately
-     * before the header row of every longtable, so `\rowcolor` lands where colortbl
-     * needs it — at the start of a row. It is only ever called inside a `\begingroup`
-     * around one table (see App.md), so the redefinition cannot leak into the next one.
-     *
-     * Both macros are defined whatever the profile says, so a table that asks for
-     * shading always compiles. A profile with no shade colour simply defines them as
-     * no-ops rather than leaving the document referring to a macro that is not there.
-     */
-    function tablePreamble(f) {
-      var t = (f && f.tables) || {};
-      var headShade = (t.head && t.head.shade) || '';
-      var colShade = (t.firstColumn && t.firstColumn.shade) || '';
-      var out = ['\\usepackage{colortbl}'];
-      if (headShade) out.push('\\definecolor{chTblHeadColour}{HTML}{' + headShade.slice(1).toUpperCase() + '}');
-      if (colShade) out.push('\\definecolor{chTblColColour}{HTML}{' + colShade.slice(1).toUpperCase() + '}');
-      // Opting in switches BOTH on: the `\toprule` redefinition, which colours the first
-      // header row, and `\chTblHeadRow`, which a filter can put on the rest of them.
-      out.push(headShade
-        ? '\\newcommand{\\chTblHeadShade}{\\let\\chOldToprule\\toprule' +
-          '\\renewcommand{\\toprule}{\\chOldToprule\\rowcolor{chTblHeadColour}}' +
-          '\\renewcommand{\\chTblHeadRow}{\\rowcolor{chTblHeadColour}}}'
-        : '\\newcommand{\\chTblHeadShade}{}');
-      out.push(colShade
-        ? '\\newcommand{\\chTblColShade}{\\cellcolor{chTblColColour}}'
-        : '\\newcommand{\\chTblColShade}{}');
-      /* FNT-6: the first column's own size, as the macro App.md's span calls.
-       *
-       * Defined whatever the profile says, for the reason the shading macros are: a
-       * document that names a macro the preamble does not define is a compile error, and
-       * an empty macro is a size that changes nothing. The leading is the same 1.2x the
-       * row-font machinery uses, so a first column set smaller sets its wrapped lines
-       * closer together as well, which is what a smaller size means.
-       */
-      var colSize = ptNum(t.firstColFontSize, 0);
-      out.push(colSize
-        ? '\\newcommand{\\chTblColFont}{\\fontsize{' + colSize + 'pt}{' +
-          (Math.round(colSize * 1.2 * 100) / 100) + 'pt}\\selectfont}'
-        : '\\newcommand{\\chTblColFont}{}');
-      /* TBL-1: the header row's shade as a CELL colour as well as a row colour.
-       *
-       * `\chTblHeadShade` works by redefining `\toprule`, which pandoc emits once,
-       * before the FIRST header row — so with a title row above the column headings it
-       * coloured the title and left the headings white. `\rowcolor` cannot be reached
-       * for the second row: it has to sit immediately after the `\\` that starts the
-       * row, and everything this file can put there is inside a cell.
-       *
-       * `\cellcolor` can be inside a cell, and — measured, because it is the whole
-       * question — it works from inside the `minipage` pandoc wraps a grid table's
-       * header cells in. So the headings row is coloured cell by cell, which is the same
-       * mechanism the first column has used since TBS-1.
-       */
-      out.push(headShade
-        ? '\\newcommand{\\chTblHeadCell}{\\cellcolor{chTblHeadColour}}'
-        : '\\newcommand{\\chTblHeadCell}{}');
-      /* `\chTblHeadRow` is the same colour as a ROW rather than as cells, for a writer
-       * that can put something at the start of a row — which markdown cannot, but a
-       * pandoc filter that assembles the longtable itself can.
-       *
-       * It exists because `\cellcolor` takes no overhang (only `\columncolor` does), so
-       * a cell-coloured row stops about 4.8pt short of the table's right rule — measured
-       * at 300dpi on a built page. A `\rowcolor` covers the row edge to edge. Defined
-       * unconditionally and empty by default, so a filter can emit it on every header
-       * row without knowing whether this table asked for shading; `\chTblHeadShade`,
-       * which is what a table opts in with, is what turns it on.
-       */
-      out.push('\\newcommand{\\chTblHeadRow}{}');
-      // CAP-2 used to need `\usepackage{caption}` and `singlelinecheck=false` here, to
-      // stop LaTeX centring a one-line caption and justifying a wrapped one. A caption
-      // is an ordinary paragraph now (CAP-3), so its alignment is simply the alignment
-      // of that paragraph and there is nothing to correct — see captionPreamble.
-      return out.concat(fontPreamble(f));
-    }
-
-    /* FNT-1: a table's own font sizes, and why they are a preamble matter.
-     *
-     * `\fontsize` cannot be made global from inside a `\noalign` — it uses
-     * `\afterassignment`, and `\global\fontsize` is an error (measured). What CAN be
-     * flipped between rows is a MACRO, so the size travels as one: `\chRowFont` is
-     * applied by every cell (pandoc writes `>{\raggedright\arraybackslash}` into every
-     * column spec, so redefining `\raggedright` reaches every cell of every table), and
-     * `\toprule` and `\midrule` — the rules pandoc puts either side of a header row —
-     * flip which size it names.
-     *
-     * Document-wide rather than per-table because the sizes are a house decision, and
-     * because doing it in the preamble means no flag has to be threaded through three
-     * modules to reach App.md. `\midrule` appears only in tables and `\raggedright` only
-     * in their cells, so nothing else is touched; with neither size set the macro is
-     * empty and the preamble is unchanged.
-     */
-    /** FNT-4: the series/shape a weight-and-slope pair implies, always stated in full
-     *  so a macro cannot inherit half its typography from wherever it is called. */
-    function emph(bold, italic) {
-      return (bold ? '\\bfseries' : '\\mdseries') + (italic ? '\\itshape' : '\\upshape');
-    }
-
-    function fontPreamble(f) {
-      var t = f.tables || {};
-      var body = ptNum(t.fontSize, 0), head = ptNum(t.headFontSize, 0);
-      /* FNT-4: the row-font machinery now carries weight and slope as well as size, so
-       * it is needed whenever any of those differ from the document's — and whenever the
-       * DOCUMENT is bold or italic, because then a table has to say plainly that it is
-       * not, or it would inherit the body's emphasis through \AtBeginDocument. */
-      var emphasised = t.bold || t.italic || t.headBold || t.headItalic;
-      if (!body && !head && !emphasised && !f.page.bold && !f.page.italic) return [];
-      var base = ptNum(f.page.fontSize, 11);
-      function sel(size, bold, italic) {
-        var s = size || base;
-        return '\\fontsize{' + s + 'pt}{' + (Math.round(s * 1.2 * 100) / 100) + 'pt}\\selectfont' + emph(bold, italic);
-      }
-      return [
-        '\\newcommand{\\chTblHeadFont}{' + sel(head, t.headBold, t.headItalic) + '}',
-        '\\newcommand{\\chTblBodyFont}{' + sel(body, t.bold, t.italic) + '}',
-        '\\newcommand{\\chRowFont}{}',
-        // DISTINCT names from the shading macro's `\chOldToprule`. That one re-lets its
-        // saved rule per table, and if the two shared a name it would capture a macro
-        // whose own body names it — an expansion that never terminates.
-        '\\let\\chBaseRaggedright\\raggedright',
-        '\\renewcommand{\\raggedright}{\\chBaseRaggedright\\chRowFont}',
-        '\\let\\chBaseToprule\\toprule',
-        '\\renewcommand{\\toprule}{\\chBaseToprule\\noalign{\\global\\let\\chRowFont\\chTblHeadFont}}',
-        '\\let\\chBaseMidrule\\midrule',
-        '\\renewcommand{\\midrule}{\\noalign{\\global\\let\\chRowFont\\chTblBodyFont}\\chBaseMidrule}'
-      ];
-    }
-
-    /**
-     * FMT-3: the whole LaTeX preamble a profile implies.
-     * @param {Object} profile @param {{classification?:string}} [opts]
-     */
-    /* CODE-1: a shaded box behind a code span, without losing the ability to break one.
-     *
-     * A code span reaches LaTeX as `\texttt`, and the obvious way to shade it —
-     * `\colorbox` — typesets its contents in an unbreakable hbox. Measured on
-     * pandoc 3.1.11 + tectonic: a 64-character SHA-256 in a `\colorbox` runs 49pt past
-     * the right margin, which is precisely the defect BRK-1 fixed by routing every
-     * `\texttt` through `\seqsplit`. soul's `\hl` breaks only at spaces, which an
-     * identifier has none of (37pt over), and `\hl` around `\seqsplit` is a hard error
-     * ("Argument of \seqsplit has an extra }"). All three were built, not reasoned about.
-     *
-     * So the choice is made per span by the only thing in a position to judge it: the
-     * typesetter, which knows how wide the run actually is. A span that fits takes the
-     * shaded box; one that does not stays breakable and unshaded, because a background
-     * painted across a line break reads worse than no background at all.
-     */
-    function codePreamble(f) {
-      var shade = normaliseShade(f.page.codeShade);
-      var plain = '\\renewcommand{\\texttt}[1]{\\chOriginalTexttt{\\seqsplit{#1}}}';
-      if (!shade) return [plain];
-      return [
-        '\\definecolor{chCodeShade}{HTML}{' + shade.slice(1).toUpperCase() + '}',
-        '\\newlength{\\chCodeWidth}',
-        // \fboxsep is the box's padding. The default 3pt makes a shaded span in a table
-        // cell sit visibly proud of the unshaded one above it.
-        '\\newcommand{\\chCodeBox}[1]{{\\setlength{\\fboxsep}{1.5pt}\\colorbox{chCodeShade}{#1}}}',
-        '\\renewcommand{\\texttt}[1]{%',
-        '  \\settowidth{\\chCodeWidth}{\\chOriginalTexttt{#1}}%',
-        '  \\ifdim\\chCodeWidth>' + CODE_SHADE_MAX + '\\linewidth',
-        '    \\chOriginalTexttt{\\seqsplit{#1}}%',
-        '  \\else',
-        '    \\chCodeBox{\\chOriginalTexttt{#1}}%',
-        '  \\fi}'
-      ];
-    }
-    /* The test is against `\linewidth`, NOT `\columnwidth`, and the difference is the
-     * whole of it: inside a table cell `\columnwidth` is still the width of the PAGE's
-     * column, so measuring against it boxed `imsSettings.simSlot0.enabled` in a narrow
-     * first column and ran it 38pt out of the cell (measured). `\linewidth` is the cell
-     * inside a `p{}` column and the text block outside one, which is the question being
-     * asked in both places: does this run fit where it is being set? */
-    var CODE_SHADE_MAX = '0.95';
-
-    /* CAP-3: the caption, as two macros the document wraps a paragraph in.
-     *
-     * Pandoc's own caption syntax puts the text INSIDE the longtable's first head —
-     * verified by reading its LaTeX: `\caption{...}\tabularnewline` sits directly before
-     * `\toprule`. That is why the caption printed above the table whichever side of the
-     * table the markdown put it on, and no `\captionsetup` moves it, because its
-     * position in the output is its position in the source. It also means LaTeX numbers
-     * the table while this file numbers its own headings and cross-references: two
-     * counters for one thing, kept in step only by both counting in the same order.
-     *
-     * So a caption stops being a pandoc caption and becomes an ordinary paragraph that
-     * App.doc numbers, exactly as it numbers a heading. What is left for LaTeX is how it
-     * LOOKS — the size, the alignment and the space on each side — which is these two
-     * macros. The longtable skip on the side facing the caption is zeroed, or the gap a
-     * reader sees is longtable's `\bigskipamount` plus ours rather than the one asked for.
-     */
-    var CAPTION_FAR_SKIP = 6;      // pt, on the side of the caption AWAY from the table
-    function captionPreamble(f) {
-      var t = f.tables || {};
-      var below = t.captionPosition !== 'above';
-      var skip = ptNum(t.captionSkip, 4);
-      var near = skip + 'pt', far = CAPTION_FAR_SKIP + 'pt';
-      /* FNT-4: a caption's own size, weight and slope.
-       *
-       * It is set inside \chCaptionOpen rather than in the preamble because a caption is
-       * an ordinary paragraph (CAP-3) with nothing else marking it — there is no caption
-       * environment left to restyle. Blank size means the document's, which is what the
-       * caption was already coming out at, so a profile that says nothing here is
-       * byte-identical to before.
-       */
-      var capSize = ptNum(t.captionFontSize, 0);
-      var capFont = (capSize ? '\\fontsize{' + capSize + 'pt}{' + (Math.round(capSize * 1.2 * 100) / 100) + 'pt}\\selectfont' : '') +
-        emph(t.captionBold, t.captionItalic);
-      return [
-        below ? '\\setlength{\\LTpost}{0pt}' : '\\setlength{\\LTpre}{0pt}',
-        '\\newcommand{\\chCaptionOpen}{\\par\\addvspace{' + (below ? near : far) + '}\\begingroup' +
-          capFont + (t.captionCentre ? '\\centering' : '\\raggedright') + '}',
-        '\\newcommand{\\chCaptionClose}{\\par\\endgroup\\addvspace{' + (below ? far : near) + '}}'
-      ];
-    }
-
-    /* TOC-1/TOC-2: the contents list, printed where the document says rather than where
-     * pandoc's template would put it.
-     *
-     * `toc: true` in the YAML emits the list immediately after `\maketitle`, before any
-     * content, with LaTeX's own "Contents" heading — which makes it the one part of the
-     * document the section order could not move. `\@starttoc{toc}` prints the entries
-     * and NOTHING else, so the heading above them is this file's, numbered (or not) and
-     * ordered by the same machinery as every other section.
-     *
-     * The stretch is reset inside it because a contents list is not prose: at 1.15 the
-     * gaps compound with the class's own inter-entry skip, which is what makes a
-     * seven-section report take most of a page to list.
-     */
-    function tocPreamble(f) {
-      var toc = f.toc || {};
-      var gap = ptNum(toc.entrySpacing, 2);
-      var depth = Number(toc.depth);
-      if (!isFinite(depth) || depth < 1) depth = 3;
-      return [
-        '\\usepackage{tocloft}',
-        '\\setlength{\\cftbeforesecskip}{' + gap + 'pt}',
-        // Nested entries take half, as the class itself does.
-        '\\setlength{\\cftbeforesubsecskip}{' + (Math.round(gap * 50) / 100) + 'pt}',
-        '\\setlength{\\cftbeforesubsubsecskip}{' + (Math.round(gap * 50) / 100) + 'pt}',
-        '\\setcounter{tocdepth}{' + Math.round(depth) + '}',
-        // `@` must be a letter when the body is TOKENISED, not when it is called, so
-        // \makeatletter has to sit outside \newcommand rather than inside it.
-        '\\makeatletter',
-        '\\newcommand{\\chContents}{\\begingroup\\setstretch{1}\\@starttoc{toc}\\endgroup}',
-        '\\makeatother'
-      ];
-    }
-
-    function preamble(profile, opts) {
-      opts = opts || {};
-      var f = normaliseProfile(profile);
-      var lines = ['\\usepackage{titlesec}', '\\usepackage{fancyhdr}', '\\usepackage{setspace}',
-        // A 64-character SHA-256 and a long package name are single unbreakable words
-        // in a typewriter font, and LaTeX will happily run them 50mm past the right
-        // margin rather than break them (verified: 146pt overfull on the provenance
-        // block). seqsplit offers a breakpoint between every character, which TeX uses
-        // only when it has to — so short identifiers are untouched and long ones wrap.
-        '\\usepackage{seqsplit}',
-        '\\let\\chOriginalTexttt\\texttt'];
-      lines = lines.concat(codePreamble(f), captionPreamble(f), tocPreamble(f));
-
-      if (f.page.lineSpacing && Number(f.page.lineSpacing) !== 1) {
-        lines.push('\\setstretch{' + Number(f.page.lineSpacing) + '}');
-      }
-      // FNT-2: a sans package sets \sfdefault and stops there, so `fontfamily: tgheros`
-      // on its own produces a document whose body is still Latin Modern Roman and whose
-      // (unused) sans family is Helvetica — the setting appears to do nothing. header-includes
-      // is read after the template has loaded the package, so this is where it can be said.
-      if (font(f).sans) lines.push('\\renewcommand{\\familydefault}{\\sfdefault}');
-      /* FNT-4: the body's own weight and slope.
-       *
-       * \AtBeginDocument rather than a preamble declaration, because the document's
-       * default series is fixed when the body starts and a bare \bfseries in the
-       * preamble is undone by it. Everything that sets its own — every heading level,
-       * both table row fonts, the caption — states both halves in full (see emph), so
-       * this reaches the prose and nothing that has an opinion of its own.
-       */
-      if (f.page.bold || f.page.italic) {
-        lines.push('\\AtBeginDocument{' + emph(f.page.bold, f.page.italic) + '}');
-      }
-      lines = lines.concat(tablePreamble(f));
-      f.levels.forEach(function (lv) { lines = lines.concat(levelPreamble(lv)); });
-
-      return lines.concat(headerFooterPreamble(f, opts)).join('\n');
-    }
-
-    /**
-     * HDR-1: the running header and footer, and the optional different first page.
-     * @param {Object} f  a normalised profile
-     * @param {{classification?:string}} opts
-     */
-    function headerFooterPreamble(f, opts) {
-      var hf = f.headerFooter;
-      /* The classification banner is a HEADER AND FOOTER, so it belongs here rather than
-       * competing with them for the same slots. It is applied as a DEFAULT — filling the
-       * centre slot only where the profile has left it empty — by resolveHeaderFooter,
-       * which the PREVIEW also calls, so the two cannot disagree about where it lands.
-       */
-      var resolved = resolveHeaderFooter(f, opts);
-      var sets = {};
-      HF_SETS.forEach(function (k) {
-        sets[k] = {};
-        HF_SLOTS.forEach(function (s) { sets[k][s] = slotLatex(resolved[k][s]); });
-      });
-      // The banner is the one thing the profile did not write, so it is the one thing
-      // this file styles rather than passing through as the operator typed it.
-      if (opts.classification) {
-        // Also the preamble, so also MD.latex — see slotLatex.
-        var banner = '\\textbf{' + MD.latex(opts.classification) + '}';
-        Object.keys(resolved.banner).forEach(function (k) { sets[k][resolved.banner[k]] = banner; });
-      }
-      function slots(set, head) {
-        var cmd = head ? '\\fancyhead' : '\\fancyfoot';
-        return HF_SLOTS.filter(function (s) { return sets[set][s]; })
-          .map(function (s) { return cmd + '[' + HF_LETTER[s] + ']{' + sets[set][s] + '}'; });
-      }
-      var out = ['\\pagestyle{fancy}', '\\fancyhf{}', '\\renewcommand{\\headrulewidth}{0pt}'];
-      // `lastpage` only when something asks for the total — an unused package is a
-      // download and a risk on a machine building this offline.
-      if (usesPages(hf)) out.unshift('\\usepackage{lastpage}');
-      out = out.concat(slots('header', true), slots('footer', false));
-      /* Pandoc puts the first page of each top-level section on `plain`, which would
-       * otherwise lose the header and footer entirely. Redefining `plain` to be `fancy`
-       * is what keeps them.
-       *
-       * The FIRST page is a style of its own, `chfirst`, and NOT a redefinition of
-       * `plain` — which is what the first attempt did, on the assumption that page 1 is
-       * a plain page. It is not: with the automatic title block off there is no
-       * `\maketitle`, so page 1 is an ordinary `fancy` page and the first-page slots
-       * never appeared. Measured in a built PDF, where page 1 carried the running
-       * header. App.doc emits `\thispagestyle{chfirst}` as the document's first block,
-       * which is the only thing that can reach page 1 specifically.
-       */
-      out.push('\\fancypagestyle{plain}{\\pagestyle{fancy}}');
-      if (hf.firstDifferent) {
-        /* No second `\renewcommand{\headrulewidth}{0pt}` here, and that is not tidiness.
-         *
-         * Pandoc's `latex_macros` extension READS a `\renewcommand` in the input and
-         * APPLIES it to everything after it. The rule above therefore defines
-         * `\headrulewidth` as the literal `0pt`, and a second copy of the same line came
-         * out of pandoc as `\renewcommand{0pt}{0pt}` — renewing something that is not a
-         * command at all, which errors and takes this whole page style down with it.
-         * Found by building the PDF: page one was still wearing the running header.
-         * The rule above is document-wide, so there is nothing to repeat.
-         */
-        out.push('\\fancypagestyle{chfirst}{\\fancyhf{}' +
-          slots('firstHeader', true).join('') + slots('firstFooter', false).join('') + '}');
-      }
-      return out;
-    }
-
-    /**
-     * HDR-1: the header and footer as the PREVIEW needs them — plain text, with the
-     * classification banner folded into the same slots the preamble folds it into.
-     *
-     * The two must agree about which slot the banner lands in, and the only way to
-     * guarantee that is for both to compute it the same way; so the preamble calls this
-     * too, and differs from the preview only in what it does with the result.
-     * `page` and `pages` are left as the words they are — the preview knows the page
-     * number and substitutes them itself, since it is the only one that can.
-     *
-     * The banner takes the first slot that is FREE, preferring the centre: the shipped
-     * profile puts the page number in the footer's centre, so insisting on the centre
-     * would have left the footer with no banner at all. A set whose three slots are all
-     * spoken for gets none — at that point the operator has said what they want on that
-     * line, and overwriting one of their slots is not a decision this file should make.
-     * `banner` records which slot each set gave up, so the caller can style it.
-     * @returns {{firstDifferent:boolean, banner:Object, header:Object, footer:Object,
-     *            firstHeader:Object, firstFooter:Object}}
-     */
-    function resolveHeaderFooter(profile, opts) {
-      var hf = normaliseProfile(profile).headerFooter;
-      var cls = (opts && opts.classification) ? String(opts.classification) : '';
-      var out = { firstDifferent: hf.firstDifferent, banner: {} };
-      HF_SETS.forEach(function (k) {
-        out[k] = {};
-        HF_SLOTS.forEach(function (s) { out[k][s] = String(hf[k][s] || '').trim(); });
-      });
-      if (cls) {
-        var fill = ['header', 'footer'].concat(hf.firstDifferent ? ['firstHeader', 'firstFooter'] : []);
-        fill.forEach(function (k) {
-          var free = ['centre', 'left', 'right'].filter(function (s) { return !out[k][s]; })[0];
-          if (free) { out[k][free] = cls; out.banner[k] = free; }
-        });
-      }
-      return out;
-    }
-
-    /** HDR-1: does any slot ask for the page TOTAL? Decides whether lastpage is loaded. */
-    function usesPages(hf) {
-      return HF_SETS.some(function (k) {
-        return HF_SLOTS.some(function (s) {
-          return slotParts(hf[k][s]).some(function (p) { return p.token === 'pages'; });
-        });
-      });
-    }
-
-    /**
-     * HDR-1: one slot's text as LaTeX — literals escaped once, markers as their macros.
-     *
-     * `MD.latex`, NOT `MD.text`: this lands in `header-includes`, which pandoc passes
-     * through verbatim, so it is the one string in a generated document that LaTeX reads
-     * without pandoc in between. Escaped for markdown it produced `\<` from a header
-     * reading "<---- Security classification", which is not a command LaTeX has.
-     *
-     * GEN-TAB: a placeholder in a slot has already been filled in by the time this runs
-     * (App.generate fills them on the RAW slot text before the profile is compiled), so
-     * the value is escaped by this one call along with the words around it. The
-     * document-wide pass escapes for markdown, which is right for the body and would be
-     * exactly as wrong here as the `\<` above.
-     */
-    function slotLatex(text) {
-      return slotParts(text).map(function (p) {
-        return p.token ? HF_MACROS[p.token] : MD.latex(p.text);
-      }).join('');
-    }
-
-    /**
-     * FMT-3: the complete YAML metadata block that opens the generated file.
-     * @param {Object} profile
-     * @param {{title:string, subtitle?:string, date?:string, author?:string,
-     *          classification?:string, extra?:Array<{key:string,value:*}>}} meta
-     * @returns {string}
-     */
-    function frontMatter(profile, meta) {
-      meta = meta || {};
-      var f = normaliseProfile(profile);
-      var geometry = [
-        'top=' + len(f.page.marginTop, '25mm'),
-        'bottom=' + len(f.page.marginBottom, '25mm'),
-        'left=' + len(f.page.marginLeft, '25mm'),
-        'right=' + len(f.page.marginRight, '25mm')
-      ];
-      var entries = [
-        { key: 'title', value: meta.title || '' },
-        { key: 'subtitle', value: meta.subtitle || '' },
-        { key: 'author', value: meta.author || '' },
-        { key: 'date', value: meta.date || '' },
-        { key: 'papersize', value: f.page.paper },
-        { key: 'fontsize', value: pt(f.page.fontSize, '11pt') },
-        // FNT-2: a package name, which pandoc's template turns into \usepackage{…}
-        // before header-includes is read. Blank is dropped by MD.yaml, which leaves
-        // pandoc's own default font in place rather than naming it.
-        { key: 'fontfamily', value: font(f).value },
-        { key: 'geometry', value: geometry },
-        // App.doc writes the numbers, so LaTeX must not (see levelPreamble).
-        { key: 'numbersections', value: false },
-        // TOC-1: `toc: true` prints the list straight after \maketitle, which is the
-        // one position the section order cannot move it to or away from. A document
-        // that carries a contents SECTION prints it there instead, and says so here by
-        // asking for no automatic one. The other two documents have no such section and
-        // keep the automatic list, so nothing they do changes.
-        { key: 'toc', value: meta.tocSection ? false : !!(f.toc && f.toc.include) },
-        { key: 'toc-depth', value: (!meta.tocSection && f.toc && f.toc.include) ? Number(f.toc.depth || 3) : null },
-        { key: 'colorlinks', value: true },
-        { key: 'linkcolor', value: 'black' },
-        { key: 'header-includes', value: { block: preamble(f, { classification: meta.classification }) } }
-      ].concat(meta.extra || []);
-      return MD.yaml(entries.filter(function (e) { return e.value !== null; }));
-    }
-
-    /**
-     * FMT-4: structural check for an imported profile. Additive and forgiving —
-     * anything missing is filled from the baseline — so this reports only the errors
-     * that would make a profile meaningless rather than merely incomplete.
-     * @returns {{ok:boolean, issues:Issue[], profile:?Object}}
-     */
+    /** A Style (or an old profile) arriving in an import, checked and made whole. */
     function validate(raw, loc) {
       var issues = [];
       function bad(msg) { issues.push({ category: 'validation', severity: 'error', message: msg, location: loc || 'format' }); }
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { bad('A formatting profile must be an object.'); return { ok: false, issues: issues, profile: null }; }
-      if (!raw.id || typeof raw.id !== 'string') bad('A formatting profile needs a string id.');
-      if (!raw.name || typeof raw.name !== 'string') bad('A formatting profile needs a name.');
-      if (raw.levels !== undefined && !Array.isArray(raw.levels)) bad('levels must be an array.');
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { bad('A Style must be an object.'); return { ok: false, issues: issues, profile: null }; }
+      if (!raw.id || typeof raw.id !== 'string') bad('A Style needs a string id.');
+      if (!raw.name || typeof raw.name !== 'string') bad('A Style needs a name.');
       if (issues.length) return { ok: false, issues: issues, profile: null };
       var p = normalise(raw);
-      delete p.builtin;                       // an imported profile is never the built-in
+      delete p.builtin;                       // an imported Style is never the built-in
       return { ok: true, issues: [], profile: p };
     }
 
-    /* -------------------------------------------------------------------------
-     * PRV-2: the profile, expressed as CSS, so a preview can look like the page.
-     *
-     * Everything a profile decides reaches the PDF through the YAML block and the LaTeX
-     * preamble — which the markdown preview, quite reasonably, ignores. The result was
-     * a preview that answered "what does the document SAY" and not "what does it LOOK
-     * like": changing the paper, the margins, the heading sizes or the table shading
-     * changed nothing on screen until the PDF was built.
-     *
-     * This compiles the same profile a second time, into CSS, for a page-shaped box.
-     * It is an approximation and is meant to be — a browser is not TeX — but it is an
-     * approximation of the RIGHT numbers, derived from the one profile rather than from
-     * a set of hard-coded preview styles that could drift from it.
-     *
-     * Everything interpolated is sanitised on the way out: sizes through Number(),
-     * colours through normaliseShade. A stylesheet built from user text is an injection
-     * route otherwise, and the values here come from text boxes.
-     * ---------------------------------------------------------------------- */
-
-    // Paper widths in millimetres, and 96dpi for the conversion to CSS pixels.
-    var PAPER_MM = { a4: 210, letter: 215.9, a5: 148, legal: 215.9 };
-    var PX_PER_MM = 96 / 25.4;
-
-    /** A length in millimetres; a bare number is read as mm, as `geometry` does. */
-    function mm(v, dflt) {
-      var m = /^\s*([\d.]+)\s*(mm|cm|in|pt)?\s*$/.exec(String(v == null ? '' : v));
-      if (!m) return dflt;
-      var n = Number(m[1]);
-      if (!isFinite(n)) return dflt;
-      var unit = m[2] || 'mm';
-      return unit === 'cm' ? n * 10 : unit === 'in' ? n * 25.4 : unit === 'pt' ? n * 25.4 / 72 : n;
-    }
-    /** A point size as a number; `11pt` and `11` both give 11. */
-    function ptNum(v, dflt) {
-      var m = /^\s*([\d.]+)\s*(pt)?\s*$/.exec(String(v == null ? '' : v));
-      var n = m ? Number(m[1]) : NaN;
-      return isFinite(n) && n > 0 ? n : dflt;
-    }
-    /** The width of the text block, in millimetres — paper less both margins. */
-    function textWidthMm(profile) {
-      var f = normaliseProfile(profile);
-      var paper = PAPER_MM[f.page.paper] || PAPER_MM.a4;
-      return Math.max(40, paper - mm(f.page.marginLeft, 25) - mm(f.page.marginRight, 25));
-    }
-
-    /* PRV-4: the numbers a PAGED preview needs, which a continuous one never did.
-     *
-     * A preview that shows where the pages fall has to know how tall a page is, not just
-     * how wide the text is — and it has to know the four margins, because a header sits
-     * inside the top one and a footer inside the bottom one. All of it comes off the same
-     * profile the PDF is built from, so the sheet on screen is the sheet on the desk at
-     * whatever scale the pane can give it.
-     */
-    var PAPER_HEIGHT_MM = { a4: 297, letter: 279.4, a5: 210, legal: 355.6 };
-    /**
-     * @returns {{width:number, height:number, top:number, bottom:number, left:number,
-     *            right:number}} all in CSS pixels at 96dpi
-     */
-    function pageMetrics(profile) {
-      var f = normaliseProfile(profile);
-      var px = function (v) { return Math.round(v * PX_PER_MM); };
-      return {
-        width: px(PAPER_MM[f.page.paper] || PAPER_MM.a4),
-        height: px(PAPER_HEIGHT_MM[f.page.paper] || PAPER_HEIGHT_MM.a4),
-        top: px(mm(f.page.marginTop, 25)), bottom: px(mm(f.page.marginBottom, 25)),
-        left: px(mm(f.page.marginLeft, 25)), right: px(mm(f.page.marginRight, 25))
-      };
-    }
-    /** SPC-1: a millimetre length in CSS pixels at 96dpi — the scale the paper is drawn at. */
-    function mmPx(v) {
-      var n = Number(v);
-      return isFinite(n) && n > 0 ? Math.round(n * PX_PER_MM) : 0;
-    }
-    /** The same, in CSS pixels, clamped to something a pane can actually show. */
-    function textWidthPx(profile) {
-      return Math.max(280, Math.min(900, Math.round(textWidthMm(profile) * PX_PER_MM)));
-    }
-
-    /**
-     * FNT-1: what App.md's width model needs to know about this profile — the page in
-     * ems, and each table font size relative to the document's.
-     *
-     * Without it the model measures every table at the document size, and a header set
-     * a point larger overflows by exactly the ratio it was enlarged by. Passed rather
-     * than read, because App.md has no business knowing which profile is in force.
-     * @returns {{pageEm:number, head:number, body:number, firstCol:number}}
-     */
-    function tableMetrics(profile) {
-      var f = normaliseProfile(profile);
-      var base = ptNum(f.page.fontSize, 11);
-      var body = ptNum(f.tables.fontSize, base);
-      return {
-        pageEm: textWidthMm(f) / 25.4 * 72 / base,
-        head: ptNum(f.tables.headFontSize, base) / base,
-        body: body / base,
-        // FNT-6: blank means the table body's size, which is what the empty macro does.
-        firstCol: ptNum(f.tables.firstColFontSize, body) / base
-      };
-    }
-
-    /**
-     * PRV-2: the profile as a stylesheet, scoped to `.rd-paper`.
-     * @param {Object} profile @returns {string} CSS
-     */
-    function previewCss(profile) {
-      var f = normaliseProfile(profile);
-      var base = ptNum(f.page.fontSize, 11);
-      var spacing = Number(f.page.lineSpacing);
-      if (!isFinite(spacing) || spacing <= 0) spacing = 1.15;
-      // 1pt of a document at 96dpi, scaled so an 11pt page reads at a comfortable size
-      // on screen rather than at its literal physical size.
-      var px = function (pt) { return Math.round(pt * 96 / 72 * 100) / 100; };
-      var out = [
-        // FNT-2: the family is stated on the paper and inherited by everything on it —
-        // headings, tables, captions — exactly as \familydefault is on the page. It is
-        // safe to interpolate because normalise() has already reduced it to one of the
-        // fixed FONTS rows; nothing a text box can produce reaches this string.
-        '.rd-paper { width: ' + textWidthPx(f) + 'px; max-width: 100%; margin: 0 auto;' +
-          ' background: #fff; color: #111; font-family: ' + font(f).css + ';' +
-          ' font-size: ' + px(base) + 'px; line-height: ' + (Math.round(spacing * 100) / 100) + '; }',
-        // FNT-4: the body's own weight and slope, on the paper — the counterpart of the
-        // \AtBeginDocument in the preamble. Stated on the paragraph rather than on the
-        // sheet so a heading, a table and a caption keep their own.
-        '.rd-paper p, .rd-paper li { font-size: ' + px(base) + 'px; line-height: ' + (Math.round(spacing * 100) / 100) + ';' +
-          ' font-weight: ' + (f.page.bold ? '700' : '400') + '; font-style: ' + (f.page.italic ? 'italic' : 'normal') + '; }',
-        // FNT-1/FNT-4: four sizes now, and blank means "the document size" for the three
-        // table ones — which is what LaTeX does with them, so the preview agrees by
-        // construction. Weight and slope travel with each size, for the same reason.
-        '.rd-paper .prv-table { font-size: ' + px(ptNum(f.tables.fontSize, base)) + 'px;' +
-          ' font-weight: ' + (f.tables.bold ? '700' : '400') + '; font-style: ' + (f.tables.italic ? 'italic' : 'normal') + '; }',
-        '.rd-paper .prv-table th { font-size: ' + px(ptNum(f.tables.headFontSize, base)) + 'px;' +
-          ' font-weight: ' + (f.tables.headBold ? '700' : '400') + '; font-style: ' + (f.tables.headItalic ? 'italic' : 'normal') + '; }',
-        // The page's own defaults, and they must be stated rather than inherited: the
-        // app's table styling paints a header with `--c-surface-alt`, which in dark mode
-        // is a near-black cell on a white sheet — and shows an UNSTYLED header as though
-        // it were a shaded one. Emitted before the shade rules below, which override it.
-        '.rd-paper .prv-table th, .rd-paper .prv-table td { border-color: #bbb; background: transparent; color: #111; }',
-        /* `font-size: inherit` is the whole point of this rule.
-         *
-         * The app's own preview styling pins a code span to 12px, which is fine for a
-         * themed panel and wrong for a page: it left every package name at one size
-         * while the prose around it followed the profile, so setting a table size
-         * appeared to skip the identifiers. On the page a code span is `\texttt`, which
-         * changes the FAMILY and keeps the size — so the preview does the same, and a
-         * code span takes the size of whatever it is sitting in: the table body, the
-         * header row, or the document. */
-        // CODE-1: the shade is the profile's, and blank means none — so a preview of a
-        // profile with no code shading shows unshaded code, as the page will.
-        '.rd-paper code { background: ' + (f.page.codeShade || 'transparent') + '; color: #111; font-size: inherit;' +
-          ' padding: ' + (f.page.codeShade ? '0.1em 0.2em' : '0') + '; }',
-        // The caption is emitted before the table's first rule, so the row-font machinery
-        // has not started when it is set — it came out at the DOCUMENT size (measured:
-        // 10.91pt in an 11pt document beside a 9pt table). FNT-4 gives it a size of its
-        // own, and blank still means the document's, so that measurement still holds.
-        '.rd-paper .prv-caption { color: #333; font-size: ' + px(ptNum(f.tables.captionFontSize, base)) + 'px;' +
-          ' font-weight: ' + (f.tables.captionBold ? '700' : '400') + '; font-style: ' + (f.tables.captionItalic ? 'italic' : 'normal') + '; }'
-      ];
-      f.levels.forEach(function (lv) {
-        var size = ptNum(lv.size, 12);
-        var lead = ptNum(lv.leading, size + 3);
-        var before = ptNum(lv.spaceBefore, 0);
-        var after = ptNum(lv.spaceAfter, 0);
-        // TTL-3: a title is an h1 element carrying its own class, because on the page it
-        // is an H1 command carrying its own \titleformat. Same shape, both places.
-        out.push('.rd-paper ' + (lv.level === TITLE_STYLE_LEVEL ? '.prv-title' : '.prv-h' + lv.level) + ' {' +
-          ' font-size: ' + px(size) + 'px;' +
-          ' line-height: ' + px(lead) + 'px;' +
-          ' font-weight: ' + (lv.bold ? '700' : '400') + ';' +
-          ' font-style: ' + (lv.italic ? 'italic' : 'normal') + ';' +
-          ' margin: ' + px(before) + 'px 0 ' + px(after) + 'px; }');
-      });
-      // TBS-1: the profile's ACTUAL colours here, not a themed stand-in. The paper is a
-      // page, so it is white whatever the app's theme is, and the colours read true.
-      var t = f.tables;
-      // FNT-4: opting a header row in buys the SHADE and nothing else now — its weight
-      // and slope come from the Fonts table above and reach every table alike.
-      if (t.head && t.head.shade) out.push('.rd-paper .prv-shade-head thead th { background: ' + t.head.shade + '; }');
-      // FNT-5: opting the first column in buys the SHADE, on the same rule as the header
-      // row. Its weight and slope are document-wide and travel as markdown emphasis, so
-      // they are already in the HTML as <strong>/<em> — a CSS rule here would be a second
-      // opinion about the same thing, and the one that disagreed with the page.
-      if (t.firstColumn && t.firstColumn.shade) out.push('.rd-paper .prv-shade-col tbody td:first-child { background: ' + t.firstColumn.shade + '; }');
-      /* FNT-6: its SIZE is not an opt-in — it reaches every table, as the header row's
-       * does, so it is stated against every table's first column rather than against the
-       * shaded ones. Emitted only when the profile sets one, so a document that leaves it
-       * blank has exactly the stylesheet it had before. */
-      if (ptNum(t.firstColFontSize, 0)) {
-        out.push('.rd-paper .prv-table tbody td:first-child { font-size: ' + px(ptNum(t.firstColFontSize, base)) + 'px; }');
-      }
-      // CAP-2: the caption's own alignment, whatever the table does.
-      out.push('.rd-paper .prv-caption { text-align: ' + (t.captionCentre ? 'center' : 'left') + '; }');
-      return out.join('\n');
-    }
-
-    /**
-     * TBS-1: the `style` App.md.table wants, for a table that has asked for one.
-     *
-     * The profile owns the LOOK; the table owns whether it wears it. Keeping the two
-     * apart is what lets a house style be changed once and reach every table that opted
-     * in — and what stops a table carrying a colour that a report template moved on
-     * from. Absent flags mean an unstyled table, which is the default everywhere.
-     *
-     * @param {Object} profile @param {?{head?:boolean, firstColumn?:boolean}} flags
-     * @returns {?{head?:Object, firstColumn?:Object}} null when nothing is styled
-     */
-    function tableStyle(profile, flags) {
-      flags = flags || {};
-      var t = normaliseProfile(profile).tables;
-      var out = {};
-      // FNT-4: the header row's WEIGHT is a document-wide setting now (tables.headBold),
-      // applied to every table through \chTblHeadFont. What opting in still buys is the
-      // shading, which is genuinely per-table — so this hands over the shade alone, and
-      // App.md emits no markdown emphasis for a header row at all.
-      if (flags.head) out.head = { shade: t.head.shade };
-      /* FNT-5: the first column, on the same footing.
-       *
-       * Its weight and slope reach EVERY table, whether or not the section opted in —
-       * they are a kind of text the document sets, like the header row's. A LaTeX macro
-       * cannot carry them the way \chTblHeadFont carries the header's (nothing pandoc
-       * writes marks a column), so they travel as markdown emphasis on the first cell of
-       * each body row, which is where App.md was already putting them.
-       *
-       * Opting in adds the SHADE, and only the shade. So a profile that sets neither
-       * hands over nothing and the table is left alone — which is what `null` means to
-       * App.md.table, and why an unstyled document still emits exactly what it did.
-       */
-      var col = {};
-      if (t.firstColBold) col.bold = true;
-      if (t.firstColItalic) col.italic = true;
-      // FNT-6: the size does reach every table through a macro, so unlike the weight it
-      // is handed over as a flag — App.md emits the span, the preamble holds the number.
-      if (ptNum(t.firstColFontSize, 0)) col.fontSize = ptNum(t.firstColFontSize, 0);
-      if (flags.firstColumn && t.firstColumn.shade) col.shade = t.firstColumn.shade;
-      if (Object.keys(col).length) out.firstColumn = col;
-      return Object.keys(out).length ? out : null;
-    }
-
-    App.docFormat = {
-      STANDARD: STANDARD, standard: standard, normalise: normalise,
-      list: list, resolve: resolve, validate: validate,
-      preamble: preamble, frontMatter: frontMatter, tablePreamble: tablePreamble,
-      tableStyle: tableStyle, normaliseShade: normaliseShade,
-      // PRV-2: the same profile, compiled for the on-screen preview instead of for TeX.
-      previewCss: previewCss, textWidthMm: textWidthMm, textWidthPx: textWidthPx, mmPx: mmPx, tableMetrics: tableMetrics,
-      // PRV-4: the sheet, for a preview that shows where the pages fall.
-      pageMetrics: pageMetrics,
-      // SEC-4: which heading levels already start a page of their own.
-      levelBreaks: levelBreaks,
-      PAPERS: PAPERS, NUMBER_POSITIONS: NUMBER_POSITIONS, LATEX_LEVELS: LATEX_LEVELS,
-      // HDR-1: the header and footer, as four sets of three slots.
-      HF_SETS: HF_SETS, HF_SLOTS: HF_SLOTS, HF_MACROS: HF_MACROS, slotParts: slotParts,
-      headerFooter: resolveHeaderFooter,
-      FONTS: FONTS, font: font
-    };
+    App.docFormat = { standard: standard, normalise: normalise, list: list, resolve: resolve, validate: validate };
   })(App);
   /* =============================================================================
-   * MODULE: App.doc  — DOC-1..DOC-4: the document outline, numbering and renderer
-   * PURPOSE: Turn an ordered list of report BLOCKS into a numbered, cross-referenced
-   *          markdown document. Owns four things the generators must not each
+   * MODULE: App.doc  — DOC-1..DOC-3: the document outline, numbering and references
+   * PURPOSE: Turn an ordered list of report BLOCKS into a numbered outline with
+   *          stable cross-references. Owns three things the builder must not
    *          re-invent: heading-level resolution (DOC-1), hierarchical auto-numbering
-   *          (DOC-2), stable cross-references (DOC-3), and the rendering of a
-   *          hand-authored custom section's parts (DOC-4).
-   * PURITY:  pure. No DOM, no I/O, no clock — the same blocks always render the
-   *          same bytes, which is what DOD-7 requires of every generated artifact.
+   *          (DOC-2) and stable cross-references (DOC-3).
+   * PURITY:  pure. No DOM, no I/O, no clock — the same blocks always outline the
+   *          same way, which is what DOD-7 requires of every generated artifact.
    * DEPENDS: App.md
    * INVARIANTS: an anchor is derived from a block ID and never from its title, which
    *             is what lets a cross-reference survive both a rename and a reorder.
@@ -3110,11 +400,6 @@ import { pagesHtml } from './doc-preview.js';
      * the first real H1 that follows is still 1.
      */
     var TITLE_LEVEL = 0;
-    /* CTR-1: the ordinal in the centring macro names App.docFormat defines per level.
-     * Named by ordinal rather than by LaTeX command so this module does not have to
-     * know which command a level maps to — the same reason it emits \chTitleStyle by
-     * name. The two lists must agree, and a self-test is what says they do. */
-    var CENTRE_WORDS = ['One', 'Two', 'Three', 'Four'];
     var LEVELS = [
       { value: TITLE_LEVEL, label: 'T', hint: 'Title — a heading with no number, and it does not consume one' },
       { value: 1, label: 'H1', hint: 'Top-level section' },
@@ -3135,7 +420,7 @@ import { pagesHtml } from './doc-preview.js';
      * every counter below it, so 1 → 1.1 → 1.2 → 1.2.1 → 2 falls out of the order
      * alone. Body-text blocks are not numbered and do not disturb the counters.
      *
-     * A level SKIP (an H3 with no H2 above it) has no single right answer. LaTeX
+     * A level SKIP (an H3 with no H2 above it) has no single right answer. A typesetter
      * would number it 1.0.1; most authors mean "one level in". The formatting
      * profile decides via `clampSkips` — on by default, so the common case is the
      * friendly one — and either way the skip is reported on the block so the
@@ -3259,7 +544,7 @@ import { pagesHtml } from './doc-preview.js';
      * ---------------------------------------------------------------------- */
 
     /**
-     * Build the reference resolver handed to App.md.rich().
+     * Build the reference resolver handed to App.md.runs().
      * @param {Array} resolved  the output of outline()
      * @param {Array<{id:string,number:string,caption:string,anchor:string}>} [tables]
      * @returns {(id:string)=>?{label:string,anchor:string}}
@@ -3330,7 +615,7 @@ import { pagesHtml } from './doc-preview.js';
     }
 
     /**
-     * Build the reference resolver handed to App.md.rich().
+     * Build the reference resolver handed to App.md.runs().
      * @param {Array} resolved  the output of outline()
      * @param {Array<{id:string,number:string,caption:string,anchor:string}>} [tables]
      */
@@ -3348,91 +633,6 @@ import { pagesHtml } from './doc-preview.js';
       });
     }
 
-    /* CAP-1: every table in the document is captioned, and the numbers agree.
-     *
-     * LaTeX numbers a captioned table itself — `\caption{X}` prints "Table 3: X". So
-     * the caption text must NOT carry a number of its own (it used to, and the PDF read
-     * "Table 3: Table 3 — X"), and the counter this module keeps is only there so a
-     * cross-reference can NAME the number the page will show. The two agree because
-     * every table now has a caption and both count them in emitted order — which is
-     * also why an uncaptioned table is not allowed: one would advance LaTeX's counter
-     * without advancing ours, and every reference after it would be off by one.
-     */
-    var TBL_ANCHOR = /^\[\]\{#(tbl-[A-Za-z0-9-]+)\}\s*$/;
-    var TBL_CAPTION = /^:\s+(\S.*)$/;
-    var ESCAPED = /\\([\\`*_{}\[\]<>#|$&^~%+\-=.!()])/g;
-
-    /**
-     * The captioned tables inside a GENERATED body, in emitted order. Generated bodies
-     * are opaque markdown by the time they reach here, so they are read back rather
-     * than declared — App.md emits the anchor line and the caption line as a pair, and
-     * nothing between them is anything but the table itself.
-     */
-    function scanTables(md) {
-      var out = [], pending = null;
-      String(md == null ? '' : md).split('\n').forEach(function (l) {
-        var a = TBL_ANCHOR.exec(l);
-        if (a) { pending = { anchor: a[1], caption: '' }; out.push(pending); return; }
-        if (!pending) return;
-        var c = TBL_CAPTION.exec(l);
-        if (c) { pending.caption = c[1].trim().replace(ESCAPED, '$1'); pending = null; }
-      });
-      return out;
-    }
-
-    /**
-     * Assign document-wide table numbers, in emitted order. Done as its own pass
-     * because a table's number depends on how many tables precede it across the WHOLE
-     * document, which no single section can know — and because a reference to a table
-     * has to resolve before that table's own section is rendered.
-     *
-     * A hand-authored table is read from its PART (its caption is still editable at
-     * this point); a generated one is read back out of the body its producer already
-     * built. Both land in the one list, so a reference can point at either.
-     *
-     * @returns {Array<{id,number,caption,anchor}>}
-     */
-    function tableIndex(resolved) {
-      var out = [], n = 0;
-      function push(id, caption, anchor) {
-        n++;
-        out.push({ id: id, number: String(n), caption: String(caption || '').trim(), anchor: anchor });
-      }
-      /* A grouped dataset declares its groups as `children`, and outline() FLATTENS
-       * them into the list as blocks of their own. Descending into `children` as well
-       * as reading those blocks counted every group's table twice: a report with a
-       * three-group Packages section numbered its tables 1,2,3,4,5,3,4,5,… and every
-       * cross-reference after it named a number the page did not print. So a parent
-       * whose children are already in the list is not descended into. Un-outlined
-       * blocks (the designer's per-section preview, and any caller holding the raw
-       * shape) have no flattened children, and are walked as before. */
-      var flattened = {};
-      (resolved || []).forEach(function (b) { if (b && b.parentId) flattened[b.parentId] = true; });
-      (resolved || []).forEach(function (b) {
-        if (b.kind === 'custom') {
-          (b.parts || []).forEach(function (p) {
-            if (p.kind !== 'table') return;
-            // CAP-4: a table asked to go uncaptioned takes no number either. It cannot
-            // then be cross-referenced — "see Table 4" needs a Table 4 — which is the
-            // trade the option is, and it is what keeps every OTHER number honest:
-            // renderPart reads its caption from this list, so a table that is not here
-            // emits none, and the count and the page agree by construction.
-            if (p.noCaption === true) return;
-            push(p.id, autoCaption(b, p), MD.anchor('tbl-' + p.id));
-          });
-          return;
-        }
-        // The body comes first, then each child, which is the order render() emits them.
-        scanTables(b.body).forEach(function (t) { push(t.anchor, t.caption, t.anchor); });
-        if (!flattened[b.id]) {
-          (b.children || []).forEach(function (c) {
-            scanTables(c.body).forEach(function (t) { push(t.anchor, t.caption, t.anchor); });
-          });
-        }
-      });
-      return out;
-    }
-
     /**
      * CAP-1: the caption a hand-authored table carries. An author who typed one gets
      * theirs; one who did not still gets a caption, because an uncaptioned table would
@@ -3446,352 +646,22 @@ import { pagesHtml } from './doc-preview.js';
       return sec || 'Table';
     }
 
-    /* -------------------------------------------------------------------------
-     * DOC-4: rendering a hand-authored section.
-     *
-     * A custom section is an ordered list of PARTS, because "a heading, then some
-     * paragraphs, then a table, then another paragraph" is the actual shape of the
-     * writing people do — a fixed header/body/table skeleton would force the author
-     * to fight it. Four part kinds cover it: paragraph, table, rule, page break.
-     * ---------------------------------------------------------------------- */
-
-    /** One part -> markdown. @param {Object} part @param {Object} ctx {resolveRef, tables} */
-    function renderPart(part, ctx) {
-      if (!part) return '';
-      if (part.kind === 'rule') return MD.rule();
-      if (part.kind === 'pagebreak') return MD.pageBreak();
-      // SPC-1: a measured gap. A part rather than a property of the part above it,
-      // because it is placed and moved like anything else in the section — the space
-      // under a paragraph and the space above the signature block are the same object.
-      if (part.kind === 'space') return MD.vspace(part.height);
-      if (part.kind === 'para') {
-        var body = MD.rich(part.text, { resolveRef: ctx.resolveRef, linkTerms: ctx.linkTerms });
-        if (!body) return '';
-        // A part inside an already-centred section is not centred a second time: two
-        // nested `center` environments contribute their vertical space twice, which on a
-        // title page — the thing people centre — is a visible gap nobody asked for.
-        if (part.centre && !ctx.centred) body = MD.centred(body);
-        // REF-1: an empty span before the paragraph, so a reference can land on this
-        // paragraph rather than on the section it happens to sit in. Pandoc turns it
-        // into `\hypertarget{…}{}`, which is exactly what a heading's own id becomes.
-        // A part with no id is not addressable and gets no anchor — every part the
-        // designer creates has one, but App.doc is also called with hand-built shapes.
-        return part.id ? '[]{#' + MD.anchor('par-' + part.id) + '}\n\n' + body : body;
-      }
-      if (part.kind === 'table') {
-        /* RTX-2: a cell holds the same rich text a paragraph does.
-         *
-         * It used to be handed straight to MD.cell, which escapes and marks long
-         * identifiers and does nothing else — so a cell was the one place in a
-         * hand-authored section where bold, a code span, a line break or a
-         * cross-reference could not be written. Same tokens, same writer, same
-         * resolver; only the line-separator differs, and richCell owns that.
-         */
-        var cellOpts = { resolveRef: ctx.resolveRef, linkTerms: ctx.linkTerms };
-        var head = (part.header || []).map(function (h) { return MD.richCell(h, cellOpts); });
-        var rows = (part.rows || []).map(function (r) {
-          // Ragged rows are padded, never dropped: a half-filled table is a table the
-          // author is still writing, and losing the row they just added is worse than
-          // an empty cell.
-          var out = [];
-          for (var i = 0; i < head.length; i++) out.push(MD.richCell(r && r[i] != null ? r[i] : '', cellOpts));
-          return out;
-        });
-        if (!head.length) return '';
-        var meta = (ctx.tables || []).filter(function (t) { return t.id === part.id; })[0];
-        var tbl = MD.table(head, rows, {
-          align: part.align || [],
-          // TW-1: widths are per-column fractions the author dragged; absent means the
-          // old behaviour (each column as wide as its content).
-          widths: (part.widths && part.widths.length === head.length) ? part.widths : null,
-          // SPC-1: extra millimetres under the body rows that were ticked — a table used
-          // as a form. No ticks recorded means every row, which is what it meant before
-          // there were ticks.
-          rowHeight: part.rowHeight,
-          tallRows: (part.tallRows && part.tallRows.length === (part.rows || []).length) ? part.tallRows : null,
-          // TBS-1: the table says whether it is styled; the profile says how.
-          style: ctx.styleFor ? ctx.styleFor(part) : null,
-          metrics: ctx.metrics || null,
-          caption: meta ? { id: part.id, text: meta.caption } : null
-        });
-        return (part.centre && !ctx.centred) ? MD.centred(tbl) : tbl;
-      }
-      return '';
-    }
-
-    /** A whole custom section's body (its parts, in order) -> markdown. */
-    function renderParts(parts, ctx) {
-      return MD.join((parts || []).map(function (p) { return renderPart(p, ctx); }));
-    }
-
-    /**
-     * Emit one block's heading line. Level 5 emits nothing — that is what "normal
-     * text" means — and the block's body simply continues under whatever heading
-     * preceded it.
-     */
-    /**
-     * @param {Object} b  the block
-     * @param {string} [gap]  SPC-1: the space-above macro call, which has to sit BETWEEN
-     *        the styling declarations and the heading itself — the title's `\chTitleStyle`
-     *        sets `\sectionbreak`, and a gap emitted ahead of it would have its one-shot
-     *        overwritten before titlesec ever called it.
-     */
-    function headingFor(b, gap) {
-      gap = gap ? gap + '\n\n' : '';
-      if (b.level === BODY_LEVEL) return '';
-      var title = String(b.title == null ? b.label : b.title).trim();
-      if (!title) return '';
-      // TTL-1: a title prints at the top level and carries no number. It is the same
-      // `#` an H1 emits — what separates them is the numbering, and (TTL-3) the styling
-      // the two macros below switch between.
-      var lvl = b.level === TITLE_LEVEL ? 1 : b.level;
-      /* TOC-1: a contents list does not list itself. Its heading is a heading like any
-       * other and would otherwise land in the .toc file with the rest — pandoc's
-       * `.unnumbered .unlisted` pair emits `\section*` with no `\addcontentsline`,
-       * which is the one thing that keeps it out (verified against pandoc 3.1.11).
-       *
-       * SEC-4: any section can now ask for the same treatment. A title block, a
-       * colophon or a signature page prints a heading and has no business in the
-       * contents list, and until now the only way to keep one out was to give it no
-       * heading at all — which also took away its anchor, and with it every
-       * cross-reference to it.
-       *
-       * D-063: it has to be the PAIR, and `.unlisted` on its own did nothing at all.
-       *
-       * Pandoc's `unlisted` is only read alongside `unnumbered` — measured on 3.1.11, not
-       * inferred: `# X {.unlisted}` comes out as a plain `\section{X}`, and `\section`
-       * puts itself in the .toc whatever the class said. So the switch worked in the
-       * preview (which builds its own contents list from the outline) and did nothing in
-       * the PDF, which is the only place it matters.
-       *
-       * The pair was avoided because "unnumbered" sounds like it takes the number away.
-       * It does not, here: `numbersections` is false for the whole document — App.doc
-       * writes every number into the heading TEXT, because LaTeX cannot produce the
-       * numbering this document uses — so `.unnumbered` changes exactly one thing,
-       * `\section` to `\section*`, and that is what stops the `\addcontentsline`. The
-       * heading still reads "3 Approval", titlesec still styles it, `\sectionbreak` still
-       * fires for it (all three measured on a built page), and the `\label` is still
-       * emitted, so every cross-reference to it still lands. */
-      var classes = (b.kind === 'toc' || b.noToc) ? ['unnumbered', 'unlisted'] : null;
-      var head = MD.heading(lvl, (b.number ? b.number + ' ' : '') + MD.text(title), b.anchor, classes);
-      /* TTL-3: a title's own styling, switched on for this heading and off again after.
-       *
-       * Both levels emit `\section`, so the profile's title row cannot reach the page as
-       * a second `\titleformat` in the preamble — the later one would simply win for
-       * both. It reaches it as a pair of declarations around the one heading instead.
-       * See App.docFormat.styleMacro for why this is not a `\begingroup`.
-       *
-       * CTR-1: centring is another face of the same declaration, so it is chosen here
-       * rather than wrapped around the heading. A `center` environment around a heading
-       * left it justified (titlesec sets the text in a box `\centering` does not reach)
-       * and put a blank page in front of it (the environment's glue fires before
-       * `\sectionbreak`) — both measured, both gone with the environment.
-       */
-      if (b.level === TITLE_LEVEL) {
-        return MD.rawLatex(b.centre ? '\\chTitleStyleCentred' : '\\chTitleStyle') +
-          '\n\n' + gap + head + '\n\n' + MD.rawLatex('\\chSectionStyle');
-      }
-      if (b.centre) {
-        var word = CENTRE_WORDS[lvl - 1];
-        if (word) return MD.rawLatex('\\chCentre' + word) + '\n\n' + gap + head + '\n\n' + MD.rawLatex('\\chPlain' + word);
-      }
-      return gap + head;
-    }
-
-    /* SPC-1: the macro call that puts a section further down its page.
-     *
-     * Named by level rather than written as a `\vspace`, because whether the gap has to
-     * clear the page first is the PROFILE's answer (App.docFormat.gapMacro) — the same
-     * division of labour as \chCentreOne above. A section with no heading has no break
-     * hook to work through and takes the plain skip.
-     */
-    var GAP_NAMES = ['One', 'Two', 'Three', 'Four'];
-    function gapFor(b) {
-      if (!(Number(b.spaceBefore) > 0)) return '';
-      var title = String(b.title == null ? b.label : b.title).trim();
-      if (b.level === BODY_LEVEL || !title) return MD.vspace(b.spaceBefore);
-      var name = b.level === TITLE_LEVEL ? 'Title' : GAP_NAMES[b.level - 1];
-      if (!name) return MD.vspace(b.spaceBefore);
-      var len = MD.mmLen(b.spaceBefore);
-      return len ? MD.rawLatex('\\chGap' + name + '{' + len + '}') : '';
-    }
-
-    /* CAP-3: the caption a reader sees, written by this module rather than by LaTeX.
-     *
-     * App.md emits a table as an anchor line, the table, and a `: caption` marker —
-     * pandoc's own caption syntax, which put the text inside the longtable's first head
-     * and therefore always ABOVE the table, and which numbered it with LaTeX's counter
-     * rather than the one every cross-reference in this document is written against.
-     *
-     * Rewriting the marker here settles both at once: the number is the number
-     * tableIndex already assigned (so "see Table 4" and the caption on that table are
-     * the same string by construction, not by two counters agreeing), and the caption
-     * is an ordinary paragraph, which can therefore sit on either side of the table.
-     * The two macros around it carry the look, and live in the formatting profile.
-     *
-     * The number is prefixed as plain text and needs no escaping: it is digits, dots
-     * and a colon, and the line begins with the word "Table", so nothing in it can be
-     * read as a list marker or any other markdown construct.
-     */
-    function captionBlock(number, text) {
-      return MD.rawLatex('\\chCaptionOpen') + '\n\n' +
-        'Table ' + number + ': ' + text + '\n\n' +
-        MD.rawLatex('\\chCaptionClose');
-    }
-
-    /**
-     * Replace every `: caption` marker in one body with its numbered caption.
-     * @param {string} md
-     * @param {function():string} nextNumber  consumed in emitted order, as tableIndex assigned them
-     * @param {boolean} above  put the caption before the table rather than after it
-     */
-    function captionise(md, nextNumber, above) {
-      if (!md || md.indexOf('[]{#tbl-') === -1) return md;
-      var lines = String(md).split('\n'), out = [], anchorAt = -1, open = false;
-      for (var i = 0; i < lines.length; i++) {
-        if (TBL_ANCHOR.test(lines[i])) { open = true; anchorAt = out.length; out.push(lines[i]); continue; }
-        var c = open ? TBL_CAPTION.exec(lines[i]) : null;
-        if (!c) { out.push(lines[i]); continue; }
-        var block = captionBlock(nextNumber(), c[1].trim());
-        // Above, the caption goes OUTSIDE the group the table may be wrapped in (the
-        // anchor is the first line of that unit); below, it stays where the marker was.
-        if (above) out.splice(anchorAt, 0, block, '');
-        else out.push(block);
-        open = false;
-      }
-      return out.join('\n');
-    }
-
-    /**
-     * DOC-2: assemble the finished document.
-     *
-     * @param {{title:string, frontMatter?:Array, blocks:Array}} spec
-     *        Each block is an outline() result plus a `body` string of ready markdown
-     *        (already escaped by its producer) and/or `parts` for a custom section.
-     * @returns {string} the complete .md file
-     */
-    function render(spec) {
-      spec = spec || {};
-      var resolved = spec.blocks || [];
-      var tables = tableIndex(resolved);
-      var ctx = { resolveRef: refResolver(resolved, tables), tables: tables, styleFor: spec.styleFor || null,
-        metrics: spec.metrics || null, linkTerms: spec.linkTerms || null };
-      // CAP-3: the numbers, in emitted order — the same order tableIndex assigned them
-      // and the same order render walks, so the two cannot drift apart.
-      var queue = tables.map(function (t) { return t.number; }), qi = 0;
-      var nextNumber = function () { return queue[qi++] || String(qi); };
-      var above = spec.captionPosition === 'above';
-      var out = [];
-      /* HDR-1: a raw block that has to be the FIRST thing in the body.
-       *
-       * `\thispagestyle` applies to the page it is issued on, so a different first page
-       * can only be asked for from inside the document — the preamble has no way to
-       * name page 1. Kept as a spec field rather than built here, because which style
-       * (if any) page 1 wears is a formatting decision and App.doc has no profile.
-       */
-      if (spec.prologue) out.push(MD.rawLatex(spec.prologue));
-      resolved.forEach(function (b) {
-        // SPC-1: the gap belongs to the heading, not to the vertical list before it —
-        // see gapFor. A section with no heading gets it as a plain skip instead.
-        var gap = gapFor(b);
-        var h = headingFor(b, gap);
-        if (!h && gap) out.push(gap);
-        var centred = b.centre && b.kind === 'custom';
-        var body = b.kind === 'custom'
-          ? renderParts(b.parts, centred ? Object.assign({}, ctx, { centred: true }) : ctx)
-          : (b.body || '');
-        /* CTR-1: a HAND-AUTHORED section's centring, which never reached the document.
-         *
-         * A generated section is centred by App.docGen.sectionContent, which is where
-         * its body is built. A custom section's body is built HERE, from its parts, and
-         * nothing centred it — so the switch worked in the per-section preview (which
-         * centres it itself) and did nothing in the .md. Exactly the sections people
-         * centre, too: a title page is always hand-authored.
-         */
-        if (centred && body) body = MD.centred(body);
-        /* TBL-1: a grouped register's tables, under the section rather than under
-         * sub-headings of their own. They used to be flattened into the block list by
-         * outline() and emitted as blocks; now they are simply the rest of this
-         * section's body, in declaration order — which is the order tableIndex counts
-         * them in, so the captions and the cross-references still agree. */
-        (b.children || []).forEach(function (c) { if (c && c.body) body = MD.join([body, c.body]); });
-        body = captionise(body, nextNumber, above);
-        // SEC-1/SEC-2: the introduction sits between the heading and whatever the
-        // register produced, and carries its number when it has one. The number is
-        // escaped because `4.1` in column 1 is an ordered-list marker in markdown.
-        //
-        // REF-1: rendered HERE rather than by the generator, which is the whole of the
-        // fix for "links only work in custom sections". The generator fills a section's
-        // body before the outline exists, so it had no reference resolver to hand and
-        // called `MD.rich(intro, {})` — every {{ref:…}} in an introduction resolved to
-        // nothing. By the time render() walks the blocks the outline and the table index
-        // are both built, so an introduction gets exactly the ctx a custom paragraph does.
-        var intro = b.introBody != null ? String(b.introBody)
-          : (String(b.intro || '').trim() ? MD.rich(b.intro, ctx) : '');
-        if (intro && b.introNumber) intro = MD.text(b.introNumber) + ' ' + intro;
-        /* SEC-4: the section's own page break, and only when its LEVEL is not already
-         * making one.
-         *
-         * The formatting profile's per-level `pageBreakBefore` reaches the page as
-         * `\sectionbreak` — LaTeX's own hook, invisible to this module. Emitting a
-         * `\newpage` here as well gave two breaks and therefore a blank page between
-         * them, which is exactly the fault D-038 was about. `levelBreaks` says which
-         * levels already break, so the two can never both fire.
-         */
-        var levelBreaks = spec.levelBreaks || {};
-        if (b.pageBreakBefore && !levelBreaks[b.level]) out.push(MD.pageBreak());
-        if (h) out.push(h);
-        if (intro) out.push(intro);
-        if (body) out.push(body);
-      });
-      var doc = MD.join(out);
-      return spec.frontMatter ? spec.frontMatter + '\n\n' + doc + '\n' : doc + '\n';
-    }
-
     App.doc = {
       LEVELS: LEVELS, BODY_LEVEL: BODY_LEVEL, TITLE_LEVEL: TITLE_LEVEL, levelLabel: levelLabel,
-      outline: outline, refResolver: refResolver, refTargets: refTargets,
-      tableIndex: tableIndex, scanTables: scanTables, autoCaption: autoCaption,
-      renderPart: renderPart, renderParts: renderParts,
-      headingFor: headingFor, gapFor: gapFor, render: render
+      outline: outline, refResolver: refResolver, refTargets: refTargets, autoCaption: autoCaption
     };
   })(App);
   /* =============================================================================
    * MODULE: App.report
-   * PURPOSE: Platform-agnostic MARKDOWN section builders (spec §10.3, DOD-8). Turns
-   *          an adapter's DECLARED report columns into a markdown table, and the
-   *          subject's metadata into the block that opens every document. Produces
-   *          BODIES only — headings, numbering and anchors belong to App.doc, which
-   *          is the one place that knows where a block sits in the outline.
-   * PURITY:  pure (data -> string)
-   * DEPENDS: App.md
-   * INVARIANTS: ALL dynamic text passes through App.md.text/cell/code. The key column
-   *             of every table is emitted as a CODE SPAN, because a key is an
-   *             identifier — verbatim in markdown, \texttt{} in LaTeX, and immune to
-   *             the underscores and dollars that fill a captured register.
+   * PURPOSE: Turn a provider's DECLARED report columns, and the subject's metadata,
+   *          into table data for the document. Produces tables only — headings,
+   *          numbering and anchors belong to App.doc and the builder.
+   * PURITY:  pure (data -> data)
    * ============================================================================= */
   (function (App) {
     'use strict';
     var MD = App.md;
 
-    /* -------------------------------------------------------------------------
-     * v2.2: this module used to emit a Word-targeted HTML document — an inline
-     * stylesheet tuned to what Word's HTML importer honours, page-break divs, fixed
-     * colgroup widths. All three document outputs are markdown now, converted to PDF
-     * through pandoc and LaTeX, so none of that survives: LaTeX does its own layout,
-     * and a fixed column width expressed in a colgroup means nothing to it.
-     *
-     * What is left is the part that was always the real content — the mapping from an
-     * adapter's declared columns to a table — plus the escaping discipline, which
-     * matters more now than it did in HTML. An unescaped `&` in HTML was a cosmetic
-     * bug; in LaTeX it is a compile error.
-     * ---------------------------------------------------------------------- */
-
-    /* CAP-1/TBS-1: every generated table takes a caption and, when the section asked
-     * for one, a header/first-column style. Both arrive as one `opts` object rather
-     * than as new positional arguments, so an adapter that never heard of either keeps
-     * working unchanged (DOD-11). The caption id is DERIVED from the block, never
-     * minted, which is what keeps the .md byte-stable across runs (DOD-7). */
     /* -------------------------------------------------------------------------
      * COL-3: an optional column's own default, and why "missing means included" was
      * not enough.
@@ -3816,74 +686,6 @@ import { pagesHtml } from './doc-preview.js';
       return v === undefined ? col.defaultOff !== true : v !== false;
     }
 
-    function tableOpts(opts, extra) {
-      opts = opts || {};
-      var out = Object.assign({}, extra || {});
-      if (opts.style) out.style = opts.style;
-      if (opts.widths && opts.widths.length) out.widths = opts.widths;
-      if (opts.metrics) out.metrics = opts.metrics;
-      // REF-2: control ids never reach a table by accident, so an absent list is absent
-      // rather than empty — App.md decides the table's FORM partly on this.
-      if (opts.rowAnchors && opts.rowAnchors.length) out.rowAnchors = opts.rowAnchors;
-      // TBL-1: the operator's own title row, already escaped by the caller.
-      if (opts.titleRow) out.titleRow = opts.titleRow;
-      if (opts.captionId) out.caption = { id: opts.captionId, text: opts.captionText || '' };
-      return out;
-    }
-
-    /** The subject's metadata block (host.subject.meta), as a markdown table.
-     *  TBL-1: `opts.headings` reworks the two column headings; absent, they are the
-     *  wording this block has always used. */
-    function metaTable(meta, opts) {
-      var headings = ((opts || {}).headings || ['Field', 'Value']);
-      return MD.table(
-        headings.map(MD.cell),
-        (meta || []).map(function (m) {
-          // Hashes, ids and firmware strings are identifiers; the label is prose.
-          return [MD.cell(m.label), m.code === false ? MD.cell(m.value) : MD.code(m.value)];
-        }),
-        tableOpts(opts)
-      );
-    }
-
-    /**
-     * A titled table as a standalone block body.
-     * @param {Array<string|{label:string}>} headerCells
-     * @param {Array<Array<string>>} rows  RAW strings — escaped here, once
-     * @param {{align?:string[], empty?:string, style?:Object,
-     *          captionId?:string, captionText?:string}} [opts]
-     */
-    function renderTable(headerCells, rows, opts) {
-      opts = opts || {};
-      var cells = (headerCells || []).map(function (h) { return typeof h === 'string' ? h : h.label; });
-      var body = (rows || []).map(function (r) { return r.map(MD.cell); });
-      if (!body.length) {
-        // GEN-5: one canonical empty row, so "nothing to report" is stated rather
-        // than left as a bare header the reader has to interpret.
-        var first = [MD.cell(opts.empty || 'None.')];
-        for (var i = 1; i < cells.length; i++) first.push('');
-        body = [first];
-      }
-      return MD.table(cells.map(MD.cell), body, tableOpts(opts, { align: opts.align || [] }));
-    }
-
-    /**
-     * Build one dataset report section from the adapter's DECLARED columns (spec
-     * §20.3) — column- and group-aware, and with no knowledge of any particular
-     * dataset (DOD-11).
-     *
-     * A grouped dataset returns CHILDREN rather than one body: one table per group,
-     * each with its own caption and anchor so it can be cross-referenced.
-     *
-     * TBL-1: a child is no longer a SUB-SECTION. It used to carry the group's declared
-     * name — "Removed", "Disabled", "Kept" — as a numbered heading above its table and
-     * again as a "— Removed" suffix on the caption, which put the same word on the page
-     * three times and put a heading between a section's introduction and the tables it
-     * introduces. The tables now sit directly under the section, and what distinguishes
-     * them is the TITLE ROW, which the operator writes (see App.md's title fences).
-     *
-     * @returns {{body:string, children:Array<{id:string,label:string,body:string}>}}
-     */
     /**
      * TBL-1: the per-table wording for one of a section's tables.
      *
@@ -3901,83 +703,12 @@ import { pagesHtml } from './doc-preview.js';
       return own || col.label;
     }
 
-    function buildSection(sectionLabel, keyCol, columns, items, opts, ctx, groups) {
-      opts = opts || {};
-      var colOpts = opts.columns || {};
-      var visible = (columns || []).filter(function (c) { return columnOn(c, colOpts); });
-      // TBL-1: the key column is addressable like any other, so its heading can be
-      // reworded too. `_key` is the id App.docGen.sectionColumns already gives it.
-      var cols = [Object.assign({ id: '_key' }, keyCol)].concat(visible);
-
-      function rowsFor(list) {
-        return list.slice().sort(function (a, b) { return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; })
-          .map(function (it) {
-            return cols.map(function (c, i) {
-              var v = c.get(it, ctx);
-              v = (v == null) ? '' : String(v);
-              // Column 0 is the register key: an identifier, so a code span.
-              // REF-2: everything else is prose, and a control named in it — in the
-              // Control column, or in passing in a Rationale — links to its coverage row.
-              return i === 0 ? MD.code(v) : MD.autoLink(MD.cell(v), opts.linkTerms);
-            });
-          });
-      }
-      /**
-       * @param {string} key  the group value, or `_all` for a single-table section
-       * @param {string} dfltCaption  what the caption reads as when nobody has said
-       */
-      function tableFor(list, key, capId, dfltCaption) {
-        var text = tableText(opts, key);
-        var headers = cols.map(function (c) { return headerFor(c, text.columns); });
-        var rows = rowsFor(list);
-        if (!rows.length) {
-          var empty = [MD.cell('None.')];
-          for (var i = 1; i < headers.length; i++) empty.push('');
-          rows = [empty];
-        }
-        /* TBL-1: a caption follows the title row when there is one.
-         *
-         * With the group sub-headings gone, three tables in one section would otherwise
-         * all be captioned with the section's heading — "Table 4: Packages, Table 5:
-         * Packages" — which is exactly the thing that makes a cross-reference useless.
-         * The title row is already the operator's name for THIS table, so it is the
-         * right default, and an explicit caption still overrides it.
-         */
-        var title = String(text.title || '').trim();
-        return MD.table(headers.map(MD.cell), rows, tableOpts({
-          style: opts.style, widths: opts.widths, metrics: opts.metrics,
-          titleRow: title ? MD.text(title) : '',
-          // CAP-4: a table the operator asked to leave uncaptioned emits no caption line
-          // and no anchor, which is also what keeps it out of the numbering — App.doc
-          // reads the numbers back off the caption markers this writes.
-          captionId: text.noCaption === true ? '' : capId,
-          captionText: String(text.caption || '').trim() || title || dfltCaption
-        }));
-      }
-
-      var capBase = opts.captionId || '';
-      var capName = opts.captionText || sectionLabel;
-      if (groups && groups.field) {
-        var groupOpts = opts.groups || {};
-        return {
-          body: '',
-          children: groups.options.filter(function (g) { return groupOpts[g.value] !== false; }).map(function (g) {
-            return {
-              id: g.value,
-              label: g.label,
-              // TBL-1: the caption is the SECTION's name, not "Packages — Removed". The
-              // group's declared label has stopped appearing on the page at all; what
-              // names one of a section's tables is the title row the operator writes.
-              body: tableFor(items.filter(function (it) { return it.decision && it.decision[groups.field] === g.value; }),
-                g.value, capBase ? capBase + '-' + g.value : '', capName)
-            };
-          })
-        };
-      }
-      return { body: tableFor(items, ONE_TABLE, capBase, capName), children: [] };
-    }
-
-    /** PDF-1: buildSection's tables as data, not markdown. Same columns, wording, sorting and grouping. */
+    /**
+     * A section's tables as data, from the provider's DECLARED columns (spec §20.3) —
+     * column- and group-aware, with no knowledge of any particular dataset (DOD-11). A
+     * grouped section gives one table per group, told apart by the title row the
+     * operator writes. Rows are sorted by key; an empty table is one "None." row.
+     */
     function tables(sectionLabel, keyCol, columns, items, opts, ctx, groups) {
       opts = opts || {};
       var colOpts = opts.columns || {};
@@ -4025,7 +756,7 @@ import { pagesHtml } from './doc-preview.js';
       }) };
     }
 
-    App.report = { tables: tables, metaData: metaData, renderTable: renderTable, buildSection: buildSection, metaTable: metaTable, tableOpts: tableOpts,
+    App.report = { tables: tables, metaData: metaData,
       // COL-3: the one answer to "is this optional column showing?".
       columnOn: columnOn };
   })(App);
@@ -4083,10 +814,9 @@ import { pagesHtml } from './doc-preview.js';
           host.classifications.every(function (c) { return typeof c === 'string' && c.trim() !== ''; }))) {
         errs.push('host.classifications must be an array of non-empty strings');
       }
-      // build() is what the workspace previews and what its Generate button emits;
-      // linkTerms() is how a host says which words in a table become links. Both
-      // optional: without build() the preview says so, without linkTerms() nothing
-      // links, and neither stops a document being produced.
+      // build() and linkTerms() are a host's own business — the designer builds the
+      // document itself (App.docGen.documentFor) — but a host that declares one must
+      // declare a function.
       ['build', 'linkTerms'].forEach(function (k) {
         if (host[k] !== undefined && typeof host[k] !== 'function') errs.push('host.' + k + ' must be a function');
       });
@@ -4238,55 +968,16 @@ import { pagesHtml } from './doc-preview.js';
   /* =============================================================================
    * MODULE: App.docProviders — the declarative half of the section contract
    * PURPOSE: Turn a section PROVIDER — a declaration of rows, a key column and
-   *          columns — into rendered markdown, so a host that only wants a table
-   *          does not have to write the code that draws one. A provider may still
-   *          supply render() for anything a table cannot express.
+   *          columns — into table data, so a host that only wants a table does not
+   *          have to write the code that draws one.
    * PURITY:  pure. No DOM, no I/O, no clock.
    * DEPENDS: App.report
-   * INVARIANTS: renderSection is the ONLY path from a provider to markdown, so a
-   *             declared section and a hand-rendered one cannot come to disagree
-   *             about captioning, styling or column widths.
    * ============================================================================= */
   (function (App) {
     'use strict';
 
-    /**
-     * @param {Object} provider  a section provider: {label, keyColumn, columns,
-     *                           groups?, render?}
-     * @param {Array}  rows      the rows this section is to show
-     * @param {Object} ctx       render context, passed to every column getter
-     * @param {Object} opts      caption / style / width options from the block
-     * @returns {{body: string, children: Array}}
-     */
-    function renderSection(provider, rows, ctx, opts) {
-      if (!provider) return { body: '', children: [] };
-
-      // The escape hatch, and the reason it stays: control coverage groups by control
-      // and sub-groups by dataset, which buildSection's single grouping axis cannot
-      // express. Declaring columns covers the ordinary case, not every case.
-      if (typeof provider.render === 'function') {
-        return normalise(provider.render(rows || [], ctx || {}, opts || {}));
-      }
-
-      var key = provider.keyColumn ||
-        { id: '_key', label: 'Key', get: function (r) { return r.key; } };
-      return normalise(App.report.buildSection(
-        provider.label, key, provider.columns || [],
-        rows || [], opts || {}, ctx || {}, provider.groups || null
-      ));
-    }
-
-    /* buildSection already returns {body, children} — '' plus children when grouped,
-     * a table plus [] when not. A hand-written render() is somebody else's code, so
-     * it is held to the same shape here rather than everywhere downstream. */
-    function normalise(out) {
-      if (out == null) return { body: '', children: [] };
-      if (typeof out === 'string') return { body: out, children: [] };
-      return { body: out.body || '', children: out.children || [] };
-    }
-
-    /** PDF-1: a provider's section as TABLE DATA rather than markdown. A provider that
-     *  renders its own markdown has nothing this format can show, and says so. */
+    /** PDF-1: a provider's section as TABLE DATA. A provider that renders its own text
+     *  (a render() function) has nothing these documents can show, and says so. */
     function sectionTables(provider, rows, ctx, opts) {
       if (!provider) return [];
       if (typeof provider.render === 'function') {
@@ -4297,7 +988,7 @@ import { pagesHtml } from './doc-preview.js';
       return App.report.tables(provider.label, key, provider.columns || [], rows || [], opts || {}, ctx || {}, provider.groups || null);
     }
 
-    App.docProviders = { renderSection: renderSection, sectionTables: sectionTables };
+    App.docProviders = { sectionTables: sectionTables };
   }(App));
 
   /* =============================================================================
@@ -4338,24 +1029,10 @@ import { pagesHtml } from './doc-preview.js';
       });
     }
 
-    /** The title-row and caption half of the same, folded into a table's options. */
-    function withWording(tblOpts, text, dfltCaption) {
-      var title = String(text.title || '').trim();
-      var out = Object.assign({}, tblOpts, {
-        titleRow: title ? MD.text(title) : '',
-        captionText: String(text.caption || '').trim() || title || dfltCaption
-      });
-      // CAP-4: no caption means no caption LINE, which is what leaves the table out of
-      // the numbering — App.doc counts the markers rather than the tables.
-      if (text.noCaption === true) out.captionId = '';
-      return out;
-    }
-
     App.docBlocks = {
       applySectionOrder: applySectionOrder,
       tableWording: tableWording,
-      headingsFor: headingsFor,
-      withWording: withWording
+      headingsFor: headingsFor
     };
   }(App));
 
@@ -4363,7 +1040,7 @@ import { pagesHtml } from './doc-preview.js';
    * MODULE: App.docGen — DOC-GEN: the document, built from a host's declarations
    * PURPOSE: Turn what a HOST declares — its sections, its subject, its filter —
    *          into the blocks a document is made of, the columns each block prints
-   *          and the markdown each block contains. This is the generator half of
+   *          and the finished document they make. This is the generator half of
    *          the module: the designer shows what this produces, and the host's
    *          own Generate button emits it.
    * PURITY:  pure. No DOM, no I/O, no clock — the time arrives on the context.
@@ -4506,12 +1183,11 @@ import { pagesHtml } from './doc-preview.js';
       var levels = bag.levels || {};
 
       /* TOC-1: the contents list is a section, so it can be ordered, levelled, renamed
-       * and given an introduction like any other. It used to be a YAML variable, which
-       * pinned it immediately after the title with LaTeX's own heading — the one part of
-       * the document the section order could not touch.
+       * and given an introduction like any other — placed wherever the section order
+       * puts it, with the heading the operator gives it.
        *
-       * TWO switches, and both mean something: "Include a table of contents" in the
-       * formatting profile is the house decision and travels with the profile; the
+       * TWO switches, and both mean something: "Include a contents list" in the
+       * Style is the house decision and travels with the Style; the
        * section's own tick is this report's decision, like every other section's. A
        * profile with no contents list offers no row to tick. */
       var wantToc = !!(App.docFormat.resolve(state).toc || {}).include;
@@ -4537,7 +1213,7 @@ import { pagesHtml } from './doc-preview.js';
         });
       });
 
-      var names = bag.names || {}, intros = bag.intros || {}, tstyles = bag.tableStyles || {}, twidths = bag.tableWidths || {};
+      var names = bag.names || {}, intros = bag.intros || {}, twidths = bag.tableWidths || {};
       var heads = bag.headings || {}, introNums = bag.introNumbered || {};
       var centred = bag.centred || {};
       var tableText = bag.tables || {}, breaks = bag.pageBreak || {}, noToc = bag.noToc || {};
@@ -4571,8 +1247,6 @@ import { pagesHtml } from './doc-preview.js';
           intro: String(intros[b.id] || ''),
           // SEC-2: whether that introduction takes a number of its own.
           introNumbered: introNums[b.id] === true,
-          // TBS-1: which of this section's tables wear the profile's table styling.
-          tableStyle: { head: (tstyles[b.id] || {}).head === true, firstColumn: (tstyles[b.id] || {}).firstColumn === true },
           // TW-2: hand-set column widths for this section's generated table.
           widths: Array.isArray(twidths[b.id]) ? twidths[b.id].slice() : null,
           // TBL-1: the title row, caption and column headings of each table this section
@@ -4640,97 +1314,6 @@ import { pagesHtml } from './doc-preview.js';
       if (block.kind === 'meta') return pack([{ id: 'field', label: 'Field' }, { id: 'value', label: 'Value' }], []);
       return null;
     }
-    /**
-     * Fill in ONE generated block's content.
-     *
-     * Pulled out of buildReport so the Report Design workspace can render a single
-     * section for its preview without generating the whole document — and, more to the
-     * point, so the preview of a section and the section in the finished document come
-     * from the same call and cannot drift.
-     *
-     * @returns {Object} the block, plus `body` (markdown) and/or `children`
-     */
-    function hostContent(host, b, opts, ctx, metaRows) {
-      opts = opts || {};
-      var out;
-      // CAP-1/TBS-1: a generated table's caption is DERIVED from the block it belongs
-      // to, so the same project always emits the same caption and the same anchor
-      // (DOD-7) — nothing is minted at generate time.
-      var capText = String(b.title || '').trim() || b.label;
-      var profile = App.docFormat.resolve((host && typeof host.getState === 'function' && host.getState()) || {});
-      var tblOpts = {
-        captionId: b.id, captionText: capText,
-        // REF-2: a control named in any cell of this section links to its coverage row.
-        linkTerms: opts.linkTerms || null,
-        metrics: App.docFormat.tableMetrics(profile),
-        style: App.docFormat.tableStyle(profile, b.tableStyle),
-        // TW-2: a generated table's columns are the section's, not any one table's, so a
-        // grouped register's groups all wear the same widths — which is right, since
-        // they are the same columns showing different rows.
-        widths: (b.widths && b.widths.length) ? b.widths : null
-      };
-      if (b.kind === 'toc') {
-        // TOC-1: the whole body is one macro. The entries come from LaTeX's .toc file,
-        // which is written by the headings this document has already emitted — so a
-        // contents section placed at the end lists the same document as one at the
-        // front, and neither needs to be told what is in it.
-        out = Object.assign({}, b, { body: App.md.rawLatex('\\chContents') });
-      } else if (b.kind === 'meta') {
-        var metaText = App.docBlocks.tableWording(b, '_all');
-        out = Object.assign({}, b, { body: metaRows
-          ? App.report.metaTable(metaRows,
-              Object.assign(App.docBlocks.withWording(tblOpts, metaText, capText),
-                { headings: App.docBlocks.headingsFor(['field', 'value'], ['Field', 'Value'], metaText.columns) }))
-          : '' });
-      } else if (providerOf(opts, b.id, null, host)) {
-        /* 8: every generated section arrives here. Registers, control coverage and
-         * guideline deviations used to be three branches, two of which meant this code
-         * knew what a control and a dataset were. They are host providers now, reached
-         * the same way any section a future host declares will be. */
-        var pv = providerOf(opts, b.id, null, host);
-        var ck = columnKey(b, pv);
-        var pr = App.docProviders.renderSection(pv, pv.rows ? pv.rows() : [], ctx,
-          Object.assign({
-            columns: (opts.columns || {})[ck],
-            colOpts: (opts.columns || {})[ck],
-            groups: groupTicks(pv, opts, ck),
-            // TBL-1: the per-table wording, passed straight through to buildSection —
-            // a provider never has to know it exists (DOD-11).
-            tables: b.tables || null,
-            block: b
-          }, tblOpts));
-        out = Object.assign({}, b, { body: pr.body, children: pr.children });
-      } else if (b.kind === 'custom') {
-        out = b;                                            // App.doc renders its parts
-      } else {
-        out = b;
-      }
-      /* SEC-1: the operator's own words, between the heading and whatever the register
-       * produced. It sits ABOVE the table because that is where a reader looks for what
-       * a table is for — and it belongs to the section rather than to the table, so a
-       * grouped dataset's introduction is written once rather than once per group.
-       *
-       * Kept OUT of `body` and handed to App.doc as its own field, because SEC-2 lets it
-       * take a number and numbering is App.doc's job — baked into the body it would have
-       * been a string nobody could put a number in front of. */
-      // SEC-1: the introduction stays as its TOKEN text and is rendered by App.doc,
-      // which is the only place holding a reference resolver (REF-1). It used to be
-      // rendered here with an empty options object, which is why a cross-reference in
-      // an introduction printed as "[missing reference]" — or, before REF-1, as the
-      // raw token.
-      // Centring is applied to the BODY, not the heading: a centred heading is a
-      // formatting-profile decision, and centring the heading here would fight it.
-      if (b.centre) {
-        if (out.body) out = Object.assign({}, out, { body: App.md.centred(out.body) });
-        if (out.children && out.children.length) {
-          out = Object.assign({}, out, { children: out.children.map(function (c) {
-            return Object.assign({}, c, { body: c.body ? App.md.centred(c.body) : c.body });
-          }) });
-        }
-      }
-      return out;
-    }
-
     /* =========================================================================
      * GEN-TAB: `/[Tag]` — a placeholder filled in at generate time.
      *
@@ -4738,18 +1321,13 @@ import { pagesHtml } from './doc-preview.js';
      * you type text — and the Generate pane lists it once with a box beside it. What you
      * put in the box replaces every occurrence in the document.
      *
-     * Found and replaced on the FINISHED markdown, not on the strings that went into it,
-     * and that is the whole design. A tag can appear in any of a dozen places — a
-     * section heading, a section name, an introduction, a table's title row, a column
-     * heading, a paragraph, a hand-authored cell, a header slot — and threading a
-     * substitution through all of them is a dozen chances to miss one. The document is
-     * the one place they have all arrived at, so it is the one place this happens.
-     *
-     * Both escaped and unescaped forms are matched, because both occur: prose reaches
-     * the .md through MD.text and comes out as `/\[Date\]`, while the same tag inside a
-     * code span is verbatim. The body is deliberately narrow — letters, digits, spaces,
-     * `_` and `-`, up to 40 characters — so that a `/[` inside a captured device value
-     * cannot be mistaken for one.
+     * Found and replaced on the FINISHED document's text, not on the strings that went
+     * into it: a tag can appear in a heading, an introduction, a table's title row, a
+     * column heading, a paragraph, a cell or a header slot, and the document is the one
+     * place they have all arrived at. The body is deliberately narrow — letters, digits,
+     * spaces, `_` and `-`, up to 40 characters — so that a `/[` inside captured data
+     * cannot be mistaken for one. (The backslashes are optional so a tag written into
+     * older, escaped text still matches.)
      */
     var TAG_RE = /\/(\\?)\[([A-Za-z0-9 _-]{1,40})(\\?)\]/g;
 
@@ -4771,278 +1349,15 @@ import { pagesHtml } from './doc-preview.js';
      * `/[Date]` still printed in it is obviously unfinished; one with a silent gap where
      * the date should be reads as complete and is not — the same rule the rest of this
      * file follows for a missing cross-reference and an unstated omission.
-     *
-     * The replacement is escaped, because it is text somebody typed arriving in a
-     * document that is markdown on its way to LaTeX. It is escaped ONCE, here, on the
-     * same rule as everything else. This is the BODY's escaper: the one place a
-     * placeholder can land that is NOT markdown is a header or footer slot, and those
-     * are filled in before the profile is compiled (see taggedProfile), so by the time
-     * this runs there is nothing left in the preamble for it to get wrong.
      */
-    /**
-     * GEN-TAB: the name the operator gave the file, made safe to be one.
-     *
-     * A filename typed into a box reaches `download`'s `a[download]` attribute, so it is
-     * reduced to characters that cannot mean anything to a filesystem or a shell — no
-     * separators, no traversal, no leading dot. Blank (or nothing left after that) falls
-     * back to the device-and-timestamp name every other artifact uses.
-     */
-    function docFilename(name) {
-      var s = String(name == null ? '' : name).trim().replace(/\.md$/i, '');
-      s = s.replace(/[^A-Za-z0-9 ._-]+/g, '-').replace(/^[.\-]+/, '').replace(/\s+/g, ' ').trim();
-      return s ? s + '.md' : '';
-    }
-
-    function applyTags(md, values, raw) {
+    function applyTags(text, values) {
       values = values || {};
-      return String(md == null ? '' : md).replace(TAG_RE, function (whole, e1, name) {
+      return String(text == null ? '' : text).replace(TAG_RE, function (whole, e1, name) {
         var v = values[name];
         if (v === undefined || v === null || !String(v).length) return whole;
-        // `raw` for a header or footer slot, which is escaped later and for LaTeX.
-        return raw ? String(v) : App.md.text(String(v));
+        return String(v);
       });
     }
-    /* =========================================================================
-     * CONF-1: blocks in, one finished document out.
-     *
-     * This is the last step of generation and the one a host should not have to
-     * write: resolve the formatting profile, number the headings, assemble the YAML
-     * front matter, render the blocks, then fill in the `/[Tag]` placeholders in one
-     * pass over the finished markdown.
-     *
-     * It lived in CH, which meant a second host could build every block the module
-     * offers and still have no way to turn them into a .md without copying eighty
-     * lines of pipeline. What is genuinely CH's about it — a device id, a project
-     * hash, the words "OFFICIAL: Sensitive", the stable name each command's file
-     * takes — arrives on `meta`, computed by whoever knows those things.
-     * ====================================================================== */
-
-    /**
-     * GEN-TAB: a profile whose header and footer slots have had their placeholders
-     * filled in, on the RAW text.
-     *
-     * Every other placeholder in the document is substituted at the very end, on the
-     * finished markdown, which is what makes one pass catch them all. A slot cannot wait
-     * for that pass: it reaches the page through `header-includes`, which pandoc hands
-     * to LaTeX verbatim, so what goes in has to be escaped for LaTeX rather than for
-     * markdown — and by the end of the pipeline the slot has already been escaped and
-     * the two cannot be told apart. Filled here, the value is escaped by `slotLatex`
-     * along with the words around it, once, in the right language.
-     */
-    function taggedProfile(profile, tags) {
-      if (!tags || !Object.keys(tags).length) return profile;
-      var out = JSON.parse(JSON.stringify(profile));
-      var hf = out.headerFooter || {};
-      App.docFormat.HF_SETS.forEach(function (k) {
-        App.docFormat.HF_SLOTS.forEach(function (slot) {
-          if (hf[k] && hf[k][slot]) hf[k][slot] = applyTags(hf[k][slot], tags, true);
-        });
-      });
-      return out;
-    }
-
-    /**
-     * Assemble, render and package a document.
-     *
-     * @param {Object} host    the installed host; only getState() is read
-     * @param {Array} blocks   sectionContent()-shaped, each with `body` and/or `parts`
-     * @param {{title?:string, subtitle?:string, date?:string, classification?:string,
-     *          extra?:Array<{key:string,value:string}>, linkTerms?:Object,
-     *          tags?:Object, filename?:string, fallbackName?:string,
-     *          logicalName?:string}} meta
-     * @returns {{blob:Blob,name:string,issues:Issue[],text:string,tags:string[],files:Object[]}}
-     */
-    function emitDocument(host, blocks, meta) {
-      meta = meta || {};
-      var state = (host && typeof host.getState === 'function' && host.getState()) || {};
-      var profile = taggedProfile(App.docFormat.resolve(state), meta.tags);
-      var resolved = App.doc.outline(blocks, {
-        baseLevel: 1,
-        clampSkips: profile.headings.clampSkips !== false,
-        numbered: profile.headings.numbered !== false
-      });
-      /* TTL-2: the automatic title block is a CHOICE, and it is off unless asked for.
-       *
-       * `title`/`subtitle`/`date` in the YAML make pandoc's template call \maketitle,
-       * which prints a title page this file composed — a heading, a model-and-firmware
-       * line and a date — ahead of everything the designer arranged. Anyone who wants
-       * their own title page cannot have one while it is there, and there is no
-       * markdown that suppresses it: the only way not to get the block is not to name
-       * the metadata. So the switch simply withholds the three keys.
-       *
-       * What is NOT withheld is the provenance the host handed in as `extra`: it still
-       * travels as its own YAML keys below, and the metadata section still prints it
-       * where a reader can see it. */
-      var titleBlock = ((state.report || {}).titleBlock === true);
-      var frontMatter = App.docFormat.frontMatter(profile, {
-        title: titleBlock ? (meta.title || '') : '',
-        subtitle: titleBlock ? (meta.subtitle || '') : '',
-        date: titleBlock ? (meta.date || '') : '',
-        // TOC-1: this document prints its own contents list iff it carries the section.
-        tocSection: (blocks || []).some(function (b) { return b && b.kind === 'toc'; }),
-        // The BANNER TEXT, not a flag: what a document is marked as is the host's own
-        // vocabulary, and a module that spelled one classification out could only ever
-        // serve the organisation that uses it.
-        classification: meta.classification || '',
-        // The manifest's job, done inside the document. `extra` lands in the YAML
-        // block, which pandoc carries into the PDF metadata and any reader can see.
-        extra: meta.extra || []
-      });
-      // TBS-1: the PART carries the flags, the PROFILE carries the look. App.doc has no
-      // business knowing about either, so it is handed the resolver rather than the two.
-      // HDR-1: page 1 is an ordinary page unless the profile gives it its own header
-      // and footer, in which case it has to be told so from inside the document.
-      var firstPage = profile.headerFooter && profile.headerFooter.firstDifferent;
-      var md = App.doc.render({
-        frontMatter: frontMatter, blocks: resolved,
-        prologue: firstPage ? '\\thispagestyle{chfirst}' : '',
-        // SEC-4: so a section whose level already starts a page does not get a second
-        // break, and a blank page between the two.
-        levelBreaks: App.docFormat.levelBreaks(profile),
-        // REF-2: prose renders its linked terms too, not just table cells. The host
-        // decided which words those are, from the blocks actually being emitted.
-        linkTerms: meta.linkTerms || null,
-        metrics: App.docFormat.tableMetrics(profile),
-        // CAP-3: which side of the table the caption goes. The look of it is the
-        // profile's business too, but that reaches the page as preamble macros.
-        captionPosition: profile.tables.captionPosition,
-        styleFor: function (part) {
-          return App.docFormat.tableStyle(profile, { head: part.styleHead === true, firstColumn: part.styleFirstColumn === true });
-        }
-      });
-      // GEN-TAB: the last thing that happens to the document, so a tag written anywhere
-      // in it — heading, table cell, footer slot, YAML title — is caught by one pass.
-      md = applyTags(md, meta.tags);
-      return {
-        blob: new Blob([md], { type: 'text/markdown;charset=utf-8' }),
-        // The DOWNLOAD name is the operator's if they typed one (GEN-TAB), and
-        // otherwise whatever the host would have called it.
-        name: docFilename(meta.filename) || meta.fallbackName || 'document.md',
-        issues: [], text: md,
-        // GEN-TAB: what is still unfilled, so the pane can say so before it is downloaded.
-        tags: findTags(md),
-        // `files` keeps a stable LOGICAL name, so anything inspecting what was produced
-        // addresses it by what it is rather than by when it was made.
-        files: [{ name: meta.logicalName || 'document.md', content: md }]
-      };
-    }
-
-    /* ======================================================================
-     * HTML-1: the same document as one standalone, printable HTML page.
-     *
-     * Made from the markdown emitDocument produced, through the live preview's own
-     * renderer (App.ui.mdPreview), so the page shows what the Preview pane shows: the
-     * same numbering, captions, tables and profile styling. It is for reading without
-     * the pandoc/tectonic stack, not a second typesetter. What only LaTeX can do, the
-     * running header and footer and any raw LaTeX, is left out. The exception is the
-     * classification banner (`meta.classification`), which is printed above and below
-     * the document because a reader must see it.
-     *
-     * Page size and margins come from the profile as `@page` rules, so printing the
-     * page from a browser gives the profile's paper.
-     * ====================================================================== */
-
-    /** The page's own styles: the preview's paper rules, with the app's theme colours
-     *  replaced by literal ones, because a document is white paper whatever the theme. */
-    var HTML_PAGE_CSS = [
-      'body { margin: 0; background: #e9ebee; }',
-      '.doc-banner { text-align: center; font-weight: 700; padding: 6px 0; }',
-      '.rd-paper { box-sizing: border-box; box-shadow: 0 1px 6px rgba(0,0,0,.18); padding: 20px 22px 28px; margin: 24px auto; }',
-      '.rd-paper .prv-h { margin: 14px 0 6px; line-height: 1.2; }',
-      '.rd-paper .prv-h1, .rd-paper .prv-title { border-bottom: 1px solid #d4d8de; padding-bottom: 3px; }',
-      '.rd-paper p { margin: 6px 0; }',
-      '.rd-paper .prv-tablewrap { overflow-x: auto; margin: 8px 0; }',
-      '.rd-paper .prv-table { border-collapse: collapse; }',
-      '.rd-paper .prv-table[style*="fixed"] { width: 100%; }',
-      '.rd-paper .prv-table th, .rd-paper .prv-table td { border: 1px solid #bbb; padding: 3px 6px; text-align: left;' +
-        ' vertical-align: top; overflow-wrap: anywhere; word-break: break-word; }',
-      '.rd-paper .prv-tbltitle th { text-align: center; }',
-      '.rd-paper .prv-caption { margin-top: 3px; }',
-      '.rd-paper .prv-toc-e { padding: 1px 0; }',
-      '.rd-paper .prv-toc-n { display: inline-block; min-width: 2.4em; }',
-      '.rd-paper .prv-toc-2 { padding-left: 1.6em; }',
-      '.rd-paper .prv-toc-3 { padding-left: 3.2em; }',
-      '.rd-paper .prv-toc-4 { padding-left: 4.8em; }',
-      '.rd-paper .prv-toc-empty { color: #5b6472; }',
-      '.rd-paper .prv-cp { margin: 0 0 4px; }',
-      '.rd-paper .prv-cp:last-child { margin-bottom: 0; }',
-      '.rd-paper .prv-rule { border: 0; border-top: 1px solid #bbb; margin: 12px 0; }',
-      '.rd-paper .prv-centre { text-align: center; }',
-      '.rd-paper .prv-centre .prv-tablewrap { display: inline-block; text-align: left; }',
-      '.rd-paper .prv-space, .rd-paper .prv-strut { display: block; }',
-      '.rd-paper a { color: #14418c; }',
-      '.doc-pagebreak { border-top: 1px dashed #bbb; margin: 16px 0; }',
-      '@media print {',
-      '  body { background: #fff; }',
-      '  .rd-paper { box-shadow: none; padding: 0; margin: 0; width: auto; max-width: none; }',
-      '  .rd-paper .prv-tablewrap { overflow: visible; }',
-      '  .rd-paper tr { break-inside: avoid; }',
-      '  .doc-pagebreak { border: 0; margin: 0; break-after: page; }',
-      '  .prv-breakbefore { break-before: page; }',
-      // Not the first thing on the page: a break there would leave the banner alone on page 1.
-      '  .rd-paper > .prv-breakbefore:first-child { break-before: auto; }',
-      '}'
-    ].join('\n');
-
-    /** CSS page sizes for the profile's paper names; anything else prints as A4. */
-    var CSS_PAPER = { a4: 'A4', a5: 'A5', letter: 'letter', legal: 'legal' };
-
-    /**
-     * @param {Object} host   the installed host; only getState() is read
-     * @param {{text:string, name?:string}|string} doc  emitDocument's result, or its markdown
-     * @param {{title?:string, classification?:string, lang?:string}} [meta]
-     * @returns {{blob:Blob, name:string, text:string, files:Object[]}}
-     */
-    function emitHtml(host, doc, meta) {
-      var esc = App.util.html.esc;
-      meta = meta || {};
-      var md = typeof doc === 'string' ? doc : String((doc && doc.text) || '');
-      var state = (host && typeof host.getState === 'function' && host.getState()) || {};
-      var profile = App.docFormat.resolve(state);
-      var rendered = App.ui.mdPreview.toHtml(md, null, { breaks: App.docFormat.levelBreaks(profile) });
-      // The preview marks a `\newpage` as a labelled rule and any other raw LaTeX as a
-      // "Raw LaTeX" marker. On the page the first is a page break and the second is
-      // nothing a reader needs to see.
-      var body = rendered.html
-        .replace(/<div class="prv-pagebreak"><span>Page break<\/span><\/div>/g, '<div class="doc-pagebreak"></div>')
-        .replace(/<div class="prv-pagebreak"><span>Raw LaTeX<\/span><\/div>/g, '');
-      var m = App.docFormat.pageMetrics(profile);
-      var paper = CSS_PAPER[String((profile.page || {}).paper || '').toLowerCase()] || 'A4';
-      var pageCss = '@page { size: ' + paper + '; margin: ' + m.top + 'px ' + m.right + 'px ' + m.bottom + 'px ' + m.left + 'px; }';
-      var banner = meta.classification ? '<div class="doc-banner">' + esc(meta.classification) + '</div>' : '';
-      var title = meta.title || (rendered.outline && rendered.outline[0] && rendered.outline[0].title) || 'Document';
-      var html = [
-        '<!doctype html>',
-        '<html lang="' + esc(meta.lang || 'en') + '">',
-        '<head>',
-        '<meta charset="utf-8">',
-        '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        '<title>' + esc(title) + '</title>',
-        '<style>',
-        pageCss,
-        HTML_PAGE_CSS,
-        App.docFormat.previewCss(profile),
-        '</style>',
-        '</head>',
-        '<body>',
-        banner,
-        '<main class="rd-paper">',
-        body,
-        '</main>',
-        banner,
-        '</body>',
-        '</html>',
-        ''
-      ].join('\n');
-      var mdName = (doc && typeof doc === 'object' && doc.name) || 'document.md';
-      var name = /\.md$/i.test(mdName) ? mdName.replace(/\.md$/i, '.html') : mdName + '.html';
-      return {
-        blob: new Blob([html], { type: 'text/html;charset=utf-8' }),
-        name: name, text: html,
-        files: [{ name: name, content: html }]
-      };
-    }
-
     /** PDF-1: one block with its generated content as data — tables, or the contents marker. */
     function contentOf(host, b, opts, ctx, metaRows) {
       opts = opts || {};
@@ -5070,7 +1385,7 @@ import { pagesHtml } from './doc-preview.js';
 
     /**
      * PDF-1: the finished DOCUMENT — blocks of runs — from content-filled blocks. Owns what
-     * App.doc.render owned for markdown: the outline and its numbers, table numbers in
+     * the outline and its numbers, table numbers in
      * emitted order, the reference index, intros, custom parts, and `/[Tag]` values.
      */
     function buildDocument(host, blocks, meta) {
@@ -5097,7 +1412,7 @@ import { pagesHtml } from './doc-preview.js';
       var resolveRef = App.doc.refResolver(resolved, tableList);
       var byId = {}; tableList.forEach(function (t) { byId[t.id] = t; });
       var tags = meta.tags || {};
-      function tag(s) { return applyTags(s, tags, true); }
+      function tag(s) { return applyTags(s, tags); }
       function runs1(s) { var ps = App.md.runs(s, { resolveRef: resolveRef }); return ps.length ? ps.reduce(function (a, p, i) { return i ? a.concat([{ br: true }, { br: true }], p) : p; }, []) : []; }
       function textRuns(s) { return [{ text: tag(String(s == null ? '' : s)) }]; }
       function caption(t) { return t ? { runs: [{ text: 'Table ' + t.number + ': ' + tag(t.caption) }] } : null; }
@@ -5177,17 +1492,13 @@ import { pagesHtml } from './doc-preview.js';
     }
 
     App.docGen = {
-      // The three the host's own generator is a shim over.
-      reportBlocks: hostBlocks, sectionColumns: hostColumns, sectionContent: hostContent,
+      // The blocks a document is made of, and the columns a generated one prints.
+      reportBlocks: hostBlocks, sectionColumns: hostColumns,
       // How many rows sit in each of the host's filter categories.
       filterCounts: filterCounts,
-      // GEN-TAB: `/[Tag]` placeholders — finding them, filling them, naming the file.
-      findTags: findTags, applyTags: applyTags, docFilename: docFilename, TAG_RE: TAG_RE,
-      // CONF-1: blocks in, one finished .md out — the step a host used to write itself.
-      emitDocument: emitDocument,
-      // HTML-1: that .md as one standalone, printable HTML page.
-      emitHtml: emitHtml,
-      // PDF-1: the document as blocks of runs, for the PDF and HTML writers.
+      // GEN-TAB: `/[Tag]` placeholders — finding them and filling them.
+      findTags: findTags, applyTags: applyTags, TAG_RE: TAG_RE,
+      // PDF-1: blocks in, the finished document (blocks of runs) and its Style out.
       contentOf: contentOf, buildDocument: buildDocument, documentFor: documentFor,
       // Exposed for a host that assembles its own run: the sections for a run, and
       // the provider behind one block.
@@ -5353,17 +1664,6 @@ import { pagesHtml } from './doc-preview.js';
     }
 
     /**
-     * TTL-2: whether the document opens with the automatic title block — the report
-     * title, the model-and-firmware line and the date, printed by pandoc's \maketitle
-     * ahead of everything the designer arranged.
-     *
-     * A DESIGN decision, not a session one: someone who composes their own title page
-     * would otherwise have to switch this off again every time the app is opened. Off
-     * is stored as absence, so a project that never wanted one carries no trace of it.
-     */
-    function setTitleBlock(on) { return setReportSwitch('titleBlock', on); }
-
-    /**
      * CLS-1 / CLS-2: the classification marking the report carries on every page: one of the
      * host's `classifications`, or none ('').
      *
@@ -5372,7 +1672,7 @@ import { pagesHtml } from './doc-preview.js';
      * a report contains is a property of the report, and a house that classifies one
      * classifies all of them — so re-ticking it every time the tool was opened was work
      * with no decision in it, and a document issued from an unticked session went out
-     * unmarked. Stored beside the title block, and on the same presence rule.
+     * unmarked. Stored with the design; none is stored as absence.
      */
     function setClassification(marking) {
       if (!P()) return errNoProject();
@@ -5389,17 +1689,6 @@ import { pagesHtml } from './doc-preview.js';
       return ok();
     }
 
-    /** The shape both of the above share: a document-level switch, stored as presence. */
-    function setReportSwitch(key, on) {
-      if (!P()) return errNoProject();
-      App.docHost.get().commit(function (p) {
-        var b = bag(p);
-        if (on) b[key] = true; else delete b[key];
-        if (!Object.keys(b).length) delete p.report;
-      });
-      return ok();
-    }
-
     /**
      * NAM-1: the name the designer's section list calls a block, when that is not the
      * same string as the heading the document prints. Blank hands it back to the
@@ -5411,8 +1700,8 @@ import { pagesHtml } from './doc-preview.js';
 
     /**
      * SEC-1: prose that sits between a generated section's heading and its table.
-     * Same rich-text token markup a custom paragraph uses (App.md.rich), so the one
-     * editor and the one escaping discipline serve both.
+     * Same rich-text token markup a custom paragraph uses (App.md.runs), so the one
+     * editor serves both.
      */
     function setBlockIntro(blockId, text) {
       return setBlockText('intros', blockId, text);
@@ -5510,7 +1799,7 @@ import { pagesHtml } from './doc-preview.js';
      *
      * Stored beside the wording, because it is the same decision one step further: a
      * caption you did not write, then a caption you do not want. An uncaptioned table
-     * is also left out of the NUMBERING (see App.doc.tableIndex), so the numbers a
+     * is also left out of the NUMBERING (see App.docGen.buildDocument), so the numbers a
      * reader counts and the numbers a cross-reference names stay the same numbers.
      * @param {string} blockId @param {string} tableKey @param {boolean} off
      */
@@ -5590,28 +1879,6 @@ import { pagesHtml } from './doc-preview.js';
         if (subKey != null && !Object.keys(m[key]).length) delete m[key];
         if (!Object.keys(m).length) delete o[map];
         if (!Object.keys(o).length) delete b.options;
-        if (!Object.keys(b).length) delete p.report;
-      });
-      return ok();
-    }
-
-    /**
-     * TBS-1: whether a GENERATED section's tables wear the profile's header-row /
-     * first-column styling. The look itself is the formatting profile's; this only
-     * records that this section opted in, which is why it is a boolean and not a colour.
-     * @param {string} blockId @param {'head'|'firstColumn'} which @param {boolean} on
-     */
-    function setBlockTableStyle(blockId, which, on) {
-      if (!P()) return errNoProject();
-      if (!blockId) return err('A section is required.');
-      if (which !== 'head' && which !== 'firstColumn') return err('Table styling is either "head" or "firstColumn".');
-      App.docHost.get().commit(function (p) {
-        var b = bag(p);
-        b.tableStyles = b.tableStyles || {};
-        var e = b.tableStyles[blockId] = b.tableStyles[blockId] || {};
-        if (on) e[which] = true; else delete e[which];
-        if (!Object.keys(e).length) delete b.tableStyles[blockId];
-        if (!Object.keys(b.tableStyles).length) delete b.tableStyles;
         if (!Object.keys(b).length) delete p.report;
       });
       return ok();
@@ -5712,9 +1979,9 @@ import { pagesHtml } from './doc-preview.js';
     /**
      * SPC-1: a millimetre figure on its way into the project.
      *
-     * The editors are text boxes, so what arrives is a string — and it ends up inside a
-     * LaTeX length, which is past the last of this file's escaping. Everything that is
-     * not a number in range becomes 0, and 0 is stored as absence.
+     * The editors are text boxes, so what arrives is a string — and it ends up as a
+     * distance on the page. Everything that is not a number in range becomes 0, and 0
+     * is stored as absence.
      * @returns {number} 0 when there is no usable measurement
      */
     function mmValue(v) {
@@ -5753,8 +2020,8 @@ import { pagesHtml } from './doc-preview.js';
         Object.keys(fields || {}).forEach(function (k) {
           if (k === 'id' || k === 'kind') return;             // identity is not editable
           // SPC-1: the two measurements are sanitised HERE rather than at the point of
-          // use, because this is where a text box's contents enter the project — and
-          // they leave it as a LaTeX length. Zero is no measurement, so it is absence.
+          // use, because this is where a text box's contents enter the project. Zero is
+          // no measurement, so it is absence.
           if (k === 'height' || k === 'rowHeight') {
             var mm = mmValue(fields[k]);
             if (mm > 0) part[k] = mm; else delete part[k];
@@ -6328,12 +2595,11 @@ import { pagesHtml } from './doc-preview.js';
       // SPC-1: …and how far down the page its heading starts.
       setBlockSpace: setBlockSpace, mmValue: mmValue,
       DEFAULT_SPACE_MM: DEFAULT_SPACE_MM, MAX_SPACE_MM: MAX_SPACE_MM,
-      setTitleBlock: setTitleBlock,
       // CLS-1: the classification banner, which is a document decision, not a per-run one.
       setClassification: setClassification,
       // NAM-1 / SEC-1 / TBS-1: a section's name, its introduction, its table styling.
       setBlockName: setBlockName, setBlockHeading: setBlockHeading, setBlockIntro: setBlockIntro,
-      setBlockIntroNumbered: setBlockIntroNumbered, setBlockTableStyle: setBlockTableStyle,
+      setBlockIntroNumbered: setBlockIntroNumbered,
       // TBL-1: a generated table's own title row, caption and column headings.
       setTableText: setTableText, setTableColumnLabel: setTableColumnLabel, ONE_TABLE: '_all',
       setTableNoCaption: setTableNoCaption,
@@ -6615,610 +2881,8 @@ import { pagesHtml } from './doc-preview.js';
   })(App);
 
   /* =============================================================================
-   * MODULE: App.ui.mdPreview  — PRV-1: markdown -> HTML for the live preview
-   * PURPOSE: Render the EXACT markdown the Generate button downloads into browsable
-   *          HTML, plus the outline needed to navigate it. Not a general markdown
-   *          implementation — it reads the dialect App.md emits, and nothing else.
-   * PURITY:  pure (string -> {html, outline}). No DOM access; the caller mounts it.
-   * DEPENDS: App.util.html (esc)
-   * INVARIANTS: every path escapes before it emits. A preview that rendered raw
-   *             document text as markup would be an injection route from a captured
-   *             device string straight into the tool's own DOM.
-   * ============================================================================= */
-  (function (App) {
-    'use strict';
-    var esc = App.util.html.esc;
-
-    /* -------------------------------------------------------------------------
-     * Why a hand-written renderer rather than a library.
-     *
-     * No network and no imports (spec §3), so a markdown library would have to be
-     * vendored whole — and a general one would be several thousand lines to render a
-     * dialect this file already controls both ends of. What is actually needed is
-     * narrow: the headings, tables, rules, page breaks and inline spans App.md emits,
-     * with the escaping read back so `\_` shows as an underscore rather than as a
-     * backslash. Anything outside that dialect is shown as literal text, which is the
-     * safe direction to fail in.
-     * ---------------------------------------------------------------------- */
-
-    // Placeholder sentinels. U+0000 cannot appear in the document (App.md would have
-    // escaped or dropped it), so a placeholder can never collide with content.
-    var NUL = ' ';
-    function ph(kind, n) { return NUL + kind + n + NUL; }
-
-    /**
-     * Inline spans. Order matters and is load-bearing:
-     * code spans are lifted out first so nothing inside them is interpreted; the
-     * backslash escapes come out next, BEFORE HTML-escaping, because after escaping
-     * `\&` has become `\&amp;` and the pair is no longer recognisable; and emphasis
-     * runs last, on text where every escaped asterisk has already been removed from
-     * play — which is what stops `50\%` or a package name from starting italics.
-     */
-    function inline(s) {
-      var store = [];
-      var out = String(s == null ? '' : s);
-
-      // 1. code spans (variable-length fence, optional one-space padding)
-      out = out.replace(/(`+)( ?)([\s\S]*?)\2\1/g, function (m, f, pad, body) {
-        store.push('<code>' + esc(body) + '</code>');
-        return ph('S', store.length - 1);
-      });
-      // 2. hard line break: a lone backslash at end of line (App.md's {{br}})
-      out = out.replace(/\\\n/g, function () {
-        store.push('<br>');
-        return ph('S', store.length - 1);
-      });
-      /* REF-2: an empty span is a LANDING POINT, not text.
-       *
-       * `[]{#ctl-ahg-001}` is pandoc's empty-span syntax; it becomes `\hypertarget{…}{}`
-       * on the page and prints nothing. Every row of the control-coverage table carries
-       * one so a mention of that control can link to its row, and the preview was
-       * printing it verbatim — "[]{#ctl-ahg-001} AHG-001" — because nothing here knew
-       * what it was. It is rendered here as what it is on the page: an anchor of no
-       * width, so the link still lands and the reader sees "AHG-001" alone.
-       *
-       * Inline rather than in the block walker, which already consumes one on a line of
-       * its OWN: inside a table cell it is one line of several and never reaches that. */
-      /* The newline after it is machinery too, and is taken with it (D-061).
-       *
-       * An anchor sits on a line of its OWN inside a cell, so that it costs the column no
-       * width — the line break is part of how it is written, not something the writer
-       * asked for. Folding a cell's lines used to happen before this pass and swallowed
-       * it; now that the fold happens after, it has to be consumed here or every anchored
-       * row would start with a space that is not on the page. */
-      out = out.replace(/\[\]\{#([A-Za-z0-9_-]+)\}[ \t]*\n?/g, function (m, id) {
-        store.push('<span class="prv-anchor" id="' + esc(id) + '"></span>');
-        return ph('S', store.length - 1);
-      });
-      // 3. backslash escapes -> the literal character, parked out of reach
-      out = out.replace(/\\([\\`*_{}\[\]<>#|$&^~%+\-=.!()])/g, function (m, ch) {
-        store.push(esc(ch));
-        return ph('S', store.length - 1);
-      });
-      // 4. now safe to HTML-escape everything that is left
-      out = esc(out);
-      // 5. links (cross-references), then emphasis
-      out = out.replace(/\[([^\]]*)\]\(#([A-Za-z0-9_-]+)\)/g, function (m, text, anchor) {
-        return '<a href="#' + esc(anchor) + '" data-prv-jump="' + esc(anchor) + '">' + text + '</a>';
-      });
-      out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-      // 6. put the parked pieces back
-      return out.replace(new RegExp(NUL + 'S(\\d+)' + NUL, 'g'), function (m, i) { return store[Number(i)]; });
-    }
-
-    /**
-     * The plain-text reading of a markdown fragment: escapes undone, code fences and
-     * emphasis markers removed. For anywhere the text is shown as text rather than
-     * rendered as markup — the outline rail, a tooltip, a title attribute.
-     */
-    function unescapeMd(s) {
-      return String(s == null ? '' : s)
-        .replace(/`+( ?)([\s\S]*?)\1`+/g, '$2')                       // code spans -> their content
-        .replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1')
-        .replace(/\\([\\`*_{}\[\]<>#|$&^~%+\-=.!()])/g, '$1');
-    }
-
-    /** Split a cell row on unescaped pipes, dropping the leading/trailing delimiters. */
-    /* D-061: the padding is spaces and tabs, and NOTHING else.
-     *
-     * `String.trim()` also strips U+00A0, which App.md emits as the line a trailing line
-     * break lands on (BR-1) — so a cell whose last line was that spacer had it trimmed to
-     * nothing, the empty line was then dropped as padding, and the break's own backslash
-     * was left as the cell's last character with nothing to break. The literal backslash
-     * D-037/D-059 were about, in the cell path this time. Pandoc's own rule is spaces and
-     * tabs; a non-breaking space is content. */
-    function padTrim(s) { return String(s == null ? '' : s).replace(/^[ \t]+|[ \t\r]+$/g, ''); }
-    function cells(line) {
-      var parts = [], cur = '';
-      for (var i = 0; i < line.length; i++) {
-        var c = line.charAt(i);
-        if (c === '\\' && i + 1 < line.length) { cur += c + line.charAt(++i); continue; }
-        if (c === '|') { parts.push(cur); cur = ''; continue; }
-        cur += c;
-      }
-      parts.push(cur);
-      if (parts.length && !parts[0].trim()) parts.shift();
-      if (parts.length && !parts[parts.length - 1].trim()) parts.pop();
-      return parts.map(padTrim);
-    }
-
-    /* TW-1/TBS-1/CAP-1: the preview earns its keep only if it shows the PDF.
-     *
-     * Three things the generated markdown now carries have to be read back rather than
-     * shown as source, or the preview would describe a different document from the one
-     * the Generate button downloads:
-     *
-     *   * column WIDTHS, which live in the dash counts of a grid table's border row and
-     *     come back out as a `<colgroup>`;
-     *   * SHADING, which travels as raw-LaTeX fences around the table and a raw-LaTeX
-     *     span at the head of each first-column cell — both invisible in the PDF's
-     *     source sense, so both are folded into a CSS class rather than printed;
-     *   * the CAPTION's number, which LaTeX supplies and the markdown therefore does
-     *     not contain (see App.doc). The preview counts tables the same way, so
-     *     "Table 3" here is "Table 3" there.
-     */
-    var COL_SHADE_RE = /^`\\chTblColShade`\{=latex\}\s*/;
-    // FNT-6: the first column's size travels the same way and is stripped the same way.
-    // Its effect is on the paper's stylesheet, which states it against every table's
-    // first column — so unlike the shade there is no per-table class to set from it.
-    var COL_FONT_RE = /^`\\chTblColFont`\{=latex\}\s*/;
-    // TBL-1: the same span on a header cell, which a table with a title row carries
-    // because the one `\rowcolor` `\toprule` can hold has gone to the title. Machinery,
-    // so it is stripped rather than shown — the shading is already on the group's class.
-    var HEAD_CELL_RE = /^`\\chTblHeadCell`\{=latex\}\s*/;
-    /* SPC-1: the row-height strut, at the END of the first cell rather than the head of
-     * it. Machinery like the three above and stripped like them — but unlike them it is
-     * read for its NUMBER first, because what it does on the page is the row's height,
-     * and a preview that showed the words without the height would be showing a
-     * different table. */
-    var ROW_STRUT_RE = /\s*`\\rule\[-([\d.]+)mm\]\{0pt\}\{0pt\}`\{=latex\}\s*$/;
-
-    /**
-     * One table cell, rendered the way the PAGE will render it.
-     *
-     * A grid-table cell is not a run of lines, it is a run of PARAGRAPHS: pandoc folds
-     * consecutive lines into one (so a wrapped sentence is one sentence) and a blank
-     * line between them starts a new one. Rendering the lines verbatim collapsed the
-     * whole cell into a single blob, which is what ran a firewall rule list together —
-     * each rule is a paragraph, and the blank lines that separate them were the only
-     * thing saying so.
-     *
-     * D-061: folding the lines BEFORE `inline()` destroyed the one thing a hard break
-     * is written as. A cell's break is a trailing backslash and a newline (RTX-2/D-060),
-     * exactly as a paragraph's is — join the lines with a space first and the pair is
-     * `\` followed by a space, which no rule here recognises, so the break vanished and
-     * the backslash printed. It was at its most visible in a cell holding nothing else:
-     * an otherwise empty box with a lone `\` in it. So the folding happens AFTER the
-     * inline pass, on the lines it did not claim.
-     */
-    function cellHtml(s) {
-      var parts = String(s == null ? '' : s).split(/\n{2,}/)
-        .map(function (p) { return inline(p).split('\n').join(' ').trim(); })
-        .filter(function (p) { return p.length; });
-      // One paragraph is the overwhelming case and gets no wrapper — a cell holding a
-      // single value should be a cell holding a single value, in the markup as well.
-      if (parts.length < 2) return parts[0] || '';
-      return '<div class="prv-cp">' + parts.join('</div><div class="prv-cp">') + '</div>';
-    }
-
-    function tableHtml(head, rows, opts) {
-      opts = opts || {};
-      var shadeCol = false, rowMm = [];
-      var body = rows.map(function (r, ri) {
-        return (r || []).map(function (c, i) {
-          if (i !== 0) return c;
-          var stripped = String(c == null ? '' : c).replace(COL_SHADE_RE, '');
-          if (stripped !== c) shadeCol = true;
-          // SPC-1: read the height off the strut, then take the strut out. Per ROW, not
-          // per table — the rows that were ticked carry one and the rest do not.
-          var m = ROW_STRUT_RE.exec(stripped);
-          if (m) { rowMm[ri] = Number(m[1]) || 0; stripped = stripped.replace(ROW_STRUT_RE, ''); }
-          return stripped.replace(COL_FONT_RE, '');
-        });
-      });
-      var cls = 'prv-table' + (opts.shadeHead ? ' prv-shade-head' : '') + (shadeCol ? ' prv-shade-col' : '');
-      // TW-3: a table narrower than the page is drawn narrower, and centred, as it will
-      // be — the whole reason for allowing the widths not to fill the line.
-      var scale = (opts.scale > 0 && opts.scale < 0.995) ? opts.scale : 0;
-      var wrapStyle = scale ? ' style="width:' + (Math.round(scale * 1000) / 10) + '%;margin:8px auto"' : '';
-      var group = (opts.widths && opts.widths.length === head.length)
-        ? '<colgroup>' + opts.widths.map(function (w) { return '<col style="width:' + (Math.round(w * 10000) / 100) + '%">'; }).join('') + '</colgroup>'
-        : '';
-      /* TBL-1: the title row, as the merged header row it is on the page.
-       *
-       * Pandoc reads a grid-table row whose internal `|` are omitted as a cell spanning
-       * those columns and writes it as `\multicolumn` — so this IS a table row, and the
-       * preview draws it as one. It was a paragraph balanced on top of the table for two
-       * rounds, which could never be the right width.
-       */
-      var title = opts.titleRow
-        ? '<tr class="prv-tbltitle"><th colspan="' + head.length + '">' + cellHtml(opts.titleRow) + '</th></tr>'
-        : '';
-      var h = title + '<tr>' + head.map(function (c) {
-        return '<th>' + cellHtml(String(c == null ? '' : c).replace(HEAD_CELL_RE, '')) + '</th>';
-      }).join('') + '</tr>';
-      /* SPC-1: the strut's millimetres go BELOW the cell's content, as an empty block
-       * inside the first cell — not as a height on the row.
-       *
-       * A row height would be a MINIMUM (max(natural, asked)); the strut on the page is
-       * additive (the content, then its depth underneath). An empty box would look the
-       * same either way and a box with a label in it would not, which is exactly the
-       * case — "Signed:" with 25mm of writing room under it. The cells align to the top
-       * for the same reason: that is where the depth strut leaves them.
-       *
-       * Per row: only the rows that were ticked carry a strut, and a row without one is
-       * drawn exactly as it always was.
-       */
-      var anyStrut = rowMm.some(function (v) { return v > 0; });
-      var b = body.map(function (r, ri) {
-        var px = App.docFormat.mmPx(rowMm[ri]);
-        var strut = px ? '<div class="prv-strut" style="height:' + px + 'px"></div>' : '';
-        return '<tr' + (anyStrut ? ' style="vertical-align:top"' : '') + '>' +
-          r.map(function (c, i) { return '<td>' + cellHtml(c) + (i === 0 ? strut : '') + '</td>'; }).join('') + '</tr>';
-      }).join('');
-      var cap = opts.caption
-        ? '<div class="prv-caption"><strong>Table ' + (opts.number || '') + ':</strong> ' + inline(opts.caption) + '</div>'
-        : '';
-      return '<div class="prv-tablewrap"' + (opts.anchor ? ' id="' + esc(opts.anchor) + '"' : '') + wrapStyle + '>' +
-        '<table class="' + cls + '"' + (group ? ' style="table-layout:fixed;width:100%"' : '') + '>' + group +
-        '<thead>' + h + '</thead><tbody>' + b + '</tbody></table>' + cap + '</div>';
-    }
-
-    /** Strip the YAML metadata block. @returns {{yaml:string, body:string}} */
-    function splitFrontMatter(md) {
-      var s = String(md == null ? '' : md);
-      if (s.slice(0, 4) !== '---\n') return { yaml: '', body: s };
-      var end = s.indexOf('\n---\n', 3);
-      if (end === -1) return { yaml: '', body: s };
-      return { yaml: s.slice(4, end), body: s.slice(end + 5) };
-    }
-
-    /**
-     * @param {string} md  a complete generated document
-     * @returns {{html:string, outline:Array<{level:number,number:string,title:string,anchor:string}>}}
-     */
-    function toHtml(md, state, opts) {
-      // The table counter is shared with a nested render (a centred block re-enters
-      // here) so numbering runs through the document rather than restarting inside one.
-      state = state || { tables: 0 };
-      // SEC-4: which heading levels start a page — the profile's, passed in by the caller.
-      if (opts && opts.breaks) state.breaks = opts.breaks;
-      var split = splitFrontMatter(md);
-      // The centred form is a pair of raw-LaTeX fences (see App.md.centred — a fenced
-      // div does not survive to LaTeX). Fold them back into the div form so the block
-      // walker below has one shape to handle rather than a cross-block state machine.
-      var body = split.body
-        .replace(/```\{=latex\}\n\\begin\{center\}\n```/g, '::: {.center}')
-        .replace(/```\{=latex\}\n\\end\{center\}\n```/g, ':::');
-      var lines = body.split('\n');
-      var out = [], outline = [], i = 0;
-
-      /* BR-1: what counts as a blank line, and why `.trim()` is the wrong test.
-       *
-       * A markdown blank line is a line of ASCII spaces and tabs. `String.trim()` also
-       * strips every Unicode space separator — including U+00A0, which App.md emits as
-       * the line a TRAILING line break lands on. Read as blank, that line was dropped
-       * and the paragraph ended on the break's own backslash, which is the literal
-       * backslash D-037 was about, back again in the preview alone. Pandoc's own
-       * blank-line rule is spaces and tabs, so this is it. */
-      function isBlank(l) { return !/[^ \t\r]/.test(l); }
-
-      function paragraphAt() {
-        var buf = [];
-        while (i < lines.length && !isBlank(lines[i]) && !isBlockStart(lines[i])) buf.push(lines[i++]);
-        return buf.length ? '<p>' + inline(buf.join('\n')) + '</p>' : '';
-      }
-      function isBlockStart(l) {
-        return /^#{1,6}\s/.test(l) || /^\|/.test(l) || /^\+[-=:+]/.test(l) ||
-          /^(\* \* \*|:::|```)/.test(l) || /^:\s/.test(l);
-      }
-
-      // A bare `[]{#id}` line is a table's anchor, emitted just before it.
-      var pendingAnchor = '';
-      // TBS-1: set by the raw-LaTeX fence that opens a shaded-header group, consumed by
-      // the next table, cleared by the fence that closes the group.
-      var pendingShadeHead = false;
-      // TW-3: the fraction of the page the next table occupies (1 = the full width).
-      var pendingScale = 1;
-      // CAP-3: the paragraph currently being read is a table caption.
-      var inCaption = false;
-      // TTL-3: set by \chTitleStyle, consumed by the heading it precedes — which is the
-      // same span the two macros cover on the page.
-      var pendingTitle = false;
-      // CTR-1: set by the centring declaration, consumed by the heading it precedes.
-      var pendingCentreHead = false;
-      // TOC-1: where in `out` a contents list has to be dropped once the walk is done.
-      var tocAt = [];
-      while (i < lines.length) {
-        var line = lines[i];
-        if (isBlank(line)) { i++; continue; }
-        var anch = /^\[\]\{#([A-Za-z0-9_-]+)\}\s*$/.exec(line);
-        if (anch) { pendingAnchor = anch[1]; i++; continue; }
-
-        // --- heading, with its pandoc {#anchor} attribute
-        // The attribute block may carry classes as well as the id (TOC-1 marks the
-        // contents heading `.unnumbered .unlisted`), so anything after the id is
-        // consumed rather than left to be printed as part of the title.
-        var h = /^(#{1,6})\s+(.*?)(?:\s*\{#([A-Za-z0-9_-]+)((?:\s+[^}]*)?)\})?\s*$/.exec(line);
-        if (h) {
-          var lvl = h[1].length, raw = h[2], anchor = h[3] || '';
-          // SEC-4/TOC-1: `.unlisted` is what keeps a heading out of the contents list on
-          // the page, so it is what keeps it out of the preview's list too.
-          var unlisted = /\.unlisted\b/.test(h[4] || '');
-          var num = (/^([\d.]+)\s+/.exec(raw) || [])[1] || '';
-          // The outline is plain TEXT — it goes into the navigation rail, where it is
-          // HTML-escaped and never parsed as markdown. So the markdown escaping has to
-          // come off first, or a section called "Firmware & build" is listed as
-          // "Firmware \& build". The heading itself still goes through inline().
-          outline.push({ level: lvl, number: num, title: unescapeMd(raw.replace(/^[\d.]+\s+/, '')), anchor: anchor, unlisted: unlisted });
-          // TTL-3: a title is an h1 wearing the profile's title styling rather than its
-          // H1 styling — the same swap \chTitleStyle makes on the page.
-          /* SEC-4: a heading whose LEVEL starts a page is marked as one.
-           *
-           * That break lives in the formatting profile and reaches the PDF as titlesec's
-           * `\sectionbreak` — there is no `\newpage` in the markdown to find, so the
-           * paged preview never broke at all and showed a document running on past the
-           * bottom of every sheet. `state.breaks` carries the profile's answer in. */
-          var breaks = (state.breaks || {})[pendingTitle ? 0 : lvl];
-          var hcls = (pendingTitle ? 'prv-h prv-title' : 'prv-h prv-h' + lvl) +
-            (pendingCentreHead ? ' prv-centre' : '') + (breaks ? ' prv-breakbefore' : '');
-          pendingTitle = false;
-          pendingCentreHead = false;
-          out.push('<h' + lvl + (anchor ? ' id="' + esc(anchor) + '"' : '') + ' class="' + hcls + '">' + inline(raw) + '</h' + lvl + '>');
-          i++; continue;
-        }
-        // --- raw-LaTeX page break
-        if (/^```\{=latex\}/.test(line)) {
-          var fence = [];
-          i++;
-          while (i < lines.length && !/^```\s*$/.test(lines[i])) fence.push(lines[i++]);
-          i++;
-          var raw = fence.join('\n');
-          // TBS-1: the shading group is machinery, not content. Showing it as "Raw
-          // LaTeX" would put a block in the preview that has no counterpart on the page.
-          // TW-3/TBS-1: the table group carries the narrowing and the shading. Both are
-          // machinery, not content — shown as "Raw LaTeX" they would put a block in the
-          // preview with no counterpart on the page.
-          var narrow = /\\setlength\{\\columnwidth\}\{([\d.]+)\\columnwidth\}/.exec(raw);
-          if (narrow || /\\chTblHeadShade/.test(raw)) {
-            pendingShadeHead = /\\chTblHeadShade/.test(raw);
-            pendingScale = narrow ? Number(narrow[1]) : 1;
-            continue;
-          }
-          if (/^\s*\\endgroup\s*$/.test(raw)) { pendingShadeHead = false; pendingScale = 1; continue; }
-          // CAP-3: the caption is a paragraph between two macros. Both are machinery;
-          // what they mark is that the paragraph between them is a caption, wherever it
-          // sits — which is how the preview shows a caption above a table as readily as
-          // one below, without knowing which the profile asked for.
-          if (/^\s*\\chCaptionOpen\s*$/.test(raw)) { inCaption = true; continue; }
-          if (/^\s*\\chCaptionClose\s*$/.test(raw)) { inCaption = false; continue; }
-          // TTL-3: the pair around a title's heading. Machinery, like the two above —
-          // what they carry is which styling the heading between them wears.
-          if (/^\s*\\chTitleStyle(Centred)?\s*$/.test(raw)) {
-            pendingTitle = true;
-            // CTR-1: the centred face of the same declaration.
-            if (/Centred/.test(raw)) pendingCentreHead = true;
-            continue;
-          }
-          if (/^\s*\\chSectionStyle\s*$/.test(raw)) { pendingTitle = false; continue; }
-          // CTR-1: a centred heading at an ordinary level — a pair of \titleformat
-          // declarations either side of it, exactly as the title uses.
-          if (/^\s*\\chCentre(One|Two|Three|Four)\s*$/.test(raw)) { pendingCentreHead = true; continue; }
-          if (/^\s*\\chPlain(One|Two|Three|Four)\s*$/.test(raw)) { pendingCentreHead = false; continue; }
-          // TOC-1: the contents list is filled in at the end, when every heading this
-          // document contains has been seen — a list at the front cannot be written
-          // until the back has been read.
-          if (/^\s*\\chContents\s*$/.test(raw)) { tocAt.push(out.length); out.push(''); continue; }
-          /* SPC-1: a measured gap is CONTENT of a sort — it is the thing the author put
-           * there — so it is drawn at its size rather than announced as machinery. The
-           * millimetres become pixels at 96dpi, which is the scale the paper itself is
-           * drawn at (App.docFormat.textWidthPx), so a 40mm gap is 40mm of this page. */
-          var gap = /^\s*(?:\\vspace\*?|\\chGap(?:Title|One|Two|Three|Four))\{([\d.]+)mm\}\s*$/.exec(raw);
-          if (gap) {
-            out.push('<div class="prv-space" style="height:' + App.docFormat.mmPx(gap[1]) + 'px"></div>');
-            continue;
-          }
-          out.push('<div class="prv-pagebreak"><span>' + (/(\\newpage)/.test(raw) ? 'Page break' : 'Raw LaTeX') + '</span></div>');
-          continue;
-        }
-        // --- centred div
-        /* CTR-1: centred blocks NEST, and the walker has to count.
-         *
-         * A paragraph centred inside a section that is itself centred emits two `center`
-         * environments, one inside the other — harmless on the page, and quietly
-         * catastrophic here: the walker stopped at the first closing `:::`, which left
-         * the OUTER close as a bare `:::` line. `/^:::/` matched it as an OPENING fence,
-         * so it swallowed the entire rest of the document into a centred div — which is
-         * what "centring my title page centres the whole document" was.
-         *
-         * It is also why the paged preview stopped after two sheets: with the document
-         * folded into one enormous block, there was one thing to place and nothing to
-         * break between.
-         */
-        if (/^:::\s*\{/.test(line)) {
-          var inner = [], depth = 1;
-          i++;
-          while (i < lines.length) {
-            if (/^:::\s*\{/.test(lines[i])) depth++;
-            else if (/^:::\s*$/.test(lines[i])) { depth--; if (!depth) break; }
-            inner.push(lines[i++]);
-          }
-          i++;
-          var nested = toHtml(inner.join('\n'), state);
-          // CTR-1: a centred block can now contain a HEADING (centring a section centres
-          // its heading), and the nested render's outline was being thrown away — so a
-          // centred section vanished from the navigation rail and from the contents list
-          // while still printing on the page.
-          nested.outline.forEach(function (o) { outline.push(o); });
-          out.push('<div class="prv-centre">' + nested.html + '</div>');
-          continue;
-        }
-        // A closing fence with nothing open is machinery left over from a block this
-        // walker did not open. It is not content, and it must not be read as an opener.
-        if (/^:::\s*$/.test(line)) { i++; continue; }
-        // --- horizontal rule
-        if (/^\* \* \*\s*$/.test(line)) { out.push('<hr class="prv-rule">'); i++; continue; }
-        // --- pipe table
-        if (/^\|/.test(line) && i + 1 < lines.length && /^\|[\s:|-]+\|?\s*$/.test(lines[i + 1])) {
-          var head = cells(line), rows = [];
-          i += 2;
-          while (i < lines.length && /^\|/.test(lines[i])) rows.push(cells(lines[i++]));
-          out.push(tableWithCaption(head, rows, null));
-          continue;
-        }
-        // --- grid table (the multi-line-cell form)
-        // `+:` as well as `+-`: an aligned column carries its marker in the border, and
-        // reading only the unaligned form left every aligned grid table shown as prose.
-        if (/^\+[-=:+]/.test(line)) {
-          var block = [];
-          while (i < lines.length && (/^[+|]/.test(lines[i]))) block.push(lines[i++]);
-          var g = parseGrid(block);
-          out.push(tableWithCaption(g[0], g[1], g[2], g[3]));
-          continue;
-        }
-        if (inCaption) {
-          var capText = paragraphAt() || (i++, '');
-          pendingAnchor = '';
-          // "Table 3:" is emphasised the way LaTeX emphasises a caption label, and the
-          // number comes from the text rather than from a counter kept here — the
-          // document has already been numbered, and counting again could only disagree.
-          out.push(capText ? '<div class="prv-caption">' +
-            capText.replace(/^<p>(Table [\d.]+:)/, '<strong>$1</strong>').replace(/^<p>|<\/p>$/g, '') + '</div>' : '');
-          continue;
-        }
-        /* REF-1: a `[]{#id}` line before a PARAGRAPH is that paragraph's anchor.
-         *
-         * It used to be read only as a table's anchor, so a paragraph anchor was held
-         * and then silently attached to whatever table came next — the preview's links
-         * landed somewhere the PDF's do not. Consumed here, it lands on the paragraph
-         * exactly as pandoc's `\hypertarget` does. */
-        var para = paragraphAt() || (i++, '');
-        if (para && pendingAnchor) {
-          para = para.replace(/^<p>/, '<p id="' + esc(pendingAnchor) + '">');
-          pendingAnchor = '';
-        }
-        out.push(para);
-      }
-
-      // TOC-1: every heading is known now, so a contents list can be written wherever
-      // the document asked for one.
-      tocAt.forEach(function (at) { out[at] = tocHtml(outline); });
-
-      /** A table may be followed by `: caption` — pandoc's caption syntax. The id, if
-       *  any, came in on the `[]{#id}` line before the table. */
-      function tableWithCaption(head, rows, widths, titleRow) {
-        var cap = '', anchor = pendingAnchor;
-        pendingAnchor = '';
-        var j = i;
-        while (j < lines.length && isBlank(lines[j])) j++;
-        var m = j < lines.length ? /^:\s+(.*?)(?:\s*\{#([A-Za-z0-9_-]+)\})?\s*$/.exec(lines[j]) : null;
-        if (m) { cap = m[1]; anchor = m[2] || anchor; i = j + 1; }
-        // Only a CAPTIONED table is numbered — by LaTeX on the page, and here for the
-        // same reason and in the same order (CAP-1).
-        var n = cap ? ++state.tables : 0;
-        return tableHtml(head, rows, { caption: cap, anchor: anchor, number: n, widths: widths,
-          shadeHead: pendingShadeHead, scale: pendingScale, titleRow: titleRow || '' });
-      }
-
-      return { html: out.filter(Boolean).join('\n'), outline: outline };
-    }
-
-    /**
-     * TOC-1: the contents list, from the headings the document turned out to have.
-     *
-     * The page numbers are LaTeX's and cannot be known here — a browser has no pages —
-     * so the preview shows the entries and their nesting, which is the part a designer
-     * is actually deciding when they move a section or change its level.
-     */
-    function tocHtml(all) {
-      // SEC-4: a section marked `.unlisted` prints its heading and is not listed —
-      // the preview's list and LaTeX's `.toc` file must agree about which those are.
-      var outline = all.filter(function (o) { return !o.unlisted; });
-      if (!outline.length) return '<div class="prv-toc prv-toc-empty"><em>No headings yet.</em></div>';
-      return '<div class="prv-toc">' + outline.map(function (o) {
-        return '<div class="prv-toc-e prv-toc-' + (o.level || 1) + '">' +
-          (o.number ? '<span class="prv-toc-n">' + esc(o.number) + '</span> ' : '') +
-          esc(o.title) + '</div>';
-      }).join('') + '</div>';
-    }
-
-    /**
-     * Read a grid table back into head + rows. Cell text that spanned several lines is
-     * rejoined with a newline, which inline() then renders as a line break — so the
-     * preview shows the same shape the PDF will.
-     */
-    function parseGrid(block) {
-      var seps = [], rows = [], headRows = [], seenHead = false, cur = [];
-      block.forEach(function (l) {
-        if (/^\+/.test(l)) {
-          if (cur.length) {
-            var merged = cur[0].map(function (_, c) {
-              // D-061: spaces and tabs are padding; a non-breaking space is content (see
-              // padTrim), and it is what a trailing line break lands on.
-              var lines = cur.map(function (r) { return padTrim(r[c] || ''); });
-              // Only the TRAILING blanks are padding — a cell is as tall as the tallest
-              // in its row. An INTERIOR blank is a paragraph break the author or the
-              // value formatter put there, and dropping it ran a list of firewall rules
-              // together into one paragraph.
-              while (lines.length && !lines[lines.length - 1].length) lines.pop();
-              return lines.join('\n');
-            });
-            // TBL-1: EVERY row above the `=` separator is a header row, not just the
-            // last one — a table with a title row has two, and reading only the last
-            // left the title standing in as the header and the headings as a body row.
-            if (!seenHead) headRows.push(merged); else rows.push(merged);
-            if (/^\+:?=/.test(l)) seenHead = true;
-            cur = [];
-          }
-          seps.push(l);
-          return;
-        }
-        cur.push(cells(l));
-      });
-      if (cur.length) rows.push(cur[0]);
-      if (!headRows.length) headRows = [rows.shift() || []];
-      /* The widths come from a border with all its joins in it. With a title row the
-       * FIRST border spans the table and has none, so it would report one column.
-       *
-       * `> 3`, not `> 2`: the outer `+` at each end already contributes an empty string
-       * either side, so a border with no INTERNAL join splits into three parts and was
-       * being taken as the width row. `gridWidths` then found one segment, gave up and
-       * returned null, and every table with a title row lost its column widths in the
-       * preview while keeping them on the page. */
-      var sep = seps.filter(function (x) { return x.split('+').length > 3; })[0] || seps[0];
-      // A header row with fewer cells than the table has columns is the spanning one.
-      var cols = headRows[headRows.length - 1].length;
-      var title = (headRows.length > 1 && headRows[0].length === 1) ? headRows[0][0] : '';
-      return [headRows[headRows.length - 1], rows, gridWidths(sep), title, cols];
-    }
-
-    /**
-     * TW-1: the column fractions pandoc will read out of a border row, read out of it
-     * here the same way — each segment's length over the whole line — so the preview's
-     * columns and the PDF's are the same numbers rather than two guesses at them.
-     * @returns {?number[]} null when the row is unreadable
-     */
-    function gridWidths(sep) {
-      if (!sep || !/^\+/.test(sep)) return null;
-      var segs = sep.slice(1, -1).split('+');
-      if (segs.length < 2) return null;
-      var total = sep.length, out = [], ok = true;
-      segs.forEach(function (s) {
-        if (!/^[-=:]+$/.test(s)) ok = false;
-        out.push((s.length + 1) / total);
-      });
-      return ok ? out : null;
-    }
-
-    App.ui = App.ui || {};
-    App.ui.mdPreview = { toHtml: toHtml, splitFrontMatter: splitFrontMatter, _inline: inline, _cells: cells,
-      gridWidths: gridWidths, unescapeMd: unescapeMd, _cellHtml: cellHtml };
-  })(App);
-
-  /* =============================================================================
    * MODULE: App.ui.richText  — RTX-1: the box shows what it holds
-   * PURPOSE: Turn the {{...}} token markup App.md.rich reads into HTML a
+   * PURPOSE: Turn the {{...}} token markup App.md.runs reads into HTML a
    *          contenteditable box can be edited in, and turn the edited box back into
    *          tokens. Bold reads as bold, a code span as code, a line break as a line
    *          break, and a cross-reference as the SECTION OR TABLE IT NAMES rather than
@@ -7240,9 +2904,9 @@ import { pagesHtml } from './doc-preview.js';
      * Why the storage stays tokens.
      *
      * The obvious move is to store HTML and be done with it. It is the wrong one: the
-     * document is markdown on its way to LaTeX, and HTML would need a second writer, a
-     * second escaping discipline and a second set of things that can go wrong on the way
-     * to a PDF — for a box that is only ever used to write four kinds of emphasis.
+     * document is built from runs of text on its way to a PDF, and HTML would need a
+     * second reader and a second set of things that can go wrong on the way — for a box
+     * that is only ever used to write four kinds of emphasis.
      *
      * So the TOKENS remain the truth, exactly as they were, and this module is a lens
      * over them. Everything that reads the project — the generator, the preview, the
@@ -7528,7 +3192,7 @@ import { pagesHtml } from './doc-preview.js';
    *          catalogues. Replaces the old "Report options" modal.
    * PURITY:  UI/DOM
    * DEPENDS: App.docHost (the host contract), App.generate, App.doc, App.docFormat,
-   *          App.docStore, App.docTemplates, App.ui.mdPreview,
+   *          App.docStore, App.docTemplates, App.ui.richText,
    *          App.docSession (this run's filename and tag values)
    * INVARIANTS: everything shown is derived from hostBlocks and App.doc.outline — the
    *             same two calls the generator itself makes — so the panel cannot
@@ -7572,7 +3236,6 @@ import { pagesHtml } from './doc-preview.js';
     var _rd = {
       open: false,
       pane: 'section',
-      pages: false,          // PRV-4: is the preview showing sheets of paper?
       selected: null,        // block id being edited in the Section pane
       fmtId: null,           // Style being edited in the Styles pane
       styleSection: null,    // which part of that Style is open (PDF-1)
@@ -7604,10 +3267,6 @@ import { pagesHtml } from './doc-preview.js';
     function providerFor(block) {
       var id = block && block.id;
       return App.docHost.sections(null).filter(function (x) { return x && x.id === id; })[0] || null;
-    }
-    /** The host's sections BOUND to what is being previewed, filter and all. */
-    function runSections(selId) {
-      return App.docHost.sections({ subjectId: selId, categories: opts().relevance || null });
     }
     /**
      * How many rows sit in each of the host's filter categories, for the omission note
@@ -7776,11 +3435,12 @@ import { pagesHtml } from './doc-preview.js';
     // RD-2: the Section pane — hand-authored content, or a register's options
     // ======================================================================
 
+    /** PDF-1: which characters in this text the PDF's standard fonts cannot show. */
     function hostileHint(text) {
-      var chars = MD.hostileChars(text);
+      var chars = toWinAnsi(MD.plain(text)).replaced.filter(function (c) { return c !== '→'; });
       if (!chars.length) return '';
-      return '<div class="rd-esc" title="These are escaped on the way into the .md so LaTeX renders them literally. Your text is stored exactly as typed.">' +
-        'Escaped for LaTeX: ' + chars.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(' ') + '</div>';
+      return '<div class="rd-esc" title="The PDF uses the standard fonts every PDF reader has. Your text is stored exactly as typed, and the HTML shows it as typed.">' +
+        'The PDF writes these another way: ' + chars.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(' ') + '</div>';
     }
 
     /* -------------------------------------------------------------------------
@@ -7875,7 +3535,7 @@ import { pagesHtml } from './doc-preview.js';
      * @param {string} host  the data attributes identifying the box being written into
      */
     function refMenuFor(project, ownId, host) {
-      // Filled, so the register tables are in the list — see filledView.
+      // From the built document, so the generated tables are in the list.
       var refs = docRefs(project);
       var targets = (refs ? refs.targets : []).filter(function (t) { return t.id !== ownId; });
       if (!targets.length) return '<div class="rd-refmenu"><em>Nothing to link to yet.</em></div>';
@@ -7931,20 +3591,6 @@ import { pagesHtml } from './doc-preview.js';
       var dims = STYLE_PAPER_MM[style.page.paper] || STYLE_PAPER_MM.a4;
       var w = style.page.orientation === 'landscape' ? dims[1] : dims[0];
       return Math.round((w - style.page.margins.left - style.page.margins.right) * 96 / 25.4);
-    }
-
-    /**
-     * PRV-2: a rendered document, wrapped in a page-shaped box carrying the profile's
-     * own CSS — so paper, margins, font size, line spacing, heading styling, table
-     * shading and caption alignment all show here rather than only in the PDF.
-     *
-     * The stylesheet is emitted beside the content rather than into the app's own, for
-     * the reason it exists: it changes with the profile, and the workspace re-renders as
-     * a string on every edit, so it stays in step by construction.
-     */
-    function paper(project, html, extraClass) {
-      return '<style>' + App.docFormat.previewCss(App.docFormat.resolve(project)) + '</style>' +
-        '<div class="rd-paper ' + (extraClass || '') + '">' + html + '</div>';
     }
 
     /* -------------------------------------------------------------------------
@@ -8112,8 +3758,8 @@ import { pagesHtml } from './doc-preview.js';
           '<button type="button" data-rd-addrow="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '">+ Row</button>' +
           '<button type="button" data-rd-addcol="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '">+ Column</button>' +
           /* SPC-1: the table as a FORM. A signature block is a table whose cells are
-           * mostly empty and need to be big enough to write in, and nothing in a
-           * markdown table can say how tall a row is — so it is said here, in the same
+           * mostly empty and need to be big enough to write in, and nothing in the
+           * cells can say how tall a row is — so it is said here, in the same
            * millimetres the Space part uses. */
           '<label class="rd-mmlab rd-rowh">Extra row height' +
             '<input class="rd-mm" type="number" min="0" max="' + App.docStore.MAX_SPACE_MM + '" step="1"' +
@@ -8171,122 +3817,8 @@ import { pagesHtml } from './doc-preview.js';
           '</label>' +
           '<span class="muted rd-part-note">Empty space down the page. Survives a page break, so a section pushed to the middle of its own page stays there.</span>' +
           partControls(sec, part, i, n) + '</div>' +
-        (mm ? '<div class="rd-mmshow" style="height:' + App.docFormat.mmPx(mm) + 'px"></div>' : '') +
+        (mm ? '<div class="rd-mmshow" style="height:' + Math.round(mm * 96 / 25.4) + 'px"></div>' : '') +
         '</div>';
-    }
-
-    /**
-     * RD-8: the selected section, rendered on its own.
-     *
-     * Built from `App.docGen.sectionContent` — the same call the host's own generator makes for
-     * that block — then through the same markdown renderer as the full preview. So
-     * what a section's tab shows and what the section looks like in the finished
-     * document come from one code path and cannot drift.
-     */
-    /**
-     * RD-9: a hand-authored section previewed on its own tab, exactly as a generated one
-     * already was.
-     *
-     * It renders through App.doc.renderParts with the SAME ctx the whole document builds
-     * with — the real table index, the real reference resolver, the real width and style
-     * resolver — so a cross-reference reads its true number here, a captioned table its
-     * true one, and a styled table shows its styling. Anything less would be a second
-     * renderer, and a second renderer is a second answer.
-     */
-    function customPreview(project, block) {
-      try {
-        // Filled, so a reference to a register table resolves here exactly as it will
-        // in the document rather than reading "[missing reference]".
-        var view = filledView(project);
-        var resolved = view.resolved.filter(function (r) { return r.id === block.id; })[0];
-        var ctx = docCtx(project, view);
-        // `centred` so a part inside a centred section is not wrapped twice — the same
-        // ctx App.doc.render builds, so the preview and the document agree.
-        var body = App.doc.renderParts(block.parts || [],
-          block.centre ? Object.assign({}, ctx, { centred: true }) : ctx);
-        if (block.centre && body) body = MD.centred(body);
-        var md = MD.join([resolved ? App.doc.headingFor(resolved) : '', body]);
-        if (!String(md).trim()) return '<p class="muted">Nothing in this section yet.</p>';
-        return '<div class="rd-preview-doc rd-secprev">' + paper(project, App.ui.mdPreview.toHtml(withTags(md)).html) + '</div>';
-      } catch (e) {
-        return '<p class="rd-err">Preview failed: ' + esc(e && e.message) + '</p>';
-      }
-    }
-
-    /**
-     * REF-1: the outline with every generated section's body FILLED IN.
-     *
-     * `outlineNow` gives the blocks and their numbers, and that is all a section list
-     * needs. A reference does need more: a generated table exists only inside the
-     * markdown its register produced, and `App.doc.tableIndex` reads the tables back out
-     * of that markdown. Outlining the empty blocks therefore found the hand-authored
-     * tables and none of the generated ones — so the link menu offered a document's
-     * worth of sections and not one of its register tables.
-     *
-     * The same call `buildReport` makes, so what the menu offers is exactly what the
-     * document will contain. Only built when something asks for it (the link menu, a
-     * section preview), because filling every section is the expensive half of
-     * generating.
-     */
-    function filledView(project) {
-      var view = outlineNow(project);
-      var selId = selectedSubjectId(project);
-      if (!selId) return view;
-      try {
-        var generatedUtc = H().clock.nowIso();
-        var ctx = App.docHost.context(selId, generatedUtc);
-        var metaRows = App.docHost.chosenMeta(selId, generatedUtc);
-        var o = Object.assign({}, opts(), { subjectId: selId });
-        o.linkTerms = H().linkTerms ? H().linkTerms(view.blocks) : null;
-        o.providers = runSections(selId);
-        var filled = view.blocks.map(function (b) {
-          return App.docGen.sectionContent(H(), b, o, ctx, metaRows);
-        });
-        return Object.assign({}, view, { resolved: App.doc.outline(filled, {
-          baseLevel: 1,
-          clampSkips: view.profile.headings.clampSkips !== false,
-          numbered: view.profile.headings.numbered !== false
-        }) });
-      } catch (e) {
-        return view;                       // a broken section must not empty the menu
-      }
-    }
-
-    /**
-     * REF-1: the ctx App.doc renders a document with — the real reference resolver, the
-     * real table index, the real control link terms. Built once here so a per-section
-     * preview and the whole-document preview cannot answer differently.
-     */
-    function docCtx(project, view) {
-      var tables = App.doc.tableIndex(view.resolved);
-      return {
-        resolveRef: App.doc.refResolver(view.resolved, tables),
-        tables: tables,
-        linkTerms: H().linkTerms ? H().linkTerms(view.blocks) : null,
-        metrics: App.docFormat.tableMetrics(view.profile),
-        styleFor: function (part) {
-          return App.docFormat.tableStyle(view.profile, { head: part.styleHead === true, firstColumn: part.styleFirstColumn === true });
-        }
-      };
-    }
-
-    /**
-     * GEN-TAB: a preview shows the placeholders as they have been filled in.
-     *
-     * The whole-document preview gets this for free — it goes through `buildReport`,
-     * which substitutes on its way out. The per-section previews do not: they assemble
-     * markdown themselves and never reach `emitDocument`, so a section whose heading is
-     * "Packages as at /[Date]" previewed with the raw tag while the document it is a
-     * preview OF said the date. One line, and the two agree again.
-     */
-    function withTags(md) { return App.docGen.applyTags(md, opts().tags); }
-
-    /** SEC-1/REF-1: a generated section's introduction, numbered and reference-resolved. */
-    function introMd(project, block, resolved) {
-      if (!String(block.intro || '').trim()) return '';
-      var body = MD.rich(block.intro, docCtx(project, filledView(project)));
-      if (!body) return '';
-      return (resolved && resolved.introNumber) ? MD.text(resolved.introNumber) + ' ' + body : body;
     }
 
     /**
@@ -8449,7 +3981,7 @@ import { pagesHtml } from './doc-preview.js';
       /* REF-1: the same toolbar a hand-authored paragraph has.
        *
        * An introduction is a paragraph in the same token markup, rendered by the same
-       * App.md.rich \u2014 the only thing it was missing was the two buttons, and (until
+       * App.md.runs \u2014 the only thing it was missing was the two buttons, and (until
        * REF-1) a reference resolver at render time, so a link inserted here would not
        * have resolved anyway. Both are fixed together; one without the other is a button
        * that produces "[missing reference]". */
@@ -8564,21 +4096,8 @@ import { pagesHtml } from './doc-preview.js';
         (omitted
           ? '<p class="rpt-omit"><strong>' + omitted + '</strong> item' + (omitted === 1 ? '' : 's') + ' will be left out.</p>'
           : '<p class="rpt-omit muted">Every applicable item is being carried.</p>') +
-        '<div class="rd-fieldset"><strong>Document</strong>' +
-          // HDR-1: the OFFICIAL: Sensitive banner has moved to the Header & Footer pane,
-          // which is where it goes on the page and where everything else that appears on
-          // every page is now decided.
-          // TTL-2: a project decision, so it is stored rather than reset each session —
-          // hence its own attribute rather than another session flag.
-          cb('data-rd-titleblock', 'Automatic title block (title, model and date)',
-            ((project.report || {}).titleBlock === true)) +
-          '<p class="muted rd-hint">Off, the document starts with whatever section you put first — compose your own title page as a section and give it the <strong>T</strong> level.</p>' +
-        '</div>';
+        '';
     }
-
-    // ======================================================================
-    // RD-4: formatting profiles (FMT-1..FMT-4)
-    // ======================================================================
 
     function num(label, key, val, hint) {
       return '<label class="rd-lab rd-lab-s" title="' + esc(hint || '') + '">' + esc(label) +
@@ -8802,7 +4321,7 @@ import { pagesHtml } from './doc-preview.js';
         var s = style ? App.docFormat.normalise(style) : built.style;
         if (style) {
           ['header', 'footer', 'firstHeader', 'firstFooter'].forEach(function (k) {
-            ['left', 'centre', 'right'].forEach(function (slot) { s.headerFooter[k][slot] = App.docGen.applyTags(s.headerFooter[k][slot], o.tags || {}, true); });
+            ['left', 'centre', 'right'].forEach(function (slot) { s.headerFooter[k][slot] = App.docGen.applyTags(s.headerFooter[k][slot], o.tags || {}); });
           });
         }
         var r = layout(built.document, s);
@@ -8895,11 +4414,10 @@ import { pagesHtml } from './doc-preview.js';
     /**
      * The last pane, and the only one that writes a file.
      *
-     * Two things happen here that cannot happen anywhere else. The document is NAMED —
-     * a report an operator will file alongside forty others should not have to be called
-     * `dev-m1-reporting-20260630T120000Z.md` — and every `/[Tag]` written anywhere in it
-     * is listed with a box beside it, so the same design can be issued repeatedly with a
-     * new date, a new author, a new reference number.
+     * Every `/[Tag]` written anywhere in the document is listed with a box beside it, so
+     * the same design can be issued repeatedly with a new date, a new author, a new
+     * reference number; and the characters the PDF's fonts cannot show are named before
+     * anything is made.
      *
      * The tag list is read off the FINISHED document, which is why this pane builds one
      * to draw itself. That is the only way the list can be complete: a tag in a footer
@@ -8962,73 +4480,6 @@ import { pagesHtml } from './doc-preview.js';
     // ======================================================================
     // RD-6: the preview
     // ======================================================================
-
-    function buildPreview(project) {
-      var selId = selectedSubjectId(project);
-      if (!selId) return { html: '<p class="muted">No ' + esc(noun()) + ' selected.</p>', outline: [] };
-      try {
-        var out = H().build ? H().build(selId, opts()) : null;
-        if (!out || !out.text) return { html: '<p class="muted">Nothing to preview.</p>', outline: [] };
-        // SEC-4: the per-LEVEL page breaks live in the profile and reach the PDF as
-        // titlesec's own hook, so there is no `\newpage` in the markdown for the
-        // paginator to find. Handed in, they become a class it can break on.
-        return App.ui.mdPreview.toHtml(out.text, null,
-          { breaks: App.docFormat.levelBreaks(App.docFormat.resolve(project)) });
-      } catch (e) {
-        return { html: '<p class="rd-err">Preview failed: ' + esc(e && e.message) + '</p>', outline: [] };
-      }
-    }
-
-    /* PRV-4: the running header and footer, drawn on a page of the preview.
-     *
-     * Only in PAGE view, and that is not a simplification — a continuous scroll has no
-     * page edges to put them against, and drawing a "footer" halfway down a column of
-     * text would be inventing a page boundary that the toggle is switched off precisely
-     * to avoid claiming.
-     *
-     * The slots come from App.docFormat.headerFooter, which is the same call the LaTeX
-     * preamble makes, so the classification banner lands in the same slot in both.
-     */
-    function runningSlots(set, n, total) {
-      var any = App.docFormat.HF_SLOTS.some(function (s) { return set[s]; });
-      if (!any) return '';
-      return App.docFormat.HF_SLOTS.map(function (s) {
-        // `#page` and `#pages` are LaTeX macros on the page; only the preview is in a
-        // position to know what they will print, so this is where they become numbers.
-        var text = App.docFormat.slotParts(set[s]).map(function (p) {
-          return p.token === 'page' ? String(n) : p.token === 'pages' ? String(total) : p.text;
-        }).join('');
-        return '<span class="prv-hf-' + s + '">' + esc(text) + '</span>';
-      }).join('');
-    }
-
-    /**
-     * PRV-4: the document laid out as sheets of paper.
-     *
-     * The break positions cannot be computed here — a browser decides where a paragraph
-     * ends only once it has laid it out, and this runs as a string. So the markup is a
-     * single flow inside a page-height CLIP, and `paginate()` (below, after mount) walks
-     * the laid-out children and moves them into as many sheets as they need. That keeps
-     * the whole thing to one render path: page view and continuous view are the same
-     * HTML, with the sheets built around it or not.
-     */
-    function pagedPaper(project, html) {
-      var f = App.docFormat.resolve(project);
-      var m = App.docFormat.pageMetrics(f);
-      var hf = App.docFormat.headerFooter(f, { classification: opts().classification || '' });
-      // Written as data attributes rather than inline styles so `paginate` can read the
-      // numbers back without re-resolving the profile, and so a redraw cannot disagree
-      // with the measurement that produced it.
-      return '<style>' + App.docFormat.previewCss(f) + '</style>' +
-        '<div class="rd-pages" data-prv-pages' +
-          ' data-prv-pw="' + m.width + '" data-prv-ph="' + m.height + '"' +
-          ' data-prv-mt="' + m.top + '" data-prv-mb="' + m.bottom + '"' +
-          ' data-prv-ml="' + m.left + '" data-prv-mr="' + m.right + '"' +
-          ' data-prv-first="' + (hf.firstDifferent ? '1' : '') + '"' +
-          ' data-prv-hf="' + esc(JSON.stringify(hf)) + '">' +
-          '<div class="rd-pageflow rd-paper">' + html + '</div>' +
-        '</div>';
-    }
 
     /** Pixels per point in the Preview pane. */
     var PREVIEW_SCALE = 1;
@@ -9128,148 +4579,8 @@ import { pagesHtml } from './doc-preview.js';
       if (pane2) pane2.scrollTop = paneTop;
       return true;
     }
-    /* PRV-4: cut the flow into sheets, once it has been laid out.
-     *
-     * This is the one thing in the workspace that cannot be done as a string: where a
-     * page ends depends on how tall the content turned out to be, and nothing knows that
-     * until the browser has laid it out. So the document is rendered as one flow and
-     * then walked, block by block, moving each into the current sheet until the next one
-     * would not fit.
-     *
-     * A TABLE is split across sheets rather than moved whole, because that is what a
-     * longtable does on the page: the rows that fit stay, the rest continue overleaf
-     * under a repeat of the header row. A table clipped at the page edge — which is what
-     * moving it whole into a fixed-height sheet did — shows a document that is missing
-     * most of its content, which is worse than a break in a slightly different place.
-     *
-     * Everything else is moved whole. A paragraph taller than a page gets a page of its
-     * own and is allowed to overflow rather than being cut mid-line: LaTeX will break it
-     * somewhere, and pretending to know where would be inventing a precise-looking
-     * answer. A `\newpage` the document asked for (a page-break part, a section that
-     * starts a page, a heading level that does) arrives as `.prv-pagebreak` and starts a
-     * new sheet — those ARE exact.
-     */
-    function paginate() {
-      var host = document.querySelector('[data-prv-pages]');
-      if (!host) return;
-      var flow = host.querySelector('.rd-pageflow');
-      if (!flow) return;
-      var num = function (k) { return Number(host.getAttribute('data-prv-' + k)) || 0; };
-      var pw = num('pw'), ph = num('ph'), mt = num('mt'), mb = num('mb'), ml = num('ml'), mr = num('mr');
-      var body = Math.max(80, ph - mt - mb);
-      var hf;
-      try { hf = JSON.parse(host.getAttribute('data-prv-hf') || '{}'); } catch (e) { hf = {}; }
-      var firstDifferent = !!host.getAttribute('data-prv-first');
-
-      /**
-       * Take as many body rows off a table as will fit in `room`, in a clone of its
-       * wrapper carrying the same header. Returns null when not even one row fits, so
-       * the caller can start a fresh sheet and try again there.
-       * @returns {?Element} the part that fits; the original keeps the remainder
-       */
-      function splitTable(el, room) {
-        var table = el.querySelector('table');
-        if (!table) return null;
-        var tbody = table.querySelector('tbody');
-        var rows = tbody ? Array.prototype.slice.call(tbody.rows) : [];
-        if (rows.length < 2) return null;               // nothing to gain by splitting
-        var head = table.tHead ? table.tHead.offsetHeight : 0;
-        var used = head, take = 0;
-        for (var i = 0; i < rows.length; i++) {
-          var h = rows[i].offsetHeight || 0;
-          // NOT "always take the first row": with no room left on the page, taking one
-          // anyway put a header and a row past the bottom edge of a sheet that was
-          // already full. Nothing fits means nothing fits, and the caller starts a
-          // fresh sheet and asks again — where there is a whole page of room.
-          if (used + h > room) break;
-          used += h; take++;
-        }
-        // All of it fits, or none of it does — neither is a split.
-        if (!take || take >= rows.length) return null;
-        /* A DEEP clone, and the rows pruned from each half afterwards.
-         *
-         * The block being split is not always the table's own wrapper — a centred
-         * section wraps it again, and a shallow clone of the outer div rebuilt the
-         * table without whatever sat between the two, which lost the centring and the
-         * column widths with it. Copying the whole subtree and then deleting rows keeps
-         * every wrapper, the colgroup and the header exactly as they were.
-         */
-        var part = el.cloneNode(true);
-        var partRows = part.querySelector('table tbody').rows;
-        while (partRows.length > take) partRows[take].parentNode.removeChild(partRows[take]);
-        for (var j = 0; j < take; j++) tbody.removeChild(tbody.rows[0]);
-        // The caption belongs to the LAST part, where longtable prints it, so a caption
-        // inside the wrapper is dropped from every part but the final one.
-        var cap = part.querySelector('.prv-caption');
-        if (cap) cap.parentNode.removeChild(cap);
-        return part;
-      }
-
-      var blocks = Array.prototype.slice.call(flow.children);
-      // jsdom has no layout, so every height reads 0 and one sheet holds everything.
-      // That is the right degradation: the structure is still correct and testable, and
-      // the measurement it cannot make is one only a real browser can.
-      var sheets = [[]], used = 0;
-      function newSheet() { sheets.push([]); used = 0; }
-      function push(el, h) { sheets[sheets.length - 1].push(el); used += h; }
-      function place(el) {
-        var h = el.offsetHeight || 0;
-        if (el.classList && el.classList.contains('prv-pagebreak')) {
-          if (sheets[sheets.length - 1].length) newSheet();
-          return;
-        }
-        // SEC-4: a heading whose level starts a page. The break belongs BEFORE it, and
-        // only when there is already something on the sheet — a document that opens
-        // with one should not begin with a blank page, which is what the PDF does too.
-        if (el.classList && el.classList.contains('prv-breakbefore') && sheets[sheets.length - 1].length) {
-          newSheet();
-        }
-        if (used + h <= body) { push(el, h); return; }
-        // A table continues rather than being clipped: as much of it as fits goes here,
-        // and what is left is placed again — on this sheet's successor, with a whole
-        // page of room. Each pass takes at least one row, so this terminates.
-        var part = splitTable(el, body - used);
-        if (part) { push(part, body - used); newSheet(); place(el); return; }
-        if (used) { newSheet(); place(el); return; }
-        // Taller than a whole page and nothing to split: it gets a page of its own and
-        // is allowed to run over rather than being cut at a line nobody chose.
-        push(el, h);
-      }
-      blocks.forEach(place);
-
-      var total = sheets.length;
-      var frag = document.createDocumentFragment();
-      sheets.forEach(function (list, i) {
-        var n = i + 1;
-        var first = firstDifferent && n === 1;
-        var sheet = document.createElement('div');
-        sheet.className = 'rd-sheet';
-        sheet.setAttribute('data-prv-sheet', String(n));
-        sheet.style.width = pw + 'px';
-        sheet.style.height = ph + 'px';
-        var head = runningSlots(hf[first ? 'firstHeader' : 'header'] || {}, n, total);
-        var foot = runningSlots(hf[first ? 'firstFooter' : 'footer'] || {}, n, total);
-        // The margins are the sheet's, so the header sits INSIDE the top margin and the
-        // footer inside the bottom one, as they do on the page.
-        var pad = ' style="padding:0 ' + mr + 'px 0 ' + ml + 'px;';
-        sheet.innerHTML =
-          '<div class="rd-sheet-hf rd-sheet-head"' + pad + 'height:' + mt + 'px">' + head + '</div>' +
-          '<div class="rd-sheet-body rd-paper"' + pad + 'height:' + body + 'px">' + '</div>' +
-          '<div class="rd-sheet-hf rd-sheet-foot"' + pad + 'height:' + mb + 'px">' + foot + '</div>' +
-          '<div class="rd-sheet-n">' + n + ' / ' + total + '</div>';
-        var target = sheet.querySelector('.rd-sheet-body');
-        list.forEach(function (el) { target.appendChild(el); });
-        frag.appendChild(sheet);
-      });
-      flow.parentNode.removeChild(flow);
-      host.appendChild(frag);
-    }
-
     function repaint() {
       if (!refresh() && _ctx) _ctx.refreshMain();
-      // The workspace re-renders as a string; the sheets are built from what that string
-      // became, so this runs after every repaint that could have drawn a paged preview.
-      if (_rd.open && _rd.pane === 'preview' && _rd.pages) paginate();
     }
     function quietly(fn) { if (_ctx && _ctx.quietEdit) _ctx.quietEdit(fn); else fn(); }
     /** Any project write invalidates the cached preview — it is a render of the project. */
@@ -9522,7 +4833,6 @@ import { pagesHtml } from './doc-preview.js';
 
       dom.on(ctx.root, 'click', '[data-rd-open]', function () {
         _rd.open = true; dirty(); ctx.refreshMain();
-        if (_rd.pane === 'preview' && _rd.pages) paginate();
       });
       dom.on(ctx.root, 'click', '[data-rd-close]', function () { _rd.open = false; ctx.refreshMain(); });
       dom.on(ctx.root, 'click', '[data-rd-modal]', function (e, el) {
@@ -9565,9 +4875,6 @@ import { pagesHtml } from './doc-preview.js';
       dom.on(ctx.root, 'click', '[data-rd-cf-apply]', function () { applyConflict(); });
       // ---- preview ----------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-refresh-preview]', function () { dirty(); repaint(); });
-      // PRV-4: page view is a way of LOOKING at the document, not a change to it, so it
-      // does not invalidate the rendered markdown — only how it is laid out.
-      dom.on(ctx.root, 'change', '[data-rd-pageview]', function (e, el) { _rd.pages = el.checked; repaint(); });
       dom.on(ctx.root, 'click', '[data-prv-jump]', function (e, el) {
         e.preventDefault();
         var target = document.getElementById(el.getAttribute('data-prv-jump'));
@@ -9641,12 +4948,8 @@ import { pagesHtml } from './doc-preview.js';
         }
         include(map, ds, key, el.checked, dflt);
       });
-      // GEN-TAB: the filename and the placeholder values. Session state, like the
-      // relevance filter beside them — a tag value is an answer for THIS run.
-      dom.on(ctx.root, 'change', '[data-rd-filename]', function (e, el) {
-        session().filename = el.value;
-        repaint();
-      });
+      // GEN-TAB: the placeholder values. Session state, like the relevance filter
+      // beside them — a tag value is an answer for THIS run.
       dom.on(ctx.root, 'change', '[data-rd-tag]', function (e, el) {
         var s = session();
         s.tags = s.tags || {};
@@ -9756,12 +5059,6 @@ import { pagesHtml } from './doc-preview.js';
       });
       dom.on(ctx.root, 'change', '[data-rd-intro-num]', function (e, el) {
         quietly(function () { logIssues(App.docStore.setBlockIntroNumbered(el.getAttribute('data-rd-intro-num'), el.checked)); });
-        dirty(); repaint();
-      });
-      dom.on(ctx.root, 'change', '[data-rd-tstyle]', function (e, el) {
-        quietly(function () {
-          logIssues(App.docStore.setBlockTableStyle(el.getAttribute('data-rd-block'), el.getAttribute('data-rd-tstyle'), el.checked));
-        });
         dirty(); repaint();
       });
       dom.on(ctx.root, 'change', '[data-rd-level]', function (e, el) {
@@ -10053,7 +5350,7 @@ import { pagesHtml } from './doc-preview.js';
        * that one writes a pixel width into UI state, and this one writes a FRACTION into
        * the project. A width that only existed in the session would be gone by the next
        * generate, and localStorage is never canonical here — so the drag ends in
-       * docStore, and the .md is what proves it landed.
+       * docStore, and the document is what proves it landed.
        *
        * The pixel-to-fraction conversion is against the container's own width, which is
        * the profile's text width in both editors, so what is dragged is the shape the
@@ -10201,10 +5498,6 @@ import { pagesHtml } from './doc-preview.js';
         quietly(function () { logIssues(App.docStore.updateFormat(id, patch)); });
         dirty(); repaint();
       }
-      dom.on(ctx.root, 'change', '[data-rd-titleblock]', function (e, el) {
-        quietly(function () { logIssues(App.docStore.setTitleBlock(el.checked)); });
-        dirty(); repaint();
-      });
       // HDR-1: a slot writes through the same dotted-path patcher every other profile
       // field uses, so nothing new has to know how a profile is saved.
       dom.on(ctx.root, 'change', '[data-rd-hf-set]', function (e, el) {
@@ -10215,9 +5508,6 @@ import { pagesHtml } from './doc-preview.js';
       });
       dom.on(ctx.root, 'change', '[data-rd-fmt]', function (e, el) { fmtPatch(el.getAttribute('data-rd-fmt'), el.value); });
       dom.on(ctx.root, 'change', '[data-rd-fmt-bool]', function (e, el) { fmtPatch(el.getAttribute('data-rd-fmt-bool'), el.checked); });
-      // TBS-1: a colour picker has no "none" — white is a colour, and a white shade over
-      // a white page is not the same thing as no shade at all in the emitted LaTeX.
-      dom.on(ctx.root, 'click', '[data-rd-fmt-clear]', function (e, el) { fmtPatch(el.getAttribute('data-rd-fmt-clear'), ''); });
 
       // ---- templates --------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-tpl-use]', function (e, el) {
@@ -10259,7 +5549,7 @@ import { pagesHtml } from './doc-preview.js';
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
-      buildPreview: buildPreview,
+      laidOut: laidOut,
       PANES: PANES, _rd: _rd
     };
   })(App);

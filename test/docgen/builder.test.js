@@ -27,7 +27,7 @@ function hostWith(design = {}) {
       ],
       order: ['c4', 'toc', 'meta', 'staff', 'teams', 'c1', 'c2', 'c3'],
       levels: { c4: 0, staff: 1, teams: 2, c1: 1, c2: 1, c3: 3 },
-      intros: { staff: 'About the staff.', teams: 'Unnumbered intro.' },
+      intros: { staff: 'About the staff.', teams: 'Unnumbered intro, see {{refn:c2}}.' },
       introNumbered: { staff: true },
       pageBreak: { c2: true },
       space: { c2: 30 },
@@ -92,7 +92,8 @@ test('numbering follows the outline; titles take none; an intro takes its own wh
   const intro = document.blocks[document.blocks.indexOf(heading(document, 'Staff')) + 1];
   assert.equal(plain(intro.runs), '2.1 About the staff.');
   const teamsIntro = document.blocks[document.blocks.indexOf(heading(document, 'Teams')) + 1];
-  assert.equal(plain(teamsIntro.runs), 'Unnumbered intro.');
+  assert.equal(plain(teamsIntro.runs), 'Unnumbered intro, see Section 4.');
+  assert.equal(teamsIntro.runs.find((r) => r.ref).ref.anchor, 'sec-c2', 'a reference in an introduction is a link (REF-1)');
 });
 
 test('a numbering format of 1.1 leaves third-level headings unnumbered; numbering off numbers nothing', () => {
@@ -110,6 +111,8 @@ test('section settings reach the heading: a page break before, space before, cen
   assert.equal(heading(document, 'Annex').spaceBefore, 30);
   assert.equal(heading(document, 'Teams').centre, true);
   assert.equal(tables(document).filter((t) => t.centre).length, 2, 'the Teams tables are centred');
+  const centred = document.blocks.filter((b) => b.centre).map((b) => b.kind);
+  assert.deepEqual(centred, ['heading', 'paragraph', 'table', 'table'], 'centring one section centres only that section (D-044)');
   assert.equal(heading(document, 'Deep').noToc, true);
   assert.equal(heading(document, 'Contents').noToc, true);
   assert.equal(heading(document, 'Staff').anchor, 'sec-staff');
