@@ -281,7 +281,8 @@ function flow(doc, style, pageOf) {
 /**
  * Column widths in points. Given fractions are kept (scaled down if they add to more than
  * one); otherwise each column gets at least its longest word and the table is filled to
- * the text width in proportion to how much more each column would like.
+ * the text width in proportion to how much more each column would like. When not every
+ * word fits, the body's words keep their room and the headings wrap.
  * @param {any} b @param {number} n @param {number} W @param {number} pad @param {any} body @param {any} head @param {any} ctx
  */
 export function columnWidths(b, n, W, pad, body, head, ctx) {
@@ -291,8 +292,11 @@ export function columnWidths(b, n, W, pad, body, head, ctx) {
     const k = sum > 1 ? 1 / sum : 1;
     return given.map((w) => w * k * W);
   }
-  const minW = Array(n).fill(2 * pad + 6), prefW = Array(n).fill(2 * pad + 6);
-  const measure = (/** @type {any[]} */ runs, /** @type {any} */ ts, /** @type {number} */ k) => {
+  const floor = 2 * pad + 6;
+  // The longest word in each column's body and in its heading, kept apart: when a table
+  // cannot give every word its room, the data keeps its words and the headings wrap.
+  const bodyMin = Array(n).fill(floor), headMin = Array(n).fill(floor), prefW = Array(n).fill(floor);
+  const measure = (/** @type {any[]} */ runs, /** @type {any} */ ts, /** @type {number} */ k, /** @type {number[]} */ mins) => {
     let line = 0, longest = 0, max = 0;
     for (const a of atomsOf(runs ?? [], ts, ctx)) {
       if (a.br) { max = Math.max(max, line); line = 0; continue; }
@@ -300,16 +304,25 @@ export function columnWidths(b, n, W, pad, body, head, ctx) {
       if (!a.space) longest = Math.max(longest, a.width);
     }
     max = Math.max(max, line);
-    minW[k] = Math.max(minW[k], Math.min(longest, W * 0.5) + 2 * pad);
+    mins[k] = Math.max(mins[k], Math.min(longest, W * 0.5) + 2 * pad);
     prefW[k] = Math.max(prefW[k], max + 2 * pad);
   };
-  (b.header ?? []).forEach((/** @type {any} */ c, /** @type {number} */ k) => measure(c, head, k));
-  (b.rows ?? []).forEach((/** @type {any[]} */ r) => r.forEach((c, k) => { if (k < n) measure(c, body, k); }));
-  const sumPref = prefW.reduce((a, c) => a + c, 0), sumMin = minW.reduce((a, c) => a + c, 0);
+  (b.header ?? []).forEach((/** @type {any} */ c, /** @type {number} */ k) => measure(c, head, k, headMin));
+  (b.rows ?? []).forEach((/** @type {any[]} */ r) => r.forEach((c, k) => { if (k < n) measure(c, body, k, bodyMin); }));
+  const sum = (/** @type {number[]} */ xs) => xs.reduce((a, c) => a + c, 0);
+  const minW = bodyMin.map((m, k) => Math.max(m, headMin[k]));
+  const sumPref = sum(prefW), sumMin = sum(minW), sumBody = sum(bodyMin);
   if (sumPref <= W) return prefW.map((p) => p + (W - sumPref) * (p / sumPref));
-  if (sumMin >= W) return minW.map((x) => (x * W) / sumMin);
+  if (sumMin > W) {
+    // Not every word fits: the body's words first, then what is left shared towards the
+    // headings' longest words; past that, everything is squeezed alike.
+    if (sumBody >= W) return bodyMin.map((x) => (x * W) / sumBody);
+    const want = minW.map((m, k) => m - bodyMin[k]);
+    const k2 = (W - sumBody) / sum(want);
+    return bodyMin.map((x, k) => x + want[k] * k2);
+  }
   const slack = prefW.map((p, k) => Math.max(0, p - minW[k]));
-  const sumSlack = slack.reduce((a, c) => a + c, 0);
+  const sumSlack = sum(slack);
   return minW.map((x, k) => x + (W - sumMin) * (sumSlack ? slack[k] / sumSlack : 1 / n));
 }
 

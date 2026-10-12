@@ -94,3 +94,12 @@ test('a title row spans the table above the header', () => {
   const t = texts(r.pages[0]);
   assert.ok(t.find((x) => x.text === 'Removed').y < t.find((x) => x.text === 'ID').y);
 });
+
+test('a table too wide for every word keeps the data whole and wraps the long headings instead', () => {
+  const heads = ['Hazard', 'ID', 'Control measure', 'Tier', 'Description', 'Kind', 'Recommendation', 'Justification', 'Status', 'Reason rejected'];
+  const row = ['HAZ-007', 'C-001', 'Fixed fire suppression', '', '', 'preventative', '', '', 'Recommended', ''];
+  const b = { kind: 'table', columns: heads.map(() => ({})), header: heads.map(cell), rows: Array.from({ length: 3 }, () => row.map(cell)) };
+  const r = layout(doc([b]), style());
+  const words = new Set(texts(r.pages[0]).map((t) => t.text));
+  for (const w of ['HAZ-007', 'C-001', 'suppression', 'preventative', 'Recommended']) assert.ok(words.has(w), `${w} is broken across lines`);
+});
