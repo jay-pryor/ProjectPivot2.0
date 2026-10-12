@@ -14,7 +14,7 @@ function host(design = {}) {
     clock: { nowIso: () => '2026-10-12T00:00:00.000Z' },
     classifications: ['OFFICIAL', 'PROTECTED'],
     subject: { noun: 'platform', list: () => [{ id: 's1', label: 'Subject One' }, { id: 's2', label: 'Subject Two' }], ready: () => true, meta: () => [{ id: 'n', label: 'Name', value: 'One' }] },
-    sections: () => [{ id: 'things', label: 'Things', keyColumn: { id: '_key', label: 'ID', get: (r) => r.id }, columns: [{ id: 'v', label: 'Value', get: (r) => r.v }],
+    sections: () => [{ id: 'things', label: 'Things', keyColumn: { id: '_key', label: 'ID', get: (r) => r.id }, columns: [{ id: 'v', label: 'Value', get: (r) => r.v }, { id: 'extra', label: 'Extra', optional: true, get: (r) => r.v }],
       rows: () => [{ id: 'T-1', v: 'x ≥ y' }] },
       { id: 'others', label: 'Others', keyColumn: { id: '_key', label: 'ID', get: (r) => r.id }, columns: [{ id: 'v', label: 'Value', get: (r) => r.v }],
       rows: () => [{ id: 'O-1', v: 'other' }] }],
@@ -210,4 +210,69 @@ test('the Sections list is resizable: a grip, a default width, held between a mi
   assert.match(width(300), /style="flex-basis:300px"/);
   assert.match(width(50), /style="flex-basis:260px"/, 'held at the minimum');
   assert.equal(RD.LIST_WIDTH.min, 260);
+});
+/** The Sections pane for a section, on a category. */
+function sectionAt(h, id, cat) {
+  App.docHost.set(h); RD.open(); RD.select(id); RD._rd.secCat = cat ?? null;
+  const html = RD.render(h.getState()); RD.close(); RD._rd.secCat = null;
+  return html;
+}
+const cats = (html) => [...html.matchAll(/data-rd-sec-cat="([a-z]+)"/g)].map((m) => m[1]);
+
+test('Sections: three columns — categories, their fields, and the preview beside them', () => {
+  const html = sectionAt(host(), 'things');
+  assert.match(html, /class="rd-secgrid"[\s\S]*class="rd-cat-list"[\s\S]*data-rd-sec-fields[\s\S]*data-rd-sec-prev[\s\S]*class="dp-page"/);
+});
+
+test('each kind of section offers its own categories', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  assert.deepEqual(cats(sectionAt(h, 'things')), ['heading', 'placement', 'introduction', 'table']);
+  assert.deepEqual(cats(sectionAt(h, 'meta')), ['heading', 'placement', 'introduction', 'table', 'rows']);
+  assert.deepEqual(cats(sectionAt(h, 'toc')), ['heading', 'placement']);
+  assert.deepEqual(cats(sectionAt(h, 'mine')), ['heading', 'placement', 'content']);
+});
+
+test('each category holds its existing controls', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  const at = (id, cat) => sectionAt(h, id, cat).slice(sectionAt(h, id, cat).indexOf('data-rd-sec-fields'));
+  assert.match(at('things', 'heading'), /data-rd-sec-heading="things"[\s\S]*data-rd-level="things"/);
+  assert.match(at('mine', 'heading'), /data-rd-sec-title="mine"[\s\S]*data-rd-level="mine"/);
+  assert.match(at('things', 'placement'), /data-rd-centre="things"[\s\S]*data-rd-pagebreak="things"[\s\S]*data-rd-notoc="things"[\s\S]*data-rd-space-block="things"/);
+  assert.match(at('things', 'introduction'), /data-rd-intro="things"[\s\S]*data-rd-intro-num="things"/);
+  assert.match(at('things', 'table'), /data-rd-tbl-field="title"[\s\S]*data-rd-tbl-col=/);
+  assert.match(at('meta', 'rows'), /data-rd-meta=/);
+  assert.match(at('mine', 'content'), /data-rd-addpart="para"[\s\S]*data-rd-del-section="mine"/);
+});
+
+test('the column and group ticks are in Table, and the ☰ button on the list is gone', () => {
+  const html = sectionAt(host(), 'things', 'table');
+  assert.doesNotMatch(html, /data-rd-optmenu/);
+  assert.match(html.slice(html.indexOf('data-rd-sec-fields')), /data-rd-dsmap="columns" data-rd-ds="things" data-rd-key="extra"/);
+});
+
+test('a category the section lacks falls back to the first; with nothing chosen the first section opens', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  assert.match(sectionAt(h, 'mine', 'table'), /class="rd-cat on"[^>]*data-rd-sec-cat="heading"/);
+  App.docHost.set(h); RD.open(); RD._rd.selected = null;
+  const first = RD.render(h.getState()); RD.close();
+  assert.match(first, /data-rd-sec-fields/);
+  assert.doesNotMatch(first, /Pick a section on the left/);
+  App.docHost.set(h); RD.open(); RD._rd.selected = 'gone';
+  assert.match(RD.render(h.getState()), /data-rd-sec-fields/, 'a vanished section opens the first one');
+  RD.close();
+});
+
+test('a column unticked in Table leaves the report: the ticks are stored under the key the report reads', () => {
+  const h = host();
+  App.docHost.set(h);
+  const header = () => {
+    const t = App.docGen.documentFor(h, Object.assign({}, App.docSession.options(), { subjectId: 's1' }), {}).document.blocks
+      .filter((b) => b.kind === 'table').find((x) => x.anchor === 'tbl-things');
+    return t.header.map((c) => c[0].text);
+  };
+  assert.deepEqual(header(), ['ID', 'Value', 'Extra']);
+  const html = sectionAt(h, 'things', 'table');
+  const key = /data-rd-dsmap="columns" data-rd-ds="([^"]+)" data-rd-key="extra"/.exec(html)[1];
+  App.docStore.setReportInclude('columns', key, 'extra', false, true);
+  assert.deepEqual(header(), ['ID', 'Value']);
 });
