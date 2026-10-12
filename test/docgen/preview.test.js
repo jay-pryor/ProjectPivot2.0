@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pagesHtml } from '../../DocGen/doc-preview.js';
+import { pagesHtml, cropPage } from '../../DocGen/doc-preview.js';
 
 const page = { size: [595.28, 841.89], items: [
   { kind: 'fill', x: 10, y: 20, w: 100, h: 30, colour: '#d9e2f3' },
@@ -37,4 +37,20 @@ test('anchors become ids at their place on their page, so the contents can jump 
   const second = h.slice(h.indexOf('data-page="2"'));
   assert.match(second, /<span class="dp-anchor" id="sec-a" style="top:200px"><\/span>/);
   assert.equal((h.match(/dp-anchor/g) ?? []).length, 1);
+});
+
+test('a page cropped to a band keeps only what lies in it, moved up to its top', () => {
+  const p = { size: [100, 300], items: [
+    { kind: 'text', x: 1, y: 50, font: 'Helvetica', size: 10, colour: '#000000', text: 'above' },
+    { kind: 'text', x: 1, y: 120, font: 'Helvetica', size: 10, colour: '#000000', text: 'inside' },
+    { kind: 'fill', x: 0, y: 90, w: 10, h: 40, colour: '#eeeeee' },
+    { kind: 'rule', x1: 5, y1: 80, x2: 5, y2: 250, width: 1, colour: '#000000' },
+    { kind: 'text', x: 1, y: 260, font: 'Helvetica', size: 10, colour: '#000000', text: 'below' },
+  ] };
+  const c = cropPage(p, 100, 200);
+  assert.deepEqual(c.size, [100, 100]);
+  assert.deepEqual(c.items.filter((i) => i.kind === 'text').map((t) => [t.text, t.y]), [['inside', 20]]);
+  assert.deepEqual(c.items.find((i) => i.kind === 'fill'), { kind: 'fill', x: 0, y: 0, w: 10, h: 30, colour: '#eeeeee' });
+  const r = c.items.find((i) => i.kind === 'rule');
+  assert.deepEqual([r.y1, r.y2], [0, 100]);
 });

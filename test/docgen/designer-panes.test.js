@@ -15,7 +15,9 @@ function host(design = {}) {
     classifications: ['OFFICIAL', 'PROTECTED'],
     subject: { list: () => [{ id: 's1', label: 'Subject One' }], ready: () => true, meta: () => [{ id: 'n', label: 'Name', value: 'One' }] },
     sections: () => [{ id: 'things', label: 'Things', keyColumn: { id: '_key', label: 'ID', get: (r) => r.id }, columns: [{ id: 'v', label: 'Value', get: (r) => r.v }],
-      rows: () => [{ id: 'T-1', v: 'x ≥ y' }] }],
+      rows: () => [{ id: 'T-1', v: 'x ≥ y' }] },
+      { id: 'others', label: 'Others', keyColumn: { id: '_key', label: 'ID', get: (r) => r.id }, columns: [{ id: 'v', label: 'Value', get: (r) => r.v }],
+      rows: () => [{ id: 'O-1', v: 'other' }] }],
   };
 }
 
@@ -127,4 +129,48 @@ test('every wiring function that reads the project takes P from the helper bag (
 
 test('Final review I5: the contents section offers no title box — the contents heading is the section\'s own title', () => {
   assert.doesNotMatch(paneOf(host(), 'styles', 'numbering'), /data-rd-fmt="toc\.title"/);
+});
+
+/** The Section pane for one section, at a zoom. */
+function sectionPane(h, id, zoom) {
+  App.docHost.set(h);
+  RD.open(); RD.select(id);
+  RD._rd.secZoom = zoom ?? null;
+  const html = RD.render(h.getState());
+  RD.close(); RD._rd.secZoom = null;
+  return html.slice(html.indexOf('rd-secprev'));
+}
+
+test('a section\'s preview shows that section only, not the ones around it', () => {
+  const things = sectionPane(host(), 'things');
+  assert.match(things, />T-1</);
+  assert.doesNotMatch(things, />O-1</);
+  assert.doesNotMatch(things, />Others</);
+  const others = sectionPane(host(), 'others');
+  assert.match(others, />O-1</);
+  assert.doesNotMatch(others, />T-1</);
+});
+
+test('the section preview zooms in and out', () => {
+  const at = (html) => Number(/class="dp-page"[^>]*style="width:([\d.]+)px/.exec(html)[1]);
+  const dflt = sectionPane(host(), 'things');
+  assert.match(dflt, /data-rd-zoom="out"/);
+  assert.match(dflt, /data-rd-zoom="in"/);
+  assert.match(dflt, /60%/);
+  assert.ok(Math.abs(at(dflt) - 595.28 * 0.6) < 0.01);
+  assert.ok(Math.abs(at(sectionPane(host(), 'things', 1.2)) - 595.28 * 1.2) < 0.01);
+});
+
+test('the Preview pane zooms too, separately from the section preview', () => {
+  const at = (html) => Number(/class="dp-page"[^>]*style="width:([\d.]+)px/.exec(html)[1]);
+  const dflt = paneOf(host(), 'preview');
+  assert.match(dflt, /data-rd-zoom="in" data-rd-zoom-for="preview"/);
+  assert.match(dflt, /data-rd-zoom="out" data-rd-zoom-for="preview"/);
+  assert.match(dflt, />100%</);
+  assert.ok(Math.abs(at(dflt) - 595.28) < 0.01);
+  RD._rd.prevZoom = 1.5;
+  const big = paneOf(host(), 'preview');
+  RD._rd.prevZoom = null;
+  assert.ok(Math.abs(at(big) - 595.28 * 1.5) < 0.01);
+  assert.match(sectionPane(host(), 'things'), /data-rd-zoom="in" data-rd-zoom-for="section"/);
 });

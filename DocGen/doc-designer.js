@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { STANDARD as STYLE_STANDARD, PAPER_MM as STYLE_PAPER_MM, normaliseStyle, fromProfile, isStyle } from './doc-style.js';
 import { layout } from './doc-layout.js';
-import { pagesHtml } from './doc-preview.js';
+import { pagesHtml, cropPage } from './doc-preview.js';
 import { toWinAnsi } from './doc-fonts.js';
   /* App namespace root. Exported at the bottom of this file. */
   var App = {};
@@ -3248,6 +3248,8 @@ import { toWinAnsi } from './doc-fonts.js';
       fmtId: null,           // Style being edited in the Styles pane
       styleSection: null,    // which part of that Style is open (PDF-1)
       held: null,            // what the last edit asked for that the Style could not use
+      secZoom: null,         // the section preview's zoom, when changed from the default
+      prevZoom: null,        // the Preview pane's zoom, likewise
       conflict: null,        // { kindKey, plan, decisions } while an import is being resolved
       refFor: null,          // part id whose "insert reference" menu is open
       optMenu: null,         // block id whose columns/groups menu is open (OPT-1)
@@ -3829,9 +3831,25 @@ import { toWinAnsi } from './doc-fonts.js';
         '</div>';
     }
 
+    /** The zoom steps of the page previews, and where each starts. */
+    var ZOOMS = [0.4, 0.5, 0.6, 0.8, 1, 1.25, 1.5, 2];
+    var ZOOM_FROM = { section: 0.6, preview: 1 };
+    var ZOOM_KEY = { section: 'secZoom', preview: 'prevZoom' };
+    function zoomOf(which) { return _rd[ZOOM_KEY[which]] || ZOOM_FROM[which]; }
+    /** − 60% + : the zoom buttons for one of the page previews. */
+    function zoomBar(which) {
+      var k = zoomOf(which);
+      return '<span class="rd-zoom">' +
+        '<button type="button" data-rd-zoom="out" data-rd-zoom-for="' + which + '" title="Smaller"' + (k <= ZOOMS[0] ? ' disabled' : '') + '>−</button>' +
+        '<span class="rd-zoom-n">' + Math.round(k * 100) + '%</span>' +
+        '<button type="button" data-rd-zoom="in" data-rd-zoom-for="' + which + '" title="Larger"' + (k >= ZOOMS[ZOOMS.length - 1] ? ' disabled' : '') + '>+</button></span>';
+    }
+
     /**
-     * PDF-1: a section previewed as the PAGES it lands on, cut from the whole document's
-     * layout — so its numbers, captions, references and page breaks are the real ones.
+     * PDF-1: a section previewed as it lands on the page — cut from the whole document's
+     * layout, so its numbers, captions, references and page breaks are the real ones, and
+     * cropped to the section itself: from its heading to where the next section starts,
+     * over as many pages as it runs.
      */
     function sectionPreview(project, block) {
       var p = _rd.preview || (_rd.preview = laidOut(project));
@@ -3840,17 +3858,24 @@ import { toWinAnsi } from './doc-fonts.js';
       var included = view.resolved.filter(function (r) { return r.included !== false; });
       var at = included.map(function (r) { return r.id; }).indexOf(block.id);
       var mine = at === -1 ? null : p.anchors[included[at].anchor];
-      if (!mine) return '<p class="muted">' + (at === -1 ? 'This section is not in the document.' : 'This section has no heading to find it by — see it in the <strong>Preview</strong>.') + '</p>';
-      var last = mine.page;
-      for (var i = at + 1; i < included.length; i++) {
-        var next = p.anchors[included[i].anchor];
-        if (next) { last = Math.max(mine.page, next.y > 80 ? next.page : next.page - 1); break; }
-        last = p.pages.length - 1;
+      if (!mine) return '<p class="muted">' + (at === -1 ? 'This section is not in the document.' : 'This section is not on the page — see the <strong>Preview</strong>.') + '</p>';
+      var end = null;
+      for (var i = at + 1; i < included.length && !end; i++) end = p.anchors[included[i].anchor] || null;
+      var m = p.style.page.margins, MMPT = 72 / 25.4;
+      var bands = [];
+      var lastPage = end ? end.page : p.pages.length - 1;
+      for (var pg = mine.page; pg <= lastPage; pg++) {
+        var page = p.pages[pg];
+        var top = pg === mine.page ? Math.max(0, mine.y - 2) : m.top * MMPT - 2;
+        var bottom = end && pg === end.page ? end.y - 1 : page.size[1] - m.bottom * MMPT + 2;
+        if (bottom - top > 1) bands.push(cropPage(page, top, bottom));
       }
-      var shown = p.pages.slice(mine.page, Math.min(last, mine.page + 2) + 1);
-      return '<div class="rd-secprev rd-preview-pages"><p class="muted rd-hint">Page ' + (mine.page + 1) +
-        (shown.length > 1 ? ' to ' + (mine.page + shown.length) : '') + ' of ' + p.pages.length + '.</p>' +
-        pagesHtml(shown, { scale: 0.6 }) + '</div>';
+      var k = zoomOf('section');
+      var zoom = zoomBar('section');
+      var pages = lastPage - mine.page + 1;
+      return '<div class="rd-secprev-head"><span class="muted rd-hint">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
+        ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
+        '<div class="rd-secprev rd-preview-pages">' + pagesHtml(bands, { scale: k }) + '</div>';
     }
 
     function metaPane(project) {
@@ -4489,9 +4514,6 @@ import { toWinAnsi } from './doc-fonts.js';
     // RD-6: the preview
     // ======================================================================
 
-    /** Pixels per point in the Preview pane. */
-    var PREVIEW_SCALE = 1;
-
     function panePreview(project) {
       var p = _rd.preview || (_rd.preview = laidOut(project));
       if (p.error) return '<div class="rd-preview"><p class="muted">' + esc(p.error) + '</p></div>';
@@ -4500,10 +4522,11 @@ import { toWinAnsi } from './doc-fonts.js';
       }).join('');
       return '<div class="rd-preview">' +
         '<div class="rd-addbar"><button type="button" data-rd-refresh-preview>↻ Refresh</button>' +
-          '<span class="muted">' + p.pages.length + ' page' + (p.pages.length === 1 ? '' : 's') + ', laid out exactly as <strong>Make PDF</strong> writes them.</span></div>' +
+          '<span class="muted">' + p.pages.length + ' page' + (p.pages.length === 1 ? '' : 's') + '</span>' +
+          zoomBar('preview') + '</div>' +
         '<div class="rd-preview-body">' +
           '<nav class="rd-preview-nav">' + (nav || '<span class="muted">No sections.</span>') + '</nav>' +
-          '<article class="rd-preview-doc rd-preview-pages" id="rd-preview-doc">' + pagesHtml(p.pages, { scale: PREVIEW_SCALE, anchors: p.anchors }) + '</article>' +
+          '<article class="rd-preview-doc rd-preview-pages" id="rd-preview-doc">' + pagesHtml(p.pages, { scale: zoomOf('preview'), anchors: p.anchors }) + '</article>' +
         '</div></div>';
     }
 
@@ -4883,6 +4906,15 @@ import { toWinAnsi } from './doc-fonts.js';
       dom.on(ctx.root, 'click', '[data-rd-cf-apply]', function () { applyConflict(); });
       // ---- preview ----------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-refresh-preview]', function () { dirty(); repaint(); });
+      // The page previews' zoom: a way of looking, so the laid-out pages are kept.
+      dom.on(ctx.root, 'click', '[data-rd-zoom]', function (e, el) {
+        var which = el.getAttribute('data-rd-zoom-for') === 'preview' ? 'preview' : 'section';
+        var i = ZOOMS.indexOf(zoomOf(which));
+        if (i === -1) i = ZOOMS.indexOf(ZOOM_FROM[which]);
+        i += el.getAttribute('data-rd-zoom') === 'in' ? 1 : -1;
+        _rd[ZOOM_KEY[which]] = ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, i))];
+        repaint();
+      });
       dom.on(ctx.root, 'click', '[data-prv-jump]', function (e, el) {
         e.preventDefault();
         var target = document.getElementById(el.getAttribute('data-prv-jump'));

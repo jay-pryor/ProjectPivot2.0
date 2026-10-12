@@ -42,3 +42,29 @@ export function pagesHtml(pages, o = {}) {
     return '';
   }).join('') + '</div>').join('');
 }
+
+/**
+ * A band of a page, from `top` to `bottom` (points), as a page of its own: what lies in the
+ * band, moved up so the band starts at 0. Text is kept by its baseline; fills and rules are
+ * cut to the band; links are dropped.
+ * @param {{ size: [number, number], items: any[] }} page @param {number} top @param {number} bottom
+ */
+export function cropPage(page, top, bottom) {
+  /** @type {any[]} */
+  const items = [];
+  for (const it of page.items) {
+    if (it.kind === 'text') { if (it.y > top && it.y <= bottom + 0.01) items.push({ ...it, y: it.y - top }); continue; }
+    if (it.kind === 'fill') {
+      const y0 = Math.max(top, it.y), y1 = Math.min(bottom, it.y + it.h);
+      if (y1 > y0) items.push({ ...it, y: y0 - top, h: y1 - y0 });
+      continue;
+    }
+    if (it.kind === 'rule') {
+      const lo = Math.min(it.y1, it.y2), hi = Math.max(it.y1, it.y2);
+      if (hi < top || lo > bottom) continue;
+      if (it.y1 === it.y2) items.push({ ...it, y1: it.y1 - top, y2: it.y2 - top });
+      else items.push({ ...it, y1: Math.max(lo, top) - top, y2: Math.min(hi, bottom) - top });
+    }
+  }
+  return { size: [page.size[0], bottom - top], items };
+}
