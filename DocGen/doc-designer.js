@@ -3465,7 +3465,7 @@ import { toWinAnsi } from './doc-fonts.js';
      */
     function richBox(project, attrs, tokens, cls, placeholder) {
       return '<div class="rd-rich ' + (cls || '') + '" contenteditable="true" role="textbox"' +
-        ' aria-multiline="true" spellcheck="true" data-rd-rich ' + attrs +
+        ' aria-multiline="true" spellcheck="true" data-rd-rich data-rd-live ' + attrs +
         (placeholder ? ' data-rd-ph="' + esc(placeholder) + '"' : '') + '>' +
         App.ui.richText.toHtml(tokens || '', { resolveRef: refResolver(project) }) + '</div>';
     }
@@ -3913,19 +3913,19 @@ import { toWinAnsi } from './doc-fonts.js';
         return '<div class="rd-tblword">' +
           (k.label ? '<div class="rd-tblword-h">' + esc(k.label) + '</div>' : '') +
           '<label class="rd-lab">Title row' +
-            '<input class="rd-title" value="' + esc(e.title || '') + '" ' + attrs + ' data-rd-tbl-field="title"' +
+            '<input class="rd-title" value="' + esc(e.title || '') + '" ' + attrs + ' data-rd-live data-rd-tbl-field="title"' +
               ' placeholder="Optional \u2014 a row above the column headings" aria-label="Title row"></label>' +
           // CAP-4: the caption box is hidden rather than disabled when there is to be no
           // caption — a box you may type into that will not be printed is a trap.
           (e.noCaption === true
             ? '<p class="rd-state">No caption: this table is not numbered.</p>'
             : '<label class="rd-lab">Caption' +
-              '<input class="rd-title" value="' + esc(e.caption || '') + '" ' + attrs + ' data-rd-tbl-field="caption"' +
+              '<input class="rd-title" value="' + esc(e.caption || '') + '" ' + attrs + ' data-rd-live data-rd-tbl-field="caption"' +
                 ' placeholder="' + esc(String(e.title || '').trim() || block.title || block.label) + '" aria-label="Caption"></label>') +
           cb(attrs + ' data-rd-tbl-nocap', 'No caption', e.noCaption === true) +
           '<div class="rd-grid">' + cols.all.map(function (c) {
             return '<label class="rd-lab rd-lab-s">' + esc(c.label) +
-              '<input value="' + esc(custom[c.id] || '') + '" ' + attrs + ' data-rd-tbl-col="' + esc(c.id) + '"' +
+              '<input value="' + esc(custom[c.id] || '') + '" ' + attrs + ' data-rd-live data-rd-tbl-col="' + esc(c.id) + '"' +
                 ' placeholder="' + esc(c.label) + '" aria-label="Heading for the ' + esc(c.label) + ' column"></label>';
           }).join('') + '</div></div>';
       }).join('');
@@ -3949,7 +3949,7 @@ import { toWinAnsi } from './doc-fonts.js';
           // NAM-2: a generated section has a heading too, and once the name stopped
           // being it there was nowhere to say what it should read.
           '<label class="rd-lab">Heading in the document' +
-            '<input class="rd-title" value="' + esc(heading === dflt ? '' : heading) + '" data-rd-sec-heading="' + esc(block.id) + '"' +
+            '<input class="rd-title" value="' + esc(heading === dflt ? '' : heading) + '" data-rd-live data-rd-sec-heading="' + esc(block.id) + '"' +
               ' placeholder="' + esc(dflt) + '" aria-label="Heading for ' + esc(block.label) + '"></label>' +
           '');
     }
@@ -4017,7 +4017,7 @@ import { toWinAnsi } from './doc-fonts.js';
       var sec = block.kind === 'custom' ? customSection(project, block.id) : null;
       if (cat === 'heading') {
         return (sec
-          ? '<label class="rd-lab">Heading<input class="rd-title" value="' + esc(sec.title || '') + '" data-rd-sec-title="' + esc(sec.id) + '"' +
+          ? '<label class="rd-lab">Heading<input class="rd-title" value="' + esc(sec.title || '') + '" data-rd-live data-rd-sec-title="' + esc(sec.id) + '"' +
               ' placeholder="None: the section is body text" aria-label="Section heading"></label>'
           : nameField(block, block.defaultTitle)) + level;
       }
@@ -4678,6 +4678,28 @@ import { toWinAnsi } from './doc-fonts.js';
       return function () { return { ok: true, issues: [] }; };
     }
 
+    /** The store write a live box makes, without any repaint: the same calls its change/blur handler makes. */
+    function liveSave(el) {
+      if (el.hasAttribute('data-rd-rich')) return boxSaver(el)(RT.fromNode(el));
+      if (el.hasAttribute('data-rd-sec-heading')) return App.docStore.setBlockHeading(el.getAttribute('data-rd-sec-heading'), el.value);
+      if (el.hasAttribute('data-rd-sec-title')) return App.docStore.updateSection(el.getAttribute('data-rd-sec-title'), { title: el.value });
+      if (el.hasAttribute('data-rd-tbl-block')) {
+        var block = el.getAttribute('data-rd-tbl-block'), key = el.getAttribute('data-rd-tbl-key'), col = el.getAttribute('data-rd-tbl-col');
+        return col ? App.docStore.setTableColumnLabel(block, key, col, el.value)
+          : App.docStore.setTableText(block, key, el.getAttribute('data-rd-tbl-field'), el.value);
+      }
+      return { ok: true, issues: [] };
+    }
+    /** Redraw the Sections pane's preview column alone, so focus and the caret stay where they are. */
+    function refreshSectionPreview() {
+      var col = document.querySelector('[data-rd-sec-prev]');
+      var project = App.docHost.get() && App.docHost.get().getState();
+      if (!col || !project) return;
+      var view = outlineNow(project);
+      var block = view.blocks.filter(function (b) { return b.id === _rd.selected; })[0];
+      if (block) col.innerHTML = sectionPreview(project, block);
+    }
+
     /** The document's reference resolver, for re-rendering a box after an edit. */
     function boxHtml(tokens) {
       var p = App.docHost.get().getState();
@@ -5167,6 +5189,18 @@ import { toWinAnsi } from './doc-fonts.js';
 
     function wireText(h) {
       var dom = h.dom, ctx = h.ctx;
+
+      // The Sections preview follows typing: half a second after a live box stops
+      // changing, its value is saved and the preview column alone is redrawn.
+      var liveTimer = null;
+      dom.on(ctx.root, 'input', '[data-rd-live]', function (e, el) {
+        clearTimeout(liveTimer);
+        liveTimer = setTimeout(function () {
+          quietly(function () { logIssues(liveSave(el)); });
+          dirty();
+          refreshSectionPreview();
+        }, 500);
+      });
 
       /* Keep the caret and the selection where the author put them.
        *

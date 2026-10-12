@@ -308,3 +308,23 @@ test('no one-line explanations anywhere in the designer: only messages about sta
 test('the title bar is the title and the platform picker, with no description after it', () => {
   assert.doesNotMatch(paneOf(host(), 'section'), /what the document contains|in what order, and how it looks/);
 });
+test('the Sections preview follows typing: a debounced input saves the box and redraws only the preview', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../DocGen/doc-designer.js', import.meta.url), 'utf8');
+  const fn = /function liveSave\(el\) \{([\s\S]*?)\n    \}\n/.exec(src);
+  assert.ok(fn, 'liveSave exists');
+  for (const attr of ['data-rd-sec-heading', 'data-rd-sec-title', 'data-rd-tbl-block', 'data-rd-rich']) assert.match(fn[1], new RegExp(attr), attr);
+  const wire = /dom\.on\(ctx\.root, 'input', '\[data-rd-live\]'[\s\S]*?\n      \}\);/.exec(src);
+  assert.ok(wire, 'an input listener on [data-rd-live]');
+  assert.match(wire[0], /setTimeout\([\s\S]*500\)/);
+  assert.match(wire[0], /refreshSectionPreview\(\)/);
+  assert.doesNotMatch(wire[0], /repaint\(\)/);
+});
+test('the boxes that drive the live preview are marked', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'p1', kind: 'para', text: 'x' }] }] });
+  assert.match(sectionAt(h, 'things', 'heading'), /data-rd-sec-heading="things"[^>]*data-rd-live|data-rd-live[^>]*data-rd-sec-heading="things"/);
+  assert.match(sectionAt(h, 'mine', 'heading'), /data-rd-live[^>]*data-rd-sec-title|data-rd-sec-title[^>]*data-rd-live/);
+  assert.match(sectionAt(h, 'things', 'introduction'), /data-rd-intro="things"[^>]*data-rd-live|data-rd-live[^>]*data-rd-intro="things"/);
+  assert.match(sectionAt(h, 'things', 'table'), /data-rd-tbl-field="title"[^>]*data-rd-live|data-rd-live[^>]*data-rd-tbl-field="title"/);
+  assert.match(sectionAt(h, 'mine', 'content'), /data-rd-text="p1"[^>]*data-rd-live|data-rd-live[^>]*data-rd-text="p1"/);
+});
