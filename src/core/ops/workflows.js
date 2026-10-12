@@ -36,7 +36,7 @@ function needHazard(data, wf, hazardId) {
 
 /** Where New Tech Data can stand: its scope, or a pair in scope. @param {Data} data @param {Rec} wf @param {string} at */
 function needPosition(data, wf, at) {
-  if (at !== '@scope' && !techPairs(data, wf).some((x) => x.key === at)) throw new PivotError('workflow.hazard', 'That hazard is not in this workflow’s scope.');
+  if (at !== '@scope' && at !== '@reference' && !techPairs(data, wf).some((x) => x.key === at)) throw new PivotError('workflow.hazard', 'That hazard is not in this workflow’s scope.');
   return at;
 }
 
@@ -45,6 +45,18 @@ function needTech(data, act, workflowId) {
   const wf = needOpen(data, act, workflowId);
   if (wf.type !== 'newTechData') throw new PivotError('workflow.type', 'That is not New Tech Data.');
   return wf;
+}
+
+/** A blank new reference for New Tech Data, with the id it will have. */
+const blankDraft = () => ({ id: newId(), title: '', docNumber: '', revision: '', url: '', path: '', file: null });
+
+/** A reference New Tech Data can work through: live, not archived, and not being worked through already. @param {Data} data @param {string} referenceId */
+function needTechReference(data, referenceId) {
+  const r = need(data, 'reference', referenceId);
+  if (r.status !== 'live') throw new PivotError('reference.retired', `${r.title} is retired.`);
+  if (r.archived) throw new PivotError('reference.archived', `${r.title} is archived.`);
+  if (openTechData(data, r.id)) throw new PivotError('techData.open', `${r.title} is being worked through already.`);
+  return r;
 }
 
 /** A step record, new or changed. @param {Data} data @param {Act} act @param {string} workflowId @param {string} hazardId @param {string} check @param {Record<string, any>} fields */
@@ -78,11 +90,9 @@ export function startOnboarding(data, act, { id = newId(), platformId = newId(),
  */
 export function startWorkflow(data, act, { id = newId(), type, platformId, referenceId }) {
   if (type === 'newTechData') {
-    const r = need(data, 'reference', /** @type {string} */ (referenceId));
-    if (r.status !== 'live') throw new PivotError('reference.retired', `${r.title} is retired.`);
-    if (r.archived) throw new PivotError('reference.archived', `${r.title} is archived.`);
-    if (openTechData(data, r.id)) throw new PivotError('techData.open', `${r.title} is being worked through already.`);
-    return commit(data, act, 'Start workflow', [{ kind: 'workflow', rec: { ...opening(act, id, type, null, '@scope'), referenceId: r.id, linked: null } }]);
+    if (referenceId) needTechReference(data, referenceId);
+    const rec = { ...opening(act, id, type, null, referenceId ? '@scope' : '@reference'), referenceId: referenceId || null, draft: blankDraft(), linked: null };
+    return commit(data, act, 'Start workflow', [{ kind: 'workflow', rec }]);
   }
   if (type === 'referenceUpdate') {
     const r = need(data, 'reference', /** @type {string} */ (referenceId));
@@ -117,17 +127,31 @@ export function startWorkflow(data, act, { id = newId(), type, platformId, refer
 }
 
 /**
- * New Tech Data on a new reference: the reference and the workflow made together, the reference
- * made through the workflow.
- * @param {Data} data @param {Act} act
- * @param {{ id?: string, referenceId?: string, title: string, docNumber?: string, revision?: string, url?: string, path?: string }} args
+ * Use an existing reference for New Tech Data, or ('' or null) go back to the new one drafted.
+ * @param {Data} data @param {Act} act @param {{ workflowId: string, referenceId?: string | null }} args
  */
-export function startTechData(data, act, { id = newId(), referenceId = newId(), title, docNumber, revision, url, path }) {
-  const withRef = createReference(data, act, { id: referenceId, title, docNumber, revision, url, path });
-  return commit(data, { ...act, workflowId: id }, 'Start new tech data', [
-    { kind: 'reference', rec: withRef.records.reference[referenceId] },
-    { kind: 'workflow', rec: { ...opening(act, id, 'newTechData', null, '@scope'), referenceId, linked: null } },
-  ]);
+export function setTechReference(data, act, { workflowId, referenceId }) {
+  const wf = needTech(data, act, workflowId);
+  const to = referenceId || null;
+  if (to && to !== wf.referenceId) needTechReference(data, to);
+  return commit(data, act, 'Choose tech data reference', [{ kind: 'workflow', rec: changed(wf, act, { referenceId: to }) }]);
+}
+
+/**
+ * The new reference New Tech Data will make on Complete: its title, doc number, revision, link,
+ * path and file. Left out, a field keeps its value.
+ * @param {Data} data @param {Act} act
+ * @param {{ workflowId: string, title?: string, docNumber?: string, revision?: string, url?: string, path?: string, file?: any }} args
+ */
+export function setTechDraft(data, act, { workflowId, title, docNumber, revision, url, path, file }) {
+  const wf = needTech(data, act, workflowId);
+  const draft = { ...blankDraft(), ...wf.draft };
+  for (const [k, v] of Object.entries({ title, docNumber, revision, url, path })) if (v !== undefined) draft[k] = String(v ?? '').trim();
+  if (file !== undefined) {
+    if (file && !file.stored) throw new PivotError('reference.file', 'Choose a file to store.');
+    draft.file = file || null;
+  }
+  return commit(data, act, 'Draft tech data reference', [{ kind: 'workflow', rec: changed(wf, act, { draft }) }]);
 }
 
 /**
@@ -293,19 +317,29 @@ export function cancelWorkflow(data, act, { workflowId }) {
 export function completeWorkflow(data, act, { workflowId }) {
   const wf = needOpen(data, act, workflowId);
   if (wf.type === 'newTechData') {
-    const r = need(data, 'reference', wf.referenceId);
     const { done, total } = workflowProgress(data, wf);
     const left = total - done;
     if (left) throw new PivotError('workflow.unmet', `${left} thing${left === 1 ? ' is' : 's are'} still needed.`);
+    // A new reference is made now, with the links, so cancelling leaves nothing behind.
+    /** @type {{ kind: string, rec: Rec }[]} */
+    const made = [];
+    let r = wf.referenceId ? need(data, 'reference', wf.referenceId) : null;
+    if (!r) {
+      const { id: rid, title, docNumber, revision, url, path, file } = wf.draft;
+      r = createReference(data, act, { id: rid, title, docNumber, revision, url, path, file }).records.reference[rid];
+      made.push({ kind: 'reference', rec: /** @type {Rec} */ (r) });
+    }
+    const rid = /** @type {Rec} */ (r).id;
     const links = techLinks(data, wf);
     const recs = links.map((t) => {
-      const lid = ids.referenceLink(r.id, t.targetKind, t.targetId);
+      const lid = ids.referenceLink(rid, t.targetKind, t.targetId);
       const was = get(data, 'referenceLink', lid);
-      return { kind: 'referenceLink', rec: was ? changed(was, act, { status: 'live' }) : created(act, lid, { referenceId: r.id, targetKind: t.targetKind, targetId: t.targetId }) };
+      return { kind: 'referenceLink', rec: was ? changed(was, act, { status: 'live' }) : created(act, lid, { referenceId: rid, targetKind: t.targetKind, targetId: t.targetId }) };
     });
     return commit(data, act, 'Work through new tech data', [
+      ...made,
       ...recs,
-      { kind: 'workflow', rec: changed(wf, act, { state: 'completed', endedBy: act.by, endedAt: act.at, covered: covered(data, wf), linked: links }) },
+      { kind: 'workflow', rec: changed(wf, act, { state: 'completed', endedBy: act.by, endedAt: act.at, covered: covered(data, wf), linked: links, referenceId: rid }) },
     ]);
   }
   if (wf.type === 'transferOwner') {

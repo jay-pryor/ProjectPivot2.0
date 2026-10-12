@@ -2,10 +2,10 @@ import { html, raw } from '../html.js';
 import { dataAttrs, go, idTag, plus } from './common.js';
 import { controlsSection, safetyReportsSection, riskPanels, sfarpArea } from './ssra.js';
 import { changesList } from './workflow.js';
-import { get } from '../../core/data.js';
+import { get, live } from '../../core/data.js';
 import { platformHazards, byNumber } from '../../core/queries.js';
-import { hazardLabel, controlLabel, workflowLabel } from '../../core/ids.js';
-import { TECH_CARDS, TECH_WORDS, TECH_QUESTIONS, techScope, techPairs, techPlatforms, techTouched, techLinks, workflowProgress, stepOf, pairKey } from '../../core/workflows.js';
+import { hazardLabel, controlLabel, workflowLabel, referenceLabel } from '../../core/ids.js';
+import { TECH_CARDS, TECH_WORDS, TECH_QUESTIONS, techScope, techPairs, techPlatforms, techTouched, techLinks, workflowProgress, stepOf, pairKey, techReferenceDone, openTechData } from '../../core/workflows.js';
 import { profileName, when } from '../names.js';
 
 /** @typedef {import('../../core/data.js').Data} Data */
@@ -60,12 +60,43 @@ function rail(data, wf, current) {
   const scoped = scope.some((s) => s.hazards.length);
   const n = TECH_CARDS.length;
   return html`<nav class="wf-rail" aria-label="Scope and hazards"><div class="wf-rail-h">New tech data <span class="muted">${prog.done}/${prog.total}</span></div>
+    ${railItem(wf, '@reference', html`<span class="wf-mark" aria-hidden="true">${techReferenceDone(wf) ? '✓' : ''}</span><span class="wf-name">Reference</span><span class="wf-count"></span>`, techReferenceDone(wf), current)}
     ${railItem(wf, '@scope', html`<span class="wf-mark" aria-hidden="true">${scoped ? '✓' : ''}</span><span class="wf-name">Scope</span><span class="wf-count"></span>`, scoped, current)}
     ${scope.map((s) => html`<div class="wf-rail-group">${s.platform.name}</div>${s.hazards.map((x) => {
       const k = prog.perHazard.get(x.key) ?? 0;
       return railItem(wf, x.key, html`<span class="wf-mark" aria-hidden="true">${k === n ? '✓' : ''}</span><span class="wf-name">${idTag(x.reportId)} ${x.hazard.title}</span><span class="wf-count">${k}/${n}</span>`, k === n, current);
     })}`)}
     ${railItem(wf, '', html`<span class="wf-mark" aria-hidden="true"></span><span class="wf-name">Summary &amp; complete</span>`, false, current)}</nav>`;
+}
+
+/** @param {any} r */
+const refName = (r) => `${referenceLabel(r)} ${r.title}${r.revision ? ` (rev ${r.revision})` : ''}`;
+
+/**
+ * The reference the data is kept as: a new one to fill in (made on Complete), or an existing one
+ * chosen instead.
+ * @param {Data} data @param {any} wf @param {boolean} mine
+ */
+function referenceStep(data, wf, mine) {
+  const chosen = wf.referenceId ? get(data, 'reference', wf.referenceId) : null;
+  if (chosen) {
+    return html`<h2>Reference</h2><section class="wf-check done" aria-label="Reference"><p>Using ${go(refName(chosen), 'reference', { id: chosen.id })}.</p>
+      ${mine ? html`<button type="button" class="small" ${dataAttrs({ action: 'setTechReference', 'workflow-id': wf.id, 'reference-id': '' })}>Use a new reference instead</button>` : ''}</section>
+      <div class="actions wf-nav">${navButton(wf, 'Scope →', '@scope')}</div>`;
+  }
+  const d = wf.draft ?? {};
+  const at = { change: 'setTechDraft', 'workflow-id': wf.id };
+  const field = (/** @type {string} */ name, /** @type {string} */ label, /** @type {string} */ hint) => html`<label class="field-block"><span class="field-label">${label}</span><input name="${name}" value="${d[name] ?? ''}" placeholder="${hint}" ${dataAttrs(at)}></label>`;
+  const others = live(data, 'reference').filter((r) => !r.archived && !openTechData(data, r.id)).sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+  return html`<h2>Reference</h2><p class="muted">The new tech data, kept as a reference. It is made when the workflow completes; cancelling leaves nothing behind.</p>
+    <fieldset class="wf-fields"${mine ? '' : raw(' disabled')}><section class="wf-check${techReferenceDone(wf) ? ' done' : ''}" aria-label="New reference">
+      ${field('title', 'Title', 'e.g. Service bulletin 12')}${field('docNumber', 'Doc number', '')}${field('revision', 'Revision', '')}
+      <div class="field-block"><span class="field-label">File</span>${d.file ? html`<span>${d.file.name}</span> ` : ''}
+        <form class="inline" data-action="uploadTechFile" ${dataAttrs({ 'workflow-id': wf.id })}><input type="file" name="file"><button type="submit" class="small">Upload</button></form></div>
+      ${field('url', 'Link', 'https://…')}${field('path', 'Path', '\\\\share\\…')}
+      <p class="muted">Give a title, and at least one of a file, a link or a path.</p></section>
+      ${others.length ? html`<label class="field-block wf-existing"><span class="field-label">Or use an existing reference</span><select name="referenceId" ${dataAttrs({ change: 'setTechReference', 'workflow-id': wf.id })}><option value="" selected>Select reference…</option>${others.map((r) => html`<option value="${r.id}">${refName(r)}</option>`)}</select></label>` : ''}
+    </fieldset><div class="actions wf-nav">${navButton(wf, 'Scope →', '@scope')}</div>`;
 }
 
 /** Ticking the platforms the data affects, then their hazards; a ticked one can gain a hazard. @param {Data} data @param {any} wf @param {boolean} mine */
@@ -124,9 +155,10 @@ function pairPage(state, data, wf, x, mine) {
 function summary(data, wf, mine) {
   const { done, total } = workflowProgress(data, wf);
   const left = total - done;
-  const ref = get(data, 'reference', wf.referenceId);
+  const ref = wf.referenceId ? get(data, 'reference', wf.referenceId) : null;
+  const what = ref ? `Completing links ${ref.title} to` : `Completing makes the new reference ${wf.draft?.title || '(not yet named)'} and links it to`;
   return html`<h2>Summary</h2>${grid(data, wf, techPairs(data, wf).map((x) => x.key))}
-    <h3>Completing links ${ref?.title ?? 'the reference'} to</h3>${linkList(data, techLinks(data, wf))}
+    <h3>${what}</h3>${linkList(data, techLinks(data, wf))}
     <fieldset class="wf-fields"${mine ? '' : raw(' disabled')}>
       <label class="outcome">Outcome<textarea name="outcome" rows="3" placeholder="What the data changed, and anything to follow up…" ${dataAttrs({ change: 'setWorkflowOutcome', 'workflow-id': wf.id })}>${wf.outcome}</textarea></label>
       <div class="actions"><button type="button" class="primary" ${dataAttrs({ action: 'completeWorkflow', 'workflow-id': wf.id })}${left ? raw(' disabled') : ''}>${left ? `Complete — ${left} still needed` : 'Complete'}</button></div>
@@ -134,16 +166,16 @@ function summary(data, wf, mine) {
 }
 
 /**
- * An open New Tech Data: the rail, and the scope, a pair's cards, or the summary. Where it opens:
+ * An open New Tech Data: the rail, and the reference, the scope, a pair's cards, or the summary. Where it opens:
  * what the rail last chose, else where its owner left it, else the summary.
  * @param {any} state @param {Data} data @param {any} wf @param {boolean} mine
  */
 export function techBody(state, data, wf, mine) {
   const v = state.view?.hazardId;
   const want = v === 'summary' ? null : v !== undefined ? v : (wf.at?.hazardId ?? null);
-  const x = want && want !== '@scope' ? techPairs(data, wf).find((y) => y.key === want) ?? null : null;
-  const page = want === '@scope' || (want && !x) ? '@scope' : x ? x.key : '';
-  const main = page === '@scope' ? scopeStep(data, wf, mine) : x ? pairPage(state, data, wf, x, mine) : summary(data, wf, mine);
+  const x = want && want !== '@scope' && want !== '@reference' ? techPairs(data, wf).find((y) => y.key === want) ?? null : null;
+  const page = want === '@reference' ? '@reference' : want === '@scope' || (want && !x) ? '@scope' : x ? x.key : '';
+  const main = page === '@reference' ? referenceStep(data, wf, mine) : page === '@scope' ? scopeStep(data, wf, mine) : x ? pairPage(state, data, wf, x, mine) : summary(data, wf, mine);
   return html`<div class="wf-layout">${rail(data, wf, page)}<div class="wf-main">${main}</div></div>`;
 }
 

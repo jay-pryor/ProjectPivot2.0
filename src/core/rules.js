@@ -115,6 +115,8 @@ export function checkRules(data) {
   const TWO = { platformReview: ['two-open-reviews', 'reviews'], platformOnboarding: ['two-open-onboardings', 'onboardings'], transferOwner: ['two-open-transfers', 'transfers'], referenceUpdate: ['two-open-updates', 'updates'], newTechData: ['two-open-techdata', 'New Tech Data workflows'] };
   for (const w of live(data, 'workflow')) {
     if (w.state !== 'open') continue;
+    // New Tech Data drafting a new reference has none yet: there is nothing for it to need.
+    if (w.type === 'newTechData' && !w.referenceId) continue;
     const onReference = w.type === 'referenceUpdate' || w.type === 'newTechData';
     const subject = onReference ? get(data, 'reference', w.referenceId) : get(data, 'platform', w.platformId);
     if (!subject || subject.status !== 'live' || (onReference && subject.archived)) {

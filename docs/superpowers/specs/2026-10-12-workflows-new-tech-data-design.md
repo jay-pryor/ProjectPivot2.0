@@ -268,3 +268,24 @@ These are `PivotError`s:
 - Linking the reference to facets.
 - Attaching a file at the start: it is attached on the reference page.
 - Workflows beyond the MVP five.
+
+## Revision (2026-10-12): the reference is the workflow's first step
+
+- **The dashboard tile is just Start.** The rail becomes Reference → Scope → platform-hazards → Summary.
+- **The Reference step** is a new-reference form by default:
+  - title
+  - doc number
+  - revision
+  - file upload
+  - link
+  - path.
+
+  An "Or use an existing reference" choice keeps the rare case. Work through as new tech data… on a reference page starts with that reference chosen, on the Scope step.
+- **A new reference is a draft until Complete.** It is held on the workflow as `draft: { id, title, docNumber, revision, url, path, file }`, with `referenceId: null`. Complete makes the reference (with that id) and its links in one change. Cancelling leaves nothing behind. An uploaded file is stored under the draft's id.
+- **Ops:**
+  - `setTechDraft` and `setTechReference` (an id, or '' to go back to the draft) are new.
+  - `startTechData` is removed.
+  - `startWorkflow` takes `referenceId` as optional.
+- **Progress** counts one more unit for the reference step: a title plus a file, link or path, or a reference chosen.
+- **Rules** skip an open New Tech Data that has no reference yet.
+- **Until a title is given**, the workflow's subject reads "New tech data, no reference yet".

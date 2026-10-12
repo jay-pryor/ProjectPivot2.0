@@ -34,11 +34,20 @@ test('Work through as new tech data starts one on the reference, or opens the on
   assert.equal(c.getState().view.id, id);
 });
 
-test('New reference… makes the reference and the workflow, and opens it', async () => {
+test('Start on the dashboard opens a New Tech Data on its Reference step; a file uploaded there is stored for the reference it will make', async () => {
   const c = await ready();
-  await c.dispatch({ type: 'beginTechDataNew', title: 'Test report 7', docNumber: 'TR-7', revision: '1', url: 'https://tr7', path: '' });
-  const wf = W(c).records.workflow[c.getState().view.id];
-  assert.equal(W(c).records.reference[wf.referenceId].title, 'Test report 7');
+  await c.dispatch({ type: 'beginTechData' });
+  const id = c.getState().view.id;
+  const wf = W(c).records.workflow[id];
+  assert.deepEqual([wf.type, wf.referenceId, wf.at.hazardId], ['newTechData', null, '@reference']);
+  await c.dispatch({ type: 'beginTechData' });
+  assert.notEqual(c.getState().view.id, id, 'each Start begins a new one');
+  await c.dispatch({ type: 'go', view: 'workflow', id });
+  await c.dispatch({ type: 'uploadTechFile', workflowId: id, file: new File(['tr7'], 'tr7.pdf', { type: 'application/pdf' }) });
+  const draft = W(c).records.workflow[id].draft;
+  assert.equal(draft.file.name, 'tr7.pdf');
+  assert.match(draft.file.stored, new RegExp(`^files/${draft.id}/`));
+  assert.equal(W(c).records.reference[draft.id], undefined);
 });
 
 test('the picker opened from the scope adds through the workflow; an edit on its page is made through it', async () => {
