@@ -1234,7 +1234,8 @@ import { toWinAnsi } from './doc-fonts.js';
           // The wording the platform declares, so the designer can offer it as the
           // placeholder and tell a reworded heading from an untouched one.
           defaultTitle: dflt,
-          label: name || String(heading).trim() || b.label,
+          // The list shows each section by its heading (a separate list name was more confusing than useful).
+          label: String(heading).trim() || b.label,
           name: name,
           // TOC-1: a contents list starts as a TITLE — "1 Contents" numbered ahead of
           // the section it lists reads as a section of the report, which it is not. It
@@ -3247,6 +3248,7 @@ import { toWinAnsi } from './doc-fonts.js';
       fmtId: null,           // Style being edited in the Styles pane
       styleSection: null,    // which part of that Style is open (PDF-1)
       held: null,            // what the last edit asked for that the Style could not use
+      listWidth: null,       // the Sections list's width, once dragged
       secZoom: null,         // the section preview's zoom, when changed from the default
       prevZoom: null,        // the Preview pane's zoom, likewise
       conflict: null,        // { kindKey, plan, decisions } while an import is being resolved
@@ -3373,6 +3375,15 @@ import { toWinAnsi } from './doc-fonts.js';
         (open ? '<span class="rd-optmenu">' + body + '</span>' : '') + '</span>';
     }
 
+    /** The Sections list's width in pixels: dragged by its grip, remembered in this browser. */
+    var LIST_WIDTH = { dflt: 420, min: 260, max: 900 };
+    var LIST_KEY = 'docgen.rd.listWidth';
+    function listWidth() {
+      var w = _rd.listWidth;
+      if (w == null) { try { w = Number(window.localStorage.getItem(LIST_KEY)) || null; } catch (e) { w = null; } }
+      return Math.round(Math.min(LIST_WIDTH.max, Math.max(LIST_WIDTH.min, w || LIST_WIDTH.dflt)));
+    }
+
     function renderSectionList(project, view) {
       var byId = {};
       view.resolved.forEach(function (r) { if (!r.parentId) byId[r.id] = r; });
@@ -3420,7 +3431,7 @@ import { toWinAnsi } from './doc-fonts.js';
           '</select>'
         : '';
 
-      return '<div class="rpt-pane rpt-pane-main"><h4>Sections</h4>' +
+      return '<div class="rpt-pane rpt-pane-main" style="flex-basis:' + listWidth() + 'px"><h4>Sections</h4>' +
         '<p class="muted rpt-note">Drag, or use ▲/▼, to set the order. The level box sets the heading — <strong>Auto</strong> makes a section a sibling of the one above it, and numbering follows the levels. ' +
         'Untick one to leave it out.</p>' +
         '<div class="rd-addbar"><button type="button" class="primary" data-rd-add-section>+ Add section</button>' + tplPicker + '</div>' +
@@ -3988,11 +3999,7 @@ import { toWinAnsi } from './doc-fonts.js';
           '<label class="rd-lab">Heading in the document' +
             '<input class="rd-title" value="' + esc(heading === dflt ? '' : heading) + '" data-rd-sec-heading="' + esc(block.id) + '"' +
               ' placeholder="' + esc(dflt) + '" aria-label="Heading for ' + esc(block.label) + '"></label>' +
-          '<p class="muted rd-hint">What the document prints. Leave it blank for the standard wording, <strong>' + esc(dflt) + '</strong>.</p>') +
-        '<label class="rd-lab">Name in this list' +
-        '<input class="rd-title" value="' + esc(block.name || '') + '" data-rd-sec-name="' + esc(block.id) + '"' +
-          ' placeholder="' + esc(heading || 'Same as the heading') + '" aria-label="Name for ' + esc(block.label) + '"></label>' +
-        '<p class="muted rd-hint">Shorthand for the section list only \u2014 the document still prints the heading. Leave it blank and the name <em>is</em> the heading.</p>';
+          '<p class="muted rd-hint">What the document prints. Leave it blank for the standard wording, <strong>' + esc(dflt) + '</strong>.</p>');
     }
 
     /** SEC-1: prose between this section's heading and its generated table. */
@@ -4066,7 +4073,6 @@ import { toWinAnsi } from './doc-fonts.js';
         centreToggle(project, block, view.resolved.filter(function (r) { return r.id === block.id; })[0]) +
         '<label class="rd-lab">Heading<input class="rd-title" value="' + esc(sec.title || '') + '" data-rd-sec-title="' + esc(sec.id) + '" placeholder="Leave blank for a paragraph with no heading" aria-label="Section heading"></label>' +
         '<p class="muted rd-hint">With no heading this becomes body text and keeps the level of the section above it — unless you pin a level on the left.</p>' +
-        nameField(block) +
         '<div class="rd-parts">' + (body || '<p class="muted">Nothing in this section yet.</p>') + '</div>' +
         '<div class="rd-addbar">' +
           '<button type="button" data-rd-addpart="para" data-rd-sec="' + esc(sec.id) + '">+ Paragraph</button>' +
@@ -4510,6 +4516,7 @@ import { toWinAnsi } from './doc-fonts.js';
           '<button type="button" class="modal-close" data-rd-close aria-label="Close">×</button></div>' +
         '<div class="modal-body"><div class="rpt-body rd-layout">' +
           renderSectionList(project, view) +
+          '<div class="rd-split" data-rd-split role="separator" aria-orientation="vertical" aria-label="Drag to widen or narrow the Sections list" title="Drag to resize"></div>' +
           '<div class="rd-right"><div class="rd-tabs">' + tabs + '</div>' +
             '<div class="rpt-pane rd-pane">' + paneBody + '</div></div>' +
         '</div></div>' +
@@ -4862,6 +4869,29 @@ import { toWinAnsi } from './doc-fonts.js';
       dom.on(ctx.root, 'click', '[data-rd-cf-apply]', function () { applyConflict(); });
       // ---- preview ----------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-refresh-preview]', function () { dirty(); repaint(); });
+      // The Sections list's grip: dragging resizes the list in place; the width is kept on release.
+      dom.on(ctx.root, 'pointerdown', '[data-rd-split]', function (e, el) {
+        var pane = el.previousElementSibling, layout = el.parentNode;
+        if (!pane || !layout) return;
+        e.preventDefault();
+        var startX = e.clientX, startW = pane.getBoundingClientRect().width;
+        var most = Math.min(LIST_WIDTH.max, layout.getBoundingClientRect().width - 360);
+        var w = startW;
+        document.body.classList.add('resizing');
+        function move(ev) {
+          w = Math.max(LIST_WIDTH.min, Math.min(most, startW + ev.clientX - startX));
+          pane.style.flexBasis = Math.round(w) + 'px';
+        }
+        function up() {
+          document.removeEventListener('pointermove', move);
+          document.removeEventListener('pointerup', up);
+          document.body.classList.remove('resizing');
+          _rd.listWidth = Math.round(w);
+          try { window.localStorage.setItem(LIST_KEY, String(_rd.listWidth)); } catch (err) { /* kept for this session only */ }
+        }
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', up);
+      });
       // The subject the report is about: a session choice, and everything shown is redrawn for it.
       dom.on(ctx.root, 'change', '[data-rd-subject]', function (e, el) { session().subjectId = el.value; dirty(); repaint(); });
       // The page previews' zoom: a way of looking, so the laid-out pages are kept.
@@ -5539,7 +5569,7 @@ import { toWinAnsi } from './doc-fonts.js';
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
-      laidOut: laidOut,
+      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH,
       PANES: PANES, _rd: _rd
     };
   })(App);

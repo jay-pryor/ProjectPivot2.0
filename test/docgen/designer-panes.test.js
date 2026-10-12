@@ -185,3 +185,29 @@ test('the designer chooses which platform the report is about, in its title bar'
   try { assert.match(paneOf(h, 'generate'), /<option value="s2" selected>Subject Two<\/option>/); }
   finally { App.docSession.get().subjectId = null; }
 });
+
+test('a section has no "Name in this list" box, and the list shows each section by its heading', () => {
+  const h = host({ names: { things: 'Old shorthand' } });
+  const html = sectionPane(h, 'things');
+  App.docHost.set(h); RD.open(); RD.select('things');
+  const all = RD.render(h.getState()); RD.close();
+  assert.doesNotMatch(all, /Name in this list|data-rd-sec-name/);
+  assert.match(all, /data-rd-sec-heading="things"/);
+  assert.doesNotMatch(all, /Old shorthand/, 'a name saved before is no longer shown');
+  assert.ok(html);
+});
+
+test('the Sections list is resizable: a grip, a default width, held between a minimum and a maximum', () => {
+  const width = (w) => {
+    const h = host();
+    App.docHost.set(h); RD.open(); RD._rd.listWidth = w;
+    const html = RD.render(h.getState()); RD.close(); RD._rd.listWidth = null;
+    return html;
+  };
+  const dflt = width(null);
+  assert.match(dflt, /<div class="rd-split" data-rd-split role="separator" aria-orientation="vertical"/);
+  assert.match(dflt, /class="rpt-pane rpt-pane-main" style="flex-basis:420px"/);
+  assert.match(width(300), /style="flex-basis:300px"/);
+  assert.match(width(50), /style="flex-basis:260px"/, 'held at the minimum');
+  assert.equal(RD.LIST_WIDTH.min, 260);
+});
