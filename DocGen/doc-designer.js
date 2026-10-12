@@ -5459,6 +5459,7 @@ import { toWinAnsi } from './doc-fonts.js';
 
     function wireFormatting(h) {
       var dom = h.dom, ctx = h.ctx;
+      var P = h.P;
 
       // ---- formatting -------------------------------------------------------
       dom.on(ctx.root, 'change', '[data-rd-fmt-active]', function (e, el) {

@@ -116,3 +116,11 @@ test('the Generate pane makes a PDF or HTML, and lists the characters the fonts 
   assert.doesNotMatch(html, /data-generate-format="md"|pandoc|tectonic/);
   assert.match(html, /class="rd-fieldset rd-replaced"[\s\S]*<code>≥<\/code>/);
 });
+
+test('every wiring function that reads the project takes P from the helper bag (Duplicate and every Style edit threw without it)', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../DocGen/doc-designer.js', import.meta.url), 'utf8');
+  const fns = [...src.matchAll(/\n    function (wire\w+)\(h\) \{([\s\S]*?)\n    \}\n/g)];
+  assert.ok(fns.length >= 4);
+  for (const [, name, body] of fns) if (/\bP\(\)/.test(body)) assert.match(body, /var P = h\.P;/, `${name} calls P() without defining it`);
+});
