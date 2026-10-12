@@ -671,8 +671,8 @@ button.plat-card:active { transform: translateY(-1px); }
 .splash-logo { position: relative; width: min(100%, 860px); height: auto; max-height: 100%; overflow: visible; }
 .splash-logo .ink, .splash-logo .letter { fill: var(--hc-fg); }
 .splash-logo .letter { fill-rule: evenodd; }
-.splash-logo .trace { fill: none; stroke: var(--hc-accent); stroke-width: 1.8; stroke-linejoin: miter; stroke-linecap: square; }
-.splash-logo .spark, .splash-logo .hot { fill: var(--hc-accent); }
+.splash-logo .trace { fill: none; stroke: var(--hc-accent); stroke-width: 1.8; stroke-linejoin: miter; stroke-linecap: butt; }
+.splash-logo .hot { fill: var(--hc-accent); }
 .splash-logo .rule { stroke: var(--hc-accent); stroke-width: 2.4; }
 .splash-logo .product { fill: var(--hc-fg); font-family: var(--p-display); font-weight: 600; font-size: 46px; letter-spacing: 14px; }
 

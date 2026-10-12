@@ -61,8 +61,6 @@ export const SPLASH_SVG = `<svg class="splash-logo" viewBox="-70 -95 1004 396" r
     </g>
     <path id="hc-trace-l" class="trace" d="M92.5,206.4 L0,138.41 L0,0 L92.5,0" opacity="0"/>
     <path id="hc-trace-r" class="trace" d="M92.5,206.4 L185,138.41 L185,0 L92.5,0" opacity="0"/>
-    <g id="hc-spark-l" opacity="0"><path class="spark" d="M0,0 L-11,-5.5 L-7.5,0 L-11,5.5 Z"/></g>
-    <g id="hc-spark-r" opacity="0"><path class="spark" d="M0,0 L-11,-5.5 L-7.5,0 L-11,5.5 Z"/></g>
   </g>
   <g clip-path="url(#hc-word-clip)">
     <g transform="translate(231.6 26.9) scale(1.685)">
@@ -117,7 +115,6 @@ export function playSplash(doc) {
   const clipRect = $('word-clip-rect'), rule = $('rule'), product = $('product'), productGroup = $('product-g'), productLogo = $('product-logo');
   const flash = /** @type {HTMLElement} */ (overlay.querySelector('.splash-flash'));
   const traces = [$('trace-l'), $('trace-r')];
-  const sparks = [$('spark-l'), $('spark-r')];
   const lens = traces.map((p) => p.getTotalLength());
   traces.forEach((p, i) => { p.style.strokeDasharray = `${lens[i]} ${lens[i]}`; });
   const stripes = [...overlay.querySelectorAll('.stripe')];
@@ -128,20 +125,10 @@ export function playSplash(doc) {
 
   /** @param {number} t milliseconds into the animation */
   function render(t) {
-    // The hairline traces the silhouette from the chevron point; arrowheads meet at the top.
+    // The hairline traces the silhouette from the chevron point, the two ends meeting at the top.
     const tp = ease.inOutCubic(P(t, 0, 520));
     const traceOp = t <= 0 ? 0 : 1 - P(t, 980, 240);
     traces.forEach((p, i) => { p.style.strokeDashoffset = String(lens[i] * (1 - tp)); op(p, traceOp); });
-    sparks.forEach((s, i) => {
-      const len = lens[i], l = len * tp;
-      const pt = traces[i].getPointAtLength(l);
-      const a = traces[i].getPointAtLength(Math.min(Math.max(l - 1, 0), len - 1));
-      const b = traces[i].getPointAtLength(Math.min(Math.max(l, 1), len));
-      const ang = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
-      const v = t <= 0 ? 0 : Math.min(clamp((l - 7) / 18), clamp((len - l - 1) / 18));
-      tf(s, `translate(${pt.x} ${pt.y}) rotate(${ang}) scale(${Math.max(v, 0.001)})`);
-      op(s, Math.min(1, v * 1.6));
-    });
     // The frame powers on, the legs extrude, the crossbar slams home.
     op(frame, flicker(P(t, 500, 100)));
     const pl = P(t, 600, 380);
