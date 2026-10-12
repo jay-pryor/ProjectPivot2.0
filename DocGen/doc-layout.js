@@ -279,22 +279,167 @@ function flow(doc, style, pageOf) {
 }
 
 /**
- * A table — Task 5 replaces this with the full grid. Here, each row is one line of its
- * cells' text, so the flow around tables can be tested first.
+ * Column widths in points. Given fractions are kept (scaled down if they add to more than
+ * one); otherwise each column gets at least its longest word and the table is filled to
+ * the text width in proportion to how much more each column would like.
+ * @param {any} b @param {number} n @param {number} W @param {number} pad @param {any} body @param {any} head @param {any} ctx
+ */
+export function columnWidths(b, n, W, pad, body, head, ctx) {
+  const given = (b.columns ?? []).map((/** @type {any} */ c) => Number(c?.width));
+  if (given.length === n && given.every((w) => w > 0)) {
+    const sum = given.reduce((a, c) => a + c, 0);
+    const k = sum > 1 ? 1 / sum : 1;
+    return given.map((w) => w * k * W);
+  }
+  const minW = Array(n).fill(2 * pad + 6), prefW = Array(n).fill(2 * pad + 6);
+  const measure = (/** @type {any[]} */ runs, /** @type {any} */ ts, /** @type {number} */ k) => {
+    let line = 0, longest = 0, max = 0;
+    for (const a of atomsOf(runs ?? [], ts, ctx)) {
+      if (a.br) { max = Math.max(max, line); line = 0; continue; }
+      line += a.width;
+      if (!a.space) longest = Math.max(longest, a.width);
+    }
+    max = Math.max(max, line);
+    minW[k] = Math.max(minW[k], Math.min(longest, W * 0.5) + 2 * pad);
+    prefW[k] = Math.max(prefW[k], max + 2 * pad);
+  };
+  (b.header ?? []).forEach((/** @type {any} */ c, /** @type {number} */ k) => measure(c, head, k));
+  (b.rows ?? []).forEach((/** @type {any[]} */ r) => r.forEach((c, k) => { if (k < n) measure(c, body, k); }));
+  const sumPref = prefW.reduce((a, c) => a + c, 0), sumMin = minW.reduce((a, c) => a + c, 0);
+  if (sumPref <= W) return prefW.map((p) => p + (W - sumPref) * (p / sumPref));
+  if (sumMin >= W) return minW.map((x) => (x * W) / sumMin);
+  const slack = prefW.map((p, k) => Math.max(0, p - minW[k]));
+  const sumSlack = slack.reduce((a, c) => a + c, 0);
+  return minW.map((x, k) => x + (W - sumMin) * (sumSlack ? slack[k] / sumSlack : 1 / n));
+}
+
+const ALIGN = { l: 'left', c: 'centre', r: 'right', left: 'left', centre: 'centre', center: 'centre', right: 'right' };
+
+/**
+ * A table: caption, optional title row, header row (repeated on each page if the style
+ * says), body rows that never split unless taller than a page (then cut, and said so),
+ * fills for the header, banding and first column, and borders as the style asks.
  * @param {any} b @param {any} f the flow's state
  */
 export function layoutTable(b, f) {
-  const ts = textStyle(f.style, 'body', { size: f.style.tables.fontSize, lineSpacing: 1 });
-  for (const row of [b.header, ...(b.rows ?? [])]) {
-    const runs = row.flatMap((/** @type {any[]} */ cell, /** @type {number} */ k) => (k ? [{ text: ' | ' }, ...cell] : cell));
-    const lines = breakLines(atomsOf(runs, ts, f.ctx), f.W);
-    for (const line of lines) {
-      if (ts.leading > f.room() && !f.atTop()) f.newPage();
-      f.mark(b.anchor);
-      f.page.items.push(...lineItems(line, f.left, f.y + ts.size, f.W, 'left', true));
-      f.y += ts.leading;
+  const st = f.style, tb = st.tables;
+  const n = Math.max(b.header?.length ?? 0, ...(b.rows ?? []).map((/** @type {any[]} */ r) => r.length), 0);
+  if (!n) return;
+  const pad = tb.padding * MM;
+  const body = textStyle(st, 'body', { size: tb.fontSize, lineSpacing: 1, align: 'left' });
+  const head = { ...body, size: tb.header.size, bold: tb.header.bold, italic: tb.header.italic, colour: tb.header.colour, leading: tb.header.size * 1.2 };
+  const firstCol = tb.firstColumn.on && tb.firstColumn.bold ? { ...body, bold: true } : body;
+  const widths = columnWidths(b, n, f.W, pad, body, head, f.ctx);
+  const total = widths.reduce((a, c) => a + c, 0);
+  const x0 = f.left + ((tb.align === 'centre' || b.centre) && total < f.W - EPS ? (f.W - total) / 2 : 0);
+  const pageH = (f.style.page.margins ? (/** @type {any} */ (f.page).size[1] - (st.page.margins.top + st.page.margins.bottom) * MM) : 700);
+
+  /** @typedef {{ cells: { lines: any[], ts: any, align: string, fill?: string }[], h: number, kind: string, span?: boolean }} Row */
+  /** A row laid out: each cell's lines, and the row's height (cut to the page if it must be). */
+  const rowOf = (/** @type {any[][]} */ cells, /** @type {string} */ kind, /** @type {number} */ idx) => {
+    /** @type {Row} */
+    const row = { cells: [], h: 0, kind };
+    for (let k = 0; k < n; k++) {
+      const ts = kind === 'head' ? head : k === 0 ? firstCol : body;
+      const align = /** @type {any} */ (ALIGN)[b.columns?.[k]?.align ?? 'l'] ?? 'left';
+      const lines = breakLines(atomsOf(cells[k] ?? [], ts, f.ctx), Math.max(1, widths[k] - 2 * pad));
+      row.cells.push({ lines, ts, align, fill: kind === 'body' && k === 0 && tb.firstColumn.on ? tb.firstColumn.fill : undefined });
+      row.h = Math.max(row.h, lines.length * ts.leading);
     }
-  }
+    const extra = kind === 'body' && b.rowHeight > 0 && (!b.tallRows || b.tallRows[idx]) ? b.rowHeight * MM : 0;
+    row.h += 2 * pad + extra;
+    if (row.h > pageH) {
+      for (const c of row.cells) {
+        const keep = Math.max(1, Math.floor((pageH - 2 * pad) / c.ts.leading) - 1);
+        if (c.lines.length > keep) {
+          c.lines = c.lines.slice(0, keep);
+          c.lines.push(breakLines(atomsOf([{ text: '[this cell continues beyond the page]', italic: true }], c.ts, f.ctx), Math.max(1, widths[0] * 4))[0]);
+        }
+      }
+      row.h = pageH;
+    }
+    return row;
+  };
+  const titleRow = b.titleRow ? (() => {
+    const ts = { ...head, align: 'centre' };
+    const lines = breakLines(atomsOf(b.titleRow, ts, f.ctx), Math.max(1, total - 2 * pad));
+    return /** @type {Row} */ ({ cells: [{ lines, ts, align: 'centre' }], h: lines.length * ts.leading + 2 * pad, kind: 'title', span: true });
+  })() : null;
+  const headRow = rowOf(b.header ?? [], 'head', 0);
+  const bodyRows = (b.rows ?? []).map((/** @type {any[][]} */ r, /** @type {number} */ i) => rowOf(r, 'body', i));
+  const heads = /** @type {Row[]} */ ([titleRow, headRow].filter(Boolean));
+  const headsH = heads.reduce((a, r) => a + r.h, 0);
+
+  const lw = tb.borders === 'none' ? 0 : tb.borderWidth;
+  const line = (/** @type {number} */ x1, /** @type {number} */ y1, /** @type {number} */ x2, /** @type {number} */ y2) => {
+    if (lw > 0) f.page.items.push({ kind: 'rule', x1, y1, x2, y2, width: lw, colour: tb.borderColour });
+  };
+  let segTop = 0, drawn = 0;
+  const drawRow = (/** @type {Row} */ row, /** @type {number} */ bodyIdx) => {
+    const top = f.y;
+    if (!drawn) segTop = top;
+    const fill = row.kind === 'head' || row.kind === 'title' ? tb.header.fill : (tb.banding.on && bodyIdx % 2 === 1 ? tb.banding.fill : null);
+    if (fill) f.page.items.push({ kind: 'fill', x: x0, y: top, w: total, h: row.h, colour: fill });
+    let x = x0;
+    row.cells.forEach((c, k) => {
+      const w = row.span ? total : widths[k];
+      if (c.fill && !(row.kind === 'body' && fill && false)) f.page.items.push({ kind: 'fill', x, y: top, w, h: row.h, colour: c.fill });
+      let ly = top + pad;
+      c.lines.forEach((ln, i) => {
+        f.page.items.push(...lineItems(ln, x + pad, ly + (c.ts.leading - c.ts.size) / 2 + c.ts.size * ASCENT, w - 2 * pad, c.align, i === c.lines.length - 1));
+        ly += c.ts.leading;
+      });
+      x += w;
+    });
+    if (tb.borders === 'all' || tb.borders === 'horizontal') { line(x0, top, x0 + total, top); line(x0, top + row.h, x0 + total, top + row.h); }
+    if (tb.borders === 'outer' && !drawn) line(x0, top, x0 + total, top);
+    if (tb.borders === 'all') {
+      let vx = x0;
+      line(vx, top, vx, top + row.h);
+      for (const w of row.span ? [total] : widths) { vx += w; line(vx, top, vx, top + row.h); }
+    }
+    f.y = top + row.h;
+    drawn++;
+  };
+  const closeSegment = () => {
+    if (!drawn) return;
+    if (tb.borders === 'outer') {
+      line(x0, f.y, x0 + total, f.y);
+      line(x0, segTop, x0, f.y);
+      line(x0 + total, segTop, x0 + total, f.y);
+    }
+    drawn = 0;
+  };
+  const caption = () => {
+    if (!b.caption) return;
+    const ts = textStyle(st, 'caption');
+    const lines = breakLines(atomsOf(b.caption.runs, ts, f.ctx), f.W);
+    if (tb.captionPosition === 'below' && lines.length * ts.leading + ts.spaceBefore > f.room() && !f.atTop()) f.newPage();
+    if (!f.atTop()) f.y += ts.spaceBefore;
+    lines.forEach((ln, i) => {
+      f.page.items.push(...lineItems(ln, f.left, f.y + (ts.leading - ts.size) / 2 + ts.size * ASCENT, f.W, b.centre ? 'centre' : ts.align, i === lines.length - 1));
+      f.y += ts.leading;
+    });
+    f.y += ts.spaceAfter;
+  };
+
+  const capAbove = tb.captionPosition === 'above';
+  const firstH = headsH + (bodyRows[0]?.h ?? 0) + (capAbove && b.caption ? 3 * textStyle(st, 'caption').leading : 0);
+  if (firstH > f.room() && !f.atTop()) f.newPage();
+  f.mark(b.anchor);
+  if (capAbove) caption();
+  heads.forEach((r) => drawRow(r, -1));
+  bodyRows.forEach((row, i) => {
+    if (row.h > f.room() + EPS) {
+      closeSegment();
+      f.newPage();
+      if (tb.header.repeat) heads.forEach((r) => drawRow(r, -1));
+    }
+    drawRow(row, i);
+  });
+  closeSegment();
+  if (!capAbove) caption();
+  else f.y += 4;
 }
 
 /** Header, footer and marking on every page, now the page count is known. @param {any[]} pages @param {any} doc @param {any} style */
