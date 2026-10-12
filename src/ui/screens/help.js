@@ -15,7 +15,7 @@ function railItem(id, current) {
 function rail(current) {
   return html`<nav class="help-rail" aria-label="Help topics" data-filter-scope>
     <input class="help-search" type="search" data-filter-list placeholder="Search help…" aria-label="Search help">
-    ${HELP_GROUPS.map((g) => html`<div class="help-group"><div class="help-group-h">${g.title}</div><ul class="plain">${g.topics.map((id) => railItem(id, current))}</ul></div>`)}
+    ${HELP_GROUPS.map((g) => html`<div class="help-group" data-pick-group><div class="help-group-h">${g.title}</div><ul class="plain">${g.topics.map((id) => railItem(id, current))}</ul></div>`)}
     <ul class="plain help-found">${GLOSSARY.map((g) => html`<li data-pick-only hidden data-pick-text="${`${g.term} ${plainHelpText(g.def)}`.toLowerCase()}"><button type="button" class="help-item" ${dataAttrs({ action: 'go', view: 'help', topic: 'glossary', term: termId(g.term) })}><span class="muted">Glossary:</span> ${g.term}</button></li>`)}</ul>
   </nav>`;
 }

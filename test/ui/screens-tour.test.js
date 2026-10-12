@@ -27,7 +27,9 @@ test('the bubble: step count, title, text, Back hidden on the first, Next, Skip;
 });
 
 test('a targeted step names its target; the last step says Finish; a try step says what to do', () => {
-  assert.match(tourOverlay(at(1)).toString(), /data-tour-target="\.topbar nav"/);
+  assert.match(tourOverlay(at(1)).toString(), /data-tour-targets="\.topbar nav"/);
+  const many = TOUR_STEPS.findIndex((s) => Array.isArray(s.target));
+  assert.match(tourOverlay(at(many)).toString(), new RegExp(`data-tour-targets="[^"]*\\|`), 'several highlights, one attribute');
   assert.match(tourOverlay(at(TOUR_STEPS.length - 1)).toString(), /data-action="tourNext"[^>]*>Finish/);
   const n = TOUR_STEPS.findIndex((s) => s.try);
   assert.match(tourOverlay(at(n)).toString(), /Your turn:<\/strong> /);

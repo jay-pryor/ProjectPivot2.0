@@ -106,3 +106,8 @@ test('a link inside bold text is still a link', () => {
   assert.match(out, /<strong>You work as a <button[^>]*data-term="profile"[^>]*>profile<\/button>.<\/strong>/);
   assert.doesNotMatch(out, /\[\[/);
 });
+
+test('each rail group is marked as one, so a search can hide a group none of whose topics match', () => {
+  const out = helpView(at({}), seed()).toString();
+  assert.equal((out.match(/class="help-group" data-pick-group/g) ?? []).length, HELP_GROUPS.length);
+});

@@ -1,4 +1,5 @@
 import { renderApp } from './render.js';
+import { pickMatches } from './pick-match.js';
 import { captureDrafts, restoreDrafts, formIdentity, formValues } from './drafts.js';
 import { themeOf } from './prefs.js';
 import { clampZoom, ZOOM_MIN, ZOOM_MAX } from './workspace.js';
@@ -128,9 +129,14 @@ export function wire(el, dispatch, submitting = new Set()) {
     const t = /** @type {HTMLInputElement} */ (e.target);
     if (!t.matches?.('[data-filter-list]')) return;
     const q = t.value.trim().toLowerCase();
-    for (const li of /** @type {NodeListOf<HTMLElement>} */ (t.closest('form, [data-filter-scope]')?.querySelectorAll('[data-pick-text]') ?? [])) {
+    const scope = t.closest('form, [data-filter-scope]');
+    for (const li of /** @type {NodeListOf<HTMLElement>} */ (scope?.querySelectorAll('[data-pick-text]') ?? [])) {
       // Some entries (Help's glossary terms) are there only to be found: hidden until something is searched for.
-      li.hidden = q === '' ? li.hasAttribute('data-pick-only') : !String(li.dataset.pickText).includes(q);
+      li.hidden = q === '' ? li.hasAttribute('data-pick-only') : !pickMatches(String(li.dataset.pickText), q);
+    }
+    // A group (Help's headings) shows only while something in it does.
+    for (const g of /** @type {NodeListOf<HTMLElement>} */ (scope?.querySelectorAll('[data-pick-group]') ?? [])) {
+      g.hidden = q !== '' && ![...g.querySelectorAll('[data-pick-text]')].some((li) => !(/** @type {HTMLElement} */ (li)).hidden);
     }
   });
   // A picker's Add new shows its new-record fields in place (nothing redraws, so ticks stay) and
@@ -183,8 +189,9 @@ function restore(t) {
 }
 
 /**
- * The tutorial's spotlight over its step's target, and its bubble beside it, kept on screen. A new
- * step scrolls its target into view; a redraw on the same step does not, so editing does not jump.
+ * The tutorial's spotlight: the page dimmed but for a hole round each thing the step talks about,
+ * each outlined, and its bubble beside the first, kept on screen. A new step scrolls its first
+ * target into view; a redraw on the same step does not, so editing does not jump.
  * @param {HTMLElement} root @param {{ step: string }} last the step last placed
  */
 function placeTour(root, last) {
@@ -192,23 +199,20 @@ function placeTour(root, last) {
   const spot = /** @type {HTMLElement | null} */ (root.querySelector('.tour-spotlight'));
   for (const el of root.querySelectorAll('.tour-pulse')) el.classList.remove('tour-pulse');
   if (!bubble || !spot) { last.step = ''; return; }
-  const sel = bubble.dataset.tourTarget;
-  const target = sel ? /** @type {HTMLElement | null} */ (root.querySelector(sel)) : null;
+  const targets = (bubble.dataset.tourTargets ?? '').split('|').filter(Boolean)
+    .map((sel) => /** @type {HTMLElement | null} */ (root.querySelector(sel))).filter((el) => el !== null);
   const stepNow = String(bubble.dataset.tourStep);
-  if (target && last.step !== stepNow) target.scrollIntoView({ block: 'center', behavior: 'instant' });
+  if (targets.length && last.step !== stepNow) targets[0].scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
   last.step = stepNow;
-  if (!target) {
-    bubble.classList.add('centred');
-    spot.classList.add('full');
-    return;
-  }
-  spot.classList.remove('full');
-  if (bubble.querySelector('.tour-try')) target.classList.add('tour-pulse');
-  const r = target.getBoundingClientRect();
-  const pad = 6;
-  Object.assign(spot.style, { top: `${r.top - pad}px`, left: `${r.left - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px` });
+  const vw = window.innerWidth, vh = window.innerHeight, pad = 6, gap = 12;
+  const holes = targets.map((t) => t.getBoundingClientRect()).map((r) => ({ x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 }));
+  // One path: the whole screen, less a hole for each target (even-odd), then an outline round each.
+  const cut = holes.map((h) => `M${h.x} ${h.y}h${h.w}v${h.h}h${-h.w}Z`).join('');
+  spot.innerHTML = `<svg width="${vw}" height="${vh}" viewBox="0 0 ${vw} ${vh}"><path fill-rule="evenodd" class="tour-dim" d="M0 0H${vw}V${vh}H0Z${cut}"/>${holes.map((h) => `<rect class="tour-ring" x="${h.x}" y="${h.y}" width="${h.w}" height="${h.h}"/>`).join('')}</svg>`;
+  if (!targets.length) { bubble.classList.add('centred'); return; }
+  if (bubble.querySelector('.tour-try')) targets[0].classList.add('tour-pulse');
+  const r = targets[0].getBoundingClientRect();
   const b = bubble.getBoundingClientRect();
-  const vw = window.innerWidth, vh = window.innerHeight, gap = 12;
   const fits = { below: r.bottom + gap + b.height <= vh, above: r.top - gap - b.height >= 0, right: r.right + gap + b.width <= vw, left: r.left - gap - b.width >= 0 };
   let top, left;
   if (fits.below) { top = r.bottom + gap; left = r.left; }
