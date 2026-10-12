@@ -17,7 +17,6 @@ test('the dashboard starts a transfer by platform and an update by reference', (
   const out = workflowsView({ ...state, view: { name: 'workflows' } }, d).toString();
   assert.match(out, /data-action="startTransfer"[\s\S]*?Select platform…/);
   assert.match(out, /data-action="startReferenceUpdate"[\s\S]*?Select reference…[\s\S]*?Range manual/);
-  assert.match(out, /New Tech Data[\s\S]*?Coming soon/);
 });
 
 test('the platform page has Transfer owner… in place of the owner dropdown; the reference page has Update revision…', () => {

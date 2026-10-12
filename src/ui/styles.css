@@ -1274,6 +1274,15 @@ ul.dots { display: grid; gap: 3px; }
 .wf-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--p-surface-2); font-size: .85em; }
 .wf-q { font-weight: 400; }
 .wf-check-foot { display: flex; gap: 12px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--p-line); }
+.wf-rail-group { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--p-muted); padding: 8px 8px 2px; }
+.wf-scope-p { display: flex; gap: 8px; align-items: center; }
+.wf-scope-h { margin: 8px 0 0 24px; display: grid; gap: 4px; }
+.wf-scope-add { display: flex; gap: 8px; align-items: center; margin: 8px 0 0 24px; flex-wrap: wrap; }
+.wf-answer { display: flex; gap: 12px; margin: 0; }
+.wf-warn { margin: 8px 0 0; color: var(--p-warn); }
+.wf-links { margin: 4px 0 12px; }
+.wf-new-ref { margin-top: 8px; }
+.wf-new-ref > summary { cursor: pointer; color: var(--p-muted); }
 .wf-tick { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
 .wf-nav { justify-content: space-between; }
 .wf-banner { padding: 8px 12px; background: var(--p-info-bg); color: var(--p-info-fg); }

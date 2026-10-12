@@ -16,7 +16,7 @@ export function pickerView(state, data) {
   if (!p) return '';
   if (p.picker === 'linkHazards') {
     const hazards = hazardsNotOn(data, p.platformId);
-    return frame('Link hazards', html`<form data-action="linkHazards" ${dataAttrs({ 'platform-id': p.platformId })} class="picker-form">
+    return frame('Link hazards', html`<form data-action="linkHazards" ${dataAttrs({ 'platform-id': p.platformId, ...(p.workflowId ? { 'workflow-id': p.workflowId } : {}) })} class="picker-form">
       ${search()}
       <ul class="pick-list">${hazards.map((h) => html`<li data-pick-text="${`${hazardLabel(h)} ${h.title}`.toLowerCase()}"><label><input type="checkbox" name="hazardId" value="${h.id}"> <span class="id">${idTag(hazardLabel(h))}</span> ${h.title}</label></li>`)}</ul>
       ${hazards.length ? '' : html`<p class="muted">Every live hazard is already on this platform.</p>`}

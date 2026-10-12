@@ -17,7 +17,7 @@ import * as platforms from '../core/ops/platforms.js';
 import * as assessment from '../core/ops/assessment.js';
 import * as reviews from '../core/ops/reviews.js';
 import * as workflows from '../core/ops/workflows.js';
-import { openTransfer, openReferenceUpdate } from '../core/workflows.js';
+import { openTransfer, openReferenceUpdate, openTechData } from '../core/workflows.js';
 import * as acks from '../core/acks.js';
 import * as references from '../core/ops/references.js';
 import * as phases from '../core/ops/phases.js';
@@ -63,7 +63,7 @@ const EDITS = {
   createReviewPolicy: reviews.createReviewPolicy, updateReviewPolicy: reviews.updateReviewPolicy, renameReviewPolicy: reviews.renameReviewPolicy, deleteReviewPolicy: reviews.deleteReviewPolicy,
   startWorkflow: workflows.startWorkflow, startOnboarding: workflows.startOnboarding, setStep: workflows.setStep, setWorkflowOutcome: workflows.setWorkflowOutcome, setWorkflowNotes: workflows.setWorkflowNotes,
   setWorkflowPosition: workflows.setWorkflowPosition, takeOverWorkflow: workflows.takeOverWorkflow,
-  setTransferRecipient: workflows.setTransferRecipient, setReferenceDraft: workflows.setReferenceDraft, markTransferReviewed: workflows.markTransferReviewed, cancelWorkflow: workflows.cancelWorkflow, completeWorkflow: workflows.completeWorkflow,
+  setTransferRecipient: workflows.setTransferRecipient, setReferenceDraft: workflows.setReferenceDraft, markTransferReviewed: workflows.markTransferReviewed, startTechData: workflows.startTechData, setTechScope: workflows.setTechScope, addTechHazard: workflows.addTechHazard, cancelWorkflow: workflows.cancelWorkflow, completeWorkflow: workflows.completeWorkflow,
   acknowledge: acks.acknowledge, acknowledgeAll: acks.acknowledgeAll,
   createReference: references.createReference, updateReference: references.updateReference, attachFile: references.attachFile,
   retireReference: references.retireReference, setReferenceArchived: references.setReferenceArchived, deleteReference: references.deleteReference,
@@ -553,8 +553,8 @@ export function createController(env) {
       if (value) filters[key] = value; else delete filters[key];
       set({ tables: { ...state.tables, [table]: { ...t, filters } } });
     },
-    async openPicker({ picker, hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field, controlId, part, existing }) {
-      const extra = { hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field, controlId, part, existing };
+    async openPicker({ picker, hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field, controlId, part, existing, workflowId }) {
+      const extra = { hazardId, platformId, referenceId, targetKind, targetId, stage, receptor, field, controlId, part, existing, workflowId };
       set({ picker: { picker, ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v)) } });
     },
     async addReference({ title, url, path, file }) {
@@ -682,8 +682,12 @@ export function createController(env) {
       await applyEdit('copyStageRisk', { hazardId, platformId, stage, from, withWhy: withWhy === 'true' });
       set({ picker: null });
     },
+    // From New Tech Data's scope, each hazard is added through the workflow, so it is scoped as added.
     async linkHazards(args) {
-      for (const hazardId of list(args.hazardId)) await applyEdit('linkHazard', { hazardId, platformId: args.platformId });
+      for (const hazardId of list(args.hazardId)) {
+        if (args.workflowId) await applyEdit('addTechHazard', { workflowId: args.workflowId, platformId: args.platformId, hazardId });
+        else await applyEdit('linkHazard', { hazardId, platformId: args.platformId });
+      }
       set({ picker: null });
     },
     async setControlState({ hazardId, controlId, platformId, value }) {
@@ -826,6 +830,20 @@ export function createController(env) {
       if (w) return handlers.go({ view: 'workflow', id: w.id });
       const id = newId();
       await applyEdit('startWorkflow', { id, type: 'referenceUpdate', referenceId });
+      await handlers.go({ view: 'workflow', id });
+    },
+    // Work through as new tech data: the reference's one under way, or a new one.
+    async beginTechData({ referenceId }) {
+      const w = state.session ? openTechData(state.session.working, referenceId) : null;
+      if (w) return handlers.go({ view: 'workflow', id: w.id });
+      const id = newId();
+      await applyEdit('startWorkflow', { id, type: 'newTechData', referenceId });
+      await handlers.go({ view: 'workflow', id });
+    },
+    // New Tech Data on a new reference: the two made together, the workflow opened.
+    async beginTechDataNew({ title, docNumber, revision, url, path }) {
+      const id = newId();
+      await applyEdit('startTechData', { id, referenceId: newId(), title, docNumber, revision, url, path });
       await handlers.go({ view: 'workflow', id });
     },
     // The new revision's file: copied into the folder now, given to the reference only when the update is confirmed.

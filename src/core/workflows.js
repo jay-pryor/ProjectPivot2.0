@@ -1,6 +1,6 @@
 import { get, live } from './data.js';
-import { hazardLabel, controlLabel, workflowLabel } from './ids.js';
-import { platformHazards, byNumber, causalFactorsOn, platformListOn, controlsOnPlatform, implementedByOf, assessmentOf, sfarpOf, groupsOf, openItems, referenceTargets, targetPlatforms } from './queries.js';
+import { hazardLabel, controlLabel, workflowLabel, ids } from './ids.js';
+import { platformHazards, byNumber, causalFactorsOn, platformListOn, controlsOnPlatform, implementedByOf, assessmentOf, sfarpOf, groupsOf, openItems, referenceTargets, targetPlatforms, onboardingOf } from './queries.js';
 import { scheduleOf } from './schedule.js';
 import { RECEPTORS } from './receptors.js';
 import { entries, deletedEntries } from './history.js';
@@ -12,7 +12,7 @@ import { entries, deletedEntries } from './history.js';
 export const WORKFLOW_TYPES = Object.freeze([
   { type: 'platformReview', name: 'Platform Review', blurb: 'Walk each hazard on a platform through six checks, then complete its review.', ready: true },
   { type: 'platformOnboarding', name: 'Platform Onboarding', blurb: 'Set up a new platform: its groups, hazards, facets and controls.', ready: true },
-  { type: 'newTechData', name: 'New Tech Data', blurb: 'Work new technical data through the platforms, controls and ratings it affects.', ready: false },
+  { type: 'newTechData', name: 'New Tech Data', blurb: 'Work new technical data through the platforms, controls and ratings it affects.', ready: true },
   { type: 'transferOwner', name: 'Transfer Platform Owner', blurb: 'Hand a platform and everything open on it to a new owner.', ready: true },
   { type: 'referenceUpdate', name: 'Reference Update', blurb: 'Take a reference to a new revision and check everything that cites it.', ready: true },
 ]);
@@ -68,6 +68,7 @@ export function stepOf(data, workflowId, hazardId, check) {
 
 /** How many checks are ticked on each hazard the workflow covers, and in all. @param {Data} data @param {Rec} wf */
 export function workflowProgress(data, wf) {
+  if (wf.type === 'newTechData') return techProgress(data, wf);
   if (wf.type === 'transferOwner') {
     const groups = transferGroups(data, wf.platformId, String(wf.updatedAt).slice(0, 10), wf.id).filter((g) => g.items.length);
     const done = Number(Boolean(wf.toOwnerId)) + groups.filter((g) => stepOf(data, wf.id, '-', `group:${g.key}`)?.checked).length;
@@ -312,4 +313,135 @@ export function referenceItems(data, referenceId) {
     const platforms = targetPlatforms(data, kind, target.id).map((pid) => get(data, 'platform', pid)?.name ?? '').filter(Boolean);
     return { key: `${kind}:${target.id}`, kind, label: linkedLabel(data, kind, target), platforms, open: OPEN_AT[/** @type {keyof typeof OPEN_AT} */ (kind)](target) };
   });
+}
+
+/** A platform-hazard as New Tech Data keys it. @param {string} platformId @param {string} hazardId */
+export const pairKey = (platformId, hazardId) => `${platformId}|${hazardId}`;
+
+/** The open New Tech Data on a reference, if any. @param {Data} data @param {string} referenceId */
+export function openTechData(data, referenceId) {
+  return live(data, 'workflow').find((w) => w.type === 'newTechData' && w.referenceId === referenceId && w.state === 'open') ?? null;
+}
+
+/** The platforms New Tech Data can take in: live ones not being onboarded, by name. @param {Data} data */
+export function techPlatforms(data) {
+  return live(data, 'platform').filter((p) => !onboardingOf(data, p.id)).sort((a, b) => String(a.name).localeCompare(b.name));
+}
+
+/**
+ * What a New Tech Data covers now: each platform ticked that can still be taken in, with the
+ * hazards ticked on it that are still live and on it, in number order. A hazard the workflow
+ * linked or made is marked added.
+ * @param {Data} data @param {Rec} wf
+ * @returns {{ platform: Rec, hazards: { hazard: Rec, reportId: string, key: string, added: boolean }[] }[]}
+ */
+export function techScope(data, wf) {
+  const step = (/** @type {string} */ key) => stepOf(data, wf.id, key, 'scope');
+  return techPlatforms(data).filter((p) => step(`p:${p.id}`)?.checked).map((platform) => ({
+    platform,
+    hazards: platformHazards(data, platform.id).filter((ph) => ph.hazard.status === 'live' && step(pairKey(platform.id, ph.hazard.id))?.checked)
+      .sort((a, b) => byNumber(a.hazard, b.hazard))
+      .map((ph) => {
+        const key = pairKey(platform.id, ph.hazard.id);
+        return { hazard: ph.hazard, reportId: ph.reportId, key, added: Boolean(step(key)?.added) };
+      }),
+  }));
+}
+
+/** Every platform-hazard in a New Tech Data's scope now, platform by platform. @param {Data} data @param {Rec} wf */
+export function techPairs(data, wf) {
+  return techScope(data, wf).flatMap((s) => s.hazards.map((x) => ({ platform: s.platform, ...x })));
+}
+
+/** New Tech Data's four cards on each platform-hazard, in order. */
+export const TECH_CARDS = Object.freeze(['controls', 'safetyReports', 'residual', 'sfarp']);
+
+/** @type {Readonly<Record<string, string>>} */
+export const TECH_WORDS = Object.freeze({ controls: 'Controls', safetyReports: 'Safety reports', residual: 'Residual rating & justification', sfarp: 'SFARP' });
+
+/** @type {Readonly<Record<string, string>>} */
+export const TECH_QUESTIONS = Object.freeze({
+  controls: 'Does it add, change or remove a control?',
+  safetyReports: 'Does it report a safety occurrence?',
+  residual: 'Does it change the residual rating or its justification?',
+  sfarp: 'Does it change the SFARP?',
+});
+
+/**
+ * What the changes made through a New Tech Data touched: for each pair in scope, the cards whose
+ * records changed, and every control changed (the control itself, its link to a hazard, its kind
+ * or status on a platform, how it is implemented, or who implements it).
+ * @param {Data} data @param {Rec} wf
+ * @returns {{ cards: Map<string, Set<string>>, controls: Set<string> }}
+ */
+export function techTouched(data, wf) {
+  const pairs = techPairs(data, wf);
+  const keys = new Set(pairs.map((x) => x.key));
+  /** @type {Map<string, Set<string>>} */
+  const cards = new Map();
+  /** @type {Set<string>} */
+  const controls = new Set();
+  const mark = (/** @type {string} */ key, /** @type {string} */ card) => {
+    if (!keys.has(key)) return;
+    if (!cards.has(key)) cards.set(key, new Set());
+    /** @type {Set<string>} */ (cards.get(key)).add(card);
+  };
+  /** A field's value as the change left it, not as it is now. @param {any} i @param {string} f */
+  const afterOf = (i, f) => i.fields?.find((/** @type {any} */ x) => x.field === f)?.after;
+  /** Whether a change also linked the record's control to its hazard. @param {any} e @param {Rec} r */
+  const linkedIn = (e, r) => e.items.some((/** @type {any} */ j) => j.kind === 'hazardControl' && (j.change === 'created' || j.change === 'restored') && j.id === ids.hazardControl(r.hazardId, r.controlId));
+  const on = (/** @type {any} */ x, /** @type {string} */ controlId) => controlsOnPlatform(data, x.hazard.id, x.platform.id).some((c) => c.control.id === controlId);
+  for (const e of workflowChanges(data, wf.id)) {
+    for (const i of e.items) {
+      const r = get(data, i.kind, i.id);
+      if (!r) continue;
+      switch (i.kind) {
+        case 'safetyReport': mark(pairKey(r.platformId, r.hazardId), 'safetyReports'); break;
+        case 'sfarp': mark(pairKey(r.platformId, r.hazardId), 'sfarp'); break;
+        case 'assessment': if (r.stage === 'residual') mark(pairKey(r.platformId, r.hazardId), 'residual'); break;
+        case 'ruling': case 'controlOn': case 'implementationStatus':
+          // Adding a control new to the hazard on one platform turns it off on the hazard's others,
+          // in the same change: not a change there. (Taking it off one platform is.)
+          if (!(i.kind === 'controlOn' && i.change === 'created' && afterOf(i, 'off') && linkedIn(e, r))) mark(pairKey(r.platformId, r.hazardId), 'controls');
+          controls.add(r.controlId); break;
+        case 'hazardControl':
+          // Unlinked, the control is on none of the hazard's platforms now, so every pair on the hazard counts.
+          for (const x of pairs) if (x.hazard.id === r.hazardId && (i.change === 'deleted' || on(x, r.controlId))) mark(x.key, 'controls');
+          controls.add(r.controlId); break;
+        case 'implementer': for (const x of pairs) if (x.platform.id === r.platformId && on(x, r.controlId)) mark(x.key, 'controls'); controls.add(r.controlId); break;
+        case 'control': for (const x of pairs) if (on(x, r.id)) mark(x.key, 'controls'); controls.add(r.id); break;
+        default: break;
+      }
+    }
+  }
+  return { cards, controls };
+}
+
+/**
+ * The links Complete gives the reference: each scoped platform, each scoped hazard answered
+ * Changed somewhere or added through the workflow, and each live control touched. Links already
+ * there are left out.
+ * @param {Data} data @param {Rec} wf
+ * @returns {{ targetKind: string, targetId: string }[]}
+ */
+export function techLinks(data, wf) {
+  const scope = techScope(data, wf);
+  const changedHazards = new Set(scope.flatMap((s) => s.hazards.filter((x) => x.added || TECH_CARDS.some((c) => stepOf(data, wf.id, x.key, c)?.answer === 'changed')).map((x) => x.hazard.id)));
+  const hazards = live(data, 'hazard').filter((h) => changedHazards.has(h.id)).sort(byNumber);
+  const controls = [...techTouched(data, wf).controls].map((id) => get(data, 'control', id)).filter((c) => c && c.status === 'live').sort((a, b) => byNumber(/** @type {Rec} */ (a), /** @type {Rec} */ (b)));
+  const want = [
+    ...scope.map((s) => ({ targetKind: 'platform', targetId: s.platform.id })),
+    ...hazards.map((h) => ({ targetKind: 'hazard', targetId: h.id })),
+    ...controls.map((c) => ({ targetKind: 'control', targetId: /** @type {Rec} */ (c).id })),
+  ];
+  return want.filter((t) => get(data, 'referenceLink', ids.referenceLink(wf.referenceId, t.targetKind, t.targetId))?.status !== 'live');
+}
+
+/** How far a New Tech Data is: one for having a scope, then each card answered on each pair. @param {Data} data @param {Rec} wf */
+export function techProgress(data, wf) {
+  const pairs = techPairs(data, wf);
+  /** @type {Map<string, number>} */
+  const perHazard = new Map(pairs.map((x) => [x.key, TECH_CARDS.filter((c) => stepOf(data, wf.id, x.key, c)?.answer).length]));
+  const done = Number(pairs.length > 0) + [...perHazard.values()].reduce((a, b) => a + b, 0);
+  return { perHazard, done, total: pairs.length * TECH_CARDS.length + 1 };
 }

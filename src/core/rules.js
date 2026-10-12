@@ -109,17 +109,17 @@ export function checkRules(data) {
     if (!p || p.status === 'deleted') out.push({ rule: 'implementer-platform-deleted', message: 'A control owner is recorded for a platform that has been deleted.', records: [{ kind: 'implementer', id: r.id }, { kind: 'platform', id: r.platformId }] });
   }
   // An open workflow needs its subject live; a platform has at most one open review, onboarding
-  // and transfer, and a reference one open update.
+  // and transfer, and a reference one open update and one open New Tech Data.
   /** @type {Map<string, any>} */
   const openOn = new Map();
-  const TWO = { platformReview: ['two-open-reviews', 'reviews'], platformOnboarding: ['two-open-onboardings', 'onboardings'], transferOwner: ['two-open-transfers', 'transfers'], referenceUpdate: ['two-open-updates', 'updates'] };
+  const TWO = { platformReview: ['two-open-reviews', 'reviews'], platformOnboarding: ['two-open-onboardings', 'onboardings'], transferOwner: ['two-open-transfers', 'transfers'], referenceUpdate: ['two-open-updates', 'updates'], newTechData: ['two-open-techdata', 'New Tech Data workflows'] };
   for (const w of live(data, 'workflow')) {
     if (w.state !== 'open') continue;
-    const onReference = w.type === 'referenceUpdate';
+    const onReference = w.type === 'referenceUpdate' || w.type === 'newTechData';
     const subject = onReference ? get(data, 'reference', w.referenceId) : get(data, 'platform', w.platformId);
     if (!subject || subject.status !== 'live' || (onReference && subject.archived)) {
       out.push(onReference
-        ? { rule: 'workflow-subject-not-live', message: 'A reference update is in progress on a reference that is not live.', records: [{ kind: 'workflow', id: w.id }, { kind: 'reference', id: w.referenceId }] }
+        ? { rule: 'workflow-subject-not-live', message: `A ${w.type === 'newTechData' ? 'New Tech Data workflow' : 'reference update'} is in progress on a reference that is not live.`, records: [{ kind: 'workflow', id: w.id }, { kind: 'reference', id: w.referenceId }] }
         : { rule: 'review-on-platform-not-live', message: 'A workflow is in progress on a platform that is not live.', records: [{ kind: 'workflow', id: w.id }, { kind: 'platform', id: w.platformId }] });
     }
     const key = `${w.type}:${onReference ? w.referenceId : w.platformId}`;
