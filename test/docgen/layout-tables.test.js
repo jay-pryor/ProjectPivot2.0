@@ -103,3 +103,11 @@ test('a table too wide for every word keeps the data whole and wraps the long he
   const words = new Set(texts(r.pages[0]).map((t) => t.text));
   for (const w of ['HAZ-007', 'C-001', 'suppression', 'preventative', 'Recommended']) assert.ok(words.has(w), `${w} is broken across lines`);
 });
+
+test('when even the data cannot all fit, only the widest columns are squeezed; short words stay whole', () => {
+  const n = 9;
+  const b = { kind: 'table', columns: Array.from({ length: n }, () => ({})), header: Array.from({ length: n }, (_, k) => cell(`H${k}`)),
+    rows: [['HAZ-001', 'Fire', ...Array(n - 2).fill('Uncategorised')].map(cell)] };
+  const words = new Set(texts(layout(doc([b]), style()).pages[0]).map((t) => t.text));
+  for (const w of ['HAZ-001', 'Fire']) assert.ok(words.has(w), `${w} is broken across lines`);
+});
