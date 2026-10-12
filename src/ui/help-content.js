@@ -374,7 +374,7 @@ Hazards, controls and facet options can be assigned to platform groups, or to [[
     body: `
 ## Producing a report
 
-Choose a platform and a title, then **Produce**. Reports are made from saved data, so save first. The report appears in the list below, where anyone can download it as Markdown (.md) or a web page (.html). Save to keep it.
+Choose a platform and a title, then **Produce**. Reports are made from saved data, so save first. The report appears in the list below, where anyone can download it as a **PDF** or a web page (**HTML**). Reports made before PDF download as HTML only. Save to keep it.
 
 A report on a platform whose review is overdue is still produced, and marked Overdue.
 

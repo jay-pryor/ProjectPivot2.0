@@ -7,6 +7,15 @@ import { assignHazardNumbers, updateHazard } from '../../src/core/ops/hazards.js
 import { confirmControl, setRating } from '../../src/core/ops/assessment.js';
 import { setReportDesign } from '../../src/core/ops/reports.js';
 import { act, seed } from '../helpers.js';
+import { renderHtml } from '../../DocGen/doc-render.js';
+import { isStyle } from '../../DocGen/doc-style.js';
+
+/** A produced report's HTML, as its download draws it. */
+const htmlOf = (report) => renderHtml(report.document, report.style);
+const runText = (runs) => (runs ?? []).map((r) => r.text ?? '').join('');
+/** Every word in a produced report's document: headings, paragraphs, captions and cells. */
+const textOf = (report) => report.document.blocks.map((b) => [runText(b.runs), runText(b.caption?.runs), runText(b.titleRow),
+  ...(b.header ?? []).map(runText), ...(b.rows ?? []).flat().map(runText)].join(' ')).join('\n');
 
 function setup(mutate = (d) => d) {
   let data = assignHazardNumbers(seed());
@@ -39,20 +48,23 @@ test('design changes made in the designer land in Pivot\'s data', () => {
   assert.equal(box.data.reportDesign.classification, 'PROTECTED');
 });
 
-test('produce: a report with its markdown and html, carrying the marking and the platform\'s hazards', () => {
+test('produce: a report keeps its finished document and Style, carrying the marking and the platform\'s hazards', () => {
   const { box, docs } = setup();
   App.docStore.setClassification('OFFICIAL: Sensitive');
-  const { report, markdownName, htmlName } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'Alpha hazards' });
+  const { report, baseName } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'Alpha hazards' });
   assert.equal(report.classification, 'OFFICIAL: Sensitive');
   assert.equal(report.rows.length, 1);
+  assert.ok(!('markdown' in report) && !('html' in report), 'the documents are drawn from the document when downloaded');
+  assert.ok(Array.isArray(report.document.blocks) && report.document.blocks.length > 0);
+  assert.ok(isStyle(report.style));
+  assert.equal(report.document.meta.marking, 'OFFICIAL: Sensitive');
+  assert.equal(report.document.meta.title, 'Alpha hazards');
   for (const text of ['HAZ-001', 'Fire', 'Sprinklers', '2C = Serious', 'Hot works', 'Burns']) {
-    assert.ok(report.markdown.includes(text), `markdown lacks ${text}`);
-    assert.ok(report.html.includes(text), `html lacks ${text}`);
+    assert.ok(textOf(report).includes(text), `document lacks ${text}`);
+    assert.ok(htmlOf(report).includes(text), `html lacks ${text}`);
   }
-  assert.ok(report.markdown.includes('OFFICIAL: Sensitive'), 'the marking reaches the PDF header');
-  assert.match(report.html, /class="doc-banner">OFFICIAL: Sensitive</);
-  assert.equal(markdownName, 'Alpha-2026-09-28.md');
-  assert.equal(htmlName, 'Alpha-2026-09-28.html');
+  assert.match(htmlOf(report), /class="marking">OFFICIAL: Sensitive</);
+  assert.equal(baseName, 'Alpha-2026-09-28');
   assert.equal(reportFileBase(report), 'Alpha-2026-09-28');
   assert.ok(box.data, 'data untouched by producing');
 });
@@ -60,8 +72,8 @@ test('produce: a report with its markdown and html, carrying the marking and the
 test('Review focus 4: markup in a hazard title is shown literally in the html, never run', () => {
   const { docs } = setup((d) => updateHazard(d, act, { id: 'h1', title: '<script>alert(1)</script> & "quotes" | *stars*' }));
   const { report } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'T' });
-  assert.equal(report.html.includes('<script>alert(1)</script>'), false);
-  assert.ok(report.html.includes('&lt;script&gt;'));
+  assert.equal(htmlOf(report).includes('<script>alert(1)</script>'), false);
+  assert.ok(htmlOf(report).includes('&lt;script&gt;'));
   assert.equal(report.rows[0].title, '<script>alert(1)</script> & "quotes" | *stars*');
 });
 
@@ -143,9 +155,9 @@ test('markup in a safety report or a justification is shown literally in the pro
     return setAssessment(x, act, { hazardId: 'h1', platformId: 'p1', stage: 'initial', receptor: 'personnel', likelihoodWhy: 'Seen <i>twice</i>' });
   });
   const { report } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'T' });
-  for (const raw of ['<b>big</b>', '<i>twice</i>']) assert.equal(report.html.includes(raw), false, `${raw} ran as markup`);
-  assert.ok(report.html.includes('&lt;b&gt;big&lt;/b&gt;'));
-  assert.ok(report.markdown.includes('\\<b\\>big\\</b\\>'));
+  for (const raw of ['<b>big</b>', '<i>twice</i>']) assert.equal(htmlOf(report).includes(raw), false, `${raw} ran as markup`);
+  assert.ok(htmlOf(report).includes('&lt;b&gt;big&lt;/b&gt;'));
+  assert.ok(textOf(report).includes('<b>big</b>'), 'the document holds the words as typed, as text');
 });
 
 test('capability in Hazards and Risk assessments, and its justifications stay literal in the output', async () => {
@@ -159,8 +171,8 @@ test('capability in Hazards and Risk assessments, and its justifications stay li
   const cap = ra.rows().find((r) => r.receptor === 'capability' && r.stage === 'residual');
   assert.equal(ra.columns.find((c) => c.id === 'receptor').get(cap), 'Capability');
   const { report } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'T' });
-  assert.ok(report.html.includes('Mission &lt;lost&gt;'));
-  assert.equal(report.html.includes('Mission <lost>'), false);
+  assert.ok(htmlOf(report).includes('Mission &lt;lost&gt;'));
+  assert.equal(htmlOf(report).includes('Mission <lost>'), false);
 });
 
 test('controls carry who implements them on the platform, as an optional column kept as owner', async () => {
@@ -187,7 +199,9 @@ test('the Implemented by columns start switched off, so saved designs keep their
   const secs = docs.host.sections({ subjectId: 'p1' });
   for (const id of ['controls', 'existing']) assert.equal(secs.find((s) => s.id === id).columns.find((c) => c.id === 'owner').defaultOff, true, id);
   const { report } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'T' });
-  const controls = report.markdown.slice(report.markdown.indexOf('Controls {'), report.markdown.indexOf('Causal factors and consequences {'));
-  assert.ok(report.markdown.indexOf('Controls {') >= 0 && controls.length > 0);
-  assert.doesNotMatch(controls, /Implemented by/, 'no Implemented by column until someone ticks it on');
+  const blocks = report.document.blocks;
+  const at = blocks.findIndex((b) => b.kind === 'heading' && runText(b.runs) === 'Controls');
+  const table = blocks.slice(at).find((b) => b.kind === 'table');
+  assert.ok(at >= 0 && table);
+  assert.doesNotMatch(table.header.map(runText).join('|'), /Implemented by/, 'no Implemented by column until someone ticks it on');
 });

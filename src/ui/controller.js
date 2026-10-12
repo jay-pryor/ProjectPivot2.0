@@ -1,5 +1,6 @@
 import { createReport, deleteReport } from '../core/ops/reports.js';
 import { reportFileBase } from '../reports/docgen-host.js';
+import { renderPdf, renderHtml } from '../../DocGen/doc-render.js';
 import { when } from './names.js';
 import * as store from '../storage/store.js';
 import { writeMirror, readMirror, clearMirror, hasUnsaved, hasUnsavedRecords, restoreReportDocuments } from '../storage/mirror.js';
@@ -990,9 +991,12 @@ export function createController(env) {
     async downloadReport({ id, format }) {
       const r = state.session?.working.records.report[id];
       if (!r) throw new PivotError('not-found', 'That report no longer exists.');
-      const ext = format === 'html' ? 'html' : 'md';
+      const ext = format === 'html' ? 'html' : 'pdf';
+      if (ext === 'pdf' && !r.document) throw new PivotError('report.legacy', 'This report was made before PDF; download its HTML.');
       const file = await env.pickSaveFile(`${reportFileBase(r)}.${ext}`);
-      await store.writeExport(file, ext === 'html' ? r.html : r.markdown);
+      // The PDF and HTML are drawn from the finished document when downloaded; a report made before PDF has only its HTML.
+      const content = ext === 'pdf' ? renderPdf(r.document, r.style, { date: r.producedAt }).bytes : r.document ? renderHtml(r.document, r.style) : r.html;
+      await store.writeExport(file, content);
       set({ message: { kind: 'info', text: `Saved ${file.name}.` } });
     },
     async generateFromDesigner({ format }) {

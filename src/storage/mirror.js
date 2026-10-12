@@ -1,4 +1,5 @@
 import { sameJson } from '../core/json.js';
+import { REPORT_DOCUMENTS } from '../core/data.js';
 
 /** One key per machine: one person uses Pivot per machine. */
 export const MIRROR_KEY = 'pivot.unsaved.v2';
@@ -19,7 +20,8 @@ function withoutSavedDocuments(data, savedIds) {
   const reports = {};
   for (const [id, r] of Object.entries(data.records.report)) {
     if (savedIds.has(id)) {
-      const { markdown: _m, html: _h, ...rest } = r;
+      const rest = { ...r };
+      for (const k of REPORT_DOCUMENTS) delete rest[k];
       reports[id] = rest;
     } else {
       reports[id] = r;
@@ -63,8 +65,9 @@ export function restoreReportDocuments(mirror, loaded) {
     /** @type {Record<string, any>} */
     const reports = {};
     for (const [id, r] of Object.entries(data.records.report)) {
-      const stored = loaded.records.report[id];
-      reports[id] = 'markdown' in r ? r : { ...r, markdown: stored?.markdown ?? '', html: stored?.html ?? '' };
+      const stored = /** @type {Record<string, any> | undefined} */ (loaded.records.report[id]);
+      if (REPORT_DOCUMENTS.some((k) => k in r) || !stored) { reports[id] = r; continue; }
+      reports[id] = { ...r, ...Object.fromEntries(REPORT_DOCUMENTS.filter((k) => k in stored).map((k) => [k, stored[k]])) };
     }
     return { ...data, records: { ...data.records, report: reports } };
   };
@@ -90,10 +93,14 @@ export function hasUnsaved(session) {
 }
 
 /**
- * Whether any record differs from what is stored, leaving out the report design (a design
- * change does not make a report differ from the stored data it is produced from).
- * @param {{ base: { records: unknown }, working: { records: unknown } }} session
+ * Whether any record a report is produced FROM differs from what is stored. Left out: the
+ * report design (a design change does not make a report differ from the stored data) and
+ * the produced reports themselves, so making a PDF and then the HTML does not ask for a save
+ * in between.
+ * @param {{ base: { records: Record<string, unknown> }, working: { records: Record<string, unknown> } }} session
  */
 export function hasUnsavedRecords(session) {
-  return !sameJson(session.base.records, session.working.records);
+  const { report: _b, ...base } = session.base.records;
+  const { report: _w, ...working } = session.working.records;
+  return !sameJson(base, working);
 }

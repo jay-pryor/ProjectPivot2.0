@@ -1,6 +1,12 @@
 import { PivotError } from './errors.js';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
+
+/**
+ * A produced report's documents: the finished document and Style it is drawn from (or, for one
+ * made before PDF, its HTML). Large, and never edited, so history and the mirror leave them out.
+ */
+export const REPORT_DOCUMENTS = Object.freeze(['document', 'style', 'html']);
 
 export const KINDS = Object.freeze([
   'hazard', 'causalFactor', 'consequence', 'control', 'platform',

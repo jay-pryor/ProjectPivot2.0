@@ -32,8 +32,8 @@
 
 <div class="bar">
   <button class="primary" id="design">Open the designer</button>
-  <button id="generate">Generate the document</button>
-  <button id="generate-html">Generate as HTML</button>
+  <button id="generate">Make a PDF</button>
+  <button id="generate-html">Make HTML</button>
 </div>
 
 <pre id="out">Press Generate.</pre>
@@ -43,6 +43,7 @@
 
 <script type="module">
 import { App } from './doc-designer.js';
+import { renderPdf, renderHtml } from './doc-render.js';
 
   // ---- 1. The state. Yours to own; the module reads and writes it through the host.
   //         Everything the designer saves lives under `report`, so persisting this object
@@ -106,18 +107,13 @@ import { App } from './doc-designer.js';
       categoryOf: function (row) { return row.decision.band; }
     },
 
-    // ---- 4. Producing the document: blocks in, one .md out.
+    // ---- 4. Producing the document: the finished document and its Style, which the
+    //         PDF and HTML writers turn into files.
     build: function (subjectId, opts) {
       var o = Object.assign({ subjectId: subjectId }, opts || {});
-      var blocks = App.docGen.reportBlocks(host, o).filter(function (b) { return b.included; });
-      var ctx = { subjectId: subjectId, generatedUtc: host.clock.nowIso() };
-      var meta = host.subject.meta(subjectId);
-      var prepared = blocks.map(function (b) { return App.docGen.sectionContent(host, b, o, ctx, meta); });
-      return App.docGen.emitDocument(host, prepared, {
-        title: 'Platform team roster',
-        date: host.clock.nowIso().slice(0, 10),
-        filename: o.filename, tags: o.tags, classification: o.classification,
-        logicalName: 'roster.md', fallbackName: 'roster.md'
+      return App.docGen.documentFor(host, o, {
+        title: 'Platform team roster', platform: 'Platform team', date: host.clock.nowIso().slice(0, 10),
+        classification: o.classification, utc: host.clock.nowIso()
       });
     }
   };
@@ -139,17 +135,24 @@ import { App } from './doc-designer.js';
 
   document.getElementById('design').addEventListener('click', function () { RD.open(); paint(); });
 
+  /** The document as a PDF or an HTML page: its file name, its bytes or text, and a Blob to download. */
   function generate(format) {
-    var doc = host.build('team', App.docSession.options());
-    if (format === 'html') doc = App.docGen.emitHtml(host, doc, { title: 'Platform team roster', classification: App.docSession.options().classification });
-    document.getElementById('out').textContent = doc.text;
-    return doc;
+    var built = host.build('team', App.docSession.options());
+    if (format === 'html') {
+      var html = renderHtml(built.document, built.style);
+      document.getElementById('out').textContent = html;
+      return { name: 'roster.html', blob: new Blob([html], { type: 'text/html;charset=utf-8' }) };
+    }
+    var pdf = renderPdf(built.document, built.style, { date: host.clock.nowIso() });
+    document.getElementById('out').textContent = pdf.pages + ' page PDF, ' + pdf.bytes.length + ' bytes' +
+      (pdf.replaced.length ? '; written another way: ' + pdf.replaced.join(' ') : '') + '.';
+    return { name: 'roster.pdf', blob: new Blob([pdf.bytes], { type: 'application/pdf' }) };
   }
-  document.getElementById('generate').addEventListener('click', function () { generate('md'); });
+  document.getElementById('generate').addEventListener('click', function () { generate('pdf'); });
   document.getElementById('generate-html').addEventListener('click', function () { generate('html'); });
 
-  // The designer's own Generate buttons. Where the file goes is the host's decision; this
-  // page downloads it. Pivot writes it through its store's save-file picker instead.
+  // The designer's own Make PDF / Make HTML buttons. Where the file goes is the host's
+  // decision; this page downloads it. Pivot writes it through its store's save-file picker instead.
   rdHost.addEventListener('click', function (e) {
     var btn = e.target.closest('[data-generate-action]');
     if (!btn || btn.disabled) return;

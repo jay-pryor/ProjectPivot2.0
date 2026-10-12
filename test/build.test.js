@@ -17,6 +17,15 @@ test('the page embeds every module behind one import map and the styles inline',
   assert.match(controller, /from 'DocGen\/doc-designer.js'/);
 });
 
+test('every module a bundled module imports is in the import map, the report engine\'s files among them', () => {
+  const map = JSON.parse(/<script type="importmap">(.*?)<\/script>/s.exec(build({ builtAt: 'test' }))[1]);
+  for (const f of ['DocGen/doc-render.js', 'DocGen/doc-layout.js', 'DocGen/doc-pdf.js', 'DocGen/doc-html.js', 'DocGen/doc-style.js', 'DocGen/doc-fonts.js', 'DocGen/doc-fonts-data.js']) assert.ok(map.imports[f], f);
+  for (const [name, url] of Object.entries(map.imports)) {
+    const code = Buffer.from(url.split(',')[1], 'base64').toString('utf8');
+    for (const m of code.matchAll(/from '([^']+)'/g)) assert.ok(map.imports[m[1]], `${name} imports ${m[1]}, which is not bundled`);
+  }
+});
+
 test('sources are src/**/*.js and DocGen', () => {
   const s = collectSources(new URL('..', import.meta.url).pathname);
   assert.ok(s.includes('src/core/merge.js'));
