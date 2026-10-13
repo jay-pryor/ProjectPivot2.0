@@ -49,8 +49,9 @@ export const STANDARD = Object.freeze({
   numbering: { on: true, format: '1.1.1', inToc: true },
   toc: { include: true, title: 'Contents', depth: 3, leaders: true, pageNumbers: true },
   refs: { pageInPdf: false },
-  // Numbered from 1 in the document rather than by the register, for a document that leaves the house.
-  document: { renumberHazards: false, renumberControls: false, renumberReferences: false },
+  // Register Numbering: off, the document numbers its own hazards, controls and references from 1;
+  // on, it uses the register's numbers.
+  document: { registerHazards: false, registerControls: false, registerReferences: false },
 });
 
 /** Has the Style shape, as opposed to an old formatting profile. @param {any} x */
@@ -170,9 +171,9 @@ export function normaliseStyle(raw) {
     toc: { include: bool(r.toc?.include, S.toc.include), title: str(r.toc?.title, S.toc.title), depth: num(r.toc?.depth, S.toc.depth, 1, 4, 'Contents depth'),
       leaders: bool(r.toc?.leaders, S.toc.leaders), pageNumbers: bool(r.toc?.pageNumbers, S.toc.pageNumbers) },
     refs: { pageInPdf: bool(r.refs?.pageInPdf, S.refs.pageInPdf) },
-    document: { renumberHazards: bool(r.document?.renumberHazards, S.document.renumberHazards),
-      renumberControls: bool(r.document?.renumberControls, S.document.renumberControls),
-      renumberReferences: bool(r.document?.renumberReferences, S.document.renumberReferences) },
+    document: { registerHazards: bool(r.document?.registerHazards, S.document.registerHazards),
+      registerControls: bool(r.document?.registerControls, S.document.registerControls),
+      registerReferences: bool(r.document?.registerReferences, S.document.registerReferences) },
   };
   return { style, held };
 }

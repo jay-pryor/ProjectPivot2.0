@@ -28,15 +28,17 @@ function metaRows(s) {
 
 /**
  * A snapshot with its hazards, controls and references numbered from 1 for this document (each
- * that `numbering` asks for), so a document delivered outside the house carries its own list.
+ * that the Style's Register Numbering does not keep on the register's numbers), so a document
+ * delivered outside the house carries its own list. With no Style's numbering given, as it is.
  * Order is kept: hazards as the snapshot lists them, controls and references in their register
  * order. Every place one is named follows: a safety report's ID, the Supports column.
- * @param {Snapshot} s @param {{ renumberHazards?: boolean, renumberControls?: boolean, renumberReferences?: boolean } | null | undefined} numbering
+ * @param {Snapshot} s @param {{ registerHazards?: boolean, registerControls?: boolean, registerReferences?: boolean } | null | undefined} numbering
  * @returns {Snapshot}
  */
 export function renumbered(s, numbering) {
-  const n = numbering ?? {};
-  if (!n.renumberHazards && !n.renumberControls && !n.renumberReferences) return s;
+  if (!numbering) return s;
+  const n = { hazards: !numbering.registerHazards, controls: !numbering.registerControls, references: !numbering.registerReferences };
+  if (!n.hazards && !n.controls && !n.references) return s;
   const pad = (/** @type {number} */ k) => String(k).padStart(3, '0');
   /** Old number → new, counting within each prefix (C-, EC-, …). @param {string[]} ids */
   const mapOf = (ids) => {
@@ -53,9 +55,9 @@ export function renumbered(s, numbering) {
     return out;
   };
   const byNumber = (/** @type {string[]} */ ids) => [...new Set(ids)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  const hz = n.renumberHazards ? mapOf(s.rows.map((r) => r.reportId)) : new Map();
-  const ct = n.renumberControls ? mapOf(byNumber(s.rows.flatMap((r) => r.controls.map((c) => c.number)))) : new Map();
-  const rf = n.renumberReferences ? mapOf((s.references ?? []).map((r) => r.number)) : new Map();
+  const hz = n.hazards ? mapOf(s.rows.map((r) => r.reportId)) : new Map();
+  const ct = n.controls ? mapOf(byNumber(s.rows.flatMap((r) => r.controls.map((c) => c.number)))) : new Map();
+  const rf = n.references ? mapOf((s.references ?? []).map((r) => r.number)) : new Map();
   const any = (/** @type {string} */ id) => hz.get(id) ?? ct.get(id) ?? rf.get(id) ?? id;
   const swap = (/** @type {string} */ text) => String(text ?? '').replace(/\b[A-Za-z]+-\d+\b/g, any);
   return {

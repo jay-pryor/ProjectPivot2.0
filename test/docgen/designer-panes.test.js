@@ -604,7 +604,10 @@ test('Styles starts with Document, set apart, then Page Setup and Section Number
   assert.ok(names.includes('Header &amp; Footer'));
   assert.match(list, /data-rd-style-section="document"[^>]*>Document<\/button><hr class="rd-style-divider"/);
   const f = html.slice(html.indexOf('rd-style-fields'), html.indexOf('rd-style-preview'));
-  for (const k of ['renumberHazards', 'renumberControls', 'renumberReferences']) assert.match(f, new RegExp(`data-rd-fmt-bool="document\\.${k}"`), k);
+  assert.match(f, /<strong[^>]*>Register Numbering<\/strong>/);
+  for (const [k, what] of [['registerHazards', 'Hazards'], ['registerControls', 'Controls'], ['registerReferences', 'References']]) {
+    assert.match(f, new RegExp(`data-rd-fmt-bool="document\\.${k}"> Use register numbering for ${what}<`), k);
+  }
 });
 
 test('an image part: added blank, boxes filled and emptied, fields held to their limits', () => {

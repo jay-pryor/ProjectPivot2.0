@@ -261,7 +261,7 @@ test('tables whose rows have no ID of their own keep the hazard first', () => {
   for (const id of ['hazards', 'references']) assert.equal(secs.find((s) => s.id === id).keyColumn.label, 'ID', id);
 });
 
-test('Document numbering: hazards, controls and references numbered from 1 in the document, everywhere they are named', async () => {
+test('Register Numbering off: hazards, controls and references numbered from 1 in the document, everywhere they are named', async () => {
   const { renumbered } = await import('../../src/reports/docgen-host.js');
   const snap = {
     rows: [
@@ -270,29 +270,31 @@ test('Document numbering: hazards, controls and references numbered from 1 in th
     ],
     references: [{ number: 'REF-012', supports: 'HAZ-004, HAZ-017 causal factor' }, { number: 'REF-030', supports: 'Platform' }],
   };
-  const all = renumbered(snap, { renumberHazards: true, renumberControls: true, renumberReferences: true });
+  const all = renumbered(snap, {});
   assert.deepEqual(all.rows.map((r) => r.reportId), ['HAZ-001', 'HAZ-002']);
   assert.deepEqual(all.rows[0].controls.map((c) => c.number), ['C-002', 'C-001'], 'controls in their register order: C-002 → C-001, C-007 → C-002');
   assert.equal(all.rows[1].controls[0].number, 'C-002');
   assert.equal(all.rows[0].safetyReports[0].number, 'HAZ-001-A-1', 'a safety report follows its hazard');
   assert.deepEqual(all.references.map((r) => [r.number, r.supports]), [['REF-001', 'HAZ-001, HAZ-002 causal factor'], ['REF-002', 'Platform']]);
-  const hazardsOnly = renumbered(snap, { renumberHazards: true });
+  const hazardsOnly = renumbered(snap, { registerControls: true, registerReferences: true });
   assert.deepEqual([hazardsOnly.rows[0].reportId, hazardsOnly.rows[0].controls[0].number, hazardsOnly.references[0].number], ['HAZ-001', 'C-007', 'REF-012']);
-  assert.equal(renumbered(snap, {}), snap, 'nothing asked: the snapshot as it is');
+  assert.equal(renumbered(snap, { registerHazards: true, registerControls: true, registerReferences: true }), snap, 'register numbers throughout: the snapshot as it is');
+  assert.equal(renumbered(snap, null), snap, 'no Style given (a column list, say): the snapshot as it is');
 });
 
-test('a report made with a Style that renumbers hazards shows the document numbers', async () => {
+test('a report shows the document\'s own numbers unless its Style uses the register\'s', async () => {
   const { createPlatform, linkHazard } = await import('../../src/core/ops/platforms.js');
   const { docs } = setup((d) => {
     let x = createPlatform(d, act, { id: 'p3', name: 'Charlie', ownerId: 'u1' });
     x = linkHazard(x, act, { hazardId: 'h2', platformId: 'p3' });
-    return setReportDesign(x, { formats: [{ id: 'cust', name: 'Customer', page: { margins: {} }, text: {}, document: { renumberHazards: true } }], formatId: 'cust' });
+    return setReportDesign(x, { formats: [{ id: 'cust', name: 'Customer', page: { margins: {} }, text: {} }], formatId: 'cust' });
   });
   const key = (run) => { const hz = docs.host.sections(run).find((s) => s.id === 'hazards'); return hz.keyColumn.get(hz.rows()[0]); };
-  assert.equal(key({ subjectId: 'p3' }), 'HAZ-002', 'the register number when not asked');
-  assert.equal(key({ subjectId: 'p3', numbering: { renumberHazards: true } }), 'HAZ-001');
+  assert.equal(key({ subjectId: 'p3' }), 'HAZ-002', 'no Style given: the register number');
+  assert.equal(key({ subjectId: 'p3', numbering: { registerHazards: false } }), 'HAZ-001');
+  assert.equal(key({ subjectId: 'p3', numbering: { registerHazards: true } }), 'HAZ-002');
   const { report } = docs.produce('p3', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'T' });
-  assert.ok(textOf(report).includes('HAZ-001'), 'the Style in use renumbers the produced report');
+  assert.ok(textOf(report).includes('HAZ-001'), 'by default the produced report numbers its own hazards');
   assert.ok(!textOf(report).includes('HAZ-002'));
 });
 

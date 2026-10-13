@@ -4631,10 +4631,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function styleSectionFields(project, f, section) {
       if (section === 'document') {
         var d = f.document;
-        return '<div class="rd-fieldset"><strong title="For a document that leaves the house: its own numbers, from 1, not the register\'s">Numbering in this document</strong><div class="rd-flags rd-flags-col">' +
-            flagField('Number hazards from HAZ-001', 'document.renumberHazards', d.renumberHazards) +
-            flagField('Number controls from C-001', 'document.renumberControls', d.renumberControls) +
-            flagField('Number references from REF-001', 'document.renumberReferences', d.renumberReferences) +
+        return '<div class="rd-fieldset"><strong title="Left off, the document numbers its own from 1 (HAZ-001, C-001, REF-001), for a document that leaves the house">Register Numbering</strong><div class="rd-flags rd-flags-col">' +
+            flagField('Use register numbering for Hazards', 'document.registerHazards', d.registerHazards) +
+            flagField('Use register numbering for Controls', 'document.registerControls', d.registerControls) +
+            flagField('Use register numbering for References', 'document.registerReferences', d.registerReferences) +
           '</div></div>';
       }
       if (section === 'page') {
