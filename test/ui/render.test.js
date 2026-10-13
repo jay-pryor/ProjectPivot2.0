@@ -78,3 +78,9 @@ test('the Save button on its own: Unsaved, Saving…, Saved', () => {
   assert.match(saveButton({ ...main(d), saving: true }).toString(), /class="save saving"[^>]*disabled>Saving…</);
   assert.match(saveButton({ ...main(d), session: { base: emptyData(), working: d, loadedStamp: null } }).toString(), /class="save unsaved"[^>]*>Unsaved</);
 });
+
+test('a report never made shows no one in By', () => {
+  const d = startReport(assignHazardNumbers(seed()), act, { id: 'r1', title: 'Draft', design: {} });
+  const h = reportsView(main(d), d).toString();
+  assert.doesNotMatch(h, /someone/);
+});

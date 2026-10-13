@@ -1,5 +1,5 @@
 import { createReport, deleteReport, startReport as startReportOp, setOwnReportDesign, makeReport } from '../core/ops/reports.js';
-import { reportFileBase, imagesInUse } from '../reports/docgen-host.js';
+import { reportFileBase, imagesInUse, arrangementOf } from '../reports/docgen-host.js';
 import { loadImages } from '../../DocGen/doc-images.js';
 import { readFile, writeWhole, exists as fileExists, removeFile, listNames } from '../storage/folder.js';
 import { renderPdf, renderHtml } from '../../DocGen/doc-render.js';
@@ -1044,7 +1044,8 @@ export function createController(env) {
       const t = String(title ?? '').trim() || `${platform.name} hazard report`;
       const { report } = docs.produce(platformId, { at, by: /** @type {string} */ (state.profileId), title: t });
       const id = newId();
-      const working = createReport(state.session.working, { by: /** @type {string} */ (state.profileId), at }, { id, report });
+      // Made from the shared design: it keeps a copy of that design, so reopening it shows what it was made from.
+      const working = createReport(state.session.working, { by: /** @type {string} */ (state.profileId), at }, { id, report: { ...report, stage: 'for-review', design: arrangementOf(state.session.working.reportDesign) } });
       set({ session: { ...state.session, working }, view: { name: 'reports' }, lastReportId: id, message: { kind: 'info', text: `Report produced for ${platform.name}. Save to keep it.` } });
       await afterChange();
     },

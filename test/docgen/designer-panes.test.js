@@ -843,3 +843,11 @@ test('the designer\'s header names what is open and has room for the app\'s Save
   delete h.heading;
   assert.match(paneOf(h, 'section'), /<h3>Report Design<\/h3>/);
 });
+
+test('a new Style gets an id no one else\'s new Style will have', () => {
+  const h = host();
+  App.docHost.set(h);
+  const a = App.docStore.addFormat('One').id, b = App.docStore.addFormat('Two').id;
+  assert.match(a, /^fmt-[0-9a-z]{8}$/);
+  assert.notEqual(a, b);
+});

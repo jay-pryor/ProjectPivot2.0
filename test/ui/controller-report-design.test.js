@@ -76,3 +76,13 @@ test('making a report redraws the designer, so its header shows For Review', asy
   assert.ok(c.getState().designerRevision > rev);
   assert.equal(DocGen.docHost.get().heading.tag, 'For Review');
 });
+
+test('a report made from the shared design keeps that design and is For Review', async () => {
+  const { c, go } = await setup();
+  await go({ type: 'openDesigner' });
+  DocGen.docHost.get().commit((s) => { s.report = { ...s.report, levels: { hazards: 2 } }; });
+  await go({ type: 'generateFromDesigner', format: 'html' });
+  const [r] = reports(c);
+  assert.equal(r.stage, 'for-review');
+  assert.deepEqual(r.design.levels, { hazards: 2 });
+});

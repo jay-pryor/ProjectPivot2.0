@@ -47,18 +47,19 @@ export function startReport(data, act, { id = newId(), title, design }) {
 /**
  * A report's own design, as the designer edits it. Not in the history (every tick would be an
  * entry), like the shared design. A change sends a For Review report back to In-Progress.
- * @param {Data} data @param {Act} act @param {{ id: string, design: Record<string, any>, platformId?: string | null }} args
+ * @param {Data} data @param {Act} act @param {{ id: string, design: Record<string, any> | undefined, platformId?: string | null }} args
  */
 export function setOwnReportDesign(data, act, { id, design, platformId }) {
   const r = need(data, 'report', id);
-  const next = structuredClone(design ?? {});
-  const designChanged = !sameJson(r.design, next);
+  // No design given: only the platform is being chosen, which is not an edit of the design.
+  const next = design === undefined ? r.design : structuredClone(design);
+  const designChanged = design !== undefined && !sameJson(r.design, next);
   const platformChanged = platformId !== undefined && platformId !== r.platformId;
   if (!designChanged && !platformChanged) return data;
   const rec = changed(r, act, {
-    design: next,
-    ...(platformChanged ? { platformId } : {}),
-    ...(designChanged ? { stage: STAGES.inProgress } : {}),
+    ...(designChanged ? { design: next, stage: STAGES.inProgress } : {}),
+    // The list shows the platform by name, so the name goes with the choice.
+    ...(platformChanged ? { platformId, platformName: (platformId && data.records.platform[platformId]?.name) || '' } : {}),
   });
   return { ...data, records: { ...data.records, report: { ...data.records.report, [id]: rec } } };
 }
