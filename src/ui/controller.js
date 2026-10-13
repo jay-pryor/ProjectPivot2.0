@@ -127,7 +127,7 @@ export function initialState() {
     screen: 'open', folderName: '', check: { failed: [] }, profiles: [], profileId: null, dataBlocked: false,
     session: null, recoverable: null, notices: [], view: { name: 'hazards' },
     filters: { hazards: {}, controls: {} }, backups: [], pendingRestore: null,
-    message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null, designerReportId: null,
+    message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null, designerReportId: null, missingDesigns: [],
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), homeOwner: 'me', missingFiles: [],
     workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null, tour: null,
@@ -431,8 +431,8 @@ export function createController(env) {
         set({ screen: 'main', view: { name: 'backups' }, backups: await store.listBackups(/** @type {any} */ (handle)) });
         return;
       }
-      const { data, stamp } = await store.load(/** @type {any} */ (handle));
-      set({ session: { base: data, working: data, loadedStamp: stamp } });
+      const { data, stamp, missingDesigns } = await store.load(/** @type {any} */ (handle));
+      set({ session: { base: data, working: data, loadedStamp: stamp }, missingDesigns });
       const m = readMirror(env.storage, state.folderName);
       if (m && hasUnsaved(m)) {
         set({ recoverable: m, screen: 'recover' });
@@ -540,7 +540,7 @@ export function createController(env) {
         }
         working = { ...working, records };
       }
-      set({ session: { base: r.data, working, loadedStamp: r.stamp } });
+      set({ session: { base: r.data, working, loadedStamp: r.stamp }, missingDesigns: state.missingDesigns.filter((id) => !working.records.report[id]?.design) });
       if (during) await afterChange(); else clearMirror(env.storage);
       // Someone who saved in between may have created their profile since this copy read the list.
       const warnings = during ? [...state.warnings] : [];
@@ -1002,13 +1002,7 @@ export function createController(env) {
       if (value) next[field] = value; else delete next[field];
       set({ filters: { ...state.filters, [list]: next } });
     },
-    async openDesigner() {
-      if (!state.session) throw new PivotError('no-data', 'Open the data before designing reports.');
-      DocGen.docHost.set(docs.host);
-      DocGen.ui.views.reportDesign.open();
-      set({ designerReportId: null, designerRevision: state.designerRevision + 1 });
-    },
-    // A new report: a name, its own copy of the shared design or of a report template, In-Progress; the designer opens on it.
+    // A new report: a name, the Default Report Template or a report template, In-Progress; the designer opens on it.
     async startReport({ title, from }) {
       if (!state.session) throw new PivotError('no-data', 'Open the data before making a report.');
       const name = String(title ?? '').trim();

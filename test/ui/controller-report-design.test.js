@@ -20,13 +20,11 @@ async function setup() {
 }
 const reports = (c) => Object.values(c.getState().session.working.records.report).filter((r) => r.status !== 'deleted');
 
-test('starting a report adds it In-Progress with a copy of the shared design and opens the designer on it', async () => {
+test('starting a report adds it In-Progress on the Default Report Template and opens the designer on it', async () => {
   const { c, go } = await setup();
-  await go({ type: 'openDesigner' });
-  DocGen.docHost.get().commit((s) => { s.report = { ...s.report, levels: { hazards: 2 } }; });
   await go({ type: 'startReport', title: 'Customer pack', from: '' });
   const [r] = reports(c);
-  assert.deepEqual([r.title, r.stage, r.design.levels], ['Customer pack', 'in-progress', { hazards: 2 }]);
+  assert.deepEqual([r.title, r.stage, r.design], ['Customer pack', 'in-progress', {}]);
   assert.equal(c.getState().designerReportId, r.id);
   assert.equal(DocGen.docHost.get().heading.title, 'Customer pack');
   assert.ok(DocGen.ui.views.reportDesign.isOpen());
@@ -44,17 +42,14 @@ test('making from the designer puts the document on the open report and sets For
   DocGen.docHost.get().commit((s) => { s.report = { ...s.report, levels: { hazards: 3 } }; });
   [r] = reports(c);
   assert.equal(r.stage, 'in-progress');
-  assert.equal(c.getState().session.working.reportDesign.levels, undefined, 'the shared design is untouched');
 });
 
-test('opening a report from the list puts the designer on it without changing its stage; the plain button opens the shared design', async () => {
+test('opening a report from the list puts the designer on it without changing its stage', async () => {
   const { c, go } = await setup();
   await go({ type: 'startReport', title: 'A', from: '' });
   await go({ type: 'generateFromDesigner', format: 'html' });
   const [r] = reports(c);
-  await go({ type: 'openDesigner' });
-  assert.equal(c.getState().designerReportId, null);
-  assert.equal(DocGen.docHost.get().heading.title, 'Default for new reports');
+  DocGen.ui.views.reportDesign.close();
   await go({ type: 'openReportDesigner', id: r.id });
   assert.equal(DocGen.docHost.get().heading.title, 'A');
   assert.equal(reports(c)[0].stage, 'for-review');
@@ -77,12 +72,26 @@ test('making a report redraws the designer, so its header shows For Review', asy
   assert.equal(DocGen.docHost.get().heading.tag, 'For Review');
 });
 
-test('a report made from the shared design keeps that design and is For Review', async () => {
+test('a report made without opening one has its own (default) design and is For Review', async () => {
   const { c, go } = await setup();
-  await go({ type: 'openDesigner' });
-  DocGen.docHost.get().commit((s) => { s.report = { ...s.report, levels: { hazards: 2 } }; });
-  await go({ type: 'generateFromDesigner', format: 'html' });
+  await go({ type: 'produceReport', platformId: 'p1' });
   const [r] = reports(c);
   assert.equal(r.stage, 'for-review');
-  assert.deepEqual(r.design.levels, { hazards: 2 });
+  assert.deepEqual(r.design, {});
+});
+
+test('the shared designer is gone', async () => {
+  const { c } = await setup();
+  await c.dispatch({ type: 'openDesigner' });
+  assert.equal(c.getState().message?.kind, 'error');
+});
+
+test('a report whose design file is missing is named in the state after loading', async () => {
+  const { c, go, f } = await setup();
+  await go({ type: 'startReport', title: 'A', from: '' });
+  await go({ type: 'save' });
+  const [r] = reports(c);
+  const at = f.locate(`files/reports/${r.id}.json`, false); at.dir.entries.delete(at.name);
+  await go({ type: 'selectProfile', id: c.getState().profiles[0].id });
+  assert.deepEqual(c.getState().missingDesigns, [r.id]);
 });

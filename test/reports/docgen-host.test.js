@@ -381,23 +381,21 @@ test('a report host shows its own arrangement over the shared library, and write
   assert.equal(box.data.records.report.r1.design.formats, undefined, 'the library is not copied into the report');
   assert.deepEqual(box.data.reportDesign.order, ['hazards', 'controls'], 'the shared arrangement is untouched');
   assert.deepEqual(box.data.reportDesign.formats.map((f) => f.id), ['house', 'new'], 'a Style made in a report joins the shared Styles');
-  assert.deepEqual(docs.host.heading, { title: 'Default for new reports' });
 });
 
-test('a report with no design of its own opens on a copy of the shared one', () => {
+test('a report with no design of its own opens on the Default Report Template', () => {
   const { box, docs } = withReport({});
   box.data = { ...box.data, records: { ...box.data.records, report: { ...box.data.records.report, r1: { ...box.data.records.report.r1, design: undefined, stage: undefined } } } };
   const h = docs.hostFor('r1');
-  assert.deepEqual(h.getState().report.order, ['hazards', 'controls']);
+  assert.equal(h.getState().report.order, undefined);
   assert.equal(h.heading.tag, 'For Review');
 });
 
-test('a new report\'s design: the shared arrangement, or a template applied to it', () => {
+test('a new report\'s design: the Default Report Template, or a template applied to it', () => {
   const { box, docs } = withReport({});
   box.data = setReportDesign(box.data, { ...box.data.reportDesign, reportTemplates: [{ id: 'rpt1', name: 'Pack', order: ['controls'], sections: [] }] });
   const shared = docs.newDesign('');
-  assert.deepEqual(shared.design.order, ['hazards', 'controls']);
-  assert.equal(shared.design.formats, undefined);
+  assert.deepEqual(shared.design, {});
   const fromT = docs.newDesign('rpt1');
   assert.deepEqual(fromT.design.order, ['controls']);
   assert.ok(Array.isArray(fromT.library.reportTemplates));
@@ -439,4 +437,16 @@ test('starting from a template never rewrites a Style others use: a clashing Sty
   assert.deepEqual(kept, house, 'the shared House Style is as it was');
   assert.notEqual(design.formatId, 'house');
   assert.ok(library.formats.some((f) => f.id === design.formatId), 'the template\'s Style is in the library under its own id');
+});
+
+test('the Default Report Template is the empty design, whatever the shared design once held', () => {
+  const { box, docs } = withReport({});
+  box.data = setReportDesign(box.data, { ...box.data.reportDesign, sections: [{ id: 'leftover', title: 'Test', parts: [] }], order: ['leftover'] });
+  assert.deepEqual(docs.newDesign('').design, {});
+  box.data = { ...box.data, records: { ...box.data.records, report: { ...box.data.records.report, r1: { ...box.data.records.report.r1, design: undefined } } } };
+  const st = docs.hostFor('r1').getState().report;
+  assert.equal(st.sections, undefined);
+  assert.equal(st.order, undefined);
+  assert.equal(st.formats[0].id, 'house', 'the library is still there');
+  assert.equal(docs.host.heading, undefined);
 });

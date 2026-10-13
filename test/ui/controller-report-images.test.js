@@ -17,7 +17,7 @@ async function setup() {
   await go({ type: 'selectProfile', id: c.getState().profiles[0].id });
   await go({ type: 'createPlatform', id: 'p1', name: 'Boat', ownerId: c.getState().profiles[0].id });
   await go({ type: 'save' });
-  await go({ type: 'openDesigner' });
+  await go({ type: 'startReport', title: 'Pictures', from: '' });
   return { f, c, go };
 }
 /** Put an image part holding these files into a new own section. */

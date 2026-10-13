@@ -80,7 +80,7 @@ test('the designer\'s Generate buttons produce and download for the designer\'s 
   const c = createController(env(f));
   await ready(c);
   await c.dispatch({ type: 'save' });
-  await c.dispatch({ type: 'openDesigner' });
+  await c.dispatch({ type: 'startReport', title: 'Alpha hazards', from: '' });
   assert.equal(c.getState().designerRevision, 1);
   assert.ok(DocGen.ui.views.reportDesign.isOpen());
   await c.dispatch({ type: 'generateFromDesigner', format: 'html' });
