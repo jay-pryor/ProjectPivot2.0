@@ -31,8 +31,9 @@ export function pagesHtml(pages, o = {}) {
     if (it.kind === 'rule') {
       const flat = it.y1 === it.y2;
       const w = it.width * k;
-      return `<div class="dp-rule" style="left:${px(Math.min(it.x1, it.x2) * k - (flat ? 0 : w / 2))};top:${px(Math.min(it.y1, it.y2) * k - (flat ? w / 2 : 0))};` +
-        `width:${px(flat ? Math.abs(it.x2 - it.x1) * k : w)};height:${px(flat ? w : Math.abs(it.y2 - it.y1) * k)};background:${esc(it.colour)}"></div>`;
+      // Square ends, as the PDF draws them: half the width past each end, so thick borders meet in full corners.
+      return `<div class="dp-rule" style="left:${px(Math.min(it.x1, it.x2) * k - w / 2)};top:${px(Math.min(it.y1, it.y2) * k - w / 2)};` +
+        `width:${px(flat ? Math.abs(it.x2 - it.x1) * k + w : w)};height:${px(flat ? w : Math.abs(it.y2 - it.y1) * k + w)};background:${esc(it.colour)}"></div>`;
     }
     if (it.kind === 'text') {
       const [fam, face = ''] = String(it.font).split('-');

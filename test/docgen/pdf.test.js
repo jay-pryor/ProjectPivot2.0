@@ -69,3 +69,8 @@ test('images are XObjects, written once, drawn where the page puts them', async 
   assert.match(s, /q 40 0 0 30 300 712 cm \/Im2 Do Q/);
   assert.doesNotThrow(() => readPdf(bytes));
 });
+
+test('lines have square ends, so the sides of a thick border meet in full corners', () => {
+  const pdf = readPdf(writePdf([{ size: [200, 200], items: [{ kind: 'rule', x1: 10, y1: 10, x2: 100, y2: 10, width: 4, colour: '#000000' }] }]));
+  assert.match(pdf.pages[0].stream, /^2 J\n/);
+});

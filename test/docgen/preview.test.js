@@ -19,8 +19,9 @@ test('each page is a box of its size, scaled, numbered from one', () => {
 test('fills and rules are placed boxes; a vertical rule is as wide as its weight', () => {
   const h = pagesHtml([page]);
   assert.match(h, /class="dp-fill" style="left:10px;top:20px;width:100px;height:30px;background:#d9e2f3"/);
-  assert.match(h, /class="dp-rule" style="left:10px;top:49.75px;width:100px;height:0.5px;background:#999999"/);
-  assert.match(h, /class="dp-rule" style="left:9.5px;top:20px;width:1px;height:30px;background:#000000"/);
+  // Square ends: each line runs half its width past both ends, so thick borders meet in full corners.
+  assert.match(h, /class="dp-rule" style="left:9.75px;top:49.75px;width:100.5px;height:0.5px;background:#999999"/);
+  assert.match(h, /class="dp-rule" style="left:9.5px;top:19.5px;width:1px;height:31px;background:#000000"/);
 });
 
 test('text sits on its baseline in its face, escaped, with WinAnsi quotes shown as Unicode', () => {

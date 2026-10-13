@@ -98,7 +98,8 @@ export function writePdf(pages, opts = {}) {
       else if (it.kind === 'text') ops.push(`BT /F${FONT_NAMES.indexOf(it.font) + 1} ${num(it.size)} Tf ${rgb(it.colour)} rg ${num(it.x)} ${num(h - it.y)} Td ${lit(it.text)} Tj ET`);
       else if (it.kind === 'image' && imgName[it.src]) ops.push(`q ${num(it.w)} 0 0 ${num(it.h)} ${num(it.x)} ${num(h - it.y - it.h)} cm /${imgName[it.src]} Do Q`);
     }
-    const content = ops.join('\n');
+    // Square line ends: a line runs half its width past each end, so the sides of a thick border meet in full corners.
+    const content = ['2 J', ...ops].join('\n');
     const contentObj = reserve();
     set(contentObj, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
     const annots = p.items.filter((it) => it.kind === 'link').map((it) => {
