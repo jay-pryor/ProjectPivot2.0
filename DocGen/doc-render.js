@@ -6,10 +6,11 @@ export { renderHtml };
 
 /**
  * A document as a PDF: laid out, then written, with bookmarks from its headings.
- * @param {any} doc @param {any} style a normalised Style @param {{ date?: string }} [opts]
+ * `images` are the document's images, prepared (doc-images loadImages); one missing is a placeholder.
+ * @param {any} doc @param {any} style a normalised Style @param {{ date?: string, images?: Record<string, any> }} [opts]
  */
 export function renderPdf(doc, style, opts = {}) {
-  const r = layout(doc, style);
-  const bytes = writePdf(r.pages, { title: doc.meta?.title || doc.title || '', anchors: r.anchors, outline: r.headings, date: opts.date });
+  const r = layout(doc, style, { images: opts.images ?? {} });
+  const bytes = writePdf(r.pages, { title: doc.meta?.title || doc.title || '', anchors: r.anchors, outline: r.headings, date: opts.date, images: opts.images ?? {} });
   return { bytes, replaced: r.replaced, pages: r.pages.length };
 }
