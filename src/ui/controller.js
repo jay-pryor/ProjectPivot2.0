@@ -540,7 +540,7 @@ export function createController(env) {
         }
         working = { ...working, records };
       }
-      set({ session: { base: r.data, working, loadedStamp: r.stamp }, missingDesigns: state.missingDesigns.filter((id) => !working.records.report[id]?.design) });
+      set({ session: { base: r.data, working, loadedStamp: r.stamp }, missingDesigns: (r.missingDesigns ?? []).filter((id) => !working.records.report[id]?.design) });
       if (during) await afterChange(); else clearMirror(env.storage);
       // Someone who saved in between may have created their profile since this copy read the list.
       const warnings = during ? [...state.warnings] : [];
@@ -1038,8 +1038,8 @@ export function createController(env) {
       const t = String(title ?? '').trim() || `${platform.name} hazard report`;
       const { report } = docs.produce(platformId, { at, by: /** @type {string} */ (state.profileId), title: t });
       const id = newId();
-      // Made from the shared design: it keeps a copy of that design, so reopening it shows what it was made from.
-      const working = createReport(state.session.working, { by: /** @type {string} */ (state.profileId), at }, { id, report: { ...report, stage: 'for-review', design: arrangementOf(state.session.working.reportDesign) } });
+      // Made without opening one: on the Default Report Template, so reopening it shows what it was made from.
+      const working = createReport(state.session.working, { by: /** @type {string} */ (state.profileId), at }, { id, report: { ...report, stage: 'for-review', design: {} } });
       set({ session: { ...state.session, working }, view: { name: 'reports' }, lastReportId: id, message: { kind: 'info', text: `Report produced for ${platform.name}. Save to keep it.` } });
       await afterChange();
     },
@@ -1096,7 +1096,7 @@ export function createController(env) {
       const r = await store.restore(/** @type {any} */ (handle), pending.data, /** @type {string} */ (state.profileId), env.clock);
       clearMirror(env.storage);
       set({
-        session: { base: r.data, working: r.data, loadedStamp: r.stamp }, pendingRestore: null, dataBlocked: false,
+        session: { base: r.data, working: r.data, loadedStamp: r.stamp }, pendingRestore: null, dataBlocked: false, missingDesigns: r.missingDesigns ?? [],
         message: { kind: 'info', text: `Restored from ${pending.label}.`, items: r.supersededFile ? [`The data it replaced is kept as ${r.supersededFile}.`] : [] },
       });
       DocGen.docHost.set(docs.host);

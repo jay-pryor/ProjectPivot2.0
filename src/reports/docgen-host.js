@@ -276,13 +276,15 @@ export function createDocHost(ctx) {
     ? producing
     : buildSnapshot(ctx.getData(), platformId, { profileName: ctx.profileName, at: ctx.clock.now(), by: '', title: '', classification: '' }));
 
+  // The shared design is only the library (Styles, templates, Standard Images): a design of its own
+  // is a report's, and a report without one is on the Default Report Template, the empty arrangement.
   const host = {
-    getState: () => ({ report: structuredClone(ctx.getData().reportDesign) }),
+    getState: () => ({ report: libraryOf(ctx.getData().reportDesign) }),
     /** @param {(state: { report?: Record<string, any> }) => void} mutator */
     commit(mutator) {
-      const state = { report: structuredClone(ctx.getData().reportDesign) };
+      const state = { report: libraryOf(ctx.getData().reportDesign) };
       mutator(state);
-      ctx.setDesign(state.report ?? {});
+      ctx.setDesign(libraryOf(state.report ?? {}));
     },
     clock: { nowIso: () => toIsoUtc(ctx.clock.now()) },
     classifications: [...CLASSIFICATIONS],

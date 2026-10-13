@@ -62,6 +62,33 @@ async function withDesigns(handle, data) {
   return { data: { ...data, records: { ...data.records, report: reports } }, missing };
 }
 
+/** The live reports with no design. @param {Data} data */
+function liveWithoutDesign(data) {
+  return Object.values(data.records.report).filter((r) => r.status !== 'deleted' && !r.design).map((r) => r.id);
+}
+
+/** `disk` with the designs `base` had put back on the reports whose files are missing. @param {Data} disk @param {Data} base @param {string[]} missing */
+function withBaseDesigns(disk, base, missing) {
+  if (!missing.length) return disk;
+  /** @type {Record<string, any>} */
+  const reports = { ...disk.records.report };
+  for (const id of missing) { const d = base.records.report[id]?.design; if (d && reports[id]) reports[id] = { ...reports[id], design: d }; }
+  return { ...disk, records: { ...disk.records, report: reports } };
+}
+
+/** The live reports without a design take theirs from their files, where there is one. @param {Dir} handle @param {Data} data */
+async function designsFromFolder(handle, data) {
+  const need = liveWithoutDesign(data);
+  if (!need.length) return data;
+  /** @type {Record<string, any>} */
+  const reports = { ...data.records.report };
+  await Promise.all(need.map(async (id) => {
+    const d = designOf(await readText(handle, designPath(id)).catch(() => null), id);
+    if (d) reports[id] = { ...reports[id], design: d };
+  }));
+  return { ...data, records: { ...data.records, report: reports } };
+}
+
 /** The data as data.json holds it: no report carries its design. @param {Data} data */
 function withoutDesigns(data) {
   /** @type {Record<string, any>} */
@@ -223,7 +250,9 @@ export async function save(handle, session, profileId, clock, hooks = {}) {
     /** @type {import('../core/merge.js').Conflict[]} */
     let conflicts = [];
     let missingFromDisk = 0;
-    if (changedOnDisk) ({ data: merged, conflicts, missingFromDisk } = mergeData(session.base, session.working, disk.data, act));
+    // A design file missing on disk is not a design someone removed: the merge reads it as what I loaded.
+    const theirs = withBaseDesigns(disk.data, session.base, disk.missingDesigns);
+    if (changedOnDisk) ({ data: merged, conflicts, missingFromDisk } = mergeData(session.base, session.working, theirs, act));
     merged = assignNumbers(merged);
     if (conflicts.length) merged = recordOverride(merged, act, conflicts);
     const stamp = newStamp(profileId, at);
@@ -242,7 +271,8 @@ export async function save(handle, session, profileId, clock, hooks = {}) {
       await writeWhole(handle, supersededFile, /** @type {string} */ (disk.text));
     }
     await writeWhole(handle, FILES.data, text);
-    return { data: merged, stamp, merged: changedOnDisk, lastSavedBy: changedOnDisk ? disk.stamp?.savedBy ?? null : null, conflicts, supersededFile, missingFromDisk };
+    return { data: merged, stamp, merged: changedOnDisk, lastSavedBy: changedOnDisk ? disk.stamp?.savedBy ?? null : null, conflicts, supersededFile, missingFromDisk,
+      missingDesigns: liveWithoutDesign(merged) };
   }
   throw new PivotError('save.busy', 'Other people kept saving while Pivot was saving. Nothing was saved; save again.');
 }
@@ -291,15 +321,23 @@ export async function restore(handle, data, profileId, clock) {
   let supersededFile = null;
   if (current !== null) {
     let stamp = null;
-    try { stamp = (await readDisk(handle)).stamp; } catch { /* a damaged file is still kept, under a restore name */ }
+    // The copy kept carries the designs it is about to replace, so restoring it undoes this.
+    let kept = current;
+    try {
+      const cur = await readDisk(handle);
+      stamp = cur.stamp;
+      kept = serialize(await seal('data', cur.data, cur.stamp, at));
+    } catch { /* a damaged file is still kept as it is, under a restore name */ }
     supersededFile = `${FILES.superseded}/${stamp ? supersededName(stamp) : `data-${compactStamp(at)}-restore.json`}`;
-    await writeWhole(handle, supersededFile, current);
+    await writeWhole(handle, supersededFile, kept);
   }
+  // A file without designs (a Superseded Save, say) takes each report's design from the folder.
+  const full = await designsFromFolder(handle, data);
   const stamp = newStamp(profileId, at);
   // Each report's own design to its file, then data.json without them.
-  await writeDesigns(handle, data, null);
-  await writeWhole(handle, FILES.data, serialize(await seal('data', withoutDesigns(data), stamp, at)));
-  return { data, stamp, supersededFile };
+  await writeDesigns(handle, full, null);
+  await writeWhole(handle, FILES.data, serialize(await seal('data', withoutDesigns(full), stamp, at)));
+  return { data: full, stamp, supersededFile, missingDesigns: liveWithoutDesign(full) };
 }
 
 /** @param {FileSystemFileHandle} fileHandle @param {string | Uint8Array} text a document, or a file's bytes */

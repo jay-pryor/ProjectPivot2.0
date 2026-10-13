@@ -101,3 +101,45 @@ test('a backup carries the designs; restoring it writes them back and leaves oth
   assert.ok(f.read('files/reports/other.json'));
   assert.equal((await diskBody(f)).records.report.r1.design, undefined);
 });
+
+test('a save while my report\'s file is missing keeps my design and writes the file again', async () => {
+  const f = new MemoryFolder();
+  let { s: a } = await open(f);
+  a.working = startReport(a.working, act, { id: 'r1', title: 'One', design });
+  a = after(await save(f.handle, a, 'a', clock()));
+  const { s: b0 } = await open(f);
+  await save(f.handle, { ...b0, working: startReport(b0.working, { by: 'b', at: act.at }, { id: 'r2', title: 'Two', design: {} }) }, 'b', clock());
+  const at = f.locate('files/reports/r1.json', false); at.dir.entries.delete(at.name);
+  const r = await save(f.handle, a, 'a', clock());
+  assert.equal(r.merged, true);
+  assert.deepEqual(r.data.records.report.r1.design, design);
+  assert.deepEqual(JSON.parse(f.read('files/reports/r1.json')).design, design);
+  assert.deepEqual(r.missingDesigns, []);
+});
+
+test('restoring a file without designs takes them from the folder, and says which are missing', async () => {
+  const f = new MemoryFolder();
+  const { s } = await open(f);
+  s.working = startReport(s.working, act, { id: 'r1', title: 'One', design });
+  s.working = startReport(s.working, act, { id: 'r2', title: 'Two', design });
+  const r = await save(f.handle, s, 'a', clock());
+  const bare = JSON.parse(JSON.stringify(r.data));
+  delete bare.records.report.r1.design; delete bare.records.report.r2.design;
+  const at = f.locate('files/reports/r2.json', false); at.dir.entries.delete(at.name);
+  const back = await restore(f.handle, bare, 'a', clock());
+  assert.deepEqual(back.data.records.report.r1.design, design);
+  assert.deepEqual(back.missingDesigns, ['r2']);
+  assert.deepEqual(JSON.parse(f.read('files/reports/r1.json')).design, design);
+});
+
+test('the copy a restore keeps under Superseded Saves carries the designs it replaced', async () => {
+  const f = new MemoryFolder();
+  const { s } = await open(f);
+  s.working = startReport(s.working, act, { id: 'r1', title: 'One', design });
+  const r = await save(f.handle, s, 'a', clock());
+  const older = JSON.parse(JSON.stringify(r.data));
+  older.records.report.r1.design = { order: ['old'] };
+  const back = await restore(f.handle, older, 'a', clock());
+  const kept = (await openEnvelope(f.read(back.supersededFile), 'data')).envelope.body;
+  assert.deepEqual(kept.records.report.r1.design, design, 'undoing the restore brings the designs back');
+});
