@@ -868,6 +868,8 @@ test('choosing a paragraph\'s numbering stores its level; Not numbered stores no
   assert.equal(h.getState().report.sections[0].parts[0].numberLevel, 3);
   RD._setParaLevel('mine', 'p1', '');
   assert.equal('numberLevel' in h.getState().report.sections[0].parts[0], false);
+});
+
 test('a new Style gets an id no one else\'s new Style will have', () => {
   const h = host();
   App.docHost.set(h);
