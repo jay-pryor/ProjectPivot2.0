@@ -4895,7 +4895,45 @@ import { toWinAnsi } from './doc-fonts.js';
     }
 
     /** RTX-1: one entry point for all three surfaces — the button says which box. */
-    function wrapSelection(btn, tag) { insertToken(boxFor(btn), tag); }
+    function wrapSelection(btn, tag) {
+      var el = boxFor(btn);
+      if (el && endFormat(el, tag)) return;
+      insertToken(el, tag);
+    }
+
+    /**
+     * A lit B, I or code pressed with nothing selected: the style ends at the caret, so
+     * what is typed next is plain. Mid-run, the run is split there; either way the caret
+     * is given a placeholder outside it to type into. False when it does not apply.
+     */
+    function endFormat(el, tag) {
+      var names = { b: ['STRONG', 'B'], i: ['EM', 'I'], c: ['CODE'] }[tag];
+      var sel = window.getSelection();
+      if (!names || !sel || !sel.rangeCount || !sel.isCollapsed || !el.contains(sel.anchorNode)) return false;
+      var run = null;
+      for (var n = sel.anchorNode; n && n !== el; n = n.parentNode) if (names.indexOf(n.nodeName) !== -1) run = n;
+      if (!run) return false;
+      // What follows the caret inside the run moves to a run of its own after it.
+      var rest = document.createRange();
+      rest.setStart(sel.anchorNode, sel.anchorOffset);
+      rest.setEndAfter(run.lastChild || run);
+      var tail = rest.extractContents();
+      var hold = document.createTextNode('\u200B');
+      run.parentNode.insertBefore(hold, run.nextSibling);
+      if (tail.textContent) {
+        var again = run.cloneNode(false);
+        again.appendChild(tail);
+        run.parentNode.insertBefore(again, hold.nextSibling);
+      }
+      if (!run.textContent) run.parentNode.removeChild(run);
+      var r = document.createRange();
+      r.setStart(hold, 1); r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+      quietly(function () { logIssues(boxSaver(el)(RT.fromNode(el))); });
+      dirty();
+      showFormats();
+      return true;
+    }
 
     // ======================================================================
     // wiring

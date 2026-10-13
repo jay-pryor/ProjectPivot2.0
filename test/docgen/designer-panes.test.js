@@ -446,3 +446,11 @@ test('typing after pressing I with nothing selected types in italics: the box\'s
   assert.equal(RT.fromNode(el('DIV', [t('Plain '), el('EM', [t('​slanted')])])), 'Plain {{i}}slanted{{/i}}');
   assert.equal(RT.fromNode(el('DIV', [t('a​')])), 'a');
 });
+
+test('pressing a lit B, I or code with nothing selected ends that style at the cursor', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../DocGen/doc-designer.js', import.meta.url), 'utf8');
+  const wrap = /function wrapSelection\(btn, tag\) \{([\s\S]*?)\n    \}\n/.exec(src);
+  assert.ok(wrap && /endFormat\(/.test(wrap[1]), 'wrapSelection ends a style that is on at a collapsed caret');
+  assert.match(src, /function endFormat\(el, tag\) \{/);
+});
