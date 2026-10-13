@@ -3078,7 +3078,8 @@ import { toWinAnsi } from './doc-fonts.js';
 
     function walk(node, emit, mark, st) {
       if (!node) return;
-      if (node.nodeType === 3) { emit('text', node.nodeValue || '', node); return; }
+      // U+200B is the placeholder a format button leaves to type into; it is not text.
+      if (node.nodeType === 3) { emit('text', String(node.nodeValue || '').replace(/\u200B/g, ''), node); return; }
       if (node.nodeType !== 1) return;
       var name = node.nodeName;
       if (name === 'BR') { emit('markup', '\n'); return; }
@@ -4580,11 +4581,21 @@ import { toWinAnsi } from './doc-fonts.js';
      * threw away where you were in a long section list on every click.
      * @returns {boolean} false when the workspace is not open (caller falls back)
      */
+    /* Replacing the workspace removes the box that has focus, which fires its save, which
+     * asks for another redraw while this one is still writing. That one waits its turn. */
+    var _painting = false, _paintAgain = false;
     function refresh() {
       var host = document.getElementById('rd-modal-host');
       if (!host) return false;
       var project = App.docHost.get().getState(); if (!project) return false;
       if (!H()) return false;
+      if (_painting) { _paintAgain = true; return true; }
+      _painting = true;
+      try { paintInto(host, project); } finally { _painting = false; }
+      if (_paintAgain) { _paintAgain = false; setTimeout(repaint, 0); }
+      return true;
+    }
+    function paintInto(host, project) {
       var body = host.querySelector('.modal-body');
       var top = body ? body.scrollTop : 0;
       var pane = host.querySelector('.rd-pane');
@@ -4595,7 +4606,7 @@ import { toWinAnsi } from './doc-fonts.js';
       var pane2 = host.querySelector('.rd-pane');
       if (pane2) pane2.scrollTop = paneTop;
       scrollToHere();
-      return true;
+      showFormats();
     }
     /* Leaving a text box saves it and redraws — on the press of whatever was clicked
      * next. Redrawn then, the button under the pointer is a new one by the release, and
@@ -4777,6 +4788,36 @@ import { toWinAnsi } from './doc-fonts.js';
       box.scrollTop += here.getBoundingClientRect().top - box.getBoundingClientRect().top - (head ? head.offsetHeight : 0) - 8;
     }
 
+    /** Which of bold, italic and code apply at a node inside a box: b, i, c, in that order. */
+    function formatsAt(node, box) {
+      var on = {};
+      for (var n = node; n && n !== box; n = n.parentNode) {
+        var name = n.nodeName;
+        if (name === 'STRONG' || name === 'B') on.b = true;
+        if (name === 'EM' || name === 'I') on.i = true;
+        if (name === 'CODE') on.c = true;
+        if (!n.parentNode) return [];           // walked out without meeting the box
+      }
+      return ['b', 'i', 'c'].filter(function (k) { return on[k]; });
+    }
+    /** Light the toolbar buttons for the formatting where the cursor is in the focused box. */
+    function showFormats() {
+      if (typeof document === 'undefined') return;
+      var box = document.activeElement && document.activeElement.closest ? document.activeElement.closest('[data-rd-rich]') : null;
+      var sel = window.getSelection && window.getSelection();
+      var on = box && sel && sel.anchorNode && box.contains(sel.anchorNode) ? formatsAt(sel.anchorNode, box) : [];
+      var scope = box ? (box.closest('.rd-part, .rd-fieldset') || box.parentNode) : null;
+      Array.prototype.forEach.call(document.querySelectorAll('[data-rd-wrap].on'), function (b) { if (!scope || !scope.contains(b)) { b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); } });
+      if (!scope) return;
+      Array.prototype.forEach.call(scope.querySelectorAll('[data-rd-wrap]'), function (b) {
+        var k = b.getAttribute('data-rd-wrap');
+        if (k === 'br') return;
+        var lit = on.indexOf(k) !== -1;
+        b.classList.toggle('on', lit);
+        b.setAttribute('aria-pressed', lit ? 'true' : 'false');
+      });
+    }
+
     /** The document's reference resolver, for re-rendering a box after an edit. */
     function boxHtml(tokens) {
       var p = App.docHost.get().getState();
@@ -4837,6 +4878,20 @@ import { toWinAnsi } from './doc-fonts.js';
       // Link, most often — acts where the last one left off rather than at the start.
       _sel = { key: boxKey(el), start: res.caret, end: res.caret };
       RT.placeCaret(el, res.caret, window);
+      // Nothing was selected: the button opened an empty bold/italic/code run. A browser
+      // types beside an empty element, not in it, so it is given a placeholder to hold
+      // the caret, and what is typed next is in that style.
+      if (s === e && (tag === 'b' || tag === 'i' || tag === 'c')) {
+        var empty = Array.prototype.filter.call(el.querySelectorAll('strong, b, em, i, code'), function (n) { return !n.textContent; })[0];
+        if (empty) {
+          var hold = document.createTextNode('\u200B');
+          empty.appendChild(hold);
+          var r = document.createRange();
+          r.setStart(hold, 1); r.collapse(true);
+          var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+          showFormats();
+        }
+      }
     }
 
     /** RTX-1: one entry point for all three surfaces — the button says which box. */
@@ -5285,6 +5340,19 @@ import { toWinAnsi } from './doc-fonts.js';
     function wireText(h) {
       var dom = h.dom, ctx = h.ctx;
 
+      // The toolbar follows the cursor: bold, italic and code light up where they apply.
+      document.addEventListener('selectionchange', showFormats);
+      dom.on(ctx.root, 'focusin', '[data-rd-rich]', function () { showFormats(); });
+      dom.on(ctx.root, 'input', '[data-rd-rich]', function () {
+        var sel = window.getSelection();
+        var n = sel && sel.anchorNode;
+        if (!n || n.nodeType !== 3 || n.nodeValue.indexOf('\u200B') === -1 || n.nodeValue.length < 2) return;
+        var at = sel.anchorOffset - (n.nodeValue.slice(0, sel.anchorOffset).split('\u200B').length - 1);
+        n.nodeValue = n.nodeValue.replace(/\u200B/g, '');
+        var r = document.createRange(); r.setStart(n, Math.max(0, Math.min(at, n.nodeValue.length))); r.collapse(true);
+        sel.removeAllRanges(); sel.addRange(r);
+      });
+
       // The Sections preview follows typing: half a second after a live box stops
       // changing, its value is saved and the preview column alone is redrawn.
       var liveTimer = null;
@@ -5666,7 +5734,7 @@ import { toWinAnsi } from './doc-fonts.js';
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
-      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _holds: holds, _releaseOn: RELEASE_ON,
+      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
       PANES: PANES, _rd: _rd
     };
   })(App);

@@ -413,3 +413,36 @@ test('the section preview switches between this section (the default) and the wh
   assert.match(all, />O-1</, 'the other sections too');
   assert.match(all, /<span class="dp-anchor" id="sec-things"[^>]*data-rd-here/, 'it marks where this section starts, to scroll to');
 });
+
+test('the toolbar shows the formatting where the cursor is: bold, italic and code from the nodes around it', () => {
+  const box = { nodeName: 'DIV', parentNode: null };
+  const node = (name, parent) => ({ nodeName: name, parentNode: parent });
+  const text = (parent) => ({ nodeName: '#text', parentNode: parent });
+  assert.deepEqual(RD._formatsAt(text(box), box), []);
+  assert.deepEqual(RD._formatsAt(text(node('EM', node('STRONG', box))), box), ['b', 'i']);
+  assert.deepEqual(RD._formatsAt(text(node('B', box)), box), ['b']);
+  assert.deepEqual(RD._formatsAt(text(node('CODE', box)), box), ['c']);
+  assert.deepEqual(RD._formatsAt(text(node('STRONG', node('DIV', null))), box), [], 'outside the box counts for nothing');
+});
+
+test('the toolbar buttons centre their marks, and a link chip is the size of the text around it', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../../DocGen/doc-designer.css', import.meta.url), 'utf8');
+  assert.match(css, /\.docgen \.rd-tb \{[^}]*display: inline-flex;[^}]*align-items: center;[^}]*justify-content: center;/);
+  assert.match(css, /\.docgen \.rd-tb\.on \{/);
+  assert.match(css, /\.docgen \.rd-chip \{[^}]*display: inline;[^}]*font-size: inherit;[^}]*line-height: inherit;/);
+});
+
+test('a redraw asked for during a redraw waits for it to finish', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../DocGen/doc-designer.js', import.meta.url), 'utf8');
+  assert.match(src, /if \(_painting\) \{ _paintAgain = true; return true; \}/);
+});
+
+test('typing after pressing I with nothing selected types in italics: the box\'s placeholder character never reaches the text', () => {
+  const RT = App.ui.richText;
+  const t = (v) => ({ nodeType: 3, nodeName: '#text', nodeValue: v, childNodes: [] });
+  const el = (name, kids) => ({ nodeType: 1, nodeName: name, childNodes: kids, getAttribute: () => null, hasAttribute: () => false });
+  assert.equal(RT.fromNode(el('DIV', [t('Plain '), el('EM', [t('​slanted')])])), 'Plain {{i}}slanted{{/i}}');
+  assert.equal(RT.fromNode(el('DIV', [t('a​')])), 'a');
+});

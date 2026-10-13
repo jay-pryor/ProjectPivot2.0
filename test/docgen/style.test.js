@@ -70,3 +70,8 @@ test('the font a profile named maps to the nearest standard family', () => {
   const fam = (f) => fromProfile({ page: { fontFamily: f } }).text.body.family;
   assert.deepEqual([fam(''), fam('tgtermes'), fam('tgheros'), fam('tgadventor'), fam('charter')], ['times', 'times', 'helvetica', 'helvetica', 'times']);
 });
+
+test('references print no "(page N)" in the PDF unless a Style asks for it', () => {
+  assert.equal(STANDARD.refs.pageInPdf, false);
+  assert.equal(normaliseStyle({ refs: { pageInPdf: true } }).style.refs.pageInPdf, true);
+});

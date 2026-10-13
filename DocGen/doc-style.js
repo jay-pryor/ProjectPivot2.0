@@ -47,7 +47,7 @@ export const STANDARD = Object.freeze({
   marking: { show: true },
   numbering: { on: true, format: '1.1.1', inToc: true },
   toc: { include: true, title: 'Contents', depth: 3, leaders: true, pageNumbers: true },
-  refs: { pageInPdf: true },
+  refs: { pageInPdf: false },
 });
 
 /** Has the Style shape, as opposed to an old formatting profile. @param {any} x */
