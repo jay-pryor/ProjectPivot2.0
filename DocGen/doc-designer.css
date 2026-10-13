@@ -346,3 +346,4 @@
   .docgen .rd-steps button { flex: 1 1 50%; width: 20px; padding: 0; font-size: 8px; line-height: 1; display: flex; align-items: center; justify-content: center;
     border: 1px solid var(--c-border); border-left: 0; background: var(--c-surface-alt); color: var(--c-text); cursor: pointer;}
   .docgen .rd-steps button + button { border-top: 0;}
+  .docgen .rd-rename { font: inherit; font-size: 13px; font-weight: 600; width: 100%; padding: 1px 4px; border: 1px solid var(--c-accent); background: var(--c-surface); color: var(--c-text);}

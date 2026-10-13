@@ -574,3 +574,24 @@ test('a step moves the value by its step from what is there, without float noise
   assert.equal(RD._stepped('', 1, 1), 1);
   assert.equal(RD._stepped('0.5', 0.25, -1), 0.25);
 });
+
+test('double-clicking a section in the list edits its heading there', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  App.docHost.set(h); RD.open(); RD.pane('section'); RD._rd.renaming = 'things';
+  const html = RD.render(h.getState()); RD.close(); RD._rd.renaming = null;
+  const list = html.slice(html.indexOf('rd-order-host'), html.indexOf('rd-split'));
+  assert.match(list, /<input class="rd-rename" data-rd-rename="things" value="Things"/);
+  assert.doesNotMatch(list, /data-rd-select="things"/, 'the name is the box while it is being edited');
+  assert.match(list, /data-rd-select="mine"/);
+});
+
+test('a renamed section saves its heading where its Heading box does; blank puts back the standard wording', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  App.docHost.set(h);
+  RD._renameSection('things', 'Our things');
+  assert.equal(h.getState().report.headings.things, 'Our things');
+  RD._renameSection('mine', 'My own');
+  assert.equal(h.getState().report.sections[0].title, 'My own');
+  RD._renameSection('things', '');
+  assert.equal((h.getState().report.headings || {}).things, undefined);
+});

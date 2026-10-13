@@ -3404,6 +3404,7 @@ import { toWinAnsi } from './doc-fonts.js';
       styleSection: null,    // which part of that Style is open (PDF-1)
       held: null,            // what the last edit asked for that the Style could not use
       colourOpen: null,      // the colour field whose palette is open (its Style path)
+      renaming: null,        // the section whose heading is being edited in the list
       secCat: null,          // the open category of the Sections pane
       secWhole: false,       // whether the section preview shows the whole document
       listWidth: null,       // the Sections list's width, once dragged
@@ -3498,6 +3499,17 @@ import { toWinAnsi } from './doc-fonts.js';
     }
 
 
+    /** A section's heading, set from the list: an own section's title, or a generated one's
+     *  heading (its standard wording, or blank, stores nothing). */
+    function renameSection(id, value) {
+      var p = App.docHost.get() && App.docHost.get().getState();
+      var block = p ? outlineNow(p).blocks.filter(function (b) { return b.id === id; })[0] : null;
+      if (!block) return { ok: false, issues: [] };
+      var v = String(value == null ? '' : value).trim();
+      if (block.kind === 'custom') return App.docStore.updateSection(id, { title: v });
+      return App.docStore.setBlockHeading(id, v === String(block.defaultTitle || '').trim() ? '' : v);
+    }
+
     /** The Sections list's width in pixels: dragged by its grip, remembered in this browser. */
     var LIST_WIDTH = { dflt: 420, min: 260, max: 900 };
     var LIST_KEY = 'docgen.rd.listWidth';
@@ -3534,7 +3546,10 @@ import { toWinAnsi } from './doc-fonts.js';
           '<span class="ord-num">' + esc(num) + '</span>' +
           '<label class="ord-inc" title="Include this section in the document">' + inc + '</label>' +
           '<span class="ord-body">' +
-            '<button type="button" class="rd-open" data-rd-select="' + esc(b.id) + '" title="Select this section. The pane on the right stays where it is.">' + esc(b.label) + '</button>' +
+            (_rd.renaming === b.id
+              ? '<input class="rd-rename" data-rd-rename="' + esc(b.id) + '" value="' + esc(String(b.title == null ? b.label : b.title)) + '"' +
+                ' placeholder="' + esc(b.defaultTitle || 'No heading') + '" aria-label="Heading for ' + esc(b.label) + '">'
+              : '<button type="button" class="rd-open" data-rd-select="' + esc(b.id) + '" title="Double-click to rename">' + esc(b.label) + '</button>') +
             '<span class="rd-meta">' + kind + warn + '</span>' +
           '</span>' +
           levelSelect(b, r) +
@@ -5185,10 +5200,32 @@ import { toWinAnsi } from './doc-fonts.js';
        * thing it is best at: clicking down the list and watching the document change.
        * Every trip cost two more clicks to get back. The row still shows as selected,
        * and the Section pane still follows the selection when it is the one on screen. */
+      // A click selects; a second click on the same name within a moment (a double-click,
+      // even though the first one redrew the list) edits its heading in place.
+      var lastPick = { id: null, at: 0 };
       dom.on(ctx.root, 'click', '[data-rd-select]', function (e, el) {
-        _rd.selected = el.getAttribute('data-rd-select');
+        var id = el.getAttribute('data-rd-select'), now = Date.now();
+        var twice = lastPick.id === id && now - lastPick.at < 450;
+        lastPick = { id: twice ? null : id, at: now };
+        _rd.selected = id;
+        if (twice) _rd.renaming = id;
         repaint();
+        if (twice) {
+          var box = document.querySelector('[data-rd-rename="' + id + '"]');
+          if (box) { box.focus(); box.select(); }
+        }
       });
+      function finishRename(el, keep) {
+        if (_rd.renaming !== el.getAttribute('data-rd-rename')) return;
+        _rd.renaming = null;
+        if (keep) quietly(function () { logIssues(renameSection(el.getAttribute('data-rd-rename'), el.value)); });
+        dirty(); repaint();
+      }
+      dom.on(ctx.root, 'keydown', '[data-rd-rename]', function (e, el) {
+        if (e.key === 'Enter') { e.preventDefault(); finishRename(el, true); }
+        else if (e.key === 'Escape') { e.preventDefault(); finishRename(el, false); }
+      });
+      dom.on(ctx.root, 'focusout', '[data-rd-rename]', function (e, el) { finishRename(el, true); });
       // ---- conflict resolution ---------------------------------------------
       dom.on(ctx.root, 'change', '[data-rd-cf]', function (e, el) {
         if (!_rd.conflict) return;
@@ -5962,7 +5999,7 @@ import { toWinAnsi } from './doc-fonts.js';
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
-      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _stepped: stepped, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
+      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _stepped: stepped, _renameSection: renameSection, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
       PANES: PANES, _rd: _rd
     };
   })(App);
