@@ -440,8 +440,9 @@ import { renderHtml, renderPdf } from './doc-render.js';
         var host = mockHost();
         var block = App.docGen.reportBlocks(host, {}).filter(function (b) { return b.id === 'staff'; })[0];
         var cols = App.docGen.sectionColumns(host, block, {});
-        T.assertDeepEqual(cols.fixed.map(function (c) { return c.label; }), ['Name', 'Role']);
-        T.assertDeepEqual(cols.optional.map(function (c) { return c.label; }), ['Band']);
+        // Only the key column is fixed; every declared column can be switched off.
+        T.assertDeepEqual(cols.fixed.map(function (c) { return c.label; }), ['Name']);
+        T.assertDeepEqual(cols.optional.map(function (c) { return c.label; }), ['Role', 'Band']);
       });
 
       s.test('rows are counted by the host\'s own filter axis', function () {

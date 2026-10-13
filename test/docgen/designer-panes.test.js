@@ -226,8 +226,8 @@ test('Sections: three columns — categories, their fields, and the preview besi
 
 test('each kind of section offers its own categories', () => {
   const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
-  assert.deepEqual(cats(sectionAt(h, 'things')), ['heading', 'placement', 'introduction', 'table']);
-  assert.deepEqual(cats(sectionAt(h, 'meta')), ['heading', 'placement', 'introduction', 'table', 'rows']);
+  assert.deepEqual(cats(sectionAt(h, 'things')), ['heading', 'introduction', 'placement', 'table']);
+  assert.deepEqual(cats(sectionAt(h, 'meta')), ['heading', 'introduction', 'placement', 'table', 'rows']);
   assert.deepEqual(cats(sectionAt(h, 'toc')), ['heading', 'placement']);
   assert.deepEqual(cats(sectionAt(h, 'mine')), ['heading', 'placement', 'content']);
 });
@@ -235,9 +235,9 @@ test('each kind of section offers its own categories', () => {
 test('each category holds its existing controls', () => {
   const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
   const at = (id, cat) => sectionAt(h, id, cat).slice(sectionAt(h, id, cat).indexOf('data-rd-sec-fields'));
-  assert.match(at('things', 'heading'), /data-rd-sec-heading="things"[\s\S]*data-rd-level="things"/);
-  assert.match(at('mine', 'heading'), /data-rd-sec-title="mine"[\s\S]*data-rd-level="mine"/);
-  assert.match(at('things', 'placement'), /data-rd-centre="things"[\s\S]*data-rd-pagebreak="things"[\s\S]*data-rd-notoc="things"[\s\S]*data-rd-space-block="things"/);
+  assert.match(at('things', 'heading'), /data-rd-sec-heading="things"/);
+  assert.match(at('mine', 'heading'), /data-rd-sec-title="mine"/);
+  assert.match(at('things', 'placement'), /data-rd-centre-part="heading" data-rd-block="things"[\s\S]*data-rd-pagebreak="things"[\s\S]*data-rd-notoc="things"[\s\S]*data-rd-space-block="things"/);
   assert.match(at('things', 'introduction'), /data-rd-intro="things"[\s\S]*data-rd-intro-num="things"/);
   assert.match(at('things', 'table'), /data-rd-tbl-field="title"[\s\S]*data-rd-tbl-col=/);
   assert.match(at('meta', 'rows'), /data-rd-meta=/);
@@ -359,4 +359,44 @@ test('Final review I3: the three columns stack by the pane\'s own width, not the
   assert.match(css, /\.docgen \.rd-pane \{[^}]*container-type: inline-size/);
   assert.match(css, /@container \(max-width: 820px\) \{ \.docgen \.rd-secgrid/);
   assert.doesNotMatch(css, /@media \(max-width: 1400px\) \{ \.docgen \.rd-secgrid/);
+});
+
+test('Heading has no level box (the list sets it); Introduction comes before Placement', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  assert.deepEqual(cats(sectionAt(h, 'things')), ['heading', 'introduction', 'placement', 'table']);
+  assert.deepEqual(cats(sectionAt(h, 'meta')), ['heading', 'introduction', 'placement', 'table', 'rows']);
+  const fields = (id, cat) => { const html = sectionAt(h, id, cat); return html.slice(html.indexOf('data-rd-sec-fields')); };
+  assert.doesNotMatch(fields('things', 'heading').split('data-rd-sec-prev')[0], /data-rd-level/);
+  assert.doesNotMatch(fields('mine', 'heading').split('data-rd-sec-prev')[0], /data-rd-level/);
+});
+
+test('Placement centres the heading, the introduction and the table separately, in that order', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }], centred: { things: { intro: true } } });
+  const parts = (id) => { const html = sectionAt(h, id, 'placement'); return [...html.matchAll(/data-rd-centre-part="([a-z]+)"[^>]*?( checked)?>/g)].map((m) => m[1] + (m[2] ? '*' : '')); };
+  assert.deepEqual(parts('things'), ['heading', 'intro*', 'table']);
+  assert.deepEqual(parts('mine'), ['heading', 'content']);
+  assert.deepEqual(parts('toc'), ['heading']);
+  assert.doesNotMatch(sectionAt(h, 'things', 'placement'), /Centre this section/);
+});
+
+test('a centring tick is stored per part; ticking a part of an old "centre everything" keeps the others', () => {
+  const h = host({ centred: { things: true } });
+  App.docHost.set(h);
+  App.docStore.setBlockCentrePart('things', 'table', false);
+  assert.deepEqual(h.getState().report.centred.things, { heading: true, intro: true, content: true });
+  App.docStore.setBlockCentrePart('things', 'heading', false);
+  App.docStore.setBlockCentrePart('things', 'intro', false);
+  App.docStore.setBlockCentrePart('things', 'content', false);
+  assert.equal(h.getState().report.centred, undefined, 'nothing centred leaves nothing stored');
+});
+
+test('Table ticks every column of a pre-populated section except its first, identifying one', () => {
+  const h = host();
+  const html = sectionAt(h, 'things', 'table');
+  const keys = [...html.matchAll(/data-rd-dsmap="columns" data-rd-ds="things" data-rd-key="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(keys, ['v', 'extra']);
+  App.docHost.set(h);
+  App.docStore.setReportInclude('columns', 'things', 'v', false, true);
+  const t = App.docGen.documentFor(h, Object.assign({}, App.docSession.options(), { subjectId: 's1' }), {}).document.blocks.find((x) => x.anchor === 'tbl-things');
+  assert.deepEqual(t.header.map((c) => c[0].text), ['ID', 'Extra']);
 });
