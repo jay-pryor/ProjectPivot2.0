@@ -1063,7 +1063,9 @@ import { toWinAnsi } from './doc-fonts.js';
     /** Which subject, and which of the filter's categories, this document is about. */
     function runOf(opts) {
       return { subjectId: (opts && opts.subjectId) || null,
-               categories: (opts && opts.categories) || (opts && opts.relevance) || null };
+               categories: (opts && opts.categories) || (opts && opts.relevance) || null,
+               // The Style's Document settings (numbering from 1), for a host that numbers its rows.
+               numbering: (opts && opts.numbering) || null };
     }
 
     /**
@@ -1513,7 +1515,11 @@ import { toWinAnsi } from './doc-fonts.js';
 
     /** PDF-1: the whole document for a run, built the way the host's produce builds it. */
     function documentFor(host, opts, meta) {
-      var o = opts || {};
+      var o = Object.assign({}, opts || {});
+      if (!o.numbering) {
+        var st = (host && typeof host.getState === 'function' && host.getState()) || {};
+        o.numbering = App.docFormat.resolve(st).document;
+      }
       var blocks = hostBlocks(host, o).filter(function (b) { return b.included; });
       var utc = (meta && meta.utc) || (host && host.clock && host.clock.nowIso ? host.clock.nowIso() : '');
       var m = o.subjectId ? App.docHost.chosenMeta(o.subjectId, utc) : null;
@@ -4296,14 +4302,15 @@ import { toWinAnsi } from './doc-fonts.js';
 
     /** The sections of a Style, in the order the left list shows them. */
     var STYLE_SECTIONS = [
-      { id: 'page', label: 'Page' },
-      { id: 'numbering', label: 'Numbering' },
+      { id: 'document', label: 'Document' },
+      { id: 'page', label: 'Page Setup' },
+      { id: 'numbering', label: 'Section Numbering' },
       { id: 'contents', label: 'Contents' },
       { id: 'title', label: 'Title' }, { id: 'h1', label: 'Heading 1' }, { id: 'h2', label: 'Heading 2' },
       { id: 'h3', label: 'Heading 3' }, { id: 'h4', label: 'Heading 4' },
       { id: 'body', label: 'Body' }, { id: 'caption', label: 'Caption' }, { id: 'code', label: 'Code' },
       { id: 'tables', label: 'Tables' },
-      { id: 'headerFooter', label: 'Header & footer' },
+      { id: 'headerFooter', label: 'Header & Footer' },
       { id: 'marking', label: 'Security Classification' }
     ];
     var FAMILY_LABELS = [{ value: 'helvetica', label: 'Helvetica (sans serif)' }, { value: 'times', label: 'Times (serif)' }, { value: 'courier', label: 'Courier (fixed width)' }];
@@ -4375,6 +4382,14 @@ import { toWinAnsi } from './doc-fonts.js';
 
     /** The fields of one section of the Style. */
     function styleSectionFields(project, f, section) {
+      if (section === 'document') {
+        var d = f.document;
+        return '<div class="rd-fieldset"><strong title="For a document that leaves the house: its own numbers, from 1, not the register\'s">Numbering in this document</strong><div class="rd-flags rd-flags-col">' +
+            flagField('Number hazards from HAZ-001', 'document.renumberHazards', d.renumberHazards) +
+            flagField('Number controls from C-001', 'document.renumberControls', d.renumberControls) +
+            flagField('Number references from REF-001', 'document.renumberReferences', d.renumberReferences) +
+          '</div></div>';
+      }
       if (section === 'page') {
         var m = f.page.margins;
         return '<div class="rd-grid">' +
@@ -4457,7 +4472,7 @@ import { toWinAnsi } from './doc-fonts.js';
       var editId = _rd.fmtId || active.id;
       var f = all.filter(function (x) { return x.id === editId; })[0] || active;
       var builtin = !!f.builtin;
-      var section = _rd.styleSection || 'page';
+      var section = _rd.styleSection || 'document';
 
       var head = '<div class="rd-fmt-head">' +
         '<label class="rd-lab">Style in use' +
@@ -4480,7 +4495,9 @@ import { toWinAnsi } from './doc-fonts.js';
         : '';
       var list = '<nav class="rd-style-list">' + STYLE_SECTIONS.map(function (s) {
         return '<button type="button" class="rd-style-sec' + (s.id === section ? ' on' : '') + '" data-rd-style-section="' + s.id + '"' +
-          (s.id === section ? ' aria-current="true"' : '') + '>' + esc(s.label) + '</button>';
+          (s.id === section ? ' aria-current="true"' : '') + '>' + esc(s.label) + '</button>' +
+          // Document is about the document as a whole; the rest are about how it looks.
+          (s.id === 'document' ? '<hr class="rd-style-divider">' : '');
       }).join('') + '</nav>';
       var label = (STYLE_SECTIONS.filter(function (s) { return s.id === section; })[0] || {}).label || '';
       var fields = '<div class="rd-style-fields"><h5>' + esc(label) + '</h5>' + held +
@@ -4507,6 +4524,8 @@ import { toWinAnsi } from './doc-fonts.js';
         var subj = latest().filter(function (c) { return c.id === selId; })[0] || {};
         var o = Object.assign({}, opts(), { subjectId: selId });
         if (tagsOverride) o.tags = tagsOverride;
+        // The Style being edited decides the numbering in its own preview.
+        if (style) o.numbering = App.docFormat.normalise(style).document;
         var utc = H().clock && H().clock.nowIso ? H().clock.nowIso() : '';
         var built = App.docGen.documentFor(H(), o, { title: subj.label || '', platform: subj.label || '', date: String(utc).slice(0, 10), utc: utc,
           classification: o.classification || (project.report || {}).classification || '' });

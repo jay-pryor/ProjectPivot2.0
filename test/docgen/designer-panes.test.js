@@ -544,7 +544,7 @@ test('Styles calls the marking "Security Classification"', () => {
 test('Styles lists Numbering and Contents separately, straight after Page, with the Table of Contents wording', () => {
   const html = paneOf(host(), 'styles', 'numbering');
   const order = [...html.matchAll(/data-rd-style-section="([a-zA-Z0-9]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(order.slice(0, 4), ['page', 'numbering', 'contents', 'title']);
+  assert.deepEqual(order.slice(0, 5), ['document', 'page', 'numbering', 'contents', 'title']);
   assert.match(html, />\s*Show the numbers in the Table of Contents</);
   const contents = paneOf(host(), 'styles', 'contents');
   assert.match(contents, />\s*Include a Table of Contents</);
@@ -594,4 +594,15 @@ test('a renamed section saves its heading where its Heading box does; blank puts
   assert.equal(h.getState().report.sections[0].title, 'My own');
   RD._renameSection('things', '');
   assert.equal((h.getState().report.headings || {}).things, undefined);
+});
+
+test('Styles starts with Document, set apart, then Page Setup and Section Numbering; Header & Footer capitalised', () => {
+  const html = paneOf(host(), 'styles', 'document');
+  const list = html.slice(html.indexOf('rd-style-list'), html.indexOf('rd-style-fields'));
+  const names = [...list.matchAll(/data-rd-style-section="[^"]+"[^>]*>([^<]+)</g)].map((m) => m[1]);
+  assert.deepEqual(names.slice(0, 4), ['Document', 'Page Setup', 'Section Numbering', 'Contents']);
+  assert.ok(names.includes('Header &amp; Footer'));
+  assert.match(list, /data-rd-style-section="document"[^>]*>Document<\/button><hr class="rd-style-divider"/);
+  const f = html.slice(html.indexOf('rd-style-fields'), html.indexOf('rd-style-preview'));
+  for (const k of ['renumberHazards', 'renumberControls', 'renumberReferences']) assert.match(f, new RegExp(`data-rd-fmt-bool="document\\.${k}"`), k);
 });
