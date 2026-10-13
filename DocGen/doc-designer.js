@@ -3295,6 +3295,7 @@ import { toWinAnsi } from './doc-fonts.js';
       styleSection: null,    // which part of that Style is open (PDF-1)
       held: null,            // what the last edit asked for that the Style could not use
       secCat: null,          // the open category of the Sections pane
+      secWhole: false,       // whether the section preview shows the whole document
       listWidth: null,       // the Sections list's width, once dragged
       secZoom: null,         // the section preview's zoom, when changed from the default
       prevZoom: null,        // the Preview pane's zoom, likewise
@@ -3871,9 +3872,17 @@ import { toWinAnsi } from './doc-fonts.js';
       var k = zoomOf('section');
       var zoom = zoomBar('section');
       var pages = lastPage - mine.page + 1;
-      return '<div class="rd-secprev-head"><span class="rd-state">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
+      var whole = !!_rd.secWhole;
+      var scope = '<span class="rd-scope">' + [['section', 'This section'], ['whole', 'Whole document']].map(function (o) {
+        var on = (o[0] === 'whole') === whole;
+        return '<button type="button" class="' + (on ? 'on' : '') + '" data-rd-prev-scope="' + o[0] + '" aria-pressed="' + on + '">' + o[1] + '</button>';
+      }).join('') + '</span>';
+      return '<div class="rd-secprev-head">' + scope + '<span class="rd-state">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
         ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
-        '<div class="rd-secprev rd-preview-pages">' + pagesHtml(bands, { scale: k }) + '</div>';
+        // The whole document, opened at this section; or just this section, cut from it.
+        '<div class="rd-secprev rd-preview-pages">' + (whole
+          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: included[at].anchor })
+          : pagesHtml(bands, { scale: k })) + '</div>';
     }
 
     function metaPane(project) {
@@ -4585,6 +4594,7 @@ import { toWinAnsi } from './doc-fonts.js';
       if (again) again.scrollTop = top;
       var pane2 = host.querySelector('.rd-pane');
       if (pane2) pane2.scrollTop = paneTop;
+      scrollToHere();
       return true;
     }
     /* Leaving a text box saves it and redraws — on the press of whatever was clicked
@@ -4756,6 +4766,15 @@ import { toWinAnsi } from './doc-fonts.js';
       var view = outlineNow(project);
       var block = view.blocks.filter(function (b) { return b.id === _rd.selected; })[0];
       if (block) col.innerHTML = sectionPreview(project, block);
+      scrollToHere();
+    }
+    /** In the whole-document preview, bring the selected section's start into view. */
+    function scrollToHere() {
+      var box = document.querySelector('[data-rd-sec-prev]');
+      var here = box && box.querySelector('[data-rd-here]');
+      if (!here) return;
+      var head = box.querySelector('.rd-secprev-head');
+      box.scrollTop += here.getBoundingClientRect().top - box.getBoundingClientRect().top - (head ? head.offsetHeight : 0) - 8;
     }
 
     /** The document's reference resolver, for re-rendering a box after an edit. */
@@ -4931,6 +4950,7 @@ import { toWinAnsi } from './doc-fonts.js';
       // ---- preview ----------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-refresh-preview]', function () { dirty(); repaint(); });
       dom.on(ctx.root, 'click', '[data-rd-sec-cat]', function (e, el) { _rd.secCat = el.getAttribute('data-rd-sec-cat'); repaint(); });
+      dom.on(ctx.root, 'click', '[data-rd-prev-scope]', function (e, el) { _rd.secWhole = el.getAttribute('data-rd-prev-scope') === 'whole'; repaint(); });
       // The Sections list's grip: dragging resizes the list in place; the width is kept on release.
       dom.on(ctx.root, 'pointerdown', '[data-rd-split]', function (e, el) {
         var pane = el.previousElementSibling, layout = el.parentNode;

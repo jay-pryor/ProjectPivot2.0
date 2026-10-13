@@ -400,3 +400,16 @@ test('Table ticks every column of a pre-populated section except its first, iden
   const t = App.docGen.documentFor(h, Object.assign({}, App.docSession.options(), { subjectId: 's1' }), {}).document.blocks.find((x) => x.anchor === 'tbl-things');
   assert.deepEqual(t.header.map((c) => c[0].text), ['ID', 'Extra']);
 });
+
+test('the section preview switches between this section (the default) and the whole document', () => {
+  const h = host();
+  const at = (whole) => { RD._rd.secWhole = whole; const html = sectionPane(h, 'things'); RD._rd.secWhole = false; return html; };
+  const one = at(false);
+  assert.match(one, /data-rd-prev-scope="section"[^>]*aria-pressed="true"/);
+  assert.match(one, /data-rd-prev-scope="whole"[^>]*aria-pressed="false"/);
+  assert.doesNotMatch(one, />O-1</, 'just this section');
+  const all = at(true);
+  assert.match(all, /data-rd-prev-scope="whole"[^>]*aria-pressed="true"/);
+  assert.match(all, />O-1</, 'the other sections too');
+  assert.match(all, /<span class="dp-anchor" id="sec-things"[^>]*data-rd-here/, 'it marks where this section starts, to scroll to');
+});

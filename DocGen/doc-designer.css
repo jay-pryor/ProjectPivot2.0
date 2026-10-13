@@ -309,3 +309,10 @@
   .docgen .rd-sec-fields > h5 { margin: 0 0 8px;}
   .docgen .rd-sec-prev { position: sticky; top: 0; max-height: calc(100vh - 230px); overflow: auto; min-width: 0;}
   .docgen .rd-sec-prev .rd-secprev { max-height: none;}
+  .docgen .rd-scope { display: inline-flex;}
+  .docgen .rd-scope button { font: inherit; font-size: 12px; padding: 3px 10px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-muted); cursor: pointer;}
+  .docgen .rd-scope button + button { border-left: 0;}
+  .docgen .rd-scope button.on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-text); font-weight: 600;}
+  .docgen .rd-secprev-head { flex-wrap: wrap;}
+  /* The preview column scrolls; its switch and zoom stay at the top of it. */
+  .docgen .rd-sec-prev .rd-secprev-head { position: sticky; top: 0; z-index: 2; background: var(--c-bg); padding: 2px 0 6px; margin: 0;}
