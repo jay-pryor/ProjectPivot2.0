@@ -14,7 +14,7 @@ export function reportsView(state, data) {
   // A new report: its name and what it starts from, then straight into the designer.
   const start = html`<section class="panel report-new" aria-labelledby="report-new-h"><h2 id="report-new-h">New report</h2><form data-action="startReport" class="report-start">
       <label class="report-start-name">Report name <input name="title" required placeholder="e.g. Harbour Patrol Boat safety case" aria-label="Report name"></label>
-      <label>Start from <select name="from" aria-label="Start from"><option value="">The shared design</option>${templates.map((t) => html`<option value="${t.id}">${t.name}</option>`)}</select></label>
+      <label>Start from <select name="from" aria-label="Start from"><option value="">Default Report Template</option>${templates.map((t) => html`<option value="${t.id}">${t.name}</option>`)}</select></label>
       <button type="submit" class="primary">Open in Report Designer</button></form></section>`;
   return html`<div class="head"><h1>Reports</h1></div>
     ${start}
@@ -29,7 +29,7 @@ export function reportsView(state, data) {
           { key: 'produced', label: 'Produced', width: 160, value: (r) => r.producedAt ?? '', render: (r) => (r.producedAt ? when(r.producedAt) : '—') },
           { key: 'platform', label: 'Platform', width: 180, value: (r) => r.platformName || '—' },
           { key: 'title', label: 'Title', width: 320, value: (r) => r.title,
-            render: (r) => html`${r.title}${r.review?.state === 'overdue' ? html` <span class="tag review-overdue" title="Produced while ${r.platformName} was overdue for review">Overdue</span>` : ''}` },
+            render: (r) => html`${r.title}${(state.missingDesigns ?? []).includes(r.id) ? html` <span class="tag tag-warn" title="Its design file is not in the folder; it opens on the Default Report Template">Design missing</span>` : ''}${r.review?.state === 'overdue' ? html` <span class="tag review-overdue" title="Produced while ${r.platformName} was overdue for review">Overdue</span>` : ''}` },
           { key: 'stage', label: 'Status', width: 120, value: (r) => stageOf(r),
             render: (r) => (stageOf(r) === 'in-progress' ? html`<span class="tag stage-progress">In-Progress</span>` : html`<span class="tag stage-review">For Review</span>`) },
           { key: 'marking', label: 'Marking', width: 170, value: (r) => r.classification || '—' },
