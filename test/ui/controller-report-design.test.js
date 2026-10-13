@@ -95,3 +95,13 @@ test('a report whose design file is missing is named in the state after loading'
   await go({ type: 'selectProfile', id: c.getState().profiles[0].id });
   assert.deepEqual(c.getState().missingDesigns, [r.id]);
 });
+
+test('a report made without opening one never picks up a leftover shared arrangement', async () => {
+  const { c, go } = await setup();
+  const w = c.getState().session.working;
+  c.getState().session.working = { ...w, reportDesign: { ...w.reportDesign, sections: [{ id: 'leftover', title: 'Test', parts: [] }], order: ['leftover'] } };
+  await go({ type: 'produceReport', platformId: 'p1' });
+  const [r] = reports(c);
+  assert.deepEqual(r.design, {});
+  assert.ok(!JSON.stringify(r.document).includes('"Test"'), 'nor does the made document');
+});

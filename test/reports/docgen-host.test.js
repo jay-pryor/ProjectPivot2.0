@@ -42,16 +42,15 @@ test('the host is a valid DocGen host about platforms, offering Pivot\'s marking
   assert.deepEqual(docs.host.sections(null).map((s) => s.id), ['hazards', 'controls', 'existing', 'causes', 'references', 'assessments', 'sfarp', 'safetyReports']);
 });
 
-test('design changes made in the designer land in Pivot\'s data', () => {
+test('library changes made in the designer land in Pivot\'s shared library', () => {
   const { box } = setup();
-  assert.ok(App.docStore.setClassification('PROTECTED').ok);
-  assert.equal(box.data.reportDesign.classification, 'PROTECTED');
+  assert.ok(App.docStore.addFormat('House').ok);
+  assert.equal(box.data.reportDesign.formats[0].name, 'House');
 });
 
 test('produce: a report keeps its finished document and Style, carrying the marking and the platform\'s hazards', () => {
-  const { box, docs } = setup();
-  App.docStore.setClassification('OFFICIAL: Sensitive');
-  const { report, baseName } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'Alpha hazards' });
+  const { box, docs } = setup((d) => startReport(d, act, { id: 'r1', title: 'Alpha hazards', design: { classification: 'OFFICIAL: Sensitive' } }));
+  const { report, baseName } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'Alpha hazards', reportId: 'r1' });
   assert.equal(report.classification, 'OFFICIAL: Sensitive');
   assert.equal(report.rows.length, 1);
   assert.ok(!('markdown' in report) && !('html' in report), 'the documents are drawn from the document when downloaded');
@@ -449,4 +448,14 @@ test('the Default Report Template is the empty design, whatever the shared desig
   assert.equal(st.order, undefined);
   assert.equal(st.formats[0].id, 'house', 'the library is still there');
   assert.equal(docs.host.heading, undefined);
+});
+
+test('the shared design is only the library: it shows nothing else and keeps nothing else', () => {
+  const { box, docs } = withReport({});
+  box.data = setReportDesign(box.data, { ...box.data.reportDesign, order: ['leftover'], sections: [{ id: 'leftover', title: 'Test', parts: [] }] });
+  assert.deepEqual(Object.keys(docs.host.getState().report).sort(), ['formats', 'sectionTemplates']);
+  docs.host.commit((s) => { s.report.levels = { hazards: 2 }; s.report.formats.push({ id: 'x', name: 'X', page: { margins: {} }, text: {} }); });
+  assert.equal(box.data.reportDesign.levels, undefined);
+  assert.equal(box.data.reportDesign.order, undefined, 'a commit through it keeps only the library');
+  assert.equal(box.data.reportDesign.formats.length, 2);
 });
