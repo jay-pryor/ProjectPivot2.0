@@ -44,6 +44,8 @@ function css(s) {
     '.fig-missing { display: inline-block; width: 100%; aspect-ratio: 4 / 3; background: #eeeeee; border: 0.5pt solid #999999; color: #555555; font-size: 8pt; }',
     '.doc-table tr { break-inside: avoid; }', '.page-break { break-after: page; }', 'hr { border: 0; border-top: 1px solid #999; }',
     '@media screen { .page-break { border-top: 1px dashed #bbb; margin: 16pt 0; } }',
+    // A landscape section prints on landscape pages (where the browser honours named pages).
+    `@page landscape { size: ${s.page.paper} landscape; }`, '.landscape { page: landscape; }',
   ].filter(Boolean).join('\n');
 }
 
@@ -70,6 +72,7 @@ const plain = (/** @type {any[]} */ runs) => (runs ?? []).map((r) => (r.br ? ' '
 export function renderHtml(doc, style, opts = {}) {
   const meta = doc.meta ?? {};
   const headings = (doc.blocks ?? []).filter((b) => b.kind === 'heading' && !b.noToc && b.level <= style.toc.depth);
+  let wide = false;
   const body = (doc.blocks ?? []).map((b) => {
     const id = b.anchor ? ` id="${esc(b.anchor)}"` : '';
     const centre = b.centre ? ' centre' : '';
@@ -109,11 +112,18 @@ export function renderHtml(doc, style, opts = {}) {
     if (b.kind === 'toc') {
       return `<nav class="toc">${headings.map((h) => `<p class="toc${Math.min(3, Math.max(1, h.level))}"><a href="#${esc(h.anchor)}">${style.numbering.inToc && h.number ? `${esc(h.number)} ` : ''}${esc(plain(h.runs))}</a></p>`).join('')}</nav>`;
     }
+    if (b.kind === 'pageBreak' && b.orientation) {
+      // A turn to landscape opens a wrapper the turn back closes. The break goes inside it: outside, the change of
+      // named page breaks once and the break div again, printing a blank page.
+      const out = '<div class="page-break"></div>' + (wide ? '</div>' : '') + (b.orientation === 'landscape' ? '\n<div class="landscape">' : '');
+      wide = b.orientation === 'landscape';
+      return out;
+    }
     if (b.kind === 'pageBreak') return '<div class="page-break"></div>';
     if (b.kind === 'space') return `<div${id} style="height:${Number(b.mm) || 0}mm"></div>`;
     if (b.kind === 'rule') return '<hr>';
     return '';
-  }).join('\n');
+  }).join('\n') + (wide ? '\n</div>' : '');
   const marking = meta.marking && style.marking.show ? `<div class="marking">${esc(meta.marking)}</div>` : '';
   return ['<!doctype html>', '<html lang="en">', '<head>', '<meta charset="utf-8">', '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>${esc(meta.title || doc.title || 'Report')}</title>`, '<style>', css(style), '</style>', '</head>', '<body>', marking,

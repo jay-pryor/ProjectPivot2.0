@@ -276,14 +276,15 @@ export function createDocHost(ctx) {
     ? producing
     : buildSnapshot(ctx.getData(), platformId, { profileName: ctx.profileName, at: ctx.clock.now(), by: '', title: '', classification: '' }));
 
+  // The shared design is only the library (Styles, templates, Standard Images): a design of its own
+  // is a report's, and a report without one is on the Default Report Template, the empty arrangement.
   const host = {
-    heading: { title: 'Default for new reports' },
-    getState: () => ({ report: structuredClone(ctx.getData().reportDesign) }),
+    getState: () => ({ report: libraryOf(ctx.getData().reportDesign) }),
     /** @param {(state: { report?: Record<string, any> }) => void} mutator */
     commit(mutator) {
-      const state = { report: structuredClone(ctx.getData().reportDesign) };
+      const state = { report: libraryOf(ctx.getData().reportDesign) };
       mutator(state);
-      ctx.setDesign(state.report ?? {});
+      ctx.setDesign(libraryOf(state.report ?? {}));
     },
     clock: { nowIso: () => toIsoUtc(ctx.clock.now()) },
     classifications: [...CLASSIFICATIONS],
@@ -328,7 +329,8 @@ export function createDocHost(ctx) {
   const hostFor = (id) => {
     if (reportHosts.has(id)) return reportHosts.get(id);
     const rec = () => ctx.getData().records.report[id];
-    const own = () => { const r = rec(); return r?.design ? structuredClone(r.design) : arrangementOf(ctx.getData().reportDesign); };
+    // A report without a design of its own is on the Default Report Template: the empty arrangement.
+    const own = () => { const r = rec(); return r?.design ? structuredClone(r.design) : {}; };
     const h = {
       ...host,
       get heading() { const r = rec(); return { title: r?.title ?? '', tag: STAGE_LABEL[r?.stage === 'in-progress' ? 'in-progress' : 'for-review'] }; },
@@ -350,15 +352,15 @@ export function createDocHost(ctx) {
     return h;
   };
   /**
-   * A new report's design, from the shared arrangement or a report template applied to it; and
+   * A new report's design, the Default Report Template (empty) or a report template applied to the library; and
    * the shared library after (a template may bring its Style with it).
-   * @param {string} from '' for the shared design, else a report template's id
+   * @param {string} from '' for the Default Report Template (the empty arrangement), else a report template's id
    */
   const newDesign = (from) => {
     const shared = structuredClone(ctx.getData().reportDesign ?? {});
     const t = from ? (shared.reportTemplates ?? []).find((/** @type {any} */ x) => x.id === from) : null;
     const applied = t ? App.docStore.applyReportTemplate(shared, t, true) : shared;
-    return { design: arrangementOf(applied), library: libraryOf(applied) };
+    return { design: t ? arrangementOf(applied) : {}, library: libraryOf(applied) };
   };
 
   return {

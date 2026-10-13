@@ -80,7 +80,7 @@ test('the designer\'s Generate buttons produce and download for the designer\'s 
   const c = createController(env(f));
   await ready(c);
   await c.dispatch({ type: 'save' });
-  await c.dispatch({ type: 'openDesigner' });
+  await c.dispatch({ type: 'startReport', title: 'Alpha hazards', from: '' });
   assert.equal(c.getState().designerRevision, 1);
   assert.ok(DocGen.ui.views.reportDesign.isOpen());
   await c.dispatch({ type: 'generateFromDesigner', format: 'html' });
@@ -108,8 +108,10 @@ test('a design change is an unsaved change of the data, but does not block produ
   const c = createController(env(f));
   await ready(c);
   await c.dispatch({ type: 'save' });
+  await c.dispatch({ type: 'startReport', title: 'Alpha hazards', from: '' });
   DocGen.docStore.setClassification('PROTECTED');
-  assert.equal(c.getState().session.working.reportDesign.classification, 'PROTECTED');
+  const r = Object.values(c.getState().session.working.records.report)[0];
+  assert.equal(r.design.classification, 'PROTECTED');
   assert.notEqual(c.getState().session.working, c.getState().session.base);
   await c.dispatch({ type: 'generateFromDesigner', format: 'html' });
   assert.match(f.read('Alpha-2026-09-28.html'), /class="marking">PROTECTED</);

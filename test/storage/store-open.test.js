@@ -31,7 +31,7 @@ test('load gives back the stored data and its stamp', async () => {
   const stamp = newStamp('u1', at);
   const body = { ...emptyData(), nextHazardNumber: 5 };
   f.write(FILES.data, serialize(await seal('data', body, stamp, at)));
-  assert.deepEqual(await load(f.handle), { data: body, stamp });
+  assert.deepEqual(await load(f.handle), { data: body, stamp, missingDesigns: [] });
 });
 
 test('profiles: created, listed by name, duplicates refused ignoring case, blank refused', async () => {

@@ -343,3 +343,19 @@ test('a link to a numbered paragraph reads as its number', () => {
   ]);
   assert.equal(paraText(doc, 'See '), 'See 4.1; in full, 4.1 Fire suppression is fitted..');
 });
+
+test('a landscape section is turned on its own pages, and the next section turns back', () => {
+  const { document } = build({ landscape: { staff: true, teams: true } });
+  const kinds = document.blocks.map((b) => (b.kind === 'pageBreak' ? `break:${b.orientation ?? ''}` : b.kind === 'heading' ? `h:${plain(b.runs)}` : b.kind));
+  const at = (t) => kinds.indexOf(`h:${t}`);
+  assert.equal(kinds[at('Staff') - 1], 'break:landscape');
+  assert.ok(!kinds.slice(at('Staff'), at('Teams')).includes('break:landscape'), 'consecutive landscape sections share the turn');
+  assert.equal(kinds[at('Notes for 12 Oct 2026') - 1], 'break:portrait');
+  assert.ok(!build().document.blocks.some((b) => b.kind === 'pageBreak' && b.orientation), 'no tick, no turns');
+});
+
+test('in a landscape Style the Landscape pages tick changes nothing', () => {
+  const style = { id: 's1', name: 'S', page: { orientation: 'landscape', margins: {} }, text: {} };
+  const { document } = build({ formats: [style], formatId: 's1', landscape: { staff: true } });
+  assert.ok(!document.blocks.some((b) => b.kind === 'pageBreak' && b.orientation), 'no turns');
+});
