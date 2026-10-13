@@ -319,3 +319,7 @@
   .docgen .rd-secprev-head { flex-wrap: wrap;}
   /* The preview column scrolls; its switch and zoom stay at the top of it. */
   .docgen .rd-sec-prev .rd-secprev-head { position: sticky; top: 0; z-index: 2; background: var(--c-bg); padding: 2px 0 6px; margin: 0;}
+  /* Ticks in three even columns; a long name wraps under its own box. */
+  .docgen .rd-ticks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 12px; margin-top: 4px;}
+  .docgen .rd-ticks .gen-opt { display: flex; align-items: flex-start; margin: 0; white-space: normal; overflow-wrap: break-word; min-width: 0;}
+  .docgen .rd-ticks .gen-opt input { flex: none; margin-top: 2px;}

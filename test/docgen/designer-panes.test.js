@@ -454,3 +454,20 @@ test('pressing a lit B, I or code with nothing selected ends that style at the c
   assert.ok(wrap && /endFormat\(/.test(wrap[1]), 'wrapSelection ends a style that is on at a collapsed caret');
   assert.match(src, /function endFormat\(el, tag\) \{/);
 });
+
+test('Placement: centring under "Centre content", the rest under "Section placement", no "On the page"', () => {
+  const html = sectionAt(host(), 'things', 'placement');
+  const f = html.slice(html.indexOf('data-rd-sec-fields'), html.indexOf('data-rd-sec-prev'));
+  assert.doesNotMatch(f, /On the page/);
+  assert.match(f, /<strong>Centre content<\/strong>[\s\S]*data-rd-centre-part="heading"[\s\S]*data-rd-centre-part="table"[\s\S]*<strong>Section placement<\/strong>[\s\S]*data-rd-pagebreak[\s\S]*data-rd-notoc[\s\S]*data-rd-space-block/);
+});
+
+test('Table: column ticks sit in a three-column grid, and the wording is "Table Headers and Caption"', async () => {
+  const html = sectionAt(host(), 'things', 'table');
+  assert.match(html, /<strong>Columns<\/strong><div class="rd-ticks">[\s\S]*data-rd-key="v"[\s\S]*data-rd-key="extra"[\s\S]*<\/div>/);
+  assert.match(html, /<strong[^>]*>Table Headers and Caption<\/strong>/);
+  assert.doesNotMatch(html, />Table wording</);
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../../DocGen/doc-designer.css', import.meta.url), 'utf8');
+  assert.match(css, /\.docgen \.rd-ticks \{[^}]*display: grid;[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+});

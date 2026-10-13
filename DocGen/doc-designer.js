@@ -3924,8 +3924,8 @@ import { toWinAnsi } from './doc-fonts.js';
       var lvl = resolved ? resolved.level : null;
       var lvStyle = App.docFormat.resolve(project).text[lvl === App.doc.TITLE_LEVEL ? 'title' : 'h' + lvl];
       var byLevel = !!(lvStyle && lvStyle.pageBreakBefore);
-      return '<div class="rd-fieldset"><strong>On the page</strong>' +
-        centreTicks(block) +
+      return '<div class="rd-fieldset"><strong>Centre content</strong><div class="rd-flags">' + centreTicks(block) + '</div></div>' +
+        '<div class="rd-fieldset"><strong>Section placement</strong>' +
         cb('data-rd-pagebreak="' + esc(block.id) + '"',
           'Start this section on a new page', byLevel || block.pageBreakBefore === true, byLevel) +
         (byLevel ? '<p class="rd-state">' + esc(levelName(lvl)) + ' starts a new page in this Style.</p>' : '') +
@@ -3985,7 +3985,7 @@ import { toWinAnsi } from './doc-fonts.js';
                 ' placeholder="' + esc(c.label) + '" aria-label="Heading for the ' + esc(c.label) + ' column"></label>';
           }).join('') + '</div></div>';
       }).join('');
-      return '<div class="rd-fieldset"><strong title="Blank means the standard wording">Table wording</strong>' + body + '</div>';
+      return '<div class="rd-fieldset"><strong title="Blank means the standard wording">Table Headers and Caption</strong>' + body + '</div>';
     }
 
     /**
@@ -4052,17 +4052,17 @@ import { toWinAnsi } from './doc-fonts.js';
       var groups = b.groups || [];
       var out = '';
       if (groups.length) {
-        out += '<div class="rd-fieldset"><strong>Groups</strong>' + groups.map(function (g) {
+        out += '<div class="rd-fieldset"><strong>Groups</strong><div class="rd-ticks">' + groups.map(function (g) {
           return cb('data-rd-dsmap="datasetSections" data-rd-ds="' + esc(b.dsId) + '" data-rd-key="' + esc(g.value) + '"', g.label, g.included);
-        }).join('') + '</div>';
+        }).join('') + '</div></div>';
       }
       if (optional.length) {
         // COL-3: ticked iff the column will actually be there; stored under the key the builder reads.
         var key = App.docGen.sectionColumnKey(H(), b, opts());
         var colOpts = (opts().columns || {})[key] || {};
-        out += '<div class="rd-fieldset"><strong>Columns</strong>' + optional.map(function (c) {
+        out += '<div class="rd-fieldset"><strong>Columns</strong><div class="rd-ticks">' + optional.map(function (c) {
           return cb('data-rd-dsmap="columns" data-rd-ds="' + esc(key) + '" data-rd-key="' + esc(c.id) + '"', c.label, App.report.columnOn(c, colOpts));
-        }).join('') + '</div>';
+        }).join('') + '</div></div>';
       }
       return out;
     }
