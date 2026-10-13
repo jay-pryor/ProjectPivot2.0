@@ -364,3 +364,6 @@
   .docgen .rd-imgmenu { position: absolute; z-index: 5; top: 100%; left: 0; min-width: 220px; background: var(--c-surface); border: 1px solid var(--c-border); padding: 6px; display: flex; flex-direction: column; gap: 4px; cursor: default;}
   .docgen .rd-std-thumb { width: 28px; height: 28px; object-fit: contain; margin-right: 6px; vertical-align: middle;}
   .docgen .rd-stdimgs.drop-target { outline: 2px dashed var(--c-accent);}
+  .docgen .rd-save-slot { margin-left: auto; display: flex; align-items: center;}
+  .docgen .modal-head h3 { display: inline-block; vertical-align: middle;}
+  .docgen .rd-stage { margin-left: 8px; vertical-align: middle;}

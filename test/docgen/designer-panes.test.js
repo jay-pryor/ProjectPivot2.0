@@ -829,3 +829,17 @@ test('applying a report template is a pure step on a design bag', () => {
   assert.equal(out.formats.length, 1, 'a template\'s Style joins the Styles');
   assert.equal(out.formatId, out.formats[0].id);
 });
+
+test('the designer\'s header names what is open and has room for the app\'s Save button', () => {
+  const h = host();
+  h.heading = { title: 'Customer pack', tag: 'In-Progress' };
+  let html = paneOf(h, 'section');
+  assert.match(html, /<h3>Customer pack<\/h3><span class="tag rd-stage">In-Progress<\/span>/);
+  assert.match(html, /<span class="rd-save-slot" data-rd-save-slot><\/span><button type="button" class="modal-close"/);
+  h.heading = { title: 'Default for new reports' };
+  html = paneOf(h, 'section');
+  assert.match(html, /<h3>Default for new reports<\/h3>/);
+  assert.doesNotMatch(html, /rd-stage/);
+  delete h.heading;
+  assert.match(paneOf(h, 'section'), /<h3>Report Design<\/h3>/);
+});

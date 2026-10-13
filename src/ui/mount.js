@@ -4,6 +4,7 @@ import { captureDrafts, restoreDrafts, formIdentity, formValues } from './drafts
 import { themeOf } from './prefs.js';
 import { clampZoom, ZOOM_MIN, ZOOM_MAX } from './workspace.js';
 import { App as DocGen } from '../../DocGen/doc-designer.js';
+import { saveButton } from './screens/common.js';
 
 /**
  * Event delegation on a root that stays put, as DocGen's designer does.
@@ -309,6 +310,9 @@ export function mount(root, controller) {
       designerRevision = state.designerRevision;
       paintDesigner();
     }
+    // The designer's own Save button follows the app's state (unsaved, saving, saved).
+    const slot = designerEl.querySelector('[data-rd-save-slot]');
+    if (slot) slot.innerHTML = saveButton(state).toString();
   };
   window.addEventListener('resize', () => { fitAttention(appEl); fitAll(appEl); });
   window.addEventListener('resize', () => placeTour(appEl, tourAt));
@@ -340,8 +344,10 @@ export function mount(root, controller) {
   const reselectOptions = assignSelect(appEl, controller.dispatch);
   const reselect = () => { reselectHistory(); reselectOptions(); };
   const showImages = platformImages(appEl, controller);
-  RD.wire({ root: designerEl, refreshMain: paintDesigner, quietEdit: (/** @type {() => void} */ fn) => fn() });
+  RD.wire({ root: designerEl, refreshMain: paintDesigner, quietEdit: (/** @type {() => void} */ fn) => fn(), saveButton: () => saveButton(controller.getState()).toString() });
   designerEl.addEventListener('click', (e) => {
+    const s = /** @type {HTMLElement} */ (e.target).closest('[data-action="save"]');
+    if (s) { void controller.dispatch({ type: 'save' }); return; }
     const b = /** @type {HTMLButtonElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-generate-action]'));
     if (!b || b.disabled) return;
     void controller.dispatch({ type: 'generateFromDesigner', format: b.getAttribute('data-generate-format') });

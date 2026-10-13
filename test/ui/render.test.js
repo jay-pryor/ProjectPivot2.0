@@ -69,3 +69,12 @@ test('the reports view: a name and a starting point open a new report; Status; d
   assert.match(h, /data-action="downloadReport" data-id="r0" data-format="pdf"/);
   for (const id of ['r0', 'r1']) assert.match(h, new RegExp(`data-action="openReportDesigner" data-id="${id}"[^>]*title="Open in Report Designer"[^>]*aria-label="Open in Report Designer"`));
 });
+
+import { saveButton } from '../../src/ui/screens/common.js';
+
+test('the Save button on its own: Unsaved, Saving…, Saved', () => {
+  const d = assignHazardNumbers(seed());
+  assert.match(saveButton(main(d)).toString(), /class="save saved"[^>]*>Saved</);
+  assert.match(saveButton({ ...main(d), saving: true }).toString(), /class="save saving"[^>]*disabled>Saving…</);
+  assert.match(saveButton({ ...main(d), session: { base: emptyData(), working: d, loadedStamp: null } }).toString(), /class="save unsaved"[^>]*>Unsaved</);
+});

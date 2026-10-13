@@ -5000,9 +5000,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           (_rd.pane === p.id ? ' aria-current="true"' : '') + '>' + esc(p.label) + '</button>';
       }).join('');
 
-      return '<div class="modal modal-full" role="dialog" aria-modal="true" aria-label="Report Design">' +
-        '<div class="modal-head"><div><h3>Report Design</h3>' +
+      var hd = (H() && H().heading) || null;
+      var save = _ctx && typeof _ctx.saveButton === 'function' ? _ctx.saveButton() : '';
+      return '<div class="modal modal-full" role="dialog" aria-modal="true" aria-label="' + esc(hd ? hd.title : 'Report Design') + '">' +
+        '<div class="modal-head"><div><h3>' + esc(hd ? hd.title : 'Report Design') + '</h3>' +
+          (hd && hd.tag ? '<span class="tag rd-stage">' + esc(hd.tag) + '</span>' : '') +
           '<div class="modal-sub">' + (subj ? subjectPicker(selId) : 'No ' + esc(noun()) + ' selected.') + '</div></div>' +
+          '<span class="rd-save-slot" data-rd-save-slot>' + save + '</span>' +
           '<button type="button" class="modal-close" data-rd-close aria-label="Close">×</button></div>' +
         '<div class="modal-body"><div class="rpt-body rd-layout">' +
           // The section list belongs to the Sections tab; the other tabs have the width.
