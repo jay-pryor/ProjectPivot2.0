@@ -84,5 +84,11 @@ test('landscape stretches print landscape: a named page and a wrapping div', () 
     { kind: 'paragraph', style: 'body', runs: [{ text: 'wide' }] }, { kind: 'pageBreak', orientation: 'portrait' }, { kind: 'paragraph', style: 'body', runs: [{ text: 'b' }] }] }, normaliseStyle({}).style);
   assert.match(html, /@page landscape \{ size: a4 landscape; \}/);
   assert.match(html, /\.landscape \{ page: landscape; \}/);
-  assert.match(html, /<div class="page-break"><\/div>\n?<div class="landscape">[\s\S]*?wide[\s\S]*?<\/div>\n?<div class="page-break"><\/div>/);
+  assert.match(html, /<div class="page-break"><\/div>\n?<div class="landscape">[\s\S]*?wide[\s\S]*?<div class="page-break"><\/div><\/div>/);
+});
+
+test('the turn back to portrait breaks inside the landscape wrapper, so printing makes no blank page', () => {
+  const html = renderHtml({ blocks: [{ kind: 'paragraph', style: 'body', runs: [{ text: 'a' }] }, { kind: 'pageBreak', orientation: 'landscape' },
+    { kind: 'paragraph', style: 'body', runs: [{ text: 'wide' }] }, { kind: 'pageBreak', orientation: 'portrait' }, { kind: 'paragraph', style: 'body', runs: [{ text: 'b' }] }] }, normaliseStyle({}).style);
+  assert.match(html, /wide[\s\S]*?<div class="page-break"><\/div><\/div>/);
 });

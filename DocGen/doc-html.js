@@ -113,8 +113,9 @@ export function renderHtml(doc, style, opts = {}) {
       return `<nav class="toc">${headings.map((h) => `<p class="toc${Math.min(3, Math.max(1, h.level))}"><a href="#${esc(h.anchor)}">${style.numbering.inToc && h.number ? `${esc(h.number)} ` : ''}${esc(plain(h.runs))}</a></p>`).join('')}</nav>`;
     }
     if (b.kind === 'pageBreak' && b.orientation) {
-      // A turn to landscape opens a wrapper the turn back closes.
-      const out = (wide ? '</div>\n' : '') + '<div class="page-break"></div>' + (b.orientation === 'landscape' ? '\n<div class="landscape">' : '');
+      // A turn to landscape opens a wrapper the turn back closes. The break goes inside it: outside, the change of
+      // named page breaks once and the break div again, printing a blank page.
+      const out = '<div class="page-break"></div>' + (wide ? '</div>' : '') + (b.orientation === 'landscape' ? '\n<div class="landscape">' : '');
       wide = b.orientation === 'landscape';
       return out;
     }

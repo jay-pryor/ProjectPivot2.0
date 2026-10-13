@@ -353,3 +353,9 @@ test('a landscape section is turned on its own pages, and the next section turns
   assert.equal(kinds[at('Notes for 12 Oct 2026') - 1], 'break:portrait');
   assert.ok(!build().document.blocks.some((b) => b.kind === 'pageBreak' && b.orientation), 'no tick, no turns');
 });
+
+test('in a landscape Style the Landscape pages tick changes nothing', () => {
+  const style = { id: 's1', name: 'S', page: { orientation: 'landscape', margins: {} }, text: {} };
+  const { document } = build({ formats: [style], formatId: 's1', landscape: { staff: true } });
+  assert.ok(!document.blocks.some((b) => b.kind === 'pageBreak' && b.orientation), 'no turns');
+});

@@ -1529,7 +1529,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var orientation = 'portrait';
       resolved.forEach(function (b) {
         // LND-1: a section's own orientation; a change turns the page (and stands in for its page break).
-        var want = b.landscape ? 'landscape' : 'portrait';
+        // A landscape Style is landscape already: the tick changes nothing there.
+        var want = (b.landscape && style.page.orientation !== 'landscape') ? 'landscape' : 'portrait';
         if (want !== orientation) { out.push({ kind: 'pageBreak', orientation: want }); orientation = want; }
         else if (b.pageBreakBefore) out.push({ kind: 'pageBreak' });
         var title = String(b.title == null ? b.label : b.title).trim();
