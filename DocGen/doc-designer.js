@@ -2736,46 +2736,37 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * Destructive by design — "apply this template" means "make the document look
      * like that" — so the UI confirms first and the whole thing is one undo step.
      */
+    /** RPT-T: what applying a report template does to a design bag (pure: a new bag). */
+    function applyReportTemplate(bag0, t) {
+      var b = JSON.parse(JSON.stringify(bag0 || {}));
+      b.order = (t.order || []).slice();
+      ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
+        'tables', 'pageBreak', 'noToc', 'space'].forEach(function (k) { b[k] = JSON.parse(JSON.stringify(t[k] || {})); });
+      b.sections = JSON.parse(JSON.stringify(t.sections || []));
+      if (!b.order.length) delete b.order;
+      if (!b.sections.length) delete b.sections;
+      ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
+        'tables', 'pageBreak', 'noToc', 'space'].forEach(function (k) { if (!Object.keys(b[k]).length) delete b[k]; });
+      if (t.format) {
+        var f = App.docFormat.normalise(t.format);
+        delete f.builtin;
+        if (f.id === 'standard') { f.id = nextId('fmt', b.formats || []); f.name = t.name + ' formatting'; }
+        b.formats = (b.formats || []).filter(function (x) { return x.id !== f.id; }).concat([f]);
+        b.formatId = f.id;
+      }
+      return b;
+    }
+
     function useReportTemplate(id) {
       if (!P()) return errNoProject();
       var t = ((P().report && P().report.reportTemplates) || []).filter(function (x) { return x.id === id; })[0];
       if (!t) return err('Unknown report template.', id);
-      App.docHost.get().commit(function (p) {
-        var b = bag(p);
-        b.order = (t.order || []).slice();
-        b.levels = JSON.parse(JSON.stringify(t.levels || {}));
-        b.centred = JSON.parse(JSON.stringify(t.centred || {}));
-        b.meta = JSON.parse(JSON.stringify(t.meta || {}));
-        b.names = JSON.parse(JSON.stringify(t.names || {}));
-        b.headings = JSON.parse(JSON.stringify(t.headings || {}));
-        b.intros = JSON.parse(JSON.stringify(t.intros || {}));
-        b.introNumbered = JSON.parse(JSON.stringify(t.introNumbered || {}));
-        b.tableStyles = JSON.parse(JSON.stringify(t.tableStyles || {}));
-        b.tableWidths = JSON.parse(JSON.stringify(t.tableWidths || {}));
-        b.tables = JSON.parse(JSON.stringify(t.tables || {}));
-        b.pageBreak = JSON.parse(JSON.stringify(t.pageBreak || {}));
-        b.noToc = JSON.parse(JSON.stringify(t.noToc || {}));
-        b.space = JSON.parse(JSON.stringify(t.space || {}));
-        b.sections = JSON.parse(JSON.stringify(t.sections || []));
-        if (!b.order.length) delete b.order;
-        if (!b.sections.length) delete b.sections;
-        ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
-          'tables', 'pageBreak', 'noToc', 'space'].forEach(function (k) {
-          if (!Object.keys(b[k]).length) delete b[k];
-        });
-        if (t.format) {
-          var f = App.docFormat.normalise(t.format);
-          delete f.builtin;
-          if (f.id === 'standard') { f.id = nextId('fmt', b.formats || []); f.name = t.name + ' formatting'; }
-          b.formats = (b.formats || []).filter(function (x) { return x.id !== f.id; }).concat([f]);
-          b.formatId = f.id;
-        }
-      });
+      App.docHost.get().commit(function (p) { p.report = applyReportTemplate(bag(p), t); });
       return ok();
     }
 
     App.docStore = {
-      nextId: nextId, blankPart: blankPart,
+      nextId: nextId, blankPart: blankPart, applyReportTemplate: applyReportTemplate,
       // RPT-3: the section order. It lived on App.store, which meant the module
       // reached into the host to reorder its own document.
       setReportOrder: setReportOrder,
@@ -5603,7 +5594,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         document.addEventListener('pointerup', up);
       });
       // The subject the report is about: a session choice, and everything shown is redrawn for it.
-      dom.on(ctx.root, 'change', '[data-rd-subject]', function (e, el) { session().subjectId = el.value; dirty(); repaint(); });
+      dom.on(ctx.root, 'change', '[data-rd-subject]', function (e, el) {
+        session().subjectId = el.value;
+        var hh = App.docHost.get();
+        if (hh && hh.rememberSubject) hh.rememberSubject(el.value);
+        dirty(); repaint();
+      });
       // The page previews' zoom: a way of looking, so the laid-out pages are kept.
       dom.on(ctx.root, 'click', '[data-rd-zoom]', function (e, el) {
         var which = ZOOM_KEY[el.getAttribute('data-rd-zoom-for')] ? el.getAttribute('data-rd-zoom-for') : 'section';

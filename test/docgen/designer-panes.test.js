@@ -820,3 +820,12 @@ test('"Centre table" is ticked unless it was turned off; off is what is stored',
   App.docStore.setBlockCentrePart('things', 'table', true);
   assert.deepEqual(h.getState().report.centred, { things: { heading: true } }, 'on is the default, so nothing is stored for it');
 });
+
+test('applying a report template is a pure step on a design bag', () => {
+  const t = { id: 'rpt1', name: 'Pack', order: ['things'], levels: { things: 2 }, sections: [], format: { ...normaliseStyle({ id: 'standard' }).style } };
+  const out = App.docStore.applyReportTemplate({ order: ['others'], formats: [] }, t);
+  assert.deepEqual(out.order, ['things']);
+  assert.deepEqual(out.levels, { things: 2 });
+  assert.equal(out.formats.length, 1, 'a template\'s Style joins the Styles');
+  assert.equal(out.formatId, out.formats[0].id);
+});
