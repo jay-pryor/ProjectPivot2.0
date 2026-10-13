@@ -70,3 +70,11 @@ test('an image\'s own caption takes the Caption text style, like any other capti
   const html = renderHtml({ blocks: [] }, normaliseStyle({}).style);
   assert.match(html, /p\.caption, caption, figcaption\.caption \{ font-family: Helvetica/);
 });
+
+test('with the Style\'s border None, HTML images have no border, as in the PDF', async () => {
+  const a = await prepareImage(await makePng({ width: 2, height: 2, sample: () => [1, 2, 3] }));
+  const doc = { blocks: [{ kind: 'figure', layout: 'single', caption: null, images: [{ src: 'a', name: 'a.png', width: 1, border: true, caption: null }] }] };
+  const html = renderHtml(doc, normaliseStyle({}).style, { images: { a } });
+  assert.doesNotMatch(html, /class="bordered"/);
+  assert.doesNotMatch(html, /img\.bordered \{ border:/);
+});

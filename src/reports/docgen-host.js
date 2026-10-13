@@ -5,7 +5,7 @@ import { live } from '../core/data.js';
 import { formatRating } from '../core/matrix.js';
 import { RECEPTORS, RECEPTOR_WORD, stageKey } from '../core/receptors.js';
 import { toIsoUtc, aestDate } from '../core/time.js';
-import { imageInfo, imagePath, MAX_IMAGE_BYTES } from '../../DocGen/doc-images.js';
+import { imageInfo, imagePath, MAX_IMAGE_BYTES, tooManyPixels } from '../../DocGen/doc-images.js';
 import { newId } from '../core/ids.js';
 
 /** @typedef {import('./snapshot.js').Snapshot} Snapshot */
@@ -294,6 +294,8 @@ export function createDocHost(ctx) {
         const bytes = new Uint8Array(await file.arrayBuffer());
         const info = imageInfo(bytes);
         if (!info) throw new Error('Only PNG and JPEG images can be used');
+        const big = tooManyPixels(info, file.name);
+        if (big) throw new Error(big);
         let name = '';
         do name = `${newId().replace(/-/g, '').slice(0, 8)}.${info.type === 'png' ? 'png' : 'jpg'}`;
         while (await ctx.files.exists(imagePath(source, name)));

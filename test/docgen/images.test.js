@@ -133,3 +133,23 @@ test('loading a document\'s images: present ones prepared, missing and broken on
 test('a data URI carries the original file', () => {
   assert.equal(dataUri({ mime: 'image/png', bytes: new Uint8Array([1, 2, 255]) }), 'data:image/png;base64,AQL/');
 });
+
+test('a phone photo\'s orientation: turned a quarter, its width and height swap', () => {
+  assert.deepEqual(imageInfo(makeJpeg(640, 480, 3, 6)), { type: 'jpeg', mime: 'image/jpeg', width: 480, height: 640, orientation: 6 });
+  assert.deepEqual(imageInfo(makeJpeg(640, 480, 3, 8, true)), { type: 'jpeg', mime: 'image/jpeg', width: 480, height: 640, orientation: 8 });
+  assert.deepEqual(imageInfo(makeJpeg(640, 480, 3, 3)), { type: 'jpeg', mime: 'image/jpeg', width: 640, height: 480, orientation: 3 });
+  assert.deepEqual(imageInfo(makeJpeg(640, 480, 3, 1)), { type: 'jpeg', mime: 'image/jpeg', width: 640, height: 480 });
+});
+
+test('prepared for the PDF, a turned photo keeps its stored size and how to turn it', async () => {
+  const p = await prepareImage(makeJpeg(640, 480, 3, 6));
+  assert.deepEqual([p.width, p.height, p.pdf.width, p.pdf.height, p.pdf.orientation], [480, 640, 640, 480, 6]);
+});
+
+test('an image over 50 megapixels is refused before it is decoded', async () => {
+  const { MAX_IMAGE_PIXELS } = await import('../../DocGen/doc-images.js');
+  assert.equal(MAX_IMAGE_PIXELS, 50_000_000);
+  const huge = await makePng({ width: 1, height: 1, sample: () => [0, 0, 0] });
+  huge.set([0, 0, 0x4E, 0x20, 0, 0, 0x4E, 0x20], 16);          // 20000 × 20000 in the header
+  await assert.rejects(prepareImage(huge), /20000 × 20000 pixels; an image can be at most 50 megapixels/);
+});

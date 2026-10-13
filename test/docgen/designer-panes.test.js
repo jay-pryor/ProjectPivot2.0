@@ -702,7 +702,7 @@ test('the previews lay out images at their own size once read, and the Generate 
     images: [{ source: 'report', file: 'a.png', name: 'a.png' }, { source: 'report', file: 'gone.png', name: 'gone.png' }] }] }], order: ['mine'] });
   h.images = { read: async (p) => (p === 'files/report-images/a.png' ? png : null) };
   App.docHost.set(h);
-  RD._imageAssets.clear();
+  RD.open();                                     // opening forgets earlier reads
   RD.laidOut(h.getState(), null, {});            // starts the reads
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(RD._imageAssets.get('files/report-images/a.png').state, 'ok');
@@ -710,7 +710,7 @@ test('the previews lay out images at their own size once read, and the Generate 
   const laid = RD.laidOut(h.getState(), null, {});
   const im = laid.pages.flatMap((p) => p.items).find((it) => it.kind === 'image');
   assert.equal(Math.round(im.h * 4), Math.round(im.w));
-  App.docHost.set(h); RD.open(); RD.pane('generate');
+  RD.pane('generate');
   const gen = RD.render(h.getState()); RD.close();
   assert.match(gen, /Images missing from the folder[\s\S]*?gone\.png/);
   RD._imageAssets.clear();
@@ -749,4 +749,35 @@ test('a redraw keeps where each scrolling area was, the page previews included',
   RD._keepScroll(host, () => { els = make(); delete els['.rd-pane']; });
   assert.equal(els['[data-rd-style-preview]'].scrollTop, 640);
   assert.equal(els['[data-rd-style-preview]'].scrollLeft, 25);
+});
+
+test('opening the designer reads its images afresh, letting go of the old ones', () => {
+  const revoked = [];
+  const had = globalThis.URL.revokeObjectURL;
+  globalThis.URL.revokeObjectURL = (u) => revoked.push(u);
+  try {
+    RD._imageAssets.set('files/report-images/a.png', { state: 'ok', url: 'blob:a' });
+    RD._imageAssets.set('files/report-images/gone.png', { state: 'missing' });
+    RD.open(); RD.close();
+    assert.equal(RD._imageAssets.size, 0);
+    assert.deepEqual(revoked, ['blob:a']);
+  } finally { globalThis.URL.revokeObjectURL = had; }
+});
+
+test('a file dropped anywhere in the designer but a drop box is caught, so the browser does not open it', () => {
+  const ev = (types, inBox) => {
+    const e = { dataTransfer: { types, dropEffect: 'copy' }, prevented: false, preventDefault() { this.prevented = true; },
+      target: { closest: (sel) => (inBox && /data-rd-imgbox|data-rd-std-drop/.test(sel) ? {} : null) } };
+    return e;
+  };
+  const stray = ev(['Files'], false);
+  RD._strayFileDrop(stray);
+  assert.equal(stray.prevented, true);
+  assert.equal(stray.dataTransfer.dropEffect, 'none');
+  const boxed = ev(['Files'], true);
+  RD._strayFileDrop(boxed);
+  assert.equal(boxed.prevented, false, 'a drop box handles its own');
+  const text = ev(['text/plain'], false);
+  RD._strayFileDrop(text);
+  assert.equal(text.prevented, false, 'dragging a section or a part is left alone');
 });

@@ -40,7 +40,7 @@ function css(s) {
     tb.firstColumn.on ? `.doc-table tbody td:first-child { background: ${tb.firstColumn.fill}; font-weight: ${tb.firstColumn.bold ? 700 : 400}; }` : '',
     `.figure { margin: 6pt 0; break-inside: avoid; text-align: ${s.images.align === 'left' ? 'left' : 'center'}; }`,
     '.fig-row { display: grid; gap: 4mm; margin-bottom: 4mm; }', '.fig-cell { margin: 0; }', '.fig-cell img { max-width: 100%; height: auto; }',
-    `.fig-cell img.bordered { border: ${s.images.borderWidth}pt solid ${s.images.borderColour}; }`,
+    s.images.border === 'line' ? `.fig-cell img.bordered { border: ${s.images.borderWidth}pt solid ${s.images.borderColour}; }` : '',
     '.fig-missing { display: inline-block; width: 100%; aspect-ratio: 4 / 3; background: #eeeeee; border: 0.5pt solid #999999; color: #555555; font-size: 8pt; }',
     '.doc-table tr { break-inside: avoid; }', '.page-break { break-after: page; }', 'hr { border: 0; border-top: 1px solid #999; }',
     '@media screen { .page-break { border-top: 1px dashed #bbb; margin: 16pt 0; } }',
@@ -98,7 +98,7 @@ export function renderHtml(doc, style, opts = {}) {
         if (!im) return '<div class="fig-cell"></div>';
         const got = imgs[im.src];
         const pct = Math.min(100, Math.round((100 * Math.min(1, im.width || 1)) / share));
-        const pic = got ? `<img${im.border ? ' class="bordered"' : ''} src="${dataUri(got)}" alt="${esc(im.name)}" style="width:${pct}%">`
+        const pic = got ? `<img${style.images.border === 'line' && im.border ? ' class="bordered"' : ''} src="${dataUri(got)}" alt="${esc(im.name)}" style="width:${pct}%">`
           : `<div class="fig-missing">Image missing: ${esc(im.name)}</div>`;
         const cap = im.caption ? `<figcaption class="caption">${runsHtml(im.caption.runs)}</figcaption>` : '';
         return `<figure class="fig-cell"${im.anchor ? ` id="${esc(im.anchor)}"` : ''}>${above ? cap : ''}${pic}${above ? '' : cap}</figure>`;

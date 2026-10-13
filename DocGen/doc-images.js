@@ -6,6 +6,13 @@
 
 /** The largest image file accepted. */
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+/** The most pixels an image may have: decoded, each takes four bytes or more. */
+export const MAX_IMAGE_PIXELS = 50_000_000;
+/** Why an image is too big to use, or null. @param {{ width: number, height: number }} info @param {string} [name] */
+export function tooManyPixels(info, name) {
+  return info.width * info.height > MAX_IMAGE_PIXELS
+    ? `${name ? `${name} is ` : 'The image is '}${info.width} × ${info.height} pixels; an image can be at most 50 megapixels.` : null;
+}
 
 /** The boxes of each image layout: rows of widths, as fractions of the text width. */
 export const FIGURE_LAYOUTS = Object.freeze({
@@ -40,14 +47,22 @@ export function imageInfo(bytes) {
   }
   if (b[0] === 0xFF && b[1] === 0xD8) {
     const sof = jpegFrame(b);
-    return sof ? { type: 'jpeg', mime: 'image/jpeg', width: sof.width, height: sof.height } : null;
+    if (!sof) return null;
+    // A photo stored on its side (Exif orientation 5–8) is that way round on the page.
+    const turned = sof.orientation >= 5;
+    return { type: 'jpeg', mime: 'image/jpeg', width: turned ? sof.height : sof.width, height: turned ? sof.width : sof.height,
+      ...(sof.orientation > 1 ? { orientation: sof.orientation } : {}) };
   }
   return null;
 }
 
-/** A JPEG's frame header: its size and number of colour components. @param {Uint8Array} b */
+/**
+ * A JPEG's frame header: its size and number of colour components, and the Exif orientation
+ * a phone or camera wrote (1 = as stored).
+ * @param {Uint8Array} b
+ */
 function jpegFrame(b) {
-  let i = 2;
+  let i = 2, orientation = 1;
   while (i + 4 <= b.length) {
     if (b[i] !== 0xFF) return null;
     const m = b[i + 1];
@@ -58,11 +73,32 @@ function jpegFrame(b) {
     if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) {
       if (i + 10 > b.length) return null;
       const height = u16(b, i + 5), width = u16(b, i + 7), components = b[i + 9];
-      return width && height ? { width, height, components } : null;
+      return width && height ? { width, height, components, orientation } : null;
     }
+    if (m === 0xE1 && i + 10 <= b.length && String.fromCharCode(b[i + 4], b[i + 5], b[i + 6], b[i + 7]) === 'Exif') orientation = exifOrientation(b, i + 10, i + 2 + len);
     i += 2 + len;
   }
   return null;
+}
+
+/**
+ * The Orientation tag (0x0112) of the TIFF block at `t` (to `end`), or 1 when there is none.
+ * @param {Uint8Array} b @param {number} t @param {number} end
+ */
+function exifOrientation(b, t, end) {
+  if (t + 8 > end) return 1;
+  const le = b[t] === 0x49;
+  const r16 = (/** @type {number} */ o) => (le ? b[o] | (b[o + 1] << 8) : (b[o] << 8) | b[o + 1]);
+  const r32 = (/** @type {number} */ o) => (le ? (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0 : u32(b, o));
+  const ifd = t + r32(t + 4);
+  if (ifd + 2 > end) return 1;
+  const n = r16(ifd);
+  for (let k = 0; k < n; k++) {
+    const e = ifd + 2 + k * 12;
+    if (e + 12 > end) return 1;
+    if (r16(e) === 0x0112) { const v = r16(e + 8); return v >= 1 && v <= 8 ? v : 1; }
+  }
+  return 1;
 }
 
 /** Every image a document's figures use, each once, in order. @param {any} doc */
@@ -85,7 +121,8 @@ async function zlib(data, inflate) {
 /**
  * @typedef {{ type: 'png'|'jpeg', mime: string, width: number, height: number, bytes: Uint8Array,
  *   pdf: { filter: 'DCTDecode'|'FlateDecode', colourSpace: 'DeviceRGB'|'DeviceGray'|'DeviceCMYK',
- *          data: Uint8Array, decode?: string, alpha?: Uint8Array } }} PreparedImage
+ *          data: Uint8Array, decode?: string, alpha?: Uint8Array, width?: number, height?: number, orientation?: number } }} PreparedImage
+ * `width` and `height` are as it shows; `pdf.width`/`pdf.height` are as stored, when a photo is stored turned.
  */
 
 /**
@@ -97,9 +134,13 @@ async function zlib(data, inflate) {
 export async function prepareImage(bytes) {
   const info = imageInfo(bytes);
   if (!info) throw new Error('Only PNG and JPEG images can be used');
+  const big = tooManyPixels(info);
+  if (big) throw new Error(big);
   if (info.type === 'jpeg') {
-    const n = /** @type {{ components: number }} */ (jpegFrame(bytes)).components;
+    const f = /** @type {{ components: number, width: number, height: number, orientation: number }} */ (jpegFrame(bytes));
+    const n = f.components;
     return { ...info, bytes, pdf: { filter: 'DCTDecode', colourSpace: n === 1 ? 'DeviceGray' : n === 4 ? 'DeviceCMYK' : 'DeviceRGB', data: bytes,
+      width: f.width, height: f.height, ...(f.orientation > 1 ? { orientation: f.orientation } : {}),
       // Adobe's CMYK JPEGs are stored inverted; nearly every CMYK JPEG is Adobe's.
       ...(n === 4 ? { decode: '[1 0 1 0 1 0 1 0]' } : {}) } };
   }

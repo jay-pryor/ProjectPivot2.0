@@ -4185,7 +4185,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         }
       }, function () { a.state = 'missing'; }).then(function () {
         _rd.preview = null;
-        if (!_rd.open) return;
+        if (!_rd.open || typeof document === 'undefined') return;
         // A read that finishes while someone is typing redraws only the preview, so the caret stays.
         var act = typeof document !== 'undefined' && document.activeElement;
         if (act && act.closest && act.closest('.docgen') && (act.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(act.tagName))) refreshSectionPreview();
@@ -4202,6 +4202,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         else if (a.state === 'loading') out[src] = { pending: true };
       });
       return out;
+    }
+    /** Let go of every image read so far, so the designer reads them afresh (a file put back, or taken away, shows as it now is). */
+    function forgetImages() {
+      _imageAssets.forEach(function (a) {
+        if (a.url && typeof URL !== 'undefined' && URL.revokeObjectURL) URL.revokeObjectURL(a.url);
+      });
+      _imageAssets.clear();
     }
     function imageUrl(src) { var a = _imageAssets.get(src); return a && a.state === 'ok' ? a.url : null; }
     /** − 60% + : the zoom buttons for one of the page previews. */
@@ -5081,6 +5088,15 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * the click is lost. So a redraw asked for while a button is held waits for the
      * release; the click's own handler then runs on the button that was pressed. */
     var _gate = { pressing: false, pending: false };
+    /** IMG-1: a file dragged over or dropped on the designer anywhere but a drop box is
+     *  caught, so a near miss does not have the browser open the image in place of the app. */
+    function strayFileDrop(e) {
+      var t = e.dataTransfer && e.dataTransfer.types;
+      if (!t || Array.prototype.indexOf.call(t, 'Files') === -1) return;
+      if (e.target && e.target.closest && e.target.closest('[data-rd-imgbox], [data-rd-std-drop]')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'none';
+    }
     /** Whether a press holds redraws: a plain left press on something other than a form
      *  field. A drop-down or a right-click opens a menu that can eat the release. */
     function holds(e) {
@@ -5872,6 +5888,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         _dragPart = null;
       });
       // ---- IMG-1: image parts ----------------------------------------------
+      ctx.root.addEventListener('dragover', strayFileDrop);
+      ctx.root.addEventListener('drop', strayFileDrop);
       function imgIds(el) { return { sec: el.getAttribute('data-rd-sec'), part: el.getAttribute('data-rd-part'), k: Number(el.getAttribute('data-rd-img-k')) }; }
       function hasFiles(e) { var t = e.dataTransfer && e.dataTransfer.types; return !!t && Array.prototype.indexOf.call(t, 'Files') !== -1; }
       /** Copy a chosen or dropped file into the folder and put it in the box. */
@@ -6419,13 +6437,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     App.ui.views = App.ui.views || {};
     App.ui.views.reportDesign = {
       render: render, wire: wire, refresh: refresh,
-      open: function () { _rd.open = true; _rd.preview = null; },
+      open: function () { _rd.open = true; _rd.preview = null; forgetImages(); },
       close: function () { _rd.open = false; },
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
       laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _stepped: stepped, _renameSection: renameSection, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
-      PANES: PANES, _rd: _rd, _imageAssets: _imageAssets, _keepScroll: keepScroll, _SCROLLERS: SCROLLERS
+      PANES: PANES, _rd: _rd, _imageAssets: _imageAssets, _keepScroll: keepScroll, _SCROLLERS: SCROLLERS, _strayFileDrop: strayFileDrop
     };
   })(App);
 

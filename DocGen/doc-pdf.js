@@ -33,6 +33,23 @@ function bin(b) {
   for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
   return s;
 }
+/**
+ * The matrix that draws an image's unit square into the box at (x, y) (bottom-left, PDF
+ * space), w by h, turned upright for its Exif orientation (1–8).
+ * @param {number | undefined} o @param {number} x @param {number} y @param {number} w @param {number} h
+ */
+function placed(o, x, y, w, h) {
+  switch (o) {
+    case 2: return [-w, 0, 0, h, x + w, y];
+    case 3: return [-w, 0, 0, -h, x + w, y + h];
+    case 4: return [w, 0, 0, -h, x, y + h];
+    case 5: return [0, -h, -w, 0, x + w, y + h];
+    case 6: return [0, -h, w, 0, x, y + h];
+    case 7: return [0, h, w, 0, x, y];
+    case 8: return [0, h, -w, 0, x + w, y];
+    default: return [w, 0, 0, h, x, y];
+  }
+}
 /** An ISO date as a PDF date. @param {string} iso */
 function pdfDate(iso) {
   const d = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/.exec(String(iso ?? ''));
@@ -70,7 +87,8 @@ export function writePdf(pages, opts = {}) {
   /** @type {Record<string, string>} */
   const imgName = {};
   const xobjRes = used_.map((src, i) => {
-    const im = imgs[src].pdf, w = imgs[src].width, h = imgs[src].height;
+    // As stored: a photo stored on its side is turned upright when it is drawn.
+    const im = imgs[src].pdf, w = im.width ?? imgs[src].width, h = im.height ?? imgs[src].height;
     let smask = '';
     if (im.alpha) {
       const m = reserve();
@@ -96,7 +114,7 @@ export function writePdf(pages, opts = {}) {
       if (it.kind === 'fill') ops.push(`${rgb(it.colour)} rg ${num(it.x)} ${num(h - it.y - it.h)} ${num(it.w)} ${num(it.h)} re f`);
       else if (it.kind === 'rule') ops.push(`${rgb(it.colour)} RG ${num(it.width)} w ${num(it.x1)} ${num(h - it.y1)} m ${num(it.x2)} ${num(h - it.y2)} l S`);
       else if (it.kind === 'text') ops.push(`BT /F${FONT_NAMES.indexOf(it.font) + 1} ${num(it.size)} Tf ${rgb(it.colour)} rg ${num(it.x)} ${num(h - it.y)} Td ${lit(it.text)} Tj ET`);
-      else if (it.kind === 'image' && imgName[it.src]) ops.push(`q ${num(it.w)} 0 0 ${num(it.h)} ${num(it.x)} ${num(h - it.y - it.h)} cm /${imgName[it.src]} Do Q`);
+      else if (it.kind === 'image' && imgName[it.src]) ops.push(`q ${placed(imgs[it.src].pdf.orientation, it.x, h - it.y - it.h, it.w, it.h).map(num).join(' ')} cm /${imgName[it.src]} Do Q`);
     }
     // Square line ends: a line runs half its width past each end, so the sides of a thick border meet in full corners.
     const content = ['2 J', ...ops].join('\n');

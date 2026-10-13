@@ -75,9 +75,23 @@ export async function makePng(o) {
   ]);
 }
 
-/** The markers of a baseline JPEG: enough for a reader of sizes, not a picture. */
-export function makeJpeg(width, height, components = 3) {
+/**
+ * The markers of a baseline JPEG: enough for a reader of sizes, not a picture. With an
+ * orientation, an Exif APP1 segment holding it (big- or little-endian TIFF), as a phone writes.
+ */
+export function makeJpeg(width, height, components = 3, orientation = 0, littleEndian = false) {
   const sof = [0xFF, 0xC0, 0, 8 + 3 * components, 8, height >> 8, height & 255, width >> 8, width & 255, components];
   for (let c = 1; c <= components; c++) sof.push(c, 0x11, 0);
-  return new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0, 0, 16, ...ascii('JFIF'), 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, ...sof, 0xFF, 0xD9]);
+  let exif = [];
+  if (orientation) {
+    const w16 = (n) => (littleEndian ? [n & 255, n >> 8] : [n >> 8, n & 255]);
+    const w32 = (n) => (littleEndian ? [n & 255, (n >> 8) & 255, (n >> 16) & 255, n >>> 24] : [n >>> 24, (n >> 16) & 255, (n >> 8) & 255, n & 255]);
+    // A camera-make entry first, as real files have, then Orientation (0x0112, SHORT).
+    const tiff = [...(littleEndian ? ascii('II') : ascii('MM')), ...w16(42), ...w32(8), ...w16(2),
+      ...w16(0x010F), ...w16(2), ...w32(4), ...ascii('ACME'),
+      ...w16(0x0112), ...w16(3), ...w32(1), ...w16(orientation), 0, 0, ...w32(0)];
+    const body = [...ascii('Exif'), 0, 0, ...tiff];
+    exif = [0xFF, 0xE1, (body.length + 2) >> 8, (body.length + 2) & 255, ...body];
+  }
+  return new Uint8Array([0xFF, 0xD8, ...exif, 0xFF, 0xE0, 0, 16, ...ascii('JFIF'), 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, ...sof, 0xFF, 0xD9]);
 }

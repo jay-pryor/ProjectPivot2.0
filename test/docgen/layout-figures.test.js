@@ -108,3 +108,15 @@ test('a heading just before a figure goes over to the next page with it', () => 
   const r = layout({ blocks }, style(), { images: sizes });
   assert.equal(r.anchors.h.page, 1);
 });
+
+test('a page-tall figure that takes its heading over still fits above the bottom margin', () => {
+  const tall = { 'c.png': { width: 100, height: 400 } };
+  const blocks = [{ kind: 'paragraph', style: 'body', runs: [{ text: 'Before.' }] }, { kind: 'heading', level: 1, runs: [{ text: 'Pictures' }], anchor: 'h' },
+    { kind: 'figure', layout: 'grid4', caption: null, images: ['c.png', 'c.png', 'c.png', 'c.png'].map((s, k) => img(s, { caption: { runs: [{ text: `Figure ${k + 1}: Tall` }] } })) }];
+  const r = layout({ blocks }, style(), { images: tall });
+  const bottom = 841.89 - 20 * MM;
+  const last = r.pages[r.pages.length - 1];
+  assert.equal(r.anchors.h.page, r.pages.length - 1, 'the heading went over with it');
+  const lowest = Math.max(...last.items.filter((it) => it.kind === 'image' || (it.kind === 'text' && /Figure/.test(it.text))).map((it) => (it.kind === 'image' ? it.y + it.h : it.y)));
+  assert.ok(lowest <= bottom + 0.01, `${lowest} > ${bottom}`);
+});

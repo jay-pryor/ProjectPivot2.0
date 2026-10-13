@@ -343,3 +343,8 @@ test('the report images in use: in sections, templates and produced reports', ()
   assert.deepEqual([...imagesInUse(data)].sort(), ['a.png', 'b.png', 'c.png', 'd.png']);
 });
 const ctxFor = () => ({ getData: () => seed(), setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (/** @type {string} */ id) => id });
+
+test('the host refuses an image over 50 megapixels with its size', async () => {
+  const { host } = createDocHost({ ...ctxFor(), files: memFiles().api });
+  await assert.rejects(host.images.store('report', fileOf(makeJpeg(10000, 6000), 'scan.jpg')), /scan\.jpg is 10000 × 6000 pixels; an image can be at most 50 megapixels/);
+});

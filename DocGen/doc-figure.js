@@ -37,13 +37,16 @@ export function layoutFigure(b, f) {
   const imgH = (/** @type {any[]} */ r, /** @type {number} */ s) => Math.max(0, ...r.map((c) => c.h * s));
   const rowCapH = (/** @type {any[]} */ r) => Math.max(0, ...r.map((c) => capH(c.cap)));
   const height = (/** @type {number} */ s) => rows.reduce((a, r, i) => a + (i ? gap : 0) + imgH(r, s) + rowCapH(r), 0) + capH(one);
-  // Scaled so the whole figure fits one page's text area when it would not.
-  let s = 1;
-  if (height(1) > f.pageH) {
+  // Scaled so the whole figure fits the space it has when it would not: a page's text area,
+  // or what a heading carried over with it leaves of one.
+  const fit = (/** @type {number} */ space) => {
+    if (height(1) <= space) return 1;
     const fixed = height(0);
-    s = Math.max(0.05, (f.pageH - fixed) / (height(1) - fixed));
-  }
+    return Math.max(0.05, (space - fixed) / (height(1) - fixed));
+  };
+  let s = fit(f.pageH);
   if (height(s) > f.room() + EPS && !f.atTop() && !f.carryHeading()) f.newPage();
+  if (height(s) > f.room() + EPS) s = Math.min(s, fit(f.room()));
 
   const above = is.captionPosition === 'above';
   const caption = (/** @type {any[]} */ ls, /** @type {number} */ x, /** @type {number} */ w) => {

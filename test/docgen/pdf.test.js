@@ -74,3 +74,11 @@ test('lines have square ends, so the sides of a thick border meet in full corner
   const pdf = readPdf(writePdf([{ size: [200, 200], items: [{ kind: 'rule', x1: 10, y1: 10, x2: 100, y2: 10, width: 4, colour: '#000000' }] }]));
   assert.match(pdf.pages[0].stream, /^2 J\n/);
 });
+
+test('a turned photo is drawn turned upright in its box', async () => {
+  const jpg = await prepareImage(makeJpeg(640, 480, 3, 6));
+  const bytes = writePdf([{ size: [595, 842], items: [{ kind: 'image', x: 50, y: 100, w: 200, h: 100, src: 'p.jpg' }] }], { images: { 'p.jpg': jpg } });
+  const s = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+  assert.match(s, /\/Width 640 \/Height 480 /);
+  assert.match(s, /q 0 -100 200 0 50 742 cm \/Im1 Do Q/);
+});
