@@ -11,7 +11,8 @@ import { REPORT_DOCUMENTS } from './data.js';
 export const RESTAMP = Object.freeze(['updatedBy', 'updatedAt']);
 
 /** Fields a history item never copies: a report's documents are the record itself, and large. */
-const NOT_IN_HISTORY = Object.freeze({ report: REPORT_DOCUMENTS });
+// A report's documents and its own design are large and edited often; the history leaves them out.
+const NOT_IN_HISTORY = Object.freeze({ report: [...REPORT_DOCUMENTS, 'design'] });
 
 /** @param {Rec | null} before @param {Rec} after */
 export function changeOf(before, after) {
