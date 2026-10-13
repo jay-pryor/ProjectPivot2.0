@@ -339,3 +339,10 @@
   .docgen .rd-sw.on { outline: 2px solid var(--c-accent); outline-offset: 1px;}
   .docgen .rd-more { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--c-text); cursor: pointer;}
   .docgen .rd-more input[type="color"] { width: 34px; height: 22px; padding: 0; border: 1px solid var(--c-border); background: none; cursor: pointer;}
+  /* A number box with its up and down arrows. */
+  .docgen .rd-num { display: flex; align-items: stretch;}
+  .docgen .rd-num input { flex: 1 1 auto; min-width: 0;}
+  .docgen .rd-steps { display: flex; flex-direction: column; flex: 0 0 auto;}
+  .docgen .rd-steps button { flex: 1 1 50%; width: 20px; padding: 0; font-size: 8px; line-height: 1; display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--c-border); border-left: 0; background: var(--c-surface-alt); color: var(--c-text); cursor: pointer;}
+  .docgen .rd-steps button + button { border-top: 0;}

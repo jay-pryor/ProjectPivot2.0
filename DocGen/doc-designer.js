@@ -4240,9 +4240,23 @@ import { toWinAnsi } from './doc-fonts.js';
         '<div class="rd-sec-prev" data-rd-sec-prev>' + sectionPreview(project, block) + '</div></div>';
     }
 
-    function num(label, key, val, hint) {
-      return '<label class="rd-lab rd-lab-s" title="' + esc(hint || '') + '">' + esc(label) +
-        '<input value="' + esc(val == null ? '' : val) + '" data-rd-fmt="' + esc(key) + '" aria-label="' + esc(label) + '"></label>';
+    /** A number box; with a step, small up and down arrows beside it that move it by the step. */
+    function num(label, key, val, hint, step) {
+      var box = '<input value="' + esc(val == null ? '' : val) + '" data-rd-fmt="' + esc(key) + '" aria-label="' + esc(label) + '"' + (step ? ' inputmode="decimal"' : '') + '>';
+      if (step) {
+        box = '<span class="rd-num">' + box + '<span class="rd-steps">' +
+          '<button type="button" data-rd-step="+" data-rd-step-key="' + esc(key) + '" data-rd-step-by="' + step + '" aria-label="' + esc(label) + ' up" tabindex="-1">&#9650;</button>' +
+          '<button type="button" data-rd-step="-" data-rd-step-key="' + esc(key) + '" data-rd-step-by="' + step + '" aria-label="' + esc(label) + ' down" tabindex="-1">&#9660;</button>' +
+          '</span></span>';
+      }
+      return '<label class="rd-lab rd-lab-s" title="' + esc(hint || '') + '">' + esc(label) + box + '</label>';
+    }
+    /** A number moved by one step up (+1) or down (−1), kept to the step's decimals. */
+    function stepped(value, step, dir) {
+      var n = Number(value);
+      if (!isFinite(n) || String(value).trim() === '') n = 0;
+      var dp = (String(step).split('.')[1] || '').length;
+      return Number((n + dir * step).toFixed(dp));
     }
     function pick(label, key, val, options, hint) {
       return '<label class="rd-lab rd-lab-s" title="' + esc(hint || '') + '">' + esc(label) +
@@ -4268,13 +4282,14 @@ import { toWinAnsi } from './doc-fonts.js';
     /** The sections of a Style, in the order the left list shows them. */
     var STYLE_SECTIONS = [
       { id: 'page', label: 'Page' },
+      { id: 'numbering', label: 'Numbering' },
+      { id: 'contents', label: 'Contents' },
       { id: 'title', label: 'Title' }, { id: 'h1', label: 'Heading 1' }, { id: 'h2', label: 'Heading 2' },
       { id: 'h3', label: 'Heading 3' }, { id: 'h4', label: 'Heading 4' },
       { id: 'body', label: 'Body' }, { id: 'caption', label: 'Caption' }, { id: 'code', label: 'Code' },
       { id: 'tables', label: 'Tables' },
       { id: 'headerFooter', label: 'Header & footer' },
-      { id: 'marking', label: 'Security Classification' },
-      { id: 'numbering', label: 'Numbering & contents' }
+      { id: 'marking', label: 'Security Classification' }
     ];
     var FAMILY_LABELS = [{ value: 'helvetica', label: 'Helvetica (sans serif)' }, { value: 'times', label: 'Times (serif)' }, { value: 'courier', label: 'Courier (fixed width)' }];
     var ALIGN_LABELS = [{ value: 'left', label: 'Left' }, { value: 'centre', label: 'Centre' }, { value: 'right', label: 'Right' }, { value: 'justify', label: 'Justified' }];
@@ -4315,12 +4330,12 @@ import { toWinAnsi } from './doc-fonts.js';
       var o = opts2 || {};
       return '<div class="rd-grid">' +
           pick('Font', p + 'family', t.family, FAMILY_LABELS) +
-          num('Size (pt)', p + 'size', t.size, '6 to 72 points') +
+          num('Size (pt)', p + 'size', t.size, '6 to 72 points', 0.5) +
           colourField('Colour', p + 'colour', t.colour) +
           pick('Alignment', p + 'align', t.align, ALIGN_LABELS) +
-          num('Line spacing', p + 'lineSpacing', t.lineSpacing, '1 = single, 1.15, 1.5 …') +
-          num('Space before (pt)', p + 'spaceBefore', t.spaceBefore) +
-          num('Space after (pt)', p + 'spaceAfter', t.spaceAfter) +
+          num('Line spacing', p + 'lineSpacing', t.lineSpacing, '1 = single, 1.15, 1.5 …', 0.05) +
+          num('Space before (pt)', p + 'spaceBefore', t.spaceBefore, '', 1) +
+          num('Space after (pt)', p + 'spaceAfter', t.spaceAfter, '', 1) +
         '</div>' +
         '<div class="rd-flags">' +
           flagField('Bold', p + 'bold', t.bold) + flagField('Italic', p + 'italic', t.italic) + flagField('Underline', p + 'underline', t.underline) +
@@ -4350,8 +4365,8 @@ import { toWinAnsi } from './doc-fonts.js';
         return '<div class="rd-grid">' +
             pick('Paper', 'page.paper', f.page.paper, [{ value: 'a4', label: 'A4' }, { value: 'letter', label: 'Letter' }, { value: 'a5', label: 'A5' }, { value: 'legal', label: 'Legal' }]) +
             pick('Orientation', 'page.orientation', f.page.orientation, [{ value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Landscape' }]) +
-            num('Top margin (mm)', 'page.margins.top', m.top) + num('Bottom margin (mm)', 'page.margins.bottom', m.bottom) +
-            num('Left margin (mm)', 'page.margins.left', m.left) + num('Right margin (mm)', 'page.margins.right', m.right) +
+            num('Top margin (mm)', 'page.margins.top', m.top, '', 1) + num('Bottom margin (mm)', 'page.margins.bottom', m.bottom, '', 1) +
+            num('Left margin (mm)', 'page.margins.left', m.left, '', 1) + num('Right margin (mm)', 'page.margins.right', m.right, '', 1) +
           '</div>';
       }
       if (/^(title|h[1-4])$/.test(section)) return textFields(f, section, { heading: true });
@@ -4363,15 +4378,15 @@ import { toWinAnsi } from './doc-fonts.js';
         return '<div class="rd-grid">' +
             pick('Borders', 'tables.borders', t.borders, [{ value: 'all', label: 'All lines' }, { value: 'horizontal', label: 'Between rows only' }, { value: 'outer', label: 'Outside only' }, { value: 'none', label: 'None' }]) +
             colourField('Border colour', 'tables.borderColour', t.borderColour) +
-            num('Border weight (pt)', 'tables.borderWidth', t.borderWidth) +
-            num('Text size (pt)', 'tables.fontSize', t.fontSize) +
-            num('Cell padding (mm)', 'tables.padding', t.padding) +
+            num('Border weight (pt)', 'tables.borderWidth', t.borderWidth, '', 0.25) +
+            num('Text size (pt)', 'tables.fontSize', t.fontSize, '', 0.5) +
+            num('Cell padding (mm)', 'tables.padding', t.padding, '', 0.5) +
             pick('Table position', 'tables.align', t.align, [{ value: 'left', label: 'Left' }, { value: 'centre', label: 'Centre' }]) +
             pick('Caption', 'tables.captionPosition', t.captionPosition, [{ value: 'below', label: 'Below the table' }, { value: 'above', label: 'Above the table' }]) +
           '</div>' +
           '<div class="rd-fieldset"><strong>Header row</strong><div class="rd-grid">' +
             colourField('Fill', 'tables.header.fill', t.header.fill) + colourField('Text colour', 'tables.header.colour', t.header.colour) +
-            num('Text size (pt)', 'tables.header.size', t.header.size) +
+            num('Text size (pt)', 'tables.header.size', t.header.size, '', 0.5) +
           '</div><div class="rd-flags">' + flagField('Bold', 'tables.header.bold', t.header.bold) + flagField('Italic', 'tables.header.italic', t.header.italic) +
             flagField('Repeat on every page', 'tables.header.repeat', t.header.repeat) + '</div></div>' +
           '<div class="rd-fieldset"><strong>Rows</strong><div class="rd-flags">' + flagField('Shade every other row', 'tables.banding.on', t.banding.on) + '</div>' +
@@ -4404,17 +4419,19 @@ import { toWinAnsi } from './doc-fonts.js';
       }
       if (section === 'numbering') {
         return '<div class="rd-fieldset"><strong>Heading numbers</strong><div class="rd-flags">' +
-            flagField('Number the headings', 'numbering.on', f.numbering.on) + flagField('Show the numbers in the contents', 'numbering.inToc', f.numbering.inToc) + '</div>' +
+            flagField('Number the headings', 'numbering.on', f.numbering.on) + flagField('Show the numbers in the Table of Contents', 'numbering.inToc', f.numbering.inToc) + '</div>' +
             '<div class="rd-grid">' + pick('Number down to', 'numbering.format', f.numbering.format, [{ value: '1', label: '1 (Heading 1)' }, { value: '1.1', label: '1.1 (Heading 2)' }, { value: '1.1.1', label: '1.1.1 (Heading 3)' }]) + '</div></div>' +
-          '<div class="rd-fieldset"><strong>Contents</strong><div class="rd-flags">' +
-            flagField('Include a contents list', 'toc.include', f.toc.include) + flagField('Page numbers', 'toc.pageNumbers', f.toc.pageNumbers) +
+          '<div class="rd-fieldset"><strong>Cross-references</strong><div class="rd-flags">' +
+            flagField('Add the page in the PDF, as in “Section 2 (page 4)”', 'refs.pageInPdf', f.refs.pageInPdf) + '</div></div>';
+      }
+      if (section === 'contents') {
+        return '<div class="rd-fieldset"><strong>Table of Contents</strong><div class="rd-flags">' +
+            flagField('Include a Table of Contents', 'toc.include', f.toc.include) + flagField('Page numbers', 'toc.pageNumbers', f.toc.pageNumbers) +
             flagField('Dot leaders to the page numbers', 'toc.leaders', f.toc.leaders) + '</div>' +
             '<div class="rd-grid">' +
               pick('Headings listed', 'toc.depth', f.toc.depth, [{ value: 1, label: 'Heading 1' }, { value: 2, label: 'Down to heading 2' }, { value: 3, label: 'Down to heading 3' }, { value: 4, label: 'Down to heading 4' }]) + '</div>' +
-            ['toc1', 'toc2', 'toc3'].map(function (k, i) { return '<div class="rd-fieldset"><strong>Contents level ' + (i + 1) + '</strong>' + textFields(f, k) + '</div>'; }).join('') +
           '</div>' +
-          '<div class="rd-fieldset"><strong>Cross-references</strong><div class="rd-flags">' +
-            flagField('Add the page in the PDF, as in “Section 2 (page 4)”', 'refs.pageInPdf', f.refs.pageInPdf) + '</div></div>';
+          ['toc1', 'toc2', 'toc3'].map(function (k, i) { return '<div class="rd-fieldset"><strong>Contents level ' + (i + 1) + '</strong>' + textFields(f, k) + '</div>'; }).join('');
       }
       return '';
     }
@@ -5880,6 +5897,13 @@ import { toWinAnsi } from './doc-fonts.js';
         if (el.type === 'color') _rd.colourOpen = null;
         fmtPatch(el.getAttribute('data-rd-fmt'), el.value);
       });
+      // The arrows beside a number box: one step up or down from what the box holds.
+      dom.on(ctx.root, 'click', '[data-rd-step]', function (e, el) {
+        var box = el.closest('.rd-num') && el.closest('.rd-num').querySelector('input');
+        var next = stepped(box ? box.value : '', Number(el.getAttribute('data-rd-step-by')), el.getAttribute('data-rd-step') === '+' ? 1 : -1);
+        if (box) box.value = String(next);
+        fmtPatch(el.getAttribute('data-rd-step-key'), next);
+      });
       // Colours: the swatch opens the presets; a preset is chosen with one click.
       dom.on(ctx.root, 'click', '[data-rd-colour-open]', function (e, el) {
         var key = el.getAttribute('data-rd-colour-open');
@@ -5938,7 +5962,7 @@ import { toWinAnsi } from './doc-fonts.js';
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
-      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
+      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _stepped: stepped, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
       PANES: PANES, _rd: _rd
     };
   })(App);
