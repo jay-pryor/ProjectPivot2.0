@@ -54,7 +54,7 @@ test('the Styles pane lists its sections and the live pages beside them', () => 
 
 test('every field on every Styles section names a real path in the Style', () => {
   const style = normaliseStyle({}).style;
-  for (const s of ['page', 'title', 'h1', 'body', 'caption', 'code', 'tables', 'headerFooter', 'marking', 'numbering']) {
+  for (const s of ['page', 'title', 'h1', 'body', 'caption', 'code', 'tables', 'images', 'headerFooter', 'marking', 'numbering']) {
     const html = paneOf(host(), 'styles', s);
     const paths = [...html.matchAll(/data-rd-fmt(?:-bool)?="([^"]+)"/g)].map((m) => m[1]);
     assert.ok(paths.length > 0, `${s} has fields`);
@@ -714,4 +714,28 @@ test('the previews lay out images at their own size once read, and the Generate 
   const gen = RD.render(h.getState()); RD.close();
   assert.match(gen, /Images missing from the folder[\s\S]*?gone\.png/);
   RD._imageAssets.clear();
+});
+
+test('Styles has an Images section after Tables: border, weight and colour when a line, caption position, alignment', () => {
+  const names = (html) => [...html.matchAll(/data-rd-style-section="([a-zA-Z0-9]+)"/g)].map((m) => m[1]);
+  const html = paneOf(host(), 'styles', 'images');
+  const order = names(html);
+  assert.equal(order[order.indexOf('tables') + 1], 'images');
+  assert.match(html, /data-rd-style-section="images"[^>]*>Images</);
+  const f = html.slice(html.indexOf('rd-style-fields'), html.indexOf('rd-style-preview'));
+  for (const k of ['images.border', 'images.captionPosition', 'images.align']) assert.match(f, new RegExp(`data-rd-fmt="${k.replace('.', '\\.')}"`), k);
+  assert.doesNotMatch(f, /images\.borderWidth/, 'no weight until there is a line');
+  const lined = host();
+  lined.getState().report.formats[0].images = { border: 'line' };
+  const g = paneOf(lined, 'styles', 'images');
+  assert.match(g, /data-rd-fmt="images\.borderWidth"/);
+  assert.match(g, /data-rd-colour-open="images\.borderColour"/);
+});
+
+test('Templates lists Standard Images with Rename and Delete, and a way to add one', () => {
+  const html = paneOf(host({ standardImages: [{ id: 'img1', name: 'Logo', file: 's1.png' }] }), 'templates');
+  assert.match(html, /<div class="rd-fieldset rd-stdimgs" data-rd-std-drop><strong>Standard Images<\/strong>/);
+  assert.match(html, /Logo[\s\S]*?data-rd-std-rename="img1"[\s\S]*?data-rd-std-del="img1"/);
+  assert.match(html, /Add image&hellip;<input type="file" accept="image\/png,image\/jpeg" data-rd-std-file>/);
+  assert.match(paneOf(host(), 'templates'), /No standard images yet\./);
 });

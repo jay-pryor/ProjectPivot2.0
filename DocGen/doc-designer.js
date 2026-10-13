@@ -4549,7 +4549,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       { id: 'title', label: 'Title' }, { id: 'h1', label: 'Heading 1' }, { id: 'h2', label: 'Heading 2' },
       { id: 'h3', label: 'Heading 3' }, { id: 'h4', label: 'Heading 4' },
       { id: 'body', label: 'Body' }, { id: 'caption', label: 'Caption' }, { id: 'code', label: 'Code' },
-      { id: 'tables', label: 'Tables' },
+      { id: 'tables', label: 'Tables' }, { id: 'images', label: 'Images' },
       { id: 'headerFooter', label: 'Header & Footer' },
       { id: 'marking', label: 'Security Classification' }
     ];
@@ -4664,6 +4664,17 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           '<div class="rd-fieldset"><strong>First column</strong><div class="rd-flags">' + flagField('Style the first column', 'tables.firstColumn.on', t.firstColumn.on) +
             flagField('Bold', 'tables.firstColumn.bold', t.firstColumn.bold) + '</div>' +
             '<div class="rd-grid">' + colourField('Fill', 'tables.firstColumn.fill', t.firstColumn.fill) + '</div></div>';
+      }
+      if (section === 'images') {
+        var im = f.images;
+        return '<div class="rd-grid">' +
+            pick('Border', 'images.border', im.border, [{ value: 'none', label: 'None' }, { value: 'line', label: 'Line' }]) +
+            (im.border === 'line'
+              ? num('Border weight (pt)', 'images.borderWidth', im.borderWidth, '', 0.25) + colourField('Border colour', 'images.borderColour', im.borderColour)
+              : '') +
+            pick('Caption', 'images.captionPosition', im.captionPosition, [{ value: 'below', label: 'Below the image' }, { value: 'above', label: 'Above the image' }]) +
+            pick('Alignment', 'images.align', im.align, [{ value: 'centre', label: 'Centre' }, { value: 'left', label: 'Left' }]) +
+          '</div>';
       }
       if (section === 'headerFooter') {
         var first = f.headerFooter.firstDifferent;
@@ -4800,7 +4811,20 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function paneTemplates(project) {
       var b = bag(project);
       var profiles = (b.formats || []);
-      return '<div class="rd-fieldset"><strong>Styles</strong>' +
+      var std = b.standardImages || [];
+      var stdImages = '<div class="rd-fieldset rd-stdimgs" data-rd-std-drop><strong>Standard Images</strong>' +
+          (std.length
+            ? '<ul class="rd-tpl-list">' + std.map(function (s) {
+                var a = imageAsset(IMAGE_PATH('standard', s.file));
+                return '<li>' + (a.url ? '<img class="rd-std-thumb" src="' + esc(a.url) + '" alt="">' : '<span class="rd-std-thumb rd-imgthumb-none"></span>') +
+                  '<span class="rd-tpl-name">' + esc(s.name) + '</span>' +
+                  '<button type="button" data-rd-std-rename="' + esc(s.id) + '">Rename</button>' +
+                  '<button type="button" class="danger" data-rd-std-del="' + esc(s.id) + '" title="Delete this image">✕</button></li>';
+              }).join('') + '</ul>'
+            : '<p class="rd-state">No standard images yet.</p>') +
+          '<div class="rd-addbar"><label class="rd-filebtn" title="Or drop PNG or JPEG files here">Add image&hellip;<input type="file" accept="image/png,image/jpeg" data-rd-std-file></label></div>' +
+        '</div>';
+      return stdImages + '<div class="rd-fieldset"><strong>Styles</strong>' +
           (profiles.length
             ? '<ul class="rd-tpl-list">' + profiles.map(function (f) {
                 return '<li><span class="rd-tpl-name">' + esc(f.name) + '</span></li>';
@@ -6328,6 +6352,48 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         if (!window.confirm('Apply this template? It replaces the current section order, heading levels and custom sections.')) return;
         logIssues(App.docStore.useReportTemplate(el.getAttribute('data-rd-rpt-use')));
         _rd.selected = null; _rd.fmtId = null; dirty(); repaint();
+      });
+      // ---- IMG-2: Standard Images -------------------------------------------
+      function addStandard(file) {
+        var h = H();
+        if (!h.images || typeof h.images.store !== 'function') { App.docHost.log({ severity: 'error', message: 'Images can only be added with a data folder open.' }); return; }
+        h.images.store('standard', file).then(function (r) {
+          logIssues(App.docStore.addStandardImage(String(file.name).replace(/\.(png|jpe?g)$/i, ''), r.file));
+          repaint();
+        }, function (e) { App.docHost.log({ severity: 'error', message: (e && e.message) || 'That image could not be added.' }); });
+      }
+      dom.on(ctx.root, 'change', '[data-rd-std-file]', function (e, el) {
+        Array.prototype.forEach.call(el.files || [], addStandard);
+        el.value = '';
+      });
+      dom.on(ctx.root, 'dragover', '[data-rd-std-drop]', function (e, el) {
+        var t = e.dataTransfer && e.dataTransfer.types;
+        if (!t || Array.prototype.indexOf.call(t, 'Files') === -1) return;
+        e.preventDefault(); el.classList.add('drop-target');
+      });
+      dom.on(ctx.root, 'dragleave', '[data-rd-std-drop]', function (e, el) { el.classList.remove('drop-target'); });
+      dom.on(ctx.root, 'drop', '[data-rd-std-drop]', function (e, el) {
+        e.preventDefault(); el.classList.remove('drop-target');
+        Array.prototype.forEach.call((e.dataTransfer && e.dataTransfer.files) || [], addStandard);
+      });
+      dom.on(ctx.root, 'click', '[data-rd-std-rename]', function (e, el) {
+        var id = el.getAttribute('data-rd-std-rename');
+        var cur = ((bag(H().getState()).standardImages) || []).filter(function (s) { return s.id === id; })[0];
+        var name = window.prompt('Name for this image:', cur ? cur.name : '');
+        if (name == null || !name.trim()) return;
+        logIssues(App.docStore.renameStandardImage(id, name)); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-std-del]', function (e, el) {
+        var id = el.getAttribute('data-rd-std-del');
+        var cur = ((bag(H().getState()).standardImages) || []).filter(function (s) { return s.id === id; })[0];
+        if (!cur) return;
+        var uses = App.docStore.standardImageUses(cur.file);
+        if (!window.confirm('Delete "' + cur.name + '"?' + (uses ? ' It is used in ' + uses + ' image box' + (uses === 1 ? '' : 'es') + ', which will show a placeholder.' : ''))) return;
+        logIssues(App.docStore.removeStandardImage(id));
+        var h = H();
+        if (h.images && typeof h.images.remove === 'function') Promise.resolve(h.images.remove('standard', cur.file)).catch(function () {});
+        _imageAssets.delete(IMAGE_PATH('standard', cur.file));
+        dirty(); repaint();
       });
       dom.on(ctx.root, 'click', '[data-rd-export]', function (e, el) { doExport(el.getAttribute('data-rd-export')); });
       dom.on(ctx.root, 'change', '[data-rd-import]', function (e, el) {
