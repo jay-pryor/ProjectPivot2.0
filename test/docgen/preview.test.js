@@ -19,8 +19,9 @@ test('each page is a box of its size, scaled, numbered from one', () => {
 test('fills and rules are placed boxes; a vertical rule is as wide as its weight', () => {
   const h = pagesHtml([page]);
   assert.match(h, /class="dp-fill" style="left:10px;top:20px;width:100px;height:30px;background:#d9e2f3"/);
-  assert.match(h, /class="dp-rule" style="left:10px;top:49.75px;width:100px;height:0.5px;background:#999999"/);
-  assert.match(h, /class="dp-rule" style="left:9.5px;top:20px;width:1px;height:30px;background:#000000"/);
+  // Square ends: each line runs half its width past both ends, so thick borders meet in full corners.
+  assert.match(h, /class="dp-rule" style="left:9.75px;top:49.75px;width:100.5px;height:0.5px;background:#999999"/);
+  assert.match(h, /class="dp-rule" style="left:9.5px;top:19.5px;width:1px;height:31px;background:#000000"/);
 });
 
 test('text sits on its baseline in its face, escaped, with WinAnsi quotes shown as Unicode', () => {
@@ -53,4 +54,16 @@ test('a page cropped to a band keeps only what lies in it, moved up to its top',
   assert.deepEqual(c.items.find((i) => i.kind === 'fill'), { kind: 'fill', x: 0, y: 0, w: 10, h: 30, colour: '#eeeeee' });
   const r = c.items.find((i) => i.kind === 'rule');
   assert.deepEqual([r.y1, r.y2], [0, 100]);
+});
+
+test('an image is drawn from the URL the designer gives, or as a grey box', () => {
+  const page = { size: [100, 100], items: [{ kind: 'image', x: 10, y: 20, w: 30, h: 15, src: 'files/report-images/a.png' }] };
+  assert.match(pagesHtml([page], { imageUrl: () => 'blob:x' }), /<img class="dp-image" src="blob:x" alt="" style="left:10px;top:20px;width:30px;height:15px">/);
+  assert.match(pagesHtml([page], { scale: 2 }), /class="dp-fill" style="left:20px;top:40px;width:60px;height:30px;background:#eeeeee"/);
+});
+
+test('a band keeps the images that overlap it', () => {
+  const page = { size: [100, 300], items: [{ kind: 'image', x: 0, y: 50, w: 10, h: 40, src: 'a' }, { kind: 'image', x: 0, y: 200, w: 10, h: 10, src: 'b' }] };
+  const band = cropPage(page, 60, 150);
+  assert.deepEqual(band.items, [{ kind: 'image', x: 0, y: -10, w: 10, h: 40, src: 'a' }]);
 });

@@ -80,3 +80,11 @@ test('the Document settings: renumbering hazards, controls and references in the
   assert.deepEqual(STANDARD.document, { renumberHazards: false, renumberControls: false, renumberReferences: false });
   assert.deepEqual(normaliseStyle({ document: { renumberHazards: true } }).style.document, { renumberHazards: true, renumberControls: false, renumberReferences: false });
 });
+
+test('Images: a border, its weight and colour, where the caption goes, and alignment', () => {
+  assert.deepEqual(normaliseStyle({}).style.images, { border: 'none', borderWidth: 0.5, borderColour: '#999999', captionPosition: 'below', align: 'centre' });
+  const r = normaliseStyle({ images: { border: 'line', borderWidth: 9, borderColour: '#1F4E79', captionPosition: 'above', align: 'left' } });
+  assert.deepEqual(r.style.images, { border: 'line', borderWidth: 6, borderColour: '#1f4e79', captionPosition: 'above', align: 'left' });
+  assert.ok(r.held.some((h) => /Image border weight/.test(h)));
+  assert.equal(normaliseStyle({ images: { border: 'dotted' } }).style.images.border, 'none');
+});

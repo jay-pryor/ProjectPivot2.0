@@ -27,6 +27,29 @@ function hex(s) {
   for (let i = 0; i < s.length; i++) out += s.charCodeAt(i).toString(16).toUpperCase().padStart(4, '0');
   return out + '>';
 }
+/** Bytes as a string of the same length, one character a byte, for a stream. @param {Uint8Array} b */
+function bin(b) {
+  let s = '';
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return s;
+}
+/**
+ * The matrix that draws an image's unit square into the box at (x, y) (bottom-left, PDF
+ * space), w by h, turned upright for its Exif orientation (1–8).
+ * @param {number | undefined} o @param {number} x @param {number} y @param {number} w @param {number} h
+ */
+function placed(o, x, y, w, h) {
+  switch (o) {
+    case 2: return [-w, 0, 0, h, x + w, y];
+    case 3: return [-w, 0, 0, -h, x + w, y + h];
+    case 4: return [w, 0, 0, -h, x, y + h];
+    case 5: return [0, -h, -w, 0, x + w, y + h];
+    case 6: return [0, -h, w, 0, x, y + h];
+    case 7: return [0, h, w, 0, x, y];
+    case 8: return [0, h, -w, 0, x + w, y];
+    default: return [w, 0, 0, h, x, y];
+  }
+}
 /** An ISO date as a PDF date. @param {string} iso */
 function pdfDate(iso) {
   const d = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/.exec(String(iso ?? ''));
@@ -38,7 +61,7 @@ function pdfDate(iso) {
  * bottom-left, so every y is flipped here. Text is WinAnsi in the standard fonts.
  * @param {Page[]} pages
  * @param {{ title?: string, anchors?: Record<string, { page: number, y: number }>,
- *   outline?: { title: string, anchor: string, level: number }[], producer?: string, date?: string }} [opts]
+ *   outline?: { title: string, anchor: string, level: number }[], producer?: string, date?: string, images?: Record<string, any> }} [opts]
  * @returns {Uint8Array}
  */
 export function writePdf(pages, opts = {}) {
@@ -56,6 +79,28 @@ export function writePdf(pages, opts = {}) {
     return [f, n];
   }));
   const fontRes = used.map((f) => `/F${FONT_NAMES.indexOf(f) + 1} ${fontObj[f]} 0 R`).join(' ');
+  // Images: one XObject each (and its mask), however many times it is drawn.
+  const imgs = opts.images ?? {};
+  /** @type {string[]} */
+  const used_ = [];
+  for (const p of pages) for (const it of p.items) if (it.kind === 'image' && imgs[it.src] && !used_.includes(it.src)) used_.push(it.src);
+  /** @type {Record<string, string>} */
+  const imgName = {};
+  const xobjRes = used_.map((src, i) => {
+    // As stored: a photo stored on its side is turned upright when it is drawn.
+    const im = imgs[src].pdf, w = im.width ?? imgs[src].width, h = im.height ?? imgs[src].height;
+    let smask = '';
+    if (im.alpha) {
+      const m = reserve();
+      set(m, `<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length ${im.alpha.length} >>\nstream\n${bin(im.alpha)}\nendstream`);
+      smask = ` /SMask ${m} 0 R`;
+    }
+    const n = reserve();
+    set(n, `<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /${im.colourSpace} /BitsPerComponent 8 /Filter /${im.filter}${smask}` +
+      `${im.decode ? ` /Decode ${im.decode}` : ''} /Length ${im.data.length} >>\nstream\n${bin(im.data)}\nendstream`);
+    imgName[src] = `Im${i + 1}`;
+    return `/Im${i + 1} ${n} 0 R`;
+  }).join(' ');
   const pageObjs = pages.map(() => reserve());
   const dest = (/** @type {string} */ to) => {
     const a = anchors[to];
@@ -69,8 +114,10 @@ export function writePdf(pages, opts = {}) {
       if (it.kind === 'fill') ops.push(`${rgb(it.colour)} rg ${num(it.x)} ${num(h - it.y - it.h)} ${num(it.w)} ${num(it.h)} re f`);
       else if (it.kind === 'rule') ops.push(`${rgb(it.colour)} RG ${num(it.width)} w ${num(it.x1)} ${num(h - it.y1)} m ${num(it.x2)} ${num(h - it.y2)} l S`);
       else if (it.kind === 'text') ops.push(`BT /F${FONT_NAMES.indexOf(it.font) + 1} ${num(it.size)} Tf ${rgb(it.colour)} rg ${num(it.x)} ${num(h - it.y)} Td ${lit(it.text)} Tj ET`);
+      else if (it.kind === 'image' && imgName[it.src]) ops.push(`q ${placed(imgs[it.src].pdf.orientation, it.x, h - it.y - it.h, it.w, it.h).map(num).join(' ')} cm /${imgName[it.src]} Do Q`);
     }
-    const content = ops.join('\n');
+    // Square line ends: a line runs half its width past each end, so the sides of a thick border meet in full corners.
+    const content = ['2 J', ...ops].join('\n');
     const contentObj = reserve();
     set(contentObj, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
     const annots = p.items.filter((it) => it.kind === 'link').map((it) => {
@@ -80,7 +127,7 @@ export function writePdf(pages, opts = {}) {
       set(n, `<< /Type /Annot /Subtype /Link /Rect [${num(it.x)} ${num(h - it.y - it.h)} ${num(it.x + it.w)} ${num(h - it.y)}] /Border [0 0 0] /Dest ${d} >>`);
       return `${n} 0 R`;
     }).filter(Boolean);
-    set(pageObjs[i], `<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${num(p.size[0])} ${num(h)}] /Resources << /Font << ${fontRes} >> >> /Contents ${contentObj} 0 R${annots.length ? ` /Annots [${annots.join(' ')}]` : ''} >>`);
+    set(pageObjs[i], `<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${num(p.size[0])} ${num(h)}] /Resources << /Font << ${fontRes} >>${xobjRes ? ` /XObject << ${xobjRes} >>` : ''} >> /Contents ${contentObj} 0 R${annots.length ? ` /Annots [${annots.join(' ')}]` : ''} >>`);
   });
   set(pagesObj, `<< /Type /Pages /Kids [${pageObjs.map((n) => `${n} 0 R`).join(' ')}] /Count ${pages.length} >>`);
 

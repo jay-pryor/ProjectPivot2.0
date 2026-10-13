@@ -48,3 +48,37 @@ test('a link to an anchor that does not exist is left out, not a broken annotati
   const pdf = readPdf(writePdf([{ size: A4, items: [{ kind: 'link', x: 1, y: 1, w: 1, h: 1, to: 'nowhere' }] }]));
   assert.deepEqual(pdf.pages[0].links, []);
 });
+
+import { prepareImage } from '../../DocGen/doc-images.js';
+import { makePng, makeJpeg } from './image-fixtures.js';
+
+test('images are XObjects, written once, drawn where the page puts them', async () => {
+  const png = await prepareImage(await makePng({ width: 2, height: 1, colourType: 6, sample: (x) => [255, 0, 0, x ? 0 : 255] }));
+  const jpg = await prepareImage(makeJpeg(4, 3));
+  const pages = [{ size: [595, 842], items: [{ kind: 'image', x: 50, y: 100, w: 200, h: 100, src: 'a.png' }, { kind: 'image', x: 50, y: 300, w: 200, h: 100, src: 'a.png' },
+    { kind: 'image', x: 300, y: 100, w: 40, h: 30, src: 'b.jpg' }, { kind: 'image', x: 0, y: 0, w: 10, h: 10, src: 'gone.png' }] }];
+  const bytes = writePdf(pages, { images: { 'a.png': png, 'b.jpg': jpg, 'gone.png': null } });
+  const s = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+  assert.equal((s.match(/\/Subtype \/Image/g) ?? []).length, 3, 'a.png, its mask, b.jpg');
+  assert.match(s, /\/Width 2 \/Height 1 \/ColorSpace \/DeviceRGB \/BitsPerComponent 8 \/Filter \/FlateDecode \/SMask \d+ 0 R/);
+  assert.match(s, /\/ColorSpace \/DeviceGray \/BitsPerComponent 8 \/Filter \/FlateDecode/);
+  assert.match(s, /\/Width 4 \/Height 3 \/ColorSpace \/DeviceRGB \/BitsPerComponent 8 \/Filter \/DCTDecode/);
+  assert.match(s, /\/XObject << \/Im1 \d+ 0 R \/Im2 \d+ 0 R >>/);
+  assert.match(s, /q 200 0 0 100 50 642 cm \/Im1 Do Q/);
+  assert.match(s, /q 200 0 0 100 50 442 cm \/Im1 Do Q/);
+  assert.match(s, /q 40 0 0 30 300 712 cm \/Im2 Do Q/);
+  assert.doesNotThrow(() => readPdf(bytes));
+});
+
+test('lines have square ends, so the sides of a thick border meet in full corners', () => {
+  const pdf = readPdf(writePdf([{ size: [200, 200], items: [{ kind: 'rule', x1: 10, y1: 10, x2: 100, y2: 10, width: 4, colour: '#000000' }] }]));
+  assert.match(pdf.pages[0].stream, /^2 J\n/);
+});
+
+test('a turned photo is drawn turned upright in its box', async () => {
+  const jpg = await prepareImage(makeJpeg(640, 480, 3, 6));
+  const bytes = writePdf([{ size: [595, 842], items: [{ kind: 'image', x: 50, y: 100, w: 200, h: 100, src: 'p.jpg' }] }], { images: { 'p.jpg': jpg } });
+  const s = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+  assert.match(s, /\/Width 640 \/Height 480 /);
+  assert.match(s, /q 0 -100 200 0 50 742 cm \/Im1 Do Q/);
+});

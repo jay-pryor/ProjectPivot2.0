@@ -42,6 +42,7 @@ export const STANDARD = Object.freeze({
     banding: { on: false, fill: '#f2f2f2' },
     firstColumn: { on: false, fill: '#e7e6e6', bold: true },
   },
+  images: { border: 'none', borderWidth: 0.5, borderColour: '#999999', captionPosition: 'below', align: 'centre' },
   headerFooter: { firstDifferent: false, header: SLOTS(), footer: { left: '', centre: 'Page #page of #pages', right: '' },
     firstHeader: SLOTS(), firstFooter: SLOTS(), ruleUnderHeader: false, ruleOverFooter: false },
   marking: { show: true },
@@ -143,6 +144,15 @@ export function normaliseStyle(raw) {
       bold: bool(t.firstColumn?.bold, td.firstColumn.bold) },
   };
 
+  const im = r.images ?? {}, imd = S.images;
+  const images = {
+    border: pick(im.border, imd.border, ['none', 'line'], 'Image border'),
+    borderWidth: num(im.borderWidth, imd.borderWidth, 0.25, 6, 'Image border weight'),
+    borderColour: colour(im.borderColour, imd.borderColour, 'Image border colour'),
+    captionPosition: pick(im.captionPosition, imd.captionPosition, ['above', 'below'], 'Image caption position'),
+    align: pick(im.align, imd.align, ['left', 'centre'], 'Image alignment'),
+  };
+
   const hf = r.headerFooter ?? {};
   const slots = (/** @type {any} */ v, /** @type {any} */ d) => ({ left: str(v?.left, d.left), centre: str(v?.centre, d.centre), right: str(v?.right, d.right) });
   const headerFooter = {
@@ -153,7 +163,7 @@ export function normaliseStyle(raw) {
   };
   const style = {
     id: str(r.id, S.id), name: str(r.name, S.name), ...(r.builtin === true ? { builtin: true } : {}),
-    page: { paper, orientation, margins }, text, tables, headerFooter,
+    page: { paper, orientation, margins }, text, tables, images, headerFooter,
     marking: { show: bool(r.marking?.show, S.marking.show) },
     numbering: { on: bool(r.numbering?.on, S.numbering.on), format: pick(r.numbering?.format, S.numbering.format, FORMATS, 'Numbering format'),
       inToc: bool(r.numbering?.inToc, S.numbering.inToc) },

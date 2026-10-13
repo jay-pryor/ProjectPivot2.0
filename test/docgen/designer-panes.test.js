@@ -54,7 +54,7 @@ test('the Styles pane lists its sections and the live pages beside them', () => 
 
 test('every field on every Styles section names a real path in the Style', () => {
   const style = normaliseStyle({}).style;
-  for (const s of ['page', 'title', 'h1', 'body', 'caption', 'code', 'tables', 'headerFooter', 'marking', 'numbering']) {
+  for (const s of ['page', 'title', 'h1', 'body', 'caption', 'code', 'tables', 'images', 'headerFooter', 'marking', 'numbering']) {
     const html = paneOf(host(), 'styles', s);
     const paths = [...html.matchAll(/data-rd-fmt(?:-bool)?="([^"]+)"/g)].map((m) => m[1]);
     assert.ok(paths.length > 0, `${s} has fields`);
@@ -605,4 +605,179 @@ test('Styles starts with Document, set apart, then Page Setup and Section Number
   assert.match(list, /data-rd-style-section="document"[^>]*>Document<\/button><hr class="rd-style-divider"/);
   const f = html.slice(html.indexOf('rd-style-fields'), html.indexOf('rd-style-preview'));
   for (const k of ['renumberHazards', 'renumberControls', 'renumberReferences']) assert.match(f, new RegExp(`data-rd-fmt-bool="document\\.${k}"`), k);
+});
+
+test('an image part: added blank, boxes filled and emptied, fields held to their limits', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  App.docHost.set(h);
+  const r = App.docStore.addPart('mine', 'image');
+  assert.equal(r.ok, true);
+  const part = () => h.getState().report.sections[0].parts[0];
+  assert.deepEqual(part(), { id: r.id, kind: 'image', layout: 'single', captions: 'one', caption: '', images: [] });
+  App.docStore.setPartImage('mine', r.id, 2, { source: 'report', file: 'a.png', name: 'a.png' });
+  assert.deepEqual(part().images, [null, null, { source: 'report', file: 'a.png', name: 'a.png' }]);
+  App.docStore.setPartImageField('mine', r.id, 2, 'width', '42.6');
+  App.docStore.setPartImageField('mine', r.id, 2, 'noBorder', true);
+  App.docStore.setPartImageField('mine', r.id, 2, 'caption', 'Left');
+  assert.deepEqual(part().images[2], { source: 'report', file: 'a.png', name: 'a.png', width: 43, noBorder: true, caption: 'Left' });
+  App.docStore.setPartImageField('mine', r.id, 2, 'width', 900);
+  assert.equal(part().images[2].width, undefined, '100% is the default, so it is not stored');
+  App.docStore.setPartImageField('mine', r.id, 2, 'width', 1);
+  assert.equal(part().images[2].width, 5);
+  App.docStore.setPartImage('mine', r.id, 2, null);
+  assert.deepEqual(part().images, [null, null, null]);
+});
+
+test('a layout with fewer boxes keeps the extra images for later', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'grid4', captions: 'one', caption: '',
+    images: [{ source: 'report', file: 'a.png', name: 'a' }, { source: 'report', file: 'b.png', name: 'b' }, { source: 'report', file: 'c.png', name: 'c' }] }] }] });
+  App.docHost.set(h);
+  App.docStore.updatePart('mine', 'i1', { layout: 'single' });
+  App.docStore.updatePart('mine', 'i1', { layout: 'grid21' });
+  assert.deepEqual(h.getState().report.sections[0].parts[0].images.map((i) => i.name), ['a', 'b', 'c']);
+});
+
+test('Standard Images: added, renamed, counted where used, removed', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'pair', captions: 'one', caption: '',
+    images: [{ source: 'standard', file: 's1.png', name: 'Logo' }, { source: 'standard', file: 's1.png', name: 'Logo' }] }] }],
+    sectionTemplates: [{ id: 'tpl1', name: 'T', parts: [{ id: 'i9', kind: 'image', layout: 'single', images: [{ source: 'standard', file: 's1.png', name: 'Logo' }] }] }] });
+  App.docHost.set(h);
+  const a = App.docStore.addStandardImage('Logo', 's1.png');
+  assert.equal(a.ok, true);
+  App.docStore.renameStandardImage(a.id, 'Company logo');
+  assert.deepEqual(h.getState().report.standardImages, [{ id: a.id, name: 'Company logo', file: 's1.png' }]);
+  assert.equal(App.docStore.standardImageUses('s1.png'), 3);
+  assert.equal(App.docStore.addStandardImage('  ', 'x.png').ok, false);
+  App.docStore.removeStandardImage(a.id);
+  assert.deepEqual(h.getState().report.standardImages, []);
+});
+
+test('a section template may hold image parts', () => {
+  const parsed = App.docTemplates.parseImport(JSON.stringify({ kind: 'ch-config-tool/section-templates', items: [{ name: 'Pics', parts: [{ kind: 'image', layout: 'pair', images: [] }] }] }), 'sections');
+  assert.equal(parsed.issues.filter((i) => i.severity === 'error').length, 0, JSON.stringify(parsed.issues));
+});
+
+/** The Sections tab, on one section's Content. */
+function contentOf(h, id) {
+  App.docHost.set(h); RD.open(); RD.pane('section'); RD.select(id); RD._rd.secCat = 'content';
+  const html = RD.render(h.getState()); RD.close();
+  return html;
+}
+
+test('the Content category offers + Image; an image part shows its layout, caption mode and boxes', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'grid21', captions: 'separate', caption: '',
+    images: [{ source: 'report', file: 'a.png', name: 'a.png', width: 40, noBorder: true, caption: 'Left' }] }] }], order: ['mine'] });
+  const html = contentOf(h, 'mine');
+  assert.match(html, /data-rd-addpart="image"[^>]*>\+ Image</);
+  assert.match(html, /<select data-rd-img-layout="i1"[^>]*>[\s\S]*?<option value="single">Single image<\/option><option value="pair">Side by side<\/option><option value="grid4">2×2 grid<\/option><option value="grid21" selected>2-1 grid<\/option><option value="grid12">1-2 grid<\/option>/);
+  assert.match(html, /<select data-rd-img-captions="i1"[^>]*>[\s\S]*?One caption[\s\S]*?value="separate" selected>Separate captions[\s\S]*?No caption/);
+  assert.equal((html.match(/data-rd-imgbox="\d"/g) ?? []).length, 3);
+  assert.match(html, /data-rd-imgbox="0"[\s\S]*?a\.png[\s\S]*?data-rd-img-width[^>]*value="40"[\s\S]*?data-rd-img-noborder[^>]*checked[\s\S]*?data-rd-img-capk[^>]*value="Left"/);
+  assert.match(html, /data-rd-imgbox="1"[\s\S]*?Drop an image here, or click to choose/);
+  assert.doesNotMatch(html, /data-rd-img-caption="i1"/, 'separate captions: no shared caption box');
+});
+
+test('one caption: a caption box for the whole block', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'single', captions: 'one', caption: 'Our map', images: [] }] }], order: ['mine'] });
+  assert.match(contentOf(h, 'mine'), /data-rd-img-caption="i1"[^>]*value="Our map"/);
+});
+
+test('a clicked box offers Standard Images or a file from this computer', () => {
+  const h = host({ standardImages: [{ id: 'img1', name: 'Logo', file: 's1.png' }],
+    sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'single', captions: 'one', caption: '', images: [] }] }], order: ['mine'] });
+  RD._rd.imgMenu = 'i1:0'; RD._rd.imgPick = false;
+  let html = contentOf(h, 'mine');
+  assert.match(html, /data-rd-img-from="standard"[^>]*>From Standard Images&hellip;</);
+  assert.match(html, /From this computer&hellip;<input type="file" accept="image\/png,image\/jpeg" data-rd-img-file/);
+  RD._rd.imgPick = true;
+  html = contentOf(h, 'mine');
+  assert.match(html, /data-rd-img-std="s1\.png"[^>]*>[\s\S]*?Logo/);
+  RD._rd.imgMenu = null; RD._rd.imgPick = false;
+});
+
+test('the previews lay out images at their own size once read, and the Generate tab names missing ones', async () => {
+  const { makePng } = await import('./image-fixtures.js');
+  const png = await makePng({ width: 40, height: 10, sample: () => [1, 2, 3] });
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'pair', captions: 'none',
+    images: [{ source: 'report', file: 'a.png', name: 'a.png' }, { source: 'report', file: 'gone.png', name: 'gone.png' }] }] }], order: ['mine'] });
+  h.images = { read: async (p) => (p === 'files/report-images/a.png' ? png : null) };
+  App.docHost.set(h);
+  RD.open();                                     // opening forgets earlier reads
+  RD.laidOut(h.getState(), null, {});            // starts the reads
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(RD._imageAssets.get('files/report-images/a.png').state, 'ok');
+  assert.equal(RD._imageAssets.get('files/report-images/gone.png').state, 'missing');
+  const laid = RD.laidOut(h.getState(), null, {});
+  const im = laid.pages.flatMap((p) => p.items).find((it) => it.kind === 'image');
+  assert.equal(Math.round(im.h * 4), Math.round(im.w));
+  RD.pane('generate');
+  const gen = RD.render(h.getState()); RD.close();
+  assert.match(gen, /Images missing from the folder[\s\S]*?gone\.png/);
+  RD._imageAssets.clear();
+});
+
+test('Styles has an Images section after Tables: border, weight and colour when a line, caption position, alignment', () => {
+  const names = (html) => [...html.matchAll(/data-rd-style-section="([a-zA-Z0-9]+)"/g)].map((m) => m[1]);
+  const html = paneOf(host(), 'styles', 'images');
+  const order = names(html);
+  assert.equal(order[order.indexOf('tables') + 1], 'images');
+  assert.match(html, /data-rd-style-section="images"[^>]*>Images</);
+  const f = html.slice(html.indexOf('rd-style-fields'), html.indexOf('rd-style-preview'));
+  for (const k of ['images.border', 'images.captionPosition', 'images.align']) assert.match(f, new RegExp(`data-rd-fmt="${k.replace('.', '\\.')}"`), k);
+  assert.doesNotMatch(f, /images\.borderWidth/, 'no weight until there is a line');
+  const lined = host();
+  lined.getState().report.formats[0].images = { border: 'line' };
+  const g = paneOf(lined, 'styles', 'images');
+  assert.match(g, /data-rd-fmt="images\.borderWidth"/);
+  assert.match(g, /data-rd-colour-open="images\.borderColour"/);
+});
+
+test('Templates lists Standard Images with Rename and Delete, and a way to add one', () => {
+  const html = paneOf(host({ standardImages: [{ id: 'img1', name: 'Logo', file: 's1.png' }] }), 'templates');
+  assert.match(html, /<div class="rd-fieldset rd-stdimgs" data-rd-std-drop><strong>Standard Images<\/strong>/);
+  assert.match(html, /Logo[\s\S]*?data-rd-std-rename="img1"[\s\S]*?data-rd-std-del="img1"/);
+  assert.match(html, /Add image&hellip;<input type="file" accept="image\/png,image\/jpeg" data-rd-std-file>/);
+  assert.match(paneOf(host(), 'templates'), /No standard images yet\./);
+});
+
+test('a redraw keeps where each scrolling area was, the page previews included', () => {
+  for (const sel of ['.modal-body', '.rd-pane', '[data-rd-style-preview]', '[data-rd-sec-prev]', '#rd-preview-doc', '[data-rd-sec-fields]']) assert.ok(RD._SCROLLERS.includes(sel), sel);
+  const make = () => Object.fromEntries(RD._SCROLLERS.map((s) => [s, { scrollTop: 0, scrollLeft: 0 }]));
+  let els = make();
+  els['[data-rd-style-preview]'].scrollTop = 640; els['[data-rd-style-preview]'].scrollLeft = 25;
+  const host = { querySelector: (s) => els[s] ?? null };
+  RD._keepScroll(host, () => { els = make(); delete els['.rd-pane']; });
+  assert.equal(els['[data-rd-style-preview]'].scrollTop, 640);
+  assert.equal(els['[data-rd-style-preview]'].scrollLeft, 25);
+});
+
+test('opening the designer reads its images afresh, letting go of the old ones', () => {
+  const revoked = [];
+  const had = globalThis.URL.revokeObjectURL;
+  globalThis.URL.revokeObjectURL = (u) => revoked.push(u);
+  try {
+    RD._imageAssets.set('files/report-images/a.png', { state: 'ok', url: 'blob:a' });
+    RD._imageAssets.set('files/report-images/gone.png', { state: 'missing' });
+    RD.open(); RD.close();
+    assert.equal(RD._imageAssets.size, 0);
+    assert.deepEqual(revoked, ['blob:a']);
+  } finally { globalThis.URL.revokeObjectURL = had; }
+});
+
+test('a file dropped anywhere in the designer but a drop box is caught, so the browser does not open it', () => {
+  const ev = (types, inBox) => {
+    const e = { dataTransfer: { types, dropEffect: 'copy' }, prevented: false, preventDefault() { this.prevented = true; },
+      target: { closest: (sel) => (inBox && /data-rd-imgbox|data-rd-std-drop/.test(sel) ? {} : null) } };
+    return e;
+  };
+  const stray = ev(['Files'], false);
+  RD._strayFileDrop(stray);
+  assert.equal(stray.prevented, true);
+  assert.equal(stray.dataTransfer.dropEffect, 'none');
+  const boxed = ev(['Files'], true);
+  RD._strayFileDrop(boxed);
+  assert.equal(boxed.prevented, false, 'a drop box handles its own');
+  const text = ev(['text/plain'], false);
+  RD._strayFileDrop(text);
+  assert.equal(text.prevented, false, 'dragging a section or a part is left alone');
 });

@@ -3,6 +3,7 @@ import { STANDARD as STYLE_STANDARD, PAPER_MM as STYLE_PAPER_MM, normaliseStyle,
 import { layout } from './doc-layout.js';
 import { pagesHtml, cropPage } from './doc-preview.js';
 import { toWinAnsi } from './doc-fonts.js';
+import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO, figureSources as FIGURE_SOURCES, FIGURE_LAYOUTS } from './doc-images.js';
   /* App namespace root. Exported at the bottom of this file. */
   var App = {};
 
@@ -581,6 +582,13 @@ import { toWinAnsi } from './doc-fonts.js';
         label: num + (t.caption ? ': ' + t.caption : '')
       };
     }
+    function figureRef(f) {
+      var num = 'Figure ' + f.number;
+      return {
+        anchor: f.anchor, numberLabel: num, titleLabel: f.caption || num,
+        label: num + (f.caption ? ': ' + f.caption : '')
+      };
+    }
     /* REF-1: a PARAGRAPH is a link target too.
      *
      * "See section 4" is often more precision than the writer has and less than the
@@ -597,7 +605,7 @@ import { toWinAnsi } from './doc-fonts.js';
     }
 
     /** Every link target in the document, keyed by id. One walk, three consumers. */
-    function refIndex(resolved, tables) {
+    function refIndex(resolved, tables, figures) {
       var byId = {}, order = [];
       function add(id, kind, ref) { if (!byId[id]) order.push({ id: id, kind: kind }); byId[id] = ref; }
       (resolved || []).forEach(function (b) {
@@ -611,6 +619,7 @@ import { toWinAnsi } from './doc-fonts.js';
         }
       });
       (tables || []).forEach(function (t) { add(t.id, 'table', tableRef(t)); });
+      (figures || []).forEach(function (f) { add(f.id, 'figure', figureRef(f)); });
       return { byId: byId, order: order };
     }
 
@@ -619,14 +628,14 @@ import { toWinAnsi } from './doc-fonts.js';
      * @param {Array} resolved  the output of outline()
      * @param {Array<{id:string,number:string,caption:string,anchor:string}>} [tables]
      */
-    function refResolver(resolved, tables) {
-      var idx = refIndex(resolved, tables);
+    function refResolver(resolved, tables, figures) {
+      var idx = refIndex(resolved, tables, figures);
       return function (id) { return idx.byId[id] || null; };
     }
 
     /** The pickable link targets, for the designer's "insert reference" menu. */
-    function refTargets(resolved, tables) {
-      var idx = refIndex(resolved, tables);
+    function refTargets(resolved, tables, figures) {
+      var idx = refIndex(resolved, tables, figures);
       return idx.order.map(function (e) {
         var r = idx.byId[e.id];
         return { id: e.id, kind: e.kind, label: r.label, numberLabel: r.numberLabel, titleLabel: r.titleLabel };
@@ -1419,11 +1428,23 @@ import { toWinAnsi } from './doc-fonts.js';
       var depth = numberDepth(style);
       // Table numbers, in the order the tables will be emitted.
       var tableList = [], n = 0;
+      var figureList = [], nf = 0;
       resolved.forEach(function (b) {
         if (b.kind === 'custom') {
           (b.parts || []).forEach(function (p) {
             if (p.kind === 'table' && p.noCaption !== true && (p.header || []).length) {
               n++; tableList.push({ id: p.id, number: String(n), caption: App.doc.autoCaption(b, p), anchor: App.md.anchor('tbl-' + p.id) });
+            }
+            if (p.kind === 'image' && (p.images || []).slice(0, FIG_BOXES(p.layout)).some(Boolean)) {
+              if (p.captions === 'separate') {
+                (p.images || []).slice(0, FIG_BOXES(p.layout)).forEach(function (im, k) {
+                  if (!im) return;
+                  nf++; var fid = p.id + '.' + (k + 1);
+                  figureList.push({ id: fid, number: String(nf), caption: String(im.caption || '').trim(), anchor: App.md.anchor('fig-' + fid) });
+                });
+              } else if (p.captions !== 'none') {
+                nf++; figureList.push({ id: p.id, number: String(nf), caption: String(p.caption || '').trim(), anchor: App.md.anchor('fig-' + p.id) });
+              }
             }
           });
         } else if (Array.isArray(b.content)) {
@@ -1432,7 +1453,8 @@ import { toWinAnsi } from './doc-fonts.js';
           });
         }
       });
-      var resolveRef = App.doc.refResolver(resolved, tableList);
+      var resolveRef = App.doc.refResolver(resolved, tableList, figureList);
+      var figById = {}; figureList.forEach(function (f) { figById[f.id] = f; });
       var byId = {}; tableList.forEach(function (t) { byId[t.id] = t; });
       var tags = meta.tags || {};
       function tag(s) { return applyTags(s, tags); }
@@ -1447,6 +1469,27 @@ import { toWinAnsi } from './doc-fonts.js';
         return out.length ? out : [Object.assign({ text: '' }, extra || {})];
       }
       function caption(t) { return t ? { runs: [{ text: 'Table ' + t.number + ': ' + tag(t.caption) }] } : null; }
+      function figCaption(f) { return f ? { runs: [{ text: 'Figure ' + f.number + (f.caption ? ': ' + tag(f.caption) : '') }] } : null; }
+      /** An image part as a figure block, or null when it has no image in any of its boxes. */
+      function figureBlock(p) {
+        var count = FIG_BOXES(p.layout);
+        var ims = (p.images || []).slice(0, count);
+        if (!ims.some(Boolean)) return null;
+        while (ims.length < count) ims.push(null);
+        var sep = p.captions === 'separate';
+        return {
+          kind: 'figure', layout: FIGURE_LAYOUTS[p.layout] ? p.layout : 'single',
+          anchor: sep ? undefined : App.md.anchor('fig-' + p.id),
+          caption: sep ? null : figCaption(figById[p.id]),
+          images: ims.map(function (im, k) {
+            if (!im) return null;
+            var fid = p.id + '.' + (k + 1);
+            var pct = Math.min(100, Math.max(5, Number(im.width) || 100));
+            return { src: IMAGE_PATH(im.source, im.file), name: String(im.name || im.file), width: pct / 100, border: !im.noBorder,
+              caption: sep ? figCaption(figById[fid]) : null, anchor: sep ? App.md.anchor('fig-' + fid) : undefined };
+          })
+        };
+      }
       /** Whether a part of a block is centred (`centre` is per part, or `true` for all). */
       function centres(b, part) { return b.centre === true || !!(b.centre && b.centre[part]); }
       var out = [];
@@ -1482,7 +1525,7 @@ import { toWinAnsi } from './doc-fonts.js';
               out.push({ kind: 'table', anchor: App.md.anchor('tbl-' + p.id), caption: caption(byId[p.id]), columns: cols, centre: centre,
                 header: p.header.map(runs1), rows: (p.rows || []).map(function (r) { return p.header.map(function (_, k) { return runs1(r && r[k] != null ? r[k] : ''); }); }),
                 rowHeight: Number(p.rowHeight) || 0, tallRows: (p.tallRows && p.tallRows.length === (p.rows || []).length) ? p.tallRows : null });
-            }
+            } else if (p.kind === 'image') { var fb = figureBlock(p); if (fb) out.push(fb); }
           });
           return;
         }
@@ -1509,7 +1552,7 @@ import { toWinAnsi } from './doc-fonts.js';
         document: { title: docTitle, meta: { title: docTitle, platform: meta.platform || '', date: meta.date || '', marking: meta.classification || '' }, blocks: out },
         style: tagged, tags: findTags(all),
         // What a reference can point at, and how each reads — for the designer's link menu and editors.
-        refs: { resolve: resolveRef, targets: App.doc.refTargets(resolved, tableList) }
+        refs: { resolve: resolveRef, targets: App.doc.refTargets(resolved, tableList, figureList) }
       };
     }
 
@@ -2021,6 +2064,7 @@ import { toWinAnsi } from './doc-fonts.js';
 
     /** A new part of the given kind, with the empty shape that kind needs. */
     function blankPart(kind, id) {
+      if (kind === 'image') return { id: id, kind: 'image', layout: 'single', captions: 'one', caption: '', images: [] };
       if (kind === 'table') {
         return { id: id, kind: 'table', caption: '', centre: false, align: ['l', 'l'], header: ['Column 1', 'Column 2'], rows: [['', '']] };
       }
@@ -2052,13 +2096,13 @@ import { toWinAnsi } from './doc-fonts.js';
     }
 
     /**
-     * @param {string} sectionId @param {'para'|'table'|'rule'|'pagebreak'|'space'} kind
+     * @param {string} sectionId @param {'para'|'table'|'rule'|'pagebreak'|'space'|'image'} kind
      * @param {number} [at]  insert position; appended when omitted
      */
     function addPart(sectionId, kind, at) {
       if (!P()) return errNoProject();
       if (!findSection(P(), sectionId)) return err('Unknown section.', sectionId);
-      if (['para', 'table', 'rule', 'pagebreak', 'space'].indexOf(kind) === -1) return err('Unknown part type "' + kind + '".');
+      if (['para', 'table', 'rule', 'pagebreak', 'space', 'image'].indexOf(kind) === -1) return err('Unknown part type "' + kind + '".');
       var id = null;
       App.docHost.get().commit(function (p) {
         var s = findSection(p, sectionId);
@@ -2102,6 +2146,81 @@ import { toWinAnsi } from './doc-fonts.js';
         s.parts = (s.parts || []).filter(function (x) { return x.id !== partId; });
       });
       return ok();
+    }
+
+    /** IMG-1: one box of an image part: an image ({ source, file, name }) or null to empty it. */
+    function setPartImage(sectionId, partId, index, img) {
+      if (!P()) return errNoProject();
+      var s0 = findSection(P(), sectionId);
+      if (!s0 || !(s0.parts || []).some(function (x) { return x.id === partId && x.kind === 'image'; })) return err('Unknown image part.', partId);
+      App.docHost.get().commit(function (p) {
+        var part = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0];
+        part.images = part.images || [];
+        while (part.images.length <= index) part.images.push(null);
+        part.images[index] = img ? { source: img.source === 'standard' ? 'standard' : 'report', file: String(img.file), name: String(img.name || img.file) } : null;
+      });
+      return ok();
+    }
+
+    /** IMG-1: an image's width (% of the text width, 5–100), its "no border" tick, or its own caption. */
+    function setPartImageField(sectionId, partId, index, field, value) {
+      if (!P()) return errNoProject();
+      if (['width', 'noBorder', 'caption'].indexOf(field) === -1) return err('Unknown image setting "' + field + '".');
+      var s0 = findSection(P(), sectionId);
+      var p0 = s0 && (s0.parts || []).filter(function (x) { return x.id === partId; })[0];
+      if (!p0 || !(p0.images || [])[index]) return err('There is no image there.', partId);
+      App.docHost.get().commit(function (p) {
+        var im = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0].images[index];
+        if (field === 'width') {
+          var n = Math.round(Number(value));
+          if (!isFinite(n) || n >= 100) delete im.width; else im.width = Math.max(5, n);
+        } else if (field === 'noBorder') {
+          if (value) im.noBorder = true; else delete im.noBorder;
+        } else {
+          var c = String(value == null ? '' : value);
+          if (c.trim()) im.caption = c; else delete im.caption;
+        }
+      });
+      return ok();
+    }
+
+    /** IMG-2: Standard Images — images any report can use, by reference. */
+    function addStandardImage(name, file) {
+      if (!P()) return errNoProject();
+      if (!String(name || '').trim()) return err('A standard image needs a name.');
+      var id = null;
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        b.standardImages = b.standardImages || [];
+        id = nextId('img', b.standardImages);
+        b.standardImages.push({ id: id, name: String(name).trim(), file: String(file) });
+      });
+      return { ok: true, id: id, issues: [] };
+    }
+    function renameStandardImage(id, name) {
+      if (!P()) return errNoProject();
+      if (!String(name || '').trim()) return err('A standard image needs a name.');
+      App.docHost.get().commit(function (p) {
+        (bag(p).standardImages || []).forEach(function (s) { if (s.id === id) s.name = String(name).trim(); });
+      });
+      return ok();
+    }
+    function removeStandardImage(id) {
+      if (!P()) return errNoProject();
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        b.standardImages = (b.standardImages || []).filter(function (s) { return s.id !== id; });
+      });
+      return ok();
+    }
+    /** How many image boxes, in sections and section templates, show this standard image. */
+    function standardImageUses(file) {
+      var n = 0;
+      if (!P()) return 0;
+      allParts(P()).forEach(function (part) {
+        if (part && part.kind === 'image') (part.images || []).forEach(function (im) { if (im && im.source === 'standard' && im.file === file) n++; });
+      });
+      return n;
     }
 
     /**
@@ -2668,6 +2787,7 @@ import { toWinAnsi } from './doc-fonts.js';
       setReportInclude: setReportInclude, INCLUDE_MAPS: INCLUDE_MAPS,
       addSection: addSection, updateSection: updateSection, removeSection: removeSection,
       addPart: addPart, updatePart: updatePart, removePart: removePart, movePart: movePart,
+      setPartImage: setPartImage, setPartImageField: setPartImageField, addStandardImage: addStandardImage, renameStandardImage: renameStandardImage, removeStandardImage: removeStandardImage, standardImageUses: standardImageUses,
       setCell: setCell, addRow: addRow, removeRow: removeRow,
       // SPC-1: which rows take the table's extra height.
       setRowTall: setRowTall, rowTall: rowTall,
@@ -2780,11 +2900,14 @@ import { toWinAnsi } from './doc-fonts.js';
       parts.forEach(function (p, i) {
         var l = loc + '.parts[' + i + ']';
         if (!p || typeof p !== 'object') { issues.push(issue('error', 'A part must be an object.', l)); ok = false; return; }
-        if (['para', 'table', 'rule', 'pagebreak'].indexOf(p.kind) === -1) {
+        if (['para', 'table', 'rule', 'pagebreak', 'space', 'image'].indexOf(p.kind) === -1) {
           issues.push(issue('error', 'Unknown part kind "' + p.kind + '".', l)); ok = false; return;
         }
         if (p.kind === 'para' && p.text !== undefined && typeof p.text !== 'string') {
           issues.push(issue('error', 'A paragraph\'s text must be a string.', l)); ok = false;
+        }
+        if (p.kind === 'image' && p.images !== undefined && !Array.isArray(p.images)) {
+          issues.push(issue('error', 'An image part\'s images must be an array.', l)); ok = false;
         }
         if (p.kind === 'table') {
           if (!Array.isArray(p.header) || !p.header.length) { issues.push(issue('error', 'A table needs a header row.', l)); ok = false; }
@@ -3412,6 +3535,8 @@ import { toWinAnsi } from './doc-fonts.js';
       colourOpen: null,      // the colour field whose palette is open (its Style path)
       renaming: null,        // the section whose heading is being edited in the list
       secCat: null,          // the open category of the Sections pane
+      imgMenu: null,         // 'partId:box' whose choose-menu is open
+      imgPick: false,        // that menu showing Standard Images
       secWhole: false,       // whether the section preview shows the whole document
       listWidth: null,       // the Sections list's width, once dragged
       secZoom: null,         // the section preview's zoom, when changed from the default
@@ -3961,11 +4086,131 @@ import { toWinAnsi } from './doc-fonts.js';
         '</div>';
     }
 
+    var IMAGE_LAYOUTS = [{ value: 'single', label: 'Single image' }, { value: 'pair', label: 'Side by side' }, { value: 'grid4', label: '2×2 grid' },
+      { value: 'grid21', label: '2-1 grid' }, { value: 'grid12', label: '1-2 grid' }];
+    var IMAGE_CAPTIONS = [{ value: 'one', label: 'One caption' }, { value: 'separate', label: 'Separate captions' }, { value: 'none', label: 'No caption' }];
+    function imgSelect(attr, partId, secId, val, options, label) {
+      return '<label class="rd-lab rd-lab-s">' + esc(label) + '<select ' + attr + '="' + esc(partId) + '" data-rd-sec="' + esc(secId) + '" aria-label="' + esc(label) + '">' +
+        options.map(function (o) { return '<option value="' + o.value + '"' + (o.value === val ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('') +
+        '</select></label>';
+    }
+
+    /** IMG-1: one box of an image part: its image and settings, or a place to drop one. */
+    function imageBox(project, sec, part, k) {
+      var im = (part.images || [])[k] || null;
+      var key = part.id + ':' + k;
+      var ids = ' data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"';
+      var menu = '';
+      if (_rd.imgMenu === key) {
+        var std = bag(project).standardImages || [];
+        menu = '<div class="rd-imgmenu">' + (_rd.imgPick
+          ? (std.length ? std.map(function (s) {
+              var a = imageAsset(IMAGE_PATH('standard', s.file));
+              return '<button type="button" data-rd-img-std="' + esc(s.file) + '" data-rd-img-name="' + esc(s.name) + '"' + ids + ' data-rd-img-k="' + k + '">' +
+                (a.url ? '<img class="rd-std-thumb" src="' + esc(a.url) + '" alt="">' : '') + esc(s.name) + '</button>';
+            }).join('') : '<p class="rd-state">No standard images yet.</p>')
+          : '<button type="button" data-rd-img-from="standard"' + ids + ' data-rd-img-k="' + k + '">From Standard Images&hellip;</button>' +
+            '<label class="rd-filebtn">From this computer&hellip;<input type="file" accept="image/png,image/jpeg" data-rd-img-file' + ids + ' data-rd-img-k="' + k + '"></label>') +
+          '</div>';
+      }
+      if (!im) {
+        return '<div class="rd-imgbox rd-imgbox-empty" data-rd-imgbox="' + k + '"' + ids + ' tabindex="0">' +
+          '<span class="rd-imgdrop">Drop an image here, or click to choose</span>' + menu + '</div>';
+      }
+      var path = IMAGE_PATH(im.source, im.file);
+      var a = imageAsset(path);
+      var sep = part.captions === 'separate';
+      var w = im.width || 100;
+      return '<div class="rd-imgbox" data-rd-imgbox="' + k + '"' + ids + ' tabindex="0">' +
+        (a.state === 'ok' && a.url ? '<img class="rd-imgthumb" src="' + esc(a.url) + '" alt="">'
+          : '<span class="rd-imgthumb rd-imgthumb-none">' + (a.state === 'missing' ? 'Missing' : '') + '</span>') +
+        '<span class="rd-imgname" title="' + esc(im.name) + '">' + esc(im.name) + (im.source === 'standard' ? ' <span class="rd-kind">Standard</span>' : '') + '</span>' +
+        '<button type="button" class="rd-imgclear" data-rd-img-clear' + ids + ' data-rd-img-k="' + k + '" aria-label="Take this image out">✕</button>' +
+        '<div class="rd-imgopts">' +
+          '<label class="rd-lab rd-lab-s" title="A share of the text width; never wider than its box">Width (%)<span class="rd-num">' +
+            '<input inputmode="numeric" data-rd-img-width' + ids + ' data-rd-img-k="' + k + '" value="' + esc(String(w)) + '" aria-label="Width, percent of the text width">' +
+            '<span class="rd-steps">' +
+              '<button type="button" data-rd-img-step="+"' + ids + ' data-rd-img-k="' + k + '" aria-label="Width up" tabindex="-1">&#9650;</button>' +
+              '<button type="button" data-rd-img-step="-"' + ids + ' data-rd-img-k="' + k + '" aria-label="Width down" tabindex="-1">&#9660;</button>' +
+            '</span></span></label>' +
+          '<label class="gen-opt"><input type="checkbox" data-rd-img-noborder' + ids + ' data-rd-img-k="' + k + '"' + (im.noBorder ? ' checked' : '') + '> No border</label>' +
+          (sep ? '<input class="rd-imgcap" placeholder="Caption" data-rd-live data-rd-img-capk' + ids + ' data-rd-img-k="' + k + '" value="' + esc(im.caption || '') + '" aria-label="Caption for this image">' : '') +
+        '</div>' + menu + '</div>';
+    }
+
+    /** IMG-1: an image part: its layout, its caption mode, its boxes and (one caption) its caption. */
+    function imageEditor(project, sec, part, i, n) {
+      var count = FIG_BOXES(part.layout);
+      var boxes = '';
+      for (var k = 0; k < count; k++) boxes += imageBox(project, sec, part, k);
+      return '<div class="rd-part rd-part-image" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
+        '<div class="rd-part-head"><span class="rd-part-kind">Image</span>' +
+          imgSelect('data-rd-img-layout', part.id, sec.id, FIGURE_LAYOUTS[part.layout] ? part.layout : 'single', IMAGE_LAYOUTS, 'Layout') +
+          imgSelect('data-rd-img-captions', part.id, sec.id, part.captions || 'one', IMAGE_CAPTIONS, 'Captions') +
+          partControls(sec, part, i, n) + '</div>' +
+        '<div class="rd-imggrid rd-imggrid-' + esc(FIGURE_LAYOUTS[part.layout] ? part.layout : 'single') + '">' + boxes + '</div>' +
+        ((part.captions || 'one') === 'one'
+          ? '<label class="rd-lab">Caption<input data-rd-img-caption="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" value="' + esc(part.caption || '') + '" data-rd-live placeholder="What the figure shows"></label>'
+          : '') +
+        '</div>';
+    }
+
     /** The zoom steps of the page previews, and where each starts. */
     var ZOOMS = [0.4, 0.5, 0.6, 0.8, 1, 1.25, 1.5, 2];
     var ZOOM_FROM = { section: 1, preview: 1, styles: 1 };
     var ZOOM_KEY = { section: 'secZoom', preview: 'prevZoom', styles: 'styleZoom' };
     function zoomOf(which) { return _rd[ZOOM_KEY[which]] || ZOOM_FROM[which]; }
+    /**
+     * IMG-3: the images the previews draw, read from the folder once and kept while the
+     * designer is open: their size (for the layout) and a URL (for the screen).
+     */
+    var _imageAssets = new Map();
+    function imageAsset(path) {
+      var a = _imageAssets.get(path);
+      if (a) return a;
+      var h = H();
+      if (!h || !h.images || typeof h.images.read !== 'function') {
+        a = { state: 'missing' };
+        _imageAssets.set(path, a);
+        return a;
+      }
+      a = { state: 'loading' };
+      _imageAssets.set(path, a);
+      Promise.resolve().then(function () { return h.images.read(path); }).then(function (bytes) {
+        var info = bytes ? IMAGE_INFO(bytes) : null;
+        if (!info) { a.state = 'missing'; } else {
+          a.state = 'ok'; a.width = info.width; a.height = info.height;
+          a.url = (typeof URL !== 'undefined' && URL.createObjectURL && typeof Blob !== 'undefined')
+            ? URL.createObjectURL(new Blob([bytes], { type: info.mime })) : null;
+        }
+      }, function () { a.state = 'missing'; }).then(function () {
+        _rd.preview = null;
+        if (!_rd.open || typeof document === 'undefined') return;
+        // A read that finishes while someone is typing redraws only the preview, so the caret stays.
+        var act = typeof document !== 'undefined' && document.activeElement;
+        if (act && act.closest && act.closest('.docgen') && (act.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(act.tagName))) refreshSectionPreview();
+        else repaint();
+      });
+      return a;
+    }
+    /** The sizes the layout needs for a document's images: loading ones as boxes, missing ones left out. */
+    function imageSizes(doc) {
+      var out = {};
+      FIGURE_SOURCES(doc).forEach(function (src) {
+        var a = imageAsset(src);
+        if (a.state === 'ok') out[src] = { width: a.width, height: a.height };
+        else if (a.state === 'loading') out[src] = { pending: true };
+      });
+      return out;
+    }
+    /** Let go of every image read so far, so the designer reads them afresh (a file put back, or taken away, shows as it now is). */
+    function forgetImages() {
+      _imageAssets.forEach(function (a) {
+        if (a.url && typeof URL !== 'undefined' && URL.revokeObjectURL) URL.revokeObjectURL(a.url);
+      });
+      _imageAssets.clear();
+    }
+    function imageUrl(src) { var a = _imageAssets.get(src); return a && a.state === 'ok' ? a.url : null; }
     /** − 60% + : the zoom buttons for one of the page previews. */
     function zoomBar(which) {
       var k = zoomOf(which);
@@ -4012,8 +4257,8 @@ import { toWinAnsi } from './doc-fonts.js';
         ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
         // The whole document, opened at this section; or just this section, cut from it.
         '<div class="rd-secprev rd-preview-pages">' + (whole
-          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: included[at].anchor })
-          : pagesHtml(bands, { scale: k })) + '</div>';
+          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: included[at].anchor, imageUrl: imageUrl })
+          : pagesHtml(bands, { scale: k, imageUrl: imageUrl })) + '</div>';
     }
 
     function metaPane(project) {
@@ -4221,12 +4466,14 @@ import { toWinAnsi } from './doc-fonts.js';
           if (p.kind === 'table') return tableEditor(project, sec, p, i, parts.length);
           if (p.kind === 'rule') return simplePart(sec, p, i, parts.length, 'Horizontal line', 'A rule across the page.');
           if (p.kind === 'space') return spaceEditor(sec, p, i, parts.length);
+          if (p.kind === 'image') return imageEditor(project, sec, p, i, parts.length);
           return simplePart(sec, p, i, parts.length, 'Page break', 'Forces what follows onto a new page.');
         }).join('');
         return '<div class="rd-sec-edit"><div class="rd-parts">' + (body || '<p class="rd-state">Nothing in this section yet.</p>') + '</div>' +
           '<div class="rd-addbar">' +
             '<button type="button" data-rd-addpart="para" data-rd-sec="' + esc(sec.id) + '">+ Paragraph</button>' +
             '<button type="button" data-rd-addpart="table" data-rd-sec="' + esc(sec.id) + '">+ Table</button>' +
+            '<button type="button" data-rd-addpart="image" data-rd-sec="' + esc(sec.id) + '">+ Image</button>' +
             '<button type="button" data-rd-addpart="rule" data-rd-sec="' + esc(sec.id) + '">+ Line</button>' +
             '<button type="button" data-rd-addpart="space" data-rd-sec="' + esc(sec.id) + '" title="A measured gap down the page">+ Space</button>' +
             '<button type="button" data-rd-addpart="pagebreak" data-rd-sec="' + esc(sec.id) + '">+ Page break</button>' +
@@ -4309,7 +4556,7 @@ import { toWinAnsi } from './doc-fonts.js';
       { id: 'title', label: 'Title' }, { id: 'h1', label: 'Heading 1' }, { id: 'h2', label: 'Heading 2' },
       { id: 'h3', label: 'Heading 3' }, { id: 'h4', label: 'Heading 4' },
       { id: 'body', label: 'Body' }, { id: 'caption', label: 'Caption' }, { id: 'code', label: 'Code' },
-      { id: 'tables', label: 'Tables' },
+      { id: 'tables', label: 'Tables' }, { id: 'images', label: 'Images' },
       { id: 'headerFooter', label: 'Header & Footer' },
       { id: 'marking', label: 'Security Classification' }
     ];
@@ -4425,6 +4672,17 @@ import { toWinAnsi } from './doc-fonts.js';
             flagField('Bold', 'tables.firstColumn.bold', t.firstColumn.bold) + '</div>' +
             '<div class="rd-grid">' + colourField('Fill', 'tables.firstColumn.fill', t.firstColumn.fill) + '</div></div>';
       }
+      if (section === 'images') {
+        var im = f.images;
+        return '<div class="rd-grid">' +
+            pick('Border', 'images.border', im.border, [{ value: 'none', label: 'None' }, { value: 'line', label: 'Line' }]) +
+            (im.border === 'line'
+              ? num('Border weight (pt)', 'images.borderWidth', im.borderWidth, '', 0.25) + colourField('Border colour', 'images.borderColour', im.borderColour)
+              : '') +
+            pick('Caption', 'images.captionPosition', im.captionPosition, [{ value: 'below', label: 'Below the image' }, { value: 'above', label: 'Above the image' }]) +
+            pick('Alignment', 'images.align', im.align, [{ value: 'centre', label: 'Centre' }, { value: 'left', label: 'Left' }]) +
+          '</div>';
+      }
       if (section === 'headerFooter') {
         var first = f.headerFooter.firstDifferent;
         return hfRow(f, 'header', 'Header') + hfRow(f, 'footer', 'Footer') +
@@ -4508,7 +4766,7 @@ import { toWinAnsi } from './doc-fonts.js';
         '<div class="rd-secprev-head">' + (laid.error ? '' : '<span class="rd-state">' + laid.pages.length + ' page' + (laid.pages.length === 1 ? '' : 's') + '</span>') + zoomBar('styles') + '</div>' +
         (laid.error
           ? '<p class="rd-err">' + esc(laid.error) + '</p>'
-          : '<div class="rd-preview-pages rd-style-pages">' + pagesHtml(laid.pages, { scale: zoomOf('styles') }) + '</div>') + '</div>';
+          : '<div class="rd-preview-pages rd-style-pages">' + pagesHtml(laid.pages, { scale: zoomOf('styles'), imageUrl: imageUrl }) + '</div>') + '</div>';
       return head + locked + '<div class="rd-styles">' + list + fields + pages + '</div>';
     }
 
@@ -4535,7 +4793,7 @@ import { toWinAnsi } from './doc-fonts.js';
             ['left', 'centre', 'right'].forEach(function (slot) { s.headerFooter[k][slot] = App.docGen.applyTags(s.headerFooter[k][slot], o.tags || {}); });
           });
         }
-        var r = layout(built.document, s);
+        var r = layout(built.document, s, { images: imageSizes(built.document) });
         return { document: built.document, style: s, tags: built.tags, pages: r.pages, anchors: r.anchors, headings: r.headings, replaced: r.replaced };
       } catch (e) {
         return { error: 'The pages could not be laid out: ' + (e && e.message) };
@@ -4560,7 +4818,20 @@ import { toWinAnsi } from './doc-fonts.js';
     function paneTemplates(project) {
       var b = bag(project);
       var profiles = (b.formats || []);
-      return '<div class="rd-fieldset"><strong>Styles</strong>' +
+      var std = b.standardImages || [];
+      var stdImages = '<div class="rd-fieldset rd-stdimgs" data-rd-std-drop><strong>Standard Images</strong>' +
+          (std.length
+            ? '<ul class="rd-tpl-list">' + std.map(function (s) {
+                var a = imageAsset(IMAGE_PATH('standard', s.file));
+                return '<li>' + (a.url ? '<img class="rd-std-thumb" src="' + esc(a.url) + '" alt="">' : '<span class="rd-std-thumb rd-imgthumb-none"></span>') +
+                  '<span class="rd-tpl-name">' + esc(s.name) + '</span>' +
+                  '<button type="button" data-rd-std-rename="' + esc(s.id) + '">Rename</button>' +
+                  '<button type="button" class="danger" data-rd-std-del="' + esc(s.id) + '" title="Delete this image">✕</button></li>';
+              }).join('') + '</ul>'
+            : '<p class="rd-state">No standard images yet.</p>') +
+          '<div class="rd-addbar"><label class="rd-filebtn" title="Or drop PNG or JPEG files here">Add image&hellip;<input type="file" accept="image/png,image/jpeg" data-rd-std-file></label></div>' +
+        '</div>';
+      return stdImages + '<div class="rd-fieldset"><strong>Styles</strong>' +
           (profiles.length
             ? '<ul class="rd-tpl-list">' + profiles.map(function (f) {
                 return '<li><span class="rd-tpl-name">' + esc(f.name) + '</span></li>';
@@ -4641,6 +4912,12 @@ import { toWinAnsi } from './doc-fonts.js';
       var laid = laidOut(project, null, {});
       var tags = laid.error ? [] : laid.tags;
       var replaced = laid.error ? [] : laid.replaced;
+      var missingImgs = [];
+      if (!laid.error) (laid.document.blocks || []).forEach(function (b) {
+        if (b.kind === 'figure') (b.images || []).forEach(function (im) {
+          if (im && imageAsset(im.src).state === 'missing' && missingImgs.indexOf(im.name) === -1) missingImgs.push(im.name);
+        });
+      });
       var values = o.tags || {};
       var unfilled = tags.filter(function (t) { return !String(values[t] || '').trim(); });
 
@@ -4663,6 +4940,10 @@ import { toWinAnsi } from './doc-fonts.js';
         (replaced.length
           ? '<div class="rd-fieldset rd-replaced"><strong title="The PDF\'s standard fonts write these another way (≥ as >=, ✓ as Yes) or as ?. The HTML shows them as they are.">Characters the PDF cannot show</strong>' +
               '<p>' + replaced.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(' ') + '</p></div>'
+          : '') +
+        (missingImgs.length
+          ? '<div class="rd-fieldset rd-replaced"><strong title="These show as a grey box until the file is back in the folder">Images missing from the folder</strong>' +
+              '<p>' + missingImgs.map(function (n) { return '<code>' + esc(n) + '</code>'; }).join(' ') + '</p></div>'
           : '') +
         '<div class="rd-fieldset"><strong>Make the report</strong>' +
           (ready ? '' : '<p class="rd-state">This ' + esc(noun()) + ' is not ready.</p>') +
@@ -4692,7 +4973,7 @@ import { toWinAnsi } from './doc-fonts.js';
           zoomBar('preview') + '</div>' +
         '<div class="rd-preview-body">' +
           '<nav class="rd-preview-nav">' + (nav || '<span class="rd-state">No sections.</span>') + '</nav>' +
-          '<article class="rd-preview-doc rd-preview-pages" id="rd-preview-doc">' + pagesHtml(p.pages, { scale: zoomOf('preview'), anchors: p.anchors }) + '</article>' +
+          '<article class="rd-preview-doc rd-preview-pages" id="rd-preview-doc">' + pagesHtml(p.pages, { scale: zoomOf('preview'), anchors: p.anchors, imageUrl: imageUrl }) + '</article>' +
         '</div></div>';
     }
 
@@ -4782,16 +5063,23 @@ import { toWinAnsi } from './doc-fonts.js';
       if (_paintAgain) { _paintAgain = false; setTimeout(repaint, 0); }
       return true;
     }
+    /** Everything in the designer that scrolls on its own: the page previews as well as the panes. */
+    var SCROLLERS = ['.modal-body', '.rd-pane', '[data-rd-sec-fields]', '[data-rd-sec-prev]', '[data-rd-style-preview]', '#rd-preview-doc'];
+    /** Run a redraw, then put each scrolling area back where it was, so changing a setting
+     *  does not throw the preview back to the top. */
+    function keepScroll(host, redraw) {
+      var was = SCROLLERS.map(function (sel) {
+        var el = host.querySelector(sel);
+        return el ? { top: el.scrollTop, left: el.scrollLeft } : null;
+      });
+      redraw();
+      SCROLLERS.forEach(function (sel, i) {
+        var el = was[i] && host.querySelector(sel);
+        if (el) { el.scrollTop = was[i].top; el.scrollLeft = was[i].left; }
+      });
+    }
     function paintInto(host, project) {
-      var body = host.querySelector('.modal-body');
-      var top = body ? body.scrollTop : 0;
-      var pane = host.querySelector('.rd-pane');
-      var paneTop = pane ? pane.scrollTop : 0;
-      host.innerHTML = inner(project);
-      var again = host.querySelector('.modal-body');
-      if (again) again.scrollTop = top;
-      var pane2 = host.querySelector('.rd-pane');
-      if (pane2) pane2.scrollTop = paneTop;
+      keepScroll(host, function () { host.innerHTML = inner(project); });
       scrollToHere();
       showFormats();
     }
@@ -4800,6 +5088,15 @@ import { toWinAnsi } from './doc-fonts.js';
      * the click is lost. So a redraw asked for while a button is held waits for the
      * release; the click's own handler then runs on the button that was pressed. */
     var _gate = { pressing: false, pending: false };
+    /** IMG-1: a file dragged over or dropped on the designer anywhere but a drop box is
+     *  caught, so a near miss does not have the browser open the image in place of the app. */
+    function strayFileDrop(e) {
+      var t = e.dataTransfer && e.dataTransfer.types;
+      if (!t || Array.prototype.indexOf.call(t, 'Files') === -1) return;
+      if (e.target && e.target.closest && e.target.closest('[data-rd-imgbox], [data-rd-std-drop]')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'none';
+    }
     /** Whether a press holds redraws: a plain left press on something other than a form
      *  field. A drop-down or a right-click opens a menu that can eat the release. */
     function holds(e) {
@@ -4949,6 +5246,8 @@ import { toWinAnsi } from './doc-fonts.js';
       if (el.hasAttribute('data-rd-rich')) return boxSaver(el)(RT.fromNode(el));
       if (el.hasAttribute('data-rd-sec-heading')) return App.docStore.setBlockHeading(el.getAttribute('data-rd-sec-heading'), el.value);
       if (el.hasAttribute('data-rd-sec-title')) return App.docStore.updateSection(el.getAttribute('data-rd-sec-title'), { title: el.value });
+      if (el.hasAttribute('data-rd-img-caption')) return App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-img-caption'), { caption: el.value });
+      if (el.hasAttribute('data-rd-img-capk')) return App.docStore.setPartImageField(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-part'), Number(el.getAttribute('data-rd-img-k')), 'caption', el.value);
       if (el.hasAttribute('data-rd-tbl-block')) {
         var block = el.getAttribute('data-rd-tbl-block'), key = el.getAttribute('data-rd-tbl-key'), col = el.getAttribute('data-rd-tbl-col');
         return col ? App.docStore.setTableColumnLabel(block, key, col, el.value)
@@ -4966,11 +5265,17 @@ import { toWinAnsi } from './doc-fonts.js';
       if (block) col.innerHTML = sectionPreview(project, block);
       scrollToHere();
     }
-    /** In the whole-document preview, bring the selected section's start into view. */
+    /** In the whole-document preview, bring the selected section's start into view: when a
+     *  section is chosen or the whole document is first shown, not on every redraw, so a
+     *  change of setting leaves the preview where it was. */
+    var _hereShown = null;
     function scrollToHere() {
       var box = document.querySelector('[data-rd-sec-prev]');
       var here = box && box.querySelector('[data-rd-here]');
-      if (!here) return;
+      if (!here) { _hereShown = null; return; }
+      var key = _rd.selected + '|' + _rd.secWhole;
+      if (key === _hereShown) return;
+      _hereShown = key;
       var head = box.querySelector('.rd-secprev-head');
       box.scrollTop += here.getBoundingClientRect().top - box.getBoundingClientRect().top - (head ? head.offsetHeight : 0) - 8;
     }
@@ -5582,6 +5887,83 @@ import { toWinAnsi } from './doc-fonts.js';
         }
         _dragPart = null;
       });
+      // ---- IMG-1: image parts ----------------------------------------------
+      ctx.root.addEventListener('dragover', strayFileDrop);
+      ctx.root.addEventListener('drop', strayFileDrop);
+      function imgIds(el) { return { sec: el.getAttribute('data-rd-sec'), part: el.getAttribute('data-rd-part'), k: Number(el.getAttribute('data-rd-img-k')) }; }
+      function hasFiles(e) { var t = e.dataTransfer && e.dataTransfer.types; return !!t && Array.prototype.indexOf.call(t, 'Files') !== -1; }
+      /** Copy a chosen or dropped file into the folder and put it in the box. */
+      function putImage(sec, part, k, file) {
+        var h = H();
+        if (!h.images || typeof h.images.store !== 'function') { App.docHost.log({ severity: 'error', message: 'Images can only be added with a data folder open.' }); return; }
+        h.images.store('report', file).then(function (r) {
+          logIssues(App.docStore.setPartImage(sec, part, k, { source: 'report', file: r.file, name: file.name }));
+          _rd.imgMenu = null; dirty(); repaint();
+        }, function (e) { App.docHost.log({ severity: 'error', message: (e && e.message) || 'That image could not be added.' }); });
+      }
+      dom.on(ctx.root, 'dragover', '[data-rd-imgbox]', function (e, el) {
+        if (!hasFiles(e)) return;
+        e.preventDefault(); e.stopPropagation();
+        el.classList.add('drop-target');
+      });
+      dom.on(ctx.root, 'dragleave', '[data-rd-imgbox]', function (e, el) { el.classList.remove('drop-target'); });
+      dom.on(ctx.root, 'drop', '[data-rd-imgbox]', function (e, el) {
+        if (!hasFiles(e)) return;
+        e.preventDefault(); e.stopPropagation();
+        el.classList.remove('drop-target');
+        var f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) putImage(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-part'), Number(el.getAttribute('data-rd-imgbox')), f);
+      });
+      // A click on the box itself (not its buttons or boxes) opens or closes its menu.
+      dom.on(ctx.root, 'click', '[data-rd-imgbox]', function (e, el) {
+        if (e.target && e.target.closest && e.target.closest('button, input, select, label, .rd-imgmenu')) return;
+        var key = el.getAttribute('data-rd-part') + ':' + el.getAttribute('data-rd-imgbox');
+        _rd.imgMenu = _rd.imgMenu === key ? null : key; _rd.imgPick = false;
+        repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-img-from]', function () { _rd.imgPick = true; repaint(); });
+      dom.on(ctx.root, 'change', '[data-rd-img-file]', function (e, el) {
+        var f = el.files && el.files[0], d = imgIds(el);
+        if (f) putImage(d.sec, d.part, d.k, f);
+        el.value = '';
+      });
+      dom.on(ctx.root, 'click', '[data-rd-img-std]', function (e, el) {
+        var d = imgIds(el);
+        logIssues(App.docStore.setPartImage(d.sec, d.part, d.k, { source: 'standard', file: el.getAttribute('data-rd-img-std'), name: el.getAttribute('data-rd-img-name') }));
+        _rd.imgMenu = null; _rd.imgPick = false; dirty(); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-img-clear]', function (e, el) {
+        var d = imgIds(el);
+        logIssues(App.docStore.setPartImage(d.sec, d.part, d.k, null)); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-layout]', function (e, el) {
+        logIssues(App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-img-layout'), { layout: el.value }));
+        _rd.imgMenu = null; dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-captions]', function (e, el) {
+        logIssues(App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-img-captions'), { captions: el.value })); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-caption]', function (e, el) {
+        logIssues(App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-img-caption'), { caption: el.value })); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-width]', function (e, el) {
+        var d = imgIds(el);
+        logIssues(App.docStore.setPartImageField(d.sec, d.part, d.k, 'width', el.value)); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-img-step]', function (e, el) {
+        var d = imgIds(el);
+        var box = el.closest('.rd-num') && el.closest('.rd-num').querySelector('[data-rd-img-width]');
+        var next = stepped(box ? box.value : 100, 5, el.getAttribute('data-rd-img-step') === '+' ? 1 : -1);
+        logIssues(App.docStore.setPartImageField(d.sec, d.part, d.k, 'width', Math.min(100, Math.max(5, next)))); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-noborder]', function (e, el) {
+        var d = imgIds(el);
+        logIssues(App.docStore.setPartImageField(d.sec, d.part, d.k, 'noBorder', el.checked)); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-capk]', function (e, el) {
+        var d = imgIds(el);
+        logIssues(App.docStore.setPartImageField(d.sec, d.part, d.k, 'caption', el.value)); dirty(); repaint();
+      });
     }
     // ======================================================================
     // wiring: wireText
@@ -6002,6 +6384,48 @@ import { toWinAnsi } from './doc-fonts.js';
         logIssues(App.docStore.useReportTemplate(el.getAttribute('data-rd-rpt-use')));
         _rd.selected = null; _rd.fmtId = null; dirty(); repaint();
       });
+      // ---- IMG-2: Standard Images -------------------------------------------
+      function addStandard(file) {
+        var h = H();
+        if (!h.images || typeof h.images.store !== 'function') { App.docHost.log({ severity: 'error', message: 'Images can only be added with a data folder open.' }); return; }
+        h.images.store('standard', file).then(function (r) {
+          logIssues(App.docStore.addStandardImage(String(file.name).replace(/\.(png|jpe?g)$/i, ''), r.file));
+          repaint();
+        }, function (e) { App.docHost.log({ severity: 'error', message: (e && e.message) || 'That image could not be added.' }); });
+      }
+      dom.on(ctx.root, 'change', '[data-rd-std-file]', function (e, el) {
+        Array.prototype.forEach.call(el.files || [], addStandard);
+        el.value = '';
+      });
+      dom.on(ctx.root, 'dragover', '[data-rd-std-drop]', function (e, el) {
+        var t = e.dataTransfer && e.dataTransfer.types;
+        if (!t || Array.prototype.indexOf.call(t, 'Files') === -1) return;
+        e.preventDefault(); el.classList.add('drop-target');
+      });
+      dom.on(ctx.root, 'dragleave', '[data-rd-std-drop]', function (e, el) { el.classList.remove('drop-target'); });
+      dom.on(ctx.root, 'drop', '[data-rd-std-drop]', function (e, el) {
+        e.preventDefault(); el.classList.remove('drop-target');
+        Array.prototype.forEach.call((e.dataTransfer && e.dataTransfer.files) || [], addStandard);
+      });
+      dom.on(ctx.root, 'click', '[data-rd-std-rename]', function (e, el) {
+        var id = el.getAttribute('data-rd-std-rename');
+        var cur = ((bag(H().getState()).standardImages) || []).filter(function (s) { return s.id === id; })[0];
+        var name = window.prompt('Name for this image:', cur ? cur.name : '');
+        if (name == null || !name.trim()) return;
+        logIssues(App.docStore.renameStandardImage(id, name)); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-std-del]', function (e, el) {
+        var id = el.getAttribute('data-rd-std-del');
+        var cur = ((bag(H().getState()).standardImages) || []).filter(function (s) { return s.id === id; })[0];
+        if (!cur) return;
+        var uses = App.docStore.standardImageUses(cur.file);
+        if (!window.confirm('Delete "' + cur.name + '"?' + (uses ? ' It is used in ' + uses + ' image box' + (uses === 1 ? '' : 'es') + ', which will show a placeholder.' : ''))) return;
+        logIssues(App.docStore.removeStandardImage(id));
+        var h = H();
+        if (h.images && typeof h.images.remove === 'function') Promise.resolve(h.images.remove('standard', cur.file)).catch(function () {});
+        _imageAssets.delete(IMAGE_PATH('standard', cur.file));
+        dirty(); repaint();
+      });
       dom.on(ctx.root, 'click', '[data-rd-export]', function (e, el) { doExport(el.getAttribute('data-rd-export')); });
       dom.on(ctx.root, 'change', '[data-rd-import]', function (e, el) {
         var f = el.files && el.files[0];
@@ -6013,13 +6437,13 @@ import { toWinAnsi } from './doc-fonts.js';
     App.ui.views = App.ui.views || {};
     App.ui.views.reportDesign = {
       render: render, wire: wire, refresh: refresh,
-      open: function () { _rd.open = true; _rd.preview = null; },
+      open: function () { _rd.open = true; _rd.preview = null; forgetImages(); },
       close: function () { _rd.open = false; },
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
       laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _stepped: stepped, _renameSection: renameSection, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
-      PANES: PANES, _rd: _rd
+      PANES: PANES, _rd: _rd, _imageAssets: _imageAssets, _keepScroll: keepScroll, _SCROLLERS: SCROLLERS, _strayFileDrop: strayFileDrop
     };
   })(App);
 
