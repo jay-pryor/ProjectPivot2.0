@@ -877,3 +877,14 @@ test('a new Style gets an id no one else\'s new Style will have', () => {
   assert.match(a, /^fmt-[0-9a-z]{8}$/);
   assert.notEqual(a, b);
 });
+
+test('Placement has a Landscape pages tick; only on is stored', () => {
+  const h = host();
+  App.docHost.set(h); RD.open(); RD.select('things'); RD._rd.secCat = 'placement';
+  const html = RD.render(h.getState()); RD.close();
+  assert.match(html, /<input type="checkbox" data-rd-landscape="things"> Landscape pages/);
+  App.docStore.setBlockFlag('landscape', 'things', true);
+  assert.deepEqual(h.getState().report.landscape, { things: true });
+  App.docStore.setBlockFlag('landscape', 'things', false);
+  assert.equal(h.getState().report.landscape, undefined);
+});

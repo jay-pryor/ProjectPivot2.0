@@ -1256,7 +1256,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var names = bag.names || {}, intros = bag.intros || {}, twidths = bag.tableWidths || {};
       var heads = bag.headings || {}, introNums = bag.introNumbered || {};
       var centred = bag.centred || {};
-      var tableText = bag.tables || {}, breaks = bag.pageBreak || {}, noToc = bag.noToc || {};
+      var tableText = bag.tables || {}, breaks = bag.pageBreak || {}, noToc = bag.noToc || {}, landscapes = bag.landscape || {};
       var space = bag.space || {};   // SPC-1
       return App.docBlocks.applySectionOrder(d, bag.order).map(function (b) {
         // NAM-2: a GENERATED section's heading is editable too. It has to be: once a
@@ -1303,6 +1303,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
            * break, so it lands ahead of the heading rather than inside the body. */
           // On unless the section was told otherwise: every section starts a page by default.
           pageBreakBefore: breaks[b.id] !== false,
+          // LND-1: this section on landscape pages.
+          landscape: landscapes[b.id] === true,
           /* SPC-1: millimetres of empty page above this section's heading.
            *
            * Composes with the page break above rather than replacing it: "start a new
@@ -1524,8 +1526,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       /** Whether a part of a block is centred (`centre` is per part, or `true` for all). */
       function centres(b, part) { return b.centre === true || !!(b.centre && b.centre[part]); }
       var out = [];
+      var orientation = 'portrait';
       resolved.forEach(function (b) {
-        if (b.pageBreakBefore) out.push({ kind: 'pageBreak' });
+        // LND-1: a section's own orientation; a change turns the page (and stands in for its page break).
+        var want = b.landscape ? 'landscape' : 'portrait';
+        if (want !== orientation) { out.push({ kind: 'pageBreak', orientation: want }); orientation = want; }
+        else if (b.pageBreakBefore) out.push({ kind: 'pageBreak' });
         var title = String(b.title == null ? b.label : b.title).trim();
         var heading = b.level !== App.doc.BODY_LEVEL && title;
         if (heading) {
@@ -1760,9 +1766,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      *
      * SEC-4 added two more of these (`pageBreak`, `noToc`) to the one that existed
      * (`centred`), which is what turned three copies of the same eight lines into one.
-     * @param {'centred'|'pageBreak'|'noToc'} bagKey
+     * @param {'centred'|'pageBreak'|'noToc'|'landscape'} bagKey
      */
-    var BLOCK_FLAGS = ['centred', 'pageBreak', 'noToc'];
+    var BLOCK_FLAGS = ['centred', 'pageBreak', 'noToc', 'landscape'];
     /** The flags that are ON for a section that says nothing: for these it is OFF that is stored. */
     var FLAGS_ON = { pageBreak: true };
     function setBlockFlag(bagKey, blockId, on) {
@@ -2088,7 +2094,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         // Everything keyed by block id goes with the block, or a deleted section would
         // leave a name and an introduction behind for an id nothing can reach.
         ['levels', 'centred', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
-          'tables', 'pageBreak', 'noToc', 'space'].forEach(function (k) {
+          'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) {
           if (!b[k]) return;
           delete b[k][id];
           if (!Object.keys(b[k]).length) delete b[k];
@@ -2752,6 +2758,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           tables: JSON.parse(JSON.stringify(b.tables || {})),
           pageBreak: JSON.parse(JSON.stringify(b.pageBreak || {})),
           noToc: JSON.parse(JSON.stringify(b.noToc || {})),
+          landscape: JSON.parse(JSON.stringify(b.landscape || {})),
           // SPC-1: how far down the page each section starts is an arrangement decision
           // like the page break beside it, so it travels with the template too.
           space: JSON.parse(JSON.stringify(b.space || {})),
@@ -2788,12 +2795,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var b = JSON.parse(JSON.stringify(bag0 || {}));
       b.order = (t.order || []).slice();
       ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
-        'tables', 'pageBreak', 'noToc', 'space'].forEach(function (k) { b[k] = JSON.parse(JSON.stringify(t[k] || {})); });
+        'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) { b[k] = JSON.parse(JSON.stringify(t[k] || {})); });
       b.sections = JSON.parse(JSON.stringify(t.sections || []));
       if (!b.order.length) delete b.order;
       if (!b.sections.length) delete b.sections;
       ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
-        'tables', 'pageBreak', 'noToc', 'space'].forEach(function (k) { if (!Object.keys(b[k]).length) delete b[k]; });
+        'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) { if (!Object.keys(b[k]).length) delete b[k]; });
       if (t.format) {
         var f = App.docFormat.normalise(t.format);
         delete f.builtin;
@@ -4381,6 +4388,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         cb('data-rd-pagebreak="' + esc(block.id) + '"',
           'Start this section on a new page', byLevel || block.pageBreakBefore === true, byLevel) +
         (byLevel ? '<p class="rd-state">' + esc(levelName(lvl)) + ' starts a new page in this Style.</p>' : '') +
+        cb('data-rd-landscape="' + esc(block.id) + '"', 'Landscape pages', block.landscape === true) +
         cb('data-rd-notoc="' + esc(block.id) + '"',
           'Leave this section out of the contents list', block.noToc === true) +
         /* SPC-1: space ABOVE the heading, which is the one gap no part can make \u2014 every
@@ -5799,6 +5807,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // SEC-4: two more per-section placement switches, on the same shape as centring.
       dom.on(ctx.root, 'change', '[data-rd-pagebreak]', function (e, el) {
         quietly(function () { logIssues(App.docStore.setBlockFlag('pageBreak', el.getAttribute('data-rd-pagebreak'), el.checked)); });
+        dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-landscape]', function (e, el) {
+        quietly(function () { logIssues(App.docStore.setBlockFlag('landscape', el.getAttribute('data-rd-landscape'), el.checked)); });
         dirty(); repaint();
       });
       dom.on(ctx.root, 'change', '[data-rd-notoc]', function (e, el) {
