@@ -226,7 +226,7 @@ export async function createProfile(handle, name, clock) {
 /**
  * @typedef {{ data: Data, stamp: SaveStamp, merged: boolean, lastSavedBy: string | null,
  *   conflicts: import('../core/merge.js').Conflict[], supersededFile: string | null,
- *   missingFromDisk: number }} SaveResult
+ *   missingFromDisk: number, missingDesigns: string[] }} SaveResult
  */
 
 const SAVE_ATTEMPTS = 3;
