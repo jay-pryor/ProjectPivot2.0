@@ -203,3 +203,30 @@ async function decodePng(b) {
   } else pass(width, height, (x, y) => y * width + x);
   return { grey, colour, alpha: translucent ? alpha : null };
 }
+
+/**
+ * Every image a document uses, read and prepared; null for one missing or unreadable, so the
+ * report is still made, with a placeholder in its place.
+ * @param {any} doc @param {(path: string) => Promise<Uint8Array | null>} read
+ * @returns {Promise<Record<string, PreparedImage | null>>}
+ */
+export async function loadImages(doc, read) {
+  /** @type {Record<string, PreparedImage | null>} */
+  const out = {};
+  await Promise.all(figureSources(doc).map(async (src) => {
+    try {
+      const bytes = await read(src);
+      out[src] = bytes ? await prepareImage(bytes) : null;
+    } catch {
+      out[src] = null;
+    }
+  }));
+  return out;
+}
+
+/** The original file as a data: URI, for the HTML. @param {{ mime: string, bytes: Uint8Array }} img */
+export function dataUri(img) {
+  let s = '';
+  for (let i = 0; i < img.bytes.length; i += 0x8000) s += String.fromCharCode(...img.bytes.subarray(i, i + 0x8000));
+  return `data:${img.mime};base64,${btoa(s)}`;
+}

@@ -113,3 +113,23 @@ test('a broken PNG or an unknown file is refused', async () => {
   await assert.rejects(prepareImage(png.slice(0, png.length - 20)));
   await assert.rejects(prepareImage(new TextEncoder().encode('not an image at all')), /Only PNG and JPEG images can be used/);
 });
+
+import { loadImages, dataUri } from '../../DocGen/doc-images.js';
+
+test('loading a document\'s images: present ones prepared, missing and broken ones null', async () => {
+  const png = await makePng({ width: 2, height: 2, sample: () => [1, 2, 3] });
+  const files = { 'files/report-images/a.png': png, 'files/report-images/broken.png': png.slice(0, 30) };
+  const doc = { blocks: [{ kind: 'figure', images: [{ src: 'files/report-images/a.png' }, { src: 'files/report-images/gone.png' }, { src: 'files/report-images/broken.png' }] }] };
+  const read = async (p) => files[p] ?? null;
+  const got = await loadImages(doc, read);
+  assert.deepEqual(Object.keys(got).sort(), ['files/report-images/a.png', 'files/report-images/broken.png', 'files/report-images/gone.png']);
+  assert.equal(got['files/report-images/a.png'].width, 2);
+  assert.equal(got['files/report-images/gone.png'], null);
+  assert.equal(got['files/report-images/broken.png'], null);
+  const throwing = await loadImages(doc, async () => { throw new Error('denied'); });
+  assert.equal(throwing['files/report-images/a.png'], null);
+});
+
+test('a data URI carries the original file', () => {
+  assert.equal(dataUri({ mime: 'image/png', bytes: new Uint8Array([1, 2, 255]) }), 'data:image/png;base64,AQL/');
+});
