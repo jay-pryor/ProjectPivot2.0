@@ -25,6 +25,50 @@ function metaRows(s) {
 }
 
 /**
+ * A snapshot with its hazards, controls and references numbered from 1 for this document (each
+ * that `numbering` asks for), so a document delivered outside the house carries its own list.
+ * Order is kept: hazards as the snapshot lists them, controls and references in their register
+ * order. Every place one is named follows: a safety report's ID, the Supports column.
+ * @param {Snapshot} s @param {{ renumberHazards?: boolean, renumberControls?: boolean, renumberReferences?: boolean } | null | undefined} numbering
+ * @returns {Snapshot}
+ */
+export function renumbered(s, numbering) {
+  const n = numbering ?? {};
+  if (!n.renumberHazards && !n.renumberControls && !n.renumberReferences) return s;
+  const pad = (/** @type {number} */ k) => String(k).padStart(3, '0');
+  /** Old number → new, counting within each prefix (C-, EC-, …). @param {string[]} ids */
+  const mapOf = (ids) => {
+    /** @type {Map<string, string>} */
+    const out = new Map();
+    /** @type {Record<string, number>} */
+    const count = {};
+    for (const id of ids) {
+      if (!id || out.has(id)) continue;
+      const prefix = (/^([A-Za-z]+-)\d/.exec(id) ?? [])[1] ?? '';
+      count[prefix] = (count[prefix] ?? 0) + 1;
+      out.set(id, prefix + pad(count[prefix]));
+    }
+    return out;
+  };
+  const byNumber = (/** @type {string[]} */ ids) => [...new Set(ids)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const hz = n.renumberHazards ? mapOf(s.rows.map((r) => r.reportId)) : new Map();
+  const ct = n.renumberControls ? mapOf(byNumber(s.rows.flatMap((r) => r.controls.map((c) => c.number)))) : new Map();
+  const rf = n.renumberReferences ? mapOf((s.references ?? []).map((r) => r.number)) : new Map();
+  const any = (/** @type {string} */ id) => hz.get(id) ?? ct.get(id) ?? rf.get(id) ?? id;
+  const swap = (/** @type {string} */ text) => String(text ?? '').replace(/\b[A-Za-z]+-\d+\b/g, any);
+  return {
+    ...s,
+    rows: s.rows.map((r) => ({
+      ...r,
+      reportId: hz.get(r.reportId) ?? r.reportId,
+      controls: r.controls.map((c) => ({ ...c, number: ct.get(c.number) ?? c.number })),
+      safetyReports: (r.safetyReports ?? []).map((x) => ({ ...x, number: String(x.number ?? '').replace(/^[A-Za-z]+-\d+/, (m) => hz.get(m) ?? m) })),
+    })),
+    references: (s.references ?? []).map((r) => ({ ...r, number: rf.get(r.number) ?? r.number, supports: swap(r.supports) })),
+  };
+}
+
+/**
  * Rows that are one thing on several hazards (a control, a safety report), gathered into one
  * row per thing: its own fields from the first, and every hazard's entry kept in `entries`.
  * @param {any[]} list @param {(x: any) => string} keyOf
@@ -210,8 +254,9 @@ export function createDocHost(ctx) {
       /** @param {string} id */
       meta: (id) => metaRows(snapshotFor(id)),
     },
-    /** @param {{ subjectId?: string } | null} run */
-    sections: (run) => sectionsFor(run && run.subjectId ? snapshotFor(run.subjectId) : null),
+    /** @param {{ subjectId?: string, numbering?: any } | null} run */
+    // `run.numbering` is the Style's Document settings: numbered from 1 for the document when asked.
+    sections: (run) => sectionsFor(run && run.subjectId ? renumbered(snapshotFor(run.subjectId), run.numbering) : null),
   };
 
   return {

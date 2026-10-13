@@ -75,3 +75,8 @@ test('references print no "(page N)" in the PDF unless a Style asks for it', () 
   assert.equal(STANDARD.refs.pageInPdf, false);
   assert.equal(normaliseStyle({ refs: { pageInPdf: true } }).style.refs.pageInPdf, true);
 });
+
+test('the Document settings: renumbering hazards, controls and references in the document, all off by default', () => {
+  assert.deepEqual(STANDARD.document, { renumberHazards: false, renumberControls: false, renumberReferences: false });
+  assert.deepEqual(normaliseStyle({ document: { renumberHazards: true } }).style.document, { renumberHazards: true, renumberControls: false, renumberReferences: false });
+});
