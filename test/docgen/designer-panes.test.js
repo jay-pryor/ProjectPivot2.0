@@ -656,3 +656,62 @@ test('a section template may hold image parts', () => {
   const parsed = App.docTemplates.parseImport(JSON.stringify({ kind: 'ch-config-tool/section-templates', items: [{ name: 'Pics', parts: [{ kind: 'image', layout: 'pair', images: [] }] }] }), 'sections');
   assert.equal(parsed.issues.filter((i) => i.severity === 'error').length, 0, JSON.stringify(parsed.issues));
 });
+
+/** The Sections tab, on one section's Content. */
+function contentOf(h, id) {
+  App.docHost.set(h); RD.open(); RD.pane('section'); RD.select(id); RD._rd.secCat = 'content';
+  const html = RD.render(h.getState()); RD.close();
+  return html;
+}
+
+test('the Content category offers + Image; an image part shows its layout, caption mode and boxes', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'grid21', captions: 'separate', caption: '',
+    images: [{ source: 'report', file: 'a.png', name: 'a.png', width: 40, noBorder: true, caption: 'Left' }] }] }], order: ['mine'] });
+  const html = contentOf(h, 'mine');
+  assert.match(html, /data-rd-addpart="image"[^>]*>\+ Image</);
+  assert.match(html, /<select data-rd-img-layout="i1"[^>]*>[\s\S]*?<option value="single">Single image<\/option><option value="pair">Side by side<\/option><option value="grid4">2×2 grid<\/option><option value="grid21" selected>2-1 grid<\/option><option value="grid12">1-2 grid<\/option>/);
+  assert.match(html, /<select data-rd-img-captions="i1"[^>]*>[\s\S]*?One caption[\s\S]*?value="separate" selected>Separate captions[\s\S]*?No caption/);
+  assert.equal((html.match(/data-rd-imgbox="\d"/g) ?? []).length, 3);
+  assert.match(html, /data-rd-imgbox="0"[\s\S]*?a\.png[\s\S]*?data-rd-img-width[^>]*value="40"[\s\S]*?data-rd-img-noborder[^>]*checked[\s\S]*?data-rd-img-capk[^>]*value="Left"/);
+  assert.match(html, /data-rd-imgbox="1"[\s\S]*?Drop an image here, or click to choose/);
+  assert.doesNotMatch(html, /data-rd-img-caption="i1"/, 'separate captions: no shared caption box');
+});
+
+test('one caption: a caption box for the whole block', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'single', captions: 'one', caption: 'Our map', images: [] }] }], order: ['mine'] });
+  assert.match(contentOf(h, 'mine'), /data-rd-img-caption="i1"[^>]*value="Our map"/);
+});
+
+test('a clicked box offers Standard Images or a file from this computer', () => {
+  const h = host({ standardImages: [{ id: 'img1', name: 'Logo', file: 's1.png' }],
+    sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'single', captions: 'one', caption: '', images: [] }] }], order: ['mine'] });
+  RD._rd.imgMenu = 'i1:0'; RD._rd.imgPick = false;
+  let html = contentOf(h, 'mine');
+  assert.match(html, /data-rd-img-from="standard"[^>]*>From Standard Images&hellip;</);
+  assert.match(html, /From this computer&hellip;<input type="file" accept="image\/png,image\/jpeg" data-rd-img-file/);
+  RD._rd.imgPick = true;
+  html = contentOf(h, 'mine');
+  assert.match(html, /data-rd-img-std="s1\.png"[^>]*>[\s\S]*?Logo/);
+  RD._rd.imgMenu = null; RD._rd.imgPick = false;
+});
+
+test('the previews lay out images at their own size once read, and the Generate tab names missing ones', async () => {
+  const { makePng } = await import('./image-fixtures.js');
+  const png = await makePng({ width: 40, height: 10, sample: () => [1, 2, 3] });
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'pair', captions: 'none',
+    images: [{ source: 'report', file: 'a.png', name: 'a.png' }, { source: 'report', file: 'gone.png', name: 'gone.png' }] }] }], order: ['mine'] });
+  h.images = { read: async (p) => (p === 'files/report-images/a.png' ? png : null) };
+  App.docHost.set(h);
+  RD._imageAssets.clear();
+  RD.laidOut(h.getState(), null, {});            // starts the reads
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(RD._imageAssets.get('files/report-images/a.png').state, 'ok');
+  assert.equal(RD._imageAssets.get('files/report-images/gone.png').state, 'missing');
+  const laid = RD.laidOut(h.getState(), null, {});
+  const im = laid.pages.flatMap((p) => p.items).find((it) => it.kind === 'image');
+  assert.equal(Math.round(im.h * 4), Math.round(im.w));
+  App.docHost.set(h); RD.open(); RD.pane('generate');
+  const gen = RD.render(h.getState()); RD.close();
+  assert.match(gen, /Images missing from the folder[\s\S]*?gone\.png/);
+  RD._imageAssets.clear();
+});

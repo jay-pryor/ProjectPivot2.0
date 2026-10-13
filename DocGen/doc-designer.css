@@ -350,3 +350,16 @@
   .docgen .rd-rename { font: inherit; font-size: 13px; font-weight: 600; width: 100%; padding: 1px 4px; border: 1px solid var(--c-accent); background: var(--c-surface); color: var(--c-text);}
   .docgen .rd-style-divider { border: 0; border-top: 1px solid var(--c-border); margin: 6px 0;}
   .docgen .rd-flags-col { flex-direction: column; align-items: flex-start;}
+  .docgen .rd-imggrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0;}
+  .docgen .rd-imggrid-single .rd-imgbox, .docgen .rd-imggrid-grid21 .rd-imgbox:nth-child(3), .docgen .rd-imggrid-grid12 .rd-imgbox:first-child { grid-column: 1 / -1;}
+  .docgen .rd-imgbox { position: relative; min-height: 90px; border: 1px dashed var(--c-border); padding: 6px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; border-radius: 0;}
+  .docgen .rd-imgbox.drop-target { border-color: var(--c-accent); background: var(--c-surface-alt);}
+  .docgen .rd-imgbox-empty { align-items: center; justify-content: center; color: var(--c-text-muted);}
+  .docgen .rd-imgthumb { max-width: 100%; max-height: 120px; object-fit: contain; align-self: center;}
+  .docgen .rd-imgthumb-none { width: 100%; height: 60px; background: #eeeeee; color: #555; display: flex; align-items: center; justify-content: center; font-size: 12px;}
+  .docgen .rd-imgname { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+  .docgen .rd-imgclear { position: absolute; top: 4px; right: 4px;}
+  .docgen .rd-imgopts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; cursor: default;}
+  .docgen .rd-imgcap { width: 100%;}
+  .docgen .rd-imgmenu { position: absolute; z-index: 5; top: 100%; left: 0; min-width: 220px; background: var(--c-surface); border: 1px solid var(--c-border); padding: 6px; display: flex; flex-direction: column; gap: 4px; cursor: default;}
+  .docgen .rd-std-thumb { width: 28px; height: 28px; object-fit: contain; margin-right: 6px; vertical-align: middle;}

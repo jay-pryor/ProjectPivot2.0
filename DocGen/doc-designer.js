@@ -3535,6 +3535,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       colourOpen: null,      // the colour field whose palette is open (its Style path)
       renaming: null,        // the section whose heading is being edited in the list
       secCat: null,          // the open category of the Sections pane
+      imgMenu: null,         // 'partId:box' whose choose-menu is open
+      imgPick: false,        // that menu showing Standard Images
       secWhole: false,       // whether the section preview shows the whole document
       listWidth: null,       // the Sections list's width, once dragged
       secZoom: null,         // the section preview's zoom, when changed from the default
@@ -4084,11 +4086,124 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         '</div>';
     }
 
+    var IMAGE_LAYOUTS = [{ value: 'single', label: 'Single image' }, { value: 'pair', label: 'Side by side' }, { value: 'grid4', label: '2×2 grid' },
+      { value: 'grid21', label: '2-1 grid' }, { value: 'grid12', label: '1-2 grid' }];
+    var IMAGE_CAPTIONS = [{ value: 'one', label: 'One caption' }, { value: 'separate', label: 'Separate captions' }, { value: 'none', label: 'No caption' }];
+    function imgSelect(attr, partId, secId, val, options, label) {
+      return '<label class="rd-lab rd-lab-s">' + esc(label) + '<select ' + attr + '="' + esc(partId) + '" data-rd-sec="' + esc(secId) + '" aria-label="' + esc(label) + '">' +
+        options.map(function (o) { return '<option value="' + o.value + '"' + (o.value === val ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('') +
+        '</select></label>';
+    }
+
+    /** IMG-1: one box of an image part: its image and settings, or a place to drop one. */
+    function imageBox(project, sec, part, k) {
+      var im = (part.images || [])[k] || null;
+      var key = part.id + ':' + k;
+      var ids = ' data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"';
+      var menu = '';
+      if (_rd.imgMenu === key) {
+        var std = bag(project).standardImages || [];
+        menu = '<div class="rd-imgmenu">' + (_rd.imgPick
+          ? (std.length ? std.map(function (s) {
+              var a = imageAsset(IMAGE_PATH('standard', s.file));
+              return '<button type="button" data-rd-img-std="' + esc(s.file) + '" data-rd-img-name="' + esc(s.name) + '"' + ids + ' data-rd-img-k="' + k + '">' +
+                (a.url ? '<img class="rd-std-thumb" src="' + esc(a.url) + '" alt="">' : '') + esc(s.name) + '</button>';
+            }).join('') : '<p class="rd-state">No standard images yet.</p>')
+          : '<button type="button" data-rd-img-from="standard"' + ids + ' data-rd-img-k="' + k + '">From Standard Images&hellip;</button>' +
+            '<label class="rd-filebtn">From this computer&hellip;<input type="file" accept="image/png,image/jpeg" data-rd-img-file' + ids + ' data-rd-img-k="' + k + '"></label>') +
+          '</div>';
+      }
+      if (!im) {
+        return '<div class="rd-imgbox rd-imgbox-empty" data-rd-imgbox="' + k + '"' + ids + ' tabindex="0">' +
+          '<span class="rd-imgdrop">Drop an image here, or click to choose</span>' + menu + '</div>';
+      }
+      var path = IMAGE_PATH(im.source, im.file);
+      var a = imageAsset(path);
+      var sep = part.captions === 'separate';
+      var w = im.width || 100;
+      return '<div class="rd-imgbox" data-rd-imgbox="' + k + '"' + ids + ' tabindex="0">' +
+        (a.state === 'ok' && a.url ? '<img class="rd-imgthumb" src="' + esc(a.url) + '" alt="">'
+          : '<span class="rd-imgthumb rd-imgthumb-none">' + (a.state === 'missing' ? 'Missing' : '') + '</span>') +
+        '<span class="rd-imgname" title="' + esc(im.name) + '">' + esc(im.name) + (im.source === 'standard' ? ' <span class="rd-kind">Standard</span>' : '') + '</span>' +
+        '<button type="button" class="rd-imgclear" data-rd-img-clear' + ids + ' data-rd-img-k="' + k + '" aria-label="Take this image out">✕</button>' +
+        '<div class="rd-imgopts">' +
+          '<label class="rd-lab rd-lab-s" title="A share of the text width; never wider than its box">Width (%)<span class="rd-num">' +
+            '<input inputmode="numeric" data-rd-img-width' + ids + ' data-rd-img-k="' + k + '" value="' + esc(String(w)) + '" aria-label="Width, percent of the text width">' +
+            '<span class="rd-steps">' +
+              '<button type="button" data-rd-img-step="+"' + ids + ' data-rd-img-k="' + k + '" aria-label="Width up" tabindex="-1">&#9650;</button>' +
+              '<button type="button" data-rd-img-step="-"' + ids + ' data-rd-img-k="' + k + '" aria-label="Width down" tabindex="-1">&#9660;</button>' +
+            '</span></span></label>' +
+          '<label class="gen-opt"><input type="checkbox" data-rd-img-noborder' + ids + ' data-rd-img-k="' + k + '"' + (im.noBorder ? ' checked' : '') + '> No border</label>' +
+          (sep ? '<input class="rd-imgcap" placeholder="Caption" data-rd-live data-rd-img-capk' + ids + ' data-rd-img-k="' + k + '" value="' + esc(im.caption || '') + '" aria-label="Caption for this image">' : '') +
+        '</div>' + menu + '</div>';
+    }
+
+    /** IMG-1: an image part: its layout, its caption mode, its boxes and (one caption) its caption. */
+    function imageEditor(project, sec, part, i, n) {
+      var count = FIG_BOXES(part.layout);
+      var boxes = '';
+      for (var k = 0; k < count; k++) boxes += imageBox(project, sec, part, k);
+      return '<div class="rd-part rd-part-image" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
+        '<div class="rd-part-head"><span class="rd-part-kind">Image</span>' +
+          imgSelect('data-rd-img-layout', part.id, sec.id, FIGURE_LAYOUTS[part.layout] ? part.layout : 'single', IMAGE_LAYOUTS, 'Layout') +
+          imgSelect('data-rd-img-captions', part.id, sec.id, part.captions || 'one', IMAGE_CAPTIONS, 'Captions') +
+          partControls(sec, part, i, n) + '</div>' +
+        '<div class="rd-imggrid rd-imggrid-' + esc(FIGURE_LAYOUTS[part.layout] ? part.layout : 'single') + '">' + boxes + '</div>' +
+        ((part.captions || 'one') === 'one'
+          ? '<label class="rd-lab">Caption<input data-rd-img-caption="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" value="' + esc(part.caption || '') + '" data-rd-live placeholder="What the figure shows"></label>'
+          : '') +
+        '</div>';
+    }
+
     /** The zoom steps of the page previews, and where each starts. */
     var ZOOMS = [0.4, 0.5, 0.6, 0.8, 1, 1.25, 1.5, 2];
     var ZOOM_FROM = { section: 1, preview: 1, styles: 1 };
     var ZOOM_KEY = { section: 'secZoom', preview: 'prevZoom', styles: 'styleZoom' };
     function zoomOf(which) { return _rd[ZOOM_KEY[which]] || ZOOM_FROM[which]; }
+    /**
+     * IMG-3: the images the previews draw, read from the folder once and kept while the
+     * designer is open: their size (for the layout) and a URL (for the screen).
+     */
+    var _imageAssets = new Map();
+    function imageAsset(path) {
+      var a = _imageAssets.get(path);
+      if (a) return a;
+      var h = H();
+      if (!h || !h.images || typeof h.images.read !== 'function') {
+        a = { state: 'missing' };
+        _imageAssets.set(path, a);
+        return a;
+      }
+      a = { state: 'loading' };
+      _imageAssets.set(path, a);
+      Promise.resolve().then(function () { return h.images.read(path); }).then(function (bytes) {
+        var info = bytes ? IMAGE_INFO(bytes) : null;
+        if (!info) { a.state = 'missing'; } else {
+          a.state = 'ok'; a.width = info.width; a.height = info.height;
+          a.url = (typeof URL !== 'undefined' && URL.createObjectURL && typeof Blob !== 'undefined')
+            ? URL.createObjectURL(new Blob([bytes], { type: info.mime })) : null;
+        }
+      }, function () { a.state = 'missing'; }).then(function () {
+        _rd.preview = null;
+        if (!_rd.open) return;
+        // A read that finishes while someone is typing redraws only the preview, so the caret stays.
+        var act = typeof document !== 'undefined' && document.activeElement;
+        if (act && act.closest && act.closest('.docgen') && (act.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(act.tagName))) refreshSectionPreview();
+        else repaint();
+      });
+      return a;
+    }
+    /** The sizes the layout needs for a document's images: loading ones as boxes, missing ones left out. */
+    function imageSizes(doc) {
+      var out = {};
+      FIGURE_SOURCES(doc).forEach(function (src) {
+        var a = imageAsset(src);
+        if (a.state === 'ok') out[src] = { width: a.width, height: a.height };
+        else if (a.state === 'loading') out[src] = { pending: true };
+      });
+      return out;
+    }
+    function imageUrl(src) { var a = _imageAssets.get(src); return a && a.state === 'ok' ? a.url : null; }
     /** − 60% + : the zoom buttons for one of the page previews. */
     function zoomBar(which) {
       var k = zoomOf(which);
@@ -4135,8 +4250,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
         // The whole document, opened at this section; or just this section, cut from it.
         '<div class="rd-secprev rd-preview-pages">' + (whole
-          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: included[at].anchor })
-          : pagesHtml(bands, { scale: k })) + '</div>';
+          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: included[at].anchor, imageUrl: imageUrl })
+          : pagesHtml(bands, { scale: k, imageUrl: imageUrl })) + '</div>';
     }
 
     function metaPane(project) {
@@ -4344,12 +4459,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           if (p.kind === 'table') return tableEditor(project, sec, p, i, parts.length);
           if (p.kind === 'rule') return simplePart(sec, p, i, parts.length, 'Horizontal line', 'A rule across the page.');
           if (p.kind === 'space') return spaceEditor(sec, p, i, parts.length);
+          if (p.kind === 'image') return imageEditor(project, sec, p, i, parts.length);
           return simplePart(sec, p, i, parts.length, 'Page break', 'Forces what follows onto a new page.');
         }).join('');
         return '<div class="rd-sec-edit"><div class="rd-parts">' + (body || '<p class="rd-state">Nothing in this section yet.</p>') + '</div>' +
           '<div class="rd-addbar">' +
             '<button type="button" data-rd-addpart="para" data-rd-sec="' + esc(sec.id) + '">+ Paragraph</button>' +
             '<button type="button" data-rd-addpart="table" data-rd-sec="' + esc(sec.id) + '">+ Table</button>' +
+            '<button type="button" data-rd-addpart="image" data-rd-sec="' + esc(sec.id) + '">+ Image</button>' +
             '<button type="button" data-rd-addpart="rule" data-rd-sec="' + esc(sec.id) + '">+ Line</button>' +
             '<button type="button" data-rd-addpart="space" data-rd-sec="' + esc(sec.id) + '" title="A measured gap down the page">+ Space</button>' +
             '<button type="button" data-rd-addpart="pagebreak" data-rd-sec="' + esc(sec.id) + '">+ Page break</button>' +
@@ -4631,7 +4748,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         '<div class="rd-secprev-head">' + (laid.error ? '' : '<span class="rd-state">' + laid.pages.length + ' page' + (laid.pages.length === 1 ? '' : 's') + '</span>') + zoomBar('styles') + '</div>' +
         (laid.error
           ? '<p class="rd-err">' + esc(laid.error) + '</p>'
-          : '<div class="rd-preview-pages rd-style-pages">' + pagesHtml(laid.pages, { scale: zoomOf('styles') }) + '</div>') + '</div>';
+          : '<div class="rd-preview-pages rd-style-pages">' + pagesHtml(laid.pages, { scale: zoomOf('styles'), imageUrl: imageUrl }) + '</div>') + '</div>';
       return head + locked + '<div class="rd-styles">' + list + fields + pages + '</div>';
     }
 
@@ -4658,7 +4775,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             ['left', 'centre', 'right'].forEach(function (slot) { s.headerFooter[k][slot] = App.docGen.applyTags(s.headerFooter[k][slot], o.tags || {}); });
           });
         }
-        var r = layout(built.document, s);
+        var r = layout(built.document, s, { images: imageSizes(built.document) });
         return { document: built.document, style: s, tags: built.tags, pages: r.pages, anchors: r.anchors, headings: r.headings, replaced: r.replaced };
       } catch (e) {
         return { error: 'The pages could not be laid out: ' + (e && e.message) };
@@ -4764,6 +4881,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var laid = laidOut(project, null, {});
       var tags = laid.error ? [] : laid.tags;
       var replaced = laid.error ? [] : laid.replaced;
+      var missingImgs = [];
+      if (!laid.error) (laid.document.blocks || []).forEach(function (b) {
+        if (b.kind === 'figure') (b.images || []).forEach(function (im) {
+          if (im && imageAsset(im.src).state === 'missing' && missingImgs.indexOf(im.name) === -1) missingImgs.push(im.name);
+        });
+      });
       var values = o.tags || {};
       var unfilled = tags.filter(function (t) { return !String(values[t] || '').trim(); });
 
@@ -4786,6 +4909,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         (replaced.length
           ? '<div class="rd-fieldset rd-replaced"><strong title="The PDF\'s standard fonts write these another way (≥ as >=, ✓ as Yes) or as ?. The HTML shows them as they are.">Characters the PDF cannot show</strong>' +
               '<p>' + replaced.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(' ') + '</p></div>'
+          : '') +
+        (missingImgs.length
+          ? '<div class="rd-fieldset rd-replaced"><strong title="These show as a grey box until the file is back in the folder">Images missing from the folder</strong>' +
+              '<p>' + missingImgs.map(function (n) { return '<code>' + esc(n) + '</code>'; }).join(' ') + '</p></div>'
           : '') +
         '<div class="rd-fieldset"><strong>Make the report</strong>' +
           (ready ? '' : '<p class="rd-state">This ' + esc(noun()) + ' is not ready.</p>') +
@@ -4815,7 +4942,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           zoomBar('preview') + '</div>' +
         '<div class="rd-preview-body">' +
           '<nav class="rd-preview-nav">' + (nav || '<span class="rd-state">No sections.</span>') + '</nav>' +
-          '<article class="rd-preview-doc rd-preview-pages" id="rd-preview-doc">' + pagesHtml(p.pages, { scale: zoomOf('preview'), anchors: p.anchors }) + '</article>' +
+          '<article class="rd-preview-doc rd-preview-pages" id="rd-preview-doc">' + pagesHtml(p.pages, { scale: zoomOf('preview'), anchors: p.anchors, imageUrl: imageUrl }) + '</article>' +
         '</div></div>';
     }
 
@@ -5072,6 +5199,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (el.hasAttribute('data-rd-rich')) return boxSaver(el)(RT.fromNode(el));
       if (el.hasAttribute('data-rd-sec-heading')) return App.docStore.setBlockHeading(el.getAttribute('data-rd-sec-heading'), el.value);
       if (el.hasAttribute('data-rd-sec-title')) return App.docStore.updateSection(el.getAttribute('data-rd-sec-title'), { title: el.value });
+      if (el.hasAttribute('data-rd-img-caption')) return App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-img-caption'), { caption: el.value });
+      if (el.hasAttribute('data-rd-img-capk')) return App.docStore.setPartImageField(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-part'), Number(el.getAttribute('data-rd-img-k')), 'caption', el.value);
       if (el.hasAttribute('data-rd-tbl-block')) {
         var block = el.getAttribute('data-rd-tbl-block'), key = el.getAttribute('data-rd-tbl-key'), col = el.getAttribute('data-rd-tbl-col');
         return col ? App.docStore.setTableColumnLabel(block, key, col, el.value)
@@ -5705,6 +5834,81 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         }
         _dragPart = null;
       });
+      // ---- IMG-1: image parts ----------------------------------------------
+      function imgIds(el) { return { sec: el.getAttribute('data-rd-sec'), part: el.getAttribute('data-rd-part'), k: Number(el.getAttribute('data-rd-img-k')) }; }
+      function hasFiles(e) { var t = e.dataTransfer && e.dataTransfer.types; return !!t && Array.prototype.indexOf.call(t, 'Files') !== -1; }
+      /** Copy a chosen or dropped file into the folder and put it in the box. */
+      function putImage(sec, part, k, file) {
+        var h = H();
+        if (!h.images || typeof h.images.store !== 'function') { App.docHost.log({ severity: 'error', message: 'Images can only be added with a data folder open.' }); return; }
+        h.images.store('report', file).then(function (r) {
+          logIssues(App.docStore.setPartImage(sec, part, k, { source: 'report', file: r.file, name: file.name }));
+          _rd.imgMenu = null; dirty(); repaint();
+        }, function (e) { App.docHost.log({ severity: 'error', message: (e && e.message) || 'That image could not be added.' }); });
+      }
+      dom.on(ctx.root, 'dragover', '[data-rd-imgbox]', function (e, el) {
+        if (!hasFiles(e)) return;
+        e.preventDefault(); e.stopPropagation();
+        el.classList.add('drop-target');
+      });
+      dom.on(ctx.root, 'dragleave', '[data-rd-imgbox]', function (e, el) { el.classList.remove('drop-target'); });
+      dom.on(ctx.root, 'drop', '[data-rd-imgbox]', function (e, el) {
+        if (!hasFiles(e)) return;
+        e.preventDefault(); e.stopPropagation();
+        el.classList.remove('drop-target');
+        var f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) putImage(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-part'), Number(el.getAttribute('data-rd-imgbox')), f);
+      });
+      // A click on the box itself (not its buttons or boxes) opens or closes its menu.
+      dom.on(ctx.root, 'click', '[data-rd-imgbox]', function (e, el) {
+        if (e.target && e.target.closest && e.target.closest('button, input, select, label, .rd-imgmenu')) return;
+        var key = el.getAttribute('data-rd-part') + ':' + el.getAttribute('data-rd-imgbox');
+        _rd.imgMenu = _rd.imgMenu === key ? null : key; _rd.imgPick = false;
+        repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-img-from]', function () { _rd.imgPick = true; repaint(); });
+      dom.on(ctx.root, 'change', '[data-rd-img-file]', function (e, el) {
+        var f = el.files && el.files[0], d = imgIds(el);
+        if (f) putImage(d.sec, d.part, d.k, f);
+        el.value = '';
+      });
+      dom.on(ctx.root, 'click', '[data-rd-img-std]', function (e, el) {
+        var d = imgIds(el);
+        logIssues(App.docStore.setPartImage(d.sec, d.part, d.k, { source: 'standard', file: el.getAttribute('data-rd-img-std'), name: el.getAttribute('data-rd-img-name') }));
+        _rd.imgMenu = null; _rd.imgPick = false; dirty(); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-img-clear]', function (e, el) {
+        var d = imgIds(el);
+        logIssues(App.docStore.setPartImage(d.sec, d.part, d.k, null)); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-layout]', function (e, el) {
+        logIssues(App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-img-layout'), { layout: el.value }));
+        _rd.imgMenu = null; dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-captions]', function (e, el) {
+        logIssues(App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-img-captions'), { captions: el.value })); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-caption]', function (e, el) {
+        logIssues(App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-img-caption'), { caption: el.value })); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-width]', function (e, el) {
+        var d = imgIds(el);
+        logIssues(App.docStore.setPartImageField(d.sec, d.part, d.k, 'width', el.value)); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-img-step]', function (e, el) {
+        var d = imgIds(el);
+        var box = el.closest('.rd-num') && el.closest('.rd-num').querySelector('[data-rd-img-width]');
+        var next = stepped(box ? box.value : 100, 5, el.getAttribute('data-rd-img-step') === '+' ? 1 : -1);
+        logIssues(App.docStore.setPartImageField(d.sec, d.part, d.k, 'width', Math.min(100, Math.max(5, next)))); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-noborder]', function (e, el) {
+        var d = imgIds(el);
+        logIssues(App.docStore.setPartImageField(d.sec, d.part, d.k, 'noBorder', el.checked)); dirty(); repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-img-capk]', function (e, el) {
+        var d = imgIds(el);
+        logIssues(App.docStore.setPartImageField(d.sec, d.part, d.k, 'caption', el.value)); dirty(); repaint();
+      });
     }
     // ======================================================================
     // wiring: wireText
@@ -6142,7 +6346,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
       laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _stepped: stepped, _renameSection: renameSection, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
-      PANES: PANES, _rd: _rd
+      PANES: PANES, _rd: _rd, _imageAssets: _imageAssets
     };
   })(App);
 
