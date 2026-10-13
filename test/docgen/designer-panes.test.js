@@ -739,3 +739,14 @@ test('Templates lists Standard Images with Rename and Delete, and a way to add o
   assert.match(html, /Add image&hellip;<input type="file" accept="image\/png,image\/jpeg" data-rd-std-file>/);
   assert.match(paneOf(host(), 'templates'), /No standard images yet\./);
 });
+
+test('a redraw keeps where each scrolling area was, the page previews included', () => {
+  for (const sel of ['.modal-body', '.rd-pane', '[data-rd-style-preview]', '[data-rd-sec-prev]', '#rd-preview-doc', '[data-rd-sec-fields]']) assert.ok(RD._SCROLLERS.includes(sel), sel);
+  const make = () => Object.fromEntries(RD._SCROLLERS.map((s) => [s, { scrollTop: 0, scrollLeft: 0 }]));
+  let els = make();
+  els['[data-rd-style-preview]'].scrollTop = 640; els['[data-rd-style-preview]'].scrollLeft = 25;
+  const host = { querySelector: (s) => els[s] ?? null };
+  RD._keepScroll(host, () => { els = make(); delete els['.rd-pane']; });
+  assert.equal(els['[data-rd-style-preview]'].scrollTop, 640);
+  assert.equal(els['[data-rd-style-preview]'].scrollLeft, 25);
+});

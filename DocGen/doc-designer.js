@@ -5056,16 +5056,23 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (_paintAgain) { _paintAgain = false; setTimeout(repaint, 0); }
       return true;
     }
+    /** Everything in the designer that scrolls on its own: the page previews as well as the panes. */
+    var SCROLLERS = ['.modal-body', '.rd-pane', '[data-rd-sec-fields]', '[data-rd-sec-prev]', '[data-rd-style-preview]', '#rd-preview-doc'];
+    /** Run a redraw, then put each scrolling area back where it was, so changing a setting
+     *  does not throw the preview back to the top. */
+    function keepScroll(host, redraw) {
+      var was = SCROLLERS.map(function (sel) {
+        var el = host.querySelector(sel);
+        return el ? { top: el.scrollTop, left: el.scrollLeft } : null;
+      });
+      redraw();
+      SCROLLERS.forEach(function (sel, i) {
+        var el = was[i] && host.querySelector(sel);
+        if (el) { el.scrollTop = was[i].top; el.scrollLeft = was[i].left; }
+      });
+    }
     function paintInto(host, project) {
-      var body = host.querySelector('.modal-body');
-      var top = body ? body.scrollTop : 0;
-      var pane = host.querySelector('.rd-pane');
-      var paneTop = pane ? pane.scrollTop : 0;
-      host.innerHTML = inner(project);
-      var again = host.querySelector('.modal-body');
-      if (again) again.scrollTop = top;
-      var pane2 = host.querySelector('.rd-pane');
-      if (pane2) pane2.scrollTop = paneTop;
+      keepScroll(host, function () { host.innerHTML = inner(project); });
       scrollToHere();
       showFormats();
     }
@@ -5242,11 +5249,17 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (block) col.innerHTML = sectionPreview(project, block);
       scrollToHere();
     }
-    /** In the whole-document preview, bring the selected section's start into view. */
+    /** In the whole-document preview, bring the selected section's start into view: when a
+     *  section is chosen or the whole document is first shown, not on every redraw, so a
+     *  change of setting leaves the preview where it was. */
+    var _hereShown = null;
     function scrollToHere() {
       var box = document.querySelector('[data-rd-sec-prev]');
       var here = box && box.querySelector('[data-rd-here]');
-      if (!here) return;
+      if (!here) { _hereShown = null; return; }
+      var key = _rd.selected + '|' + _rd.secWhole;
+      if (key === _hereShown) return;
+      _hereShown = key;
       var head = box.querySelector('.rd-secprev-head');
       box.scrollTop += here.getBoundingClientRect().top - box.getBoundingClientRect().top - (head ? head.offsetHeight : 0) - 8;
     }
@@ -6412,7 +6425,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
       laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _stepped: stepped, _renameSection: renameSection, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
-      PANES: PANES, _rd: _rd, _imageAssets: _imageAssets
+      PANES: PANES, _rd: _rd, _imageAssets: _imageAssets, _keepScroll: keepScroll, _SCROLLERS: SCROLLERS
     };
   })(App);
 
