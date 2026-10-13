@@ -284,6 +284,7 @@
   .docgen .dp-page::after { content: attr(data-page); position: absolute; right: 4px; bottom: 2px; font-size: 10px; color: #aaa;}
   .docgen .dp-text { position: absolute; white-space: pre;}
   .docgen .dp-fill, .docgen .dp-rule, .docgen .dp-link, .docgen .dp-anchor { position: absolute;}
+  .docgen .dp-image { position: absolute; display: block; object-fit: fill;}
   .docgen .dp-link { display: block;}
   .docgen .dp-link:hover { background: rgba(20, 65, 140, 0.12);}
   /* PDF-1: the Styles pane — sections, their fields, and the pages beside them. */

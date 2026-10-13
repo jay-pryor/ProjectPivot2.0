@@ -20,7 +20,7 @@ const px = (n) => `${Math.round(n * 1000) / 1000}px`;
  * contents entry or a reference can jump to it.
  * @param {{ size: [number, number], items: any[] }[]} pages
  * `here` marks one anchor (data-rd-here), for the designer to scroll to.
- * @param {{ scale?: number, anchors?: Record<string, { page: number, y: number }>, here?: string }} [o]
+ * @param {{ scale?: number, anchors?: Record<string, { page: number, y: number }>, here?: string, imageUrl?: (src: string) => string | null }} [o]
  */
 export function pagesHtml(pages, o = {}) {
   const k = o.scale ?? 1;
@@ -39,6 +39,11 @@ export function pagesHtml(pages, o = {}) {
       return `<span class="dp-text" style="left:${px(it.x * k)};top:${px((it.y - it.size * 0.78) * k)};font-size:${px(it.size * k)};line-height:1;color:${esc(it.colour)};` +
         `font-family:${FAMILY_CSS[/** @type {'Times'} */ (fam)] ?? FAMILY_CSS.Helvetica};font-weight:${/Bold/.test(face) ? 700 : 400};font-style:${/Oblique|Italic/.test(face) ? 'italic' : 'normal'}">${esc(uni(it.text))}</span>`;
     }
+    if (it.kind === 'image') {
+      const u = o.imageUrl ? o.imageUrl(it.src) : null;
+      const box = `left:${px(it.x * k)};top:${px(it.y * k)};width:${px(it.w * k)};height:${px(it.h * k)}`;
+      return u ? `<img class="dp-image" src="${esc(u)}" alt="" style="${box}">` : `<div class="dp-fill" style="${box};background:#eeeeee"></div>`;
+    }
     if (it.kind === 'link') return `<a class="dp-link" data-prv-jump="${esc(it.to)}" style="left:${px(it.x * k)};top:${px(it.y * k)};width:${px(it.w * k)};height:${px(it.h * k)}"></a>`;
     return '';
   }).join('') + '</div>').join('');
@@ -55,6 +60,7 @@ export function cropPage(page, top, bottom) {
   const items = [];
   for (const it of page.items) {
     if (it.kind === 'text') { if (it.y > top && it.y <= bottom + 0.01) items.push({ ...it, y: it.y - top }); continue; }
+    if (it.kind === 'image') { if (it.y < bottom && it.y + it.h > top) items.push({ ...it, y: it.y - top }); continue; }
     if (it.kind === 'fill') {
       const y0 = Math.max(top, it.y), y1 = Math.min(bottom, it.y + it.h);
       if (y1 > y0) items.push({ ...it, y: y0 - top, h: y1 - y0 });
