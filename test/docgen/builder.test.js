@@ -204,3 +204,21 @@ test('Final review I5: a Style that leaves out the contents list leaves out the 
   const r = build({ formats: [{ id: 's1', name: 'S', page: { margins: {} }, text: {}, toc: { include: false } }], formatId: 's1' });
   assert.ok(!r.document.blocks.some((b) => b.kind === 'toc'));
 });
+
+test('centring is chosen per part: heading, introduction and table separately; an old "centre everything" still centres everything', () => {
+  const kindsCentred = (design) => build(design).document.blocks
+    .filter((b) => b.centre && (b.kind === 'heading' ? plain(b.runs) === 'Teams' : true)).map((b) => b.kind);
+  assert.deepEqual(kindsCentred({ centred: { teams: { heading: true } } }), ['heading']);
+  assert.deepEqual(kindsCentred({ centred: { teams: { intro: true } } }), ['paragraph']);
+  assert.deepEqual(kindsCentred({ centred: { teams: { table: true } } }), ['table', 'table']);
+  assert.deepEqual(kindsCentred({ centred: { teams: true } }), ['heading', 'paragraph', 'table', 'table']);
+});
+
+test('your own section centres its heading and its content separately', () => {
+  const doc = build({ centred: { c2: { content: true } } }).document;
+  assert.equal(heading(doc, 'Annex').centre, false);
+  assert.equal(doc.blocks.find((b) => b.kind === 'paragraph' && plain(b.runs) === 'Annex text.').centre, true);
+  const doc2 = build({ centred: { c2: { heading: true } } }).document;
+  assert.equal(heading(doc2, 'Annex').centre, true);
+  assert.equal(doc2.blocks.find((b) => b.kind === 'paragraph' && plain(b.runs) === 'Annex text.').centre, false);
+});

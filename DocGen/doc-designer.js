@@ -681,7 +681,7 @@ import { toWinAnsi } from './doc-fonts.js';
      * the designer's column list, so the three cannot disagree about what is showing.
      */
     function columnOn(col, colOpts) {
-      if (!col || !col.optional) return true;
+      if (!col) return true;
       var v = (colOpts || {})[col.id];
       return v === undefined ? col.defaultOff !== true : v !== false;
     }
@@ -1175,6 +1175,13 @@ import { toWinAnsi } from './doc-fonts.js';
      *                  dsId?:string,title?:string,parts?:Array,
      *                  groups?:Array<{value:string,label:string,included:boolean}>}>}
      */
+    var CENTRE_PARTS = ['heading', 'intro', 'table', 'content'];
+    function centreParts(v) {
+      var out = {};
+      CENTRE_PARTS.forEach(function (k) { out[k] = v === true || !!(v && v[k] === true); });
+      return out;
+    }
+
     function hostBlocks(host, opts) {
       opts = opts || {};
       var state = (host && typeof host.getState === 'function' && host.getState()) || {};
@@ -1241,7 +1248,9 @@ import { toWinAnsi } from './doc-fonts.js';
           // the section it lists reads as a section of the report, which it is not. It
           // is only a default; the level picker moves it like any other block's.
           level: levels[b.id] === undefined ? (b.kind === 'toc' ? App.doc.TITLE_LEVEL : null) : levels[b.id],
-          centre: centred[b.id] === true,
+          // Which parts are centred: the heading, the introduction, the table, an own
+          // section's content. An old `true` centres them all.
+          centre: centreParts(centred[b.id]),
           // SEC-1: prose the operator wrote to sit between this section's heading and
           // its generated table. Stored as the same rich-text token markup a custom
           // paragraph uses, so one editor serves both.
@@ -1319,8 +1328,9 @@ import { toWinAnsi } from './doc-fonts.js';
         // A column the provider did not mark `optional` is FIXED: it is in the table,
         // and it takes a width slot, but it is offered no tick — because a tick that
         // cannot turn anything off is worse than no tick at all.
-        return pack([{ id: key.id || '_key', label: key.label }].concat(declared.filter(function (c) { return !c.optional; })),
-                    declared.filter(function (c) { return c.optional; }));
+        // Every declared column can be switched off; only the key column (the row's
+        // identifier) is always there.
+        return pack([{ id: key.id || '_key', label: key.label }], declared);
       }
       if (block.kind === 'meta') return pack([{ id: 'field', label: 'Field' }, { id: 'value', label: 'Value' }], []);
       return null;
@@ -1435,6 +1445,8 @@ import { toWinAnsi } from './doc-fonts.js';
         return out.length ? out : [Object.assign({ text: '' }, extra || {})];
       }
       function caption(t) { return t ? { runs: [{ text: 'Table ' + t.number + ': ' + tag(t.caption) }] } : null; }
+      /** Whether a part of a block is centred (`centre` is per part, or `true` for all). */
+      function centres(b, part) { return b.centre === true || !!(b.centre && b.centre[part]); }
       var out = [];
       resolved.forEach(function (b) {
         if (b.pageBreakBefore) out.push({ kind: 'pageBreak' });
@@ -1443,17 +1455,17 @@ import { toWinAnsi } from './doc-fonts.js';
         if (heading) {
           var num = b.number && b.number.split('.').length <= depth ? b.number : '';
           out.push({ kind: 'heading', level: b.level, number: num, anchor: b.anchor, runs: textRuns(title),
-            centre: !!b.centre, spaceBefore: b.spaceBefore || 0, noToc: b.kind === 'toc' || !!b.noToc });
+            centre: centres(b, 'heading'), spaceBefore: b.spaceBefore || 0, noToc: b.kind === 'toc' || !!b.noToc });
         } else out.push({ kind: 'space', mm: b.spaceBefore || 0, anchor: b.anchor });   // where a reference to it lands
         var intro = App.md.runs(b.intro || '', { resolveRef: resolveRef });
         intro.forEach(function (rs, i) {
-          out.push({ kind: 'paragraph', style: 'body', centre: !!b.centre,
+          out.push({ kind: 'paragraph', style: 'body', centre: centres(b, 'intro'),
             runs: (i === 0 && b.introNumber ? [{ text: b.introNumber + ' ' }] : []).concat(rs) });
         });
         if (b.content === 'toc') { out.push({ kind: 'toc' }); return; }
         if (b.kind === 'custom') {
           (b.parts || []).forEach(function (p) {
-            var centre = !!(p.centre || b.centre);
+            var centre = !!(p.centre || centres(b, 'content'));
             if (p.kind === 'rule') out.push({ kind: 'rule' });
             else if (p.kind === 'pagebreak') out.push({ kind: 'pageBreak' });
             else if (p.kind === 'space') out.push({ kind: 'space', mm: Number(p.height) || 0 });
@@ -1474,7 +1486,7 @@ import { toWinAnsi } from './doc-fonts.js';
         }
         (Array.isArray(b.content) ? b.content : []).forEach(function (t) {
           out.push({ kind: 'table', anchor: t.captionId ? App.md.anchor('tbl-' + t.captionId) : undefined, caption: t.noCaption ? null : caption(byId[App.md.anchor('tbl-' + t.captionId)]),
-            titleRow: t.titleRow ? textRuns(t.titleRow) : null, centre: !!b.centre,
+            titleRow: t.titleRow ? textRuns(t.titleRow) : null, centre: centres(b, 'table'),
             columns: t.header.map(function (_, k) { return { width: t.widths ? t.widths[k] : undefined }; }),
             header: t.header.map(function (h) { return textRuns(h); }), rows: t.rows.map(function (r) { return r.map(function (c) { return c.code ? textRuns(c.text, { code: true }) : textRuns(c.text); }); }) });
         });
@@ -1632,6 +1644,30 @@ import { toWinAnsi } from './doc-fonts.js';
      * centred and un-centred leaves no trace in the file (DOD-7).
      */
     function setBlockCentre(blockId, on) { return setBlockFlag('centred', blockId, on); }
+
+    /**
+     * Centre one part of a section: its heading, introduction, table or (an own
+     * section's) content. An old whole-section `true` is first spread over every part,
+     * so un-ticking one keeps the others; nothing centred leaves nothing stored.
+     */
+    function setBlockCentrePart(blockId, part, on) {
+      if (!P()) return errNoProject();
+      if (!blockId) return err('A section is required.');
+      var parts = ['heading', 'intro', 'table', 'content'];
+      if (parts.indexOf(part) === -1) return err('Unknown part "' + part + '".');
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        b.centred = b.centred || {};
+        var cur = b.centred[blockId];
+        var next = {};
+        parts.forEach(function (k) { if (cur === true || (cur && cur[k] === true)) next[k] = true; });
+        if (on) next[part] = true; else delete next[part];
+        if (Object.keys(next).length) b.centred[blockId] = next; else delete b.centred[blockId];
+        if (!Object.keys(b.centred).length) delete b.centred;
+        if (!Object.keys(b).length) delete p.report;
+      });
+      return ok();
+    }
 
     /**
      * A per-section boolean, stored as PRESENCE. Off leaves no trace in the file, so a
@@ -2608,7 +2644,7 @@ import { toWinAnsi } from './doc-fonts.js';
       // RPT-3: the section order. It lived on App.store, which meant the module
       // reached into the host to reorder its own document.
       setReportOrder: setReportOrder,
-      setBlockLevel: setBlockLevel, setBlockCentre: setBlockCentre, setMetaField: setMetaField,
+      setBlockLevel: setBlockLevel, setBlockCentre: setBlockCentre, setBlockCentrePart: setBlockCentrePart, setMetaField: setMetaField,
       // SEC-4: per-section placement — centring, a page of its own, out of the contents.
       setBlockFlag: setBlockFlag,
       // SPC-1: …and how far down the page its heading starts.
@@ -3856,6 +3892,17 @@ import { toWinAnsi } from './doc-fonts.js';
         }).join('') + '</div>';
     }
 
+    /** Centring, part by part, in the order the parts sit on the page. */
+    function centreTicks(block) {
+      var c = block.centre || {};
+      var parts = block.kind === 'toc' ? [['heading', 'Centre heading']]
+        : block.kind === 'custom' ? [['heading', 'Centre heading'], ['content', 'Centre content']]
+        : [['heading', 'Centre heading'], ['intro', 'Centre introduction'], ['table', 'Centre table']];
+      return parts.map(function (p) {
+        return cb('data-rd-centre-part="' + p[0] + '" data-rd-block="' + esc(block.id) + '"', p[1], c === true || c[p[0]] === true);
+      }).join('');
+    }
+
     /** Centre a whole section's body — available to generated and authored alike. */
     function centreToggle(project, block, resolved) {
       /* SEC-4: the per-section page break, greyed out when the LEVEL already makes one.
@@ -3868,8 +3915,7 @@ import { toWinAnsi } from './doc-fonts.js';
       var lvStyle = App.docFormat.resolve(project).text[lvl === App.doc.TITLE_LEVEL ? 'title' : 'h' + lvl];
       var byLevel = !!(lvStyle && lvStyle.pageBreakBefore);
       return '<div class="rd-fieldset"><strong>On the page</strong>' +
-        cb('data-rd-centre="' + esc(block.id) + '"',
-          'Centre this section\u2019s content \u2014 heading included', block.centre === true) +
+        centreTicks(block) +
         cb('data-rd-pagebreak="' + esc(block.id) + '"',
           'Start this section on a new page', byLevel || block.pageBreakBefore === true, byLevel) +
         (byLevel ? '<p class="rd-state">' + esc(levelName(lvl)) + ' starts a new page in this Style.</p>' : '') +
@@ -3983,7 +4029,7 @@ import { toWinAnsi } from './doc-fonts.js';
     function categoriesFor(block) {
       var ids = block.kind === 'toc' ? ['heading', 'placement']
         : block.kind === 'custom' ? ['heading', 'placement', 'content']
-        : ['heading', 'placement', 'introduction'].concat(
+        : ['heading', 'introduction', 'placement'].concat(
             ((App.docGen.sectionColumns(H(), block, opts()) || { all: [] }).all.length ? ['table'] : []),
             block.kind === 'meta' ? ['rows'] : []);
       return ids.map(function (id) { return { id: id, label: SEC_CATEGORIES[id] }; });
@@ -4013,13 +4059,12 @@ import { toWinAnsi } from './doc-fonts.js';
 
     /** The fields of one category of a section. */
     function categoryFields(project, view, block, resolved, cat) {
-      var level = '<label class="rd-lab">Level ' + levelSelect(block, resolved) + '</label>';
       var sec = block.kind === 'custom' ? customSection(project, block.id) : null;
       if (cat === 'heading') {
         return (sec
           ? '<label class="rd-lab">Heading<input class="rd-title" value="' + esc(sec.title || '') + '" data-rd-live data-rd-sec-title="' + esc(sec.id) + '"' +
               ' placeholder="None: the section is body text" aria-label="Section heading"></label>'
-          : nameField(block, block.defaultTitle)) + level;
+          : nameField(block, block.defaultTitle));
       }
       if (cat === 'placement') return centreToggle(project, block, resolved);
       if (cat === 'introduction') return introField(project, block);
@@ -5023,8 +5068,8 @@ import { toWinAnsi } from './doc-fonts.js';
         quietly(function () { App.docStore.setReportOrder([]); });
         dirty(); repaint();
       });
-      dom.on(ctx.root, 'change', '[data-rd-centre]', function (e, el) {
-        quietly(function () { logIssues(App.docStore.setBlockCentre(el.getAttribute('data-rd-centre'), el.checked)); });
+      dom.on(ctx.root, 'change', '[data-rd-centre-part]', function (e, el) {
+        quietly(function () { logIssues(App.docStore.setBlockCentrePart(el.getAttribute('data-rd-block'), el.getAttribute('data-rd-centre-part'), el.checked)); });
         dirty(); repaint();
       });
       // SEC-4: two more per-section placement switches, on the same shape as centring.
