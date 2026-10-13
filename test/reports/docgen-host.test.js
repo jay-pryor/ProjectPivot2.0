@@ -59,7 +59,7 @@ test('produce: a report keeps its finished document and Style, carrying the mark
   assert.ok(isStyle(report.style));
   assert.equal(report.document.meta.marking, 'OFFICIAL: Sensitive');
   assert.equal(report.document.meta.title, 'Alpha hazards');
-  for (const text of ['HAZ-001', 'Fire', 'Sprinklers', '2C = Serious', 'Hot works', 'Burns']) {
+  for (const text of ['HAZ-001', 'Fire', 'Sprinklers', 'Serious (2C)', 'Hot works', 'Burns']) {
     assert.ok(textOf(report).includes(text), `document lacks ${text}`);
     assert.ok(htmlOf(report).includes(text), `html lacks ${text}`);
   }
@@ -98,11 +98,11 @@ test('Hazards has four risk columns; Risk assessments and SFARP sections', async
   const secs = docs.host.sections({ subjectId: 'p1' });
   const hz = secs.find((s) => s.id === 'hazards');
   assert.deepEqual(hz.columns.map((c) => c.id), ['title', 'initialPersonnel', 'initialEnvironment', 'initialCapability', 'residualPersonnel', 'residualEnvironment', 'residualCapability', 'phases', 'description']);
-  assert.equal(hz.columns.find((c) => c.id === 'residualEnvironment').get(hz.rows()[0]), '2C = Serious');
+  assert.equal(hz.columns.find((c) => c.id === 'residualEnvironment').get(hz.rows()[0]), 'Serious (2C)');
   const ra = secs.find((s) => s.id === 'assessments');
   assert.equal(ra.label, 'Risk assessments');
   const envResidual = ra.rows().find((r) => r.stage === 'residual' && r.receptor === 'environment');
-  assert.deepEqual(ra.columns.map((c) => c.get(envResidual)), ['Residual', 'Environment', 'C', '', '2', 'Large spill', '2C = Serious']);
+  assert.deepEqual(ra.columns.map((c) => c.get(envResidual)), ['Residual', 'Environment', 'C', '', '2', 'Large spill', 'Serious (2C)']);
   const sf = secs.find((s) => s.id === 'sfarp');
   assert.deepEqual(sf.columns.map((c) => c.label), ['Justification', 'Conclusion', 'Conditions of validity']);
   assert.equal(sf.columns[1].get(sf.rows()[0]), 'SFARP achieved');
@@ -166,7 +166,7 @@ test('capability in Hazards and Risk assessments, and its justifications stay li
   const secs = docs.host.sections({ subjectId: 'p1' });
   const hz = secs.find((s) => s.id === 'hazards');
   assert.equal(hz.columns.find((c) => c.id === 'residualCapability').label, 'Residual risk (capability)');
-  assert.equal(hz.columns.find((c) => c.id === 'residualCapability').get(hz.rows()[0]), '2C = Serious');
+  assert.equal(hz.columns.find((c) => c.id === 'residualCapability').get(hz.rows()[0]), 'Serious (2C)');
   const ra = secs.find((s) => s.id === 'assessments');
   const cap = ra.rows().find((r) => r.receptor === 'capability' && r.stage === 'residual');
   assert.equal(ra.columns.find((c) => c.id === 'receptor').get(cap), 'Capability');

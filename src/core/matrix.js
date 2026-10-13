@@ -66,9 +66,9 @@ export function ratingFor(consequence, likelihood) {
 
 /**
  * @param {{ consequence: number | null, likelihood: string | null } | null | undefined} pair
- * @returns {string} `2C = Serious`, or `Uncategorised`
+ * @returns {string} `Serious (2C)`, or `Uncategorised`
  */
 export function formatRating(pair) {
   const r = ratingFor(pair?.consequence ?? null, pair?.likelihood ?? null);
-  return r.cell ? `${r.cell} = ${r.band}` : r.band;
+  return r.cell ? `${r.band} (${r.cell})` : r.band;
 }
