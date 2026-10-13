@@ -295,3 +295,51 @@ test('a report made with a Style that renumbers hazards shows the document numbe
   assert.ok(textOf(report).includes('HAZ-001'), 'the Style in use renumbers the produced report');
   assert.ok(!textOf(report).includes('HAZ-002'));
 });
+
+import { imagesInUse } from '../../src/reports/docgen-host.js';
+import { makePng, makeJpeg } from '../docgen/image-fixtures.js';
+
+function memFiles() {
+  const files = new Map();
+  return { files, api: {
+    read: async (p) => files.get(p) ?? null,
+    write: async (p, blob) => { files.set(p, new Uint8Array(await blob.arrayBuffer())); },
+    exists: async (p) => files.has(p),
+    remove: async (p) => { files.delete(p); },
+  } };
+}
+const fileOf = (bytes, name) => new File([bytes], name);
+
+test('the host stores a PNG or JPEG under its folder with a new name, and reads it back', async () => {
+  const m = memFiles();
+  const { host } = createDocHost({ ...ctxFor(), files: m.api });
+  const png = await makePng({ width: 3, height: 2, sample: () => [1, 2, 3] });
+  const r = await host.images.store('report', fileOf(png, 'site.png'));
+  assert.match(r.file, /^[0-9a-f]{8}\.png$/);
+  assert.deepEqual([r.width, r.height], [3, 2]);
+  assert.deepEqual([...await host.images.read(`files/report-images/${r.file}`)], [...png]);
+  const j = await host.images.store('standard', fileOf(makeJpeg(10, 5), 'logo.jpeg'));
+  assert.match(j.file, /^[0-9a-f]{8}\.jpg$/);
+  assert.ok(m.files.has(`files/standard-images/${j.file}`));
+  await host.images.remove('standard', j.file);
+  assert.equal(m.files.has(`files/standard-images/${j.file}`), false);
+});
+
+test('other files, and files over 20 MB, are refused with a reason', async () => {
+  const { host } = createDocHost({ ...ctxFor(), files: memFiles().api });
+  await assert.rejects(host.images.store('report', fileOf(new TextEncoder().encode('GIF89a'), 'a.gif')), /Only PNG and JPEG images can be used/);
+  const big = { name: 'huge.png', size: 21 * 1024 * 1024, arrayBuffer: async () => new ArrayBuffer(0) };
+  await assert.rejects(host.images.store('report', big), /huge\.png is 21 MB; an image can be at most 20 MB/);
+  const { host: none } = createDocHost(ctxFor());
+  await assert.rejects(none.images.store('report', fileOf(makeJpeg(1, 1), 'a.jpg')), /Open the data folder first/);
+  assert.equal(await none.images.read('files/report-images/a.png'), null);
+});
+
+test('the report images in use: in sections, templates and produced reports', () => {
+  const img = (file, source = 'report') => ({ kind: 'image', images: [{ source, file }, null] });
+  const data = { reportDesign: { sections: [{ parts: [img('a.png'), img('s.png', 'standard')] }], sectionTemplates: [{ parts: [img('b.png')] }],
+    reportTemplates: [{ sections: [{ parts: [img('c.png')] }] }] },
+    records: { report: { r1: { document: { blocks: [{ kind: 'figure', images: [{ src: 'files/report-images/d.png' }, { src: 'files/standard-images/s.png' }, null] }] } } } } };
+  assert.deepEqual([...imagesInUse(data)].sort(), ['a.png', 'b.png', 'c.png', 'd.png']);
+});
+const ctxFor = () => ({ getData: () => seed(), setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (/** @type {string} */ id) => id });

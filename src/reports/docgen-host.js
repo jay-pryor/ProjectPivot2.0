@@ -5,6 +5,8 @@ import { live } from '../core/data.js';
 import { formatRating } from '../core/matrix.js';
 import { RECEPTORS, RECEPTOR_WORD, stageKey } from '../core/receptors.js';
 import { toIsoUtc, aestDate } from '../core/time.js';
+import { imageInfo, imagePath, MAX_IMAGE_BYTES } from '../../DocGen/doc-images.js';
+import { newId } from '../core/ids.js';
 
 /** @typedef {import('./snapshot.js').Snapshot} Snapshot */
 
@@ -225,8 +227,34 @@ function sectionsFor(s) {
 }
 
 /**
+ * The files in files/report-images/ that something still uses: an image part in a section, a
+ * section template or a report template, or a figure in a produced report (downloaded again later).
+ * @param {{ reportDesign?: any, records: { report?: Record<string, any> } }} data
+ */
+export function imagesInUse(data) {
+  /** @type {Set<string>} */
+  const used = new Set();
+  /** @param {any[] | undefined} parts */
+  const visit = (parts) => {
+    for (const p of parts ?? []) if (p?.kind === 'image') for (const im of p.images ?? []) if (im && im.source !== 'standard' && im.file) used.add(im.file);
+  };
+  const d = data.reportDesign ?? {};
+  for (const s of d.sections ?? []) visit(s.parts);
+  for (const t of d.sectionTemplates ?? []) visit(t.parts);
+  for (const t of d.reportTemplates ?? []) for (const s of t.sections ?? []) visit(s.parts);
+  const prefix = 'files/report-images/';
+  for (const r of Object.values(data.records.report ?? {})) {
+    for (const b of r?.document?.blocks ?? []) {
+      if (b.kind === 'figure') for (const im of b.images ?? []) if (im?.src?.startsWith(prefix)) used.add(im.src.slice(prefix.length));
+    }
+  }
+  return used;
+}
+
+/**
  * @param {{ getData: () => import('../core/data.js').Data, setDesign: (design: Record<string, any>) => void,
- *   clock: import('../core/time.js').Clock, profileName: (id: string) => string }} ctx
+ *   clock: import('../core/time.js').Clock, profileName: (id: string) => string,
+ *   files?: { read: (path: string) => Promise<Uint8Array | null>, write: (path: string, blob: Blob) => Promise<void>, exists: (path: string) => Promise<boolean>, remove: (path: string) => Promise<void> } }} ctx
  */
 export function createDocHost(ctx) {
   /** @type {Snapshot | null} set only while a report is being produced */
@@ -257,6 +285,26 @@ export function createDocHost(ctx) {
     /** @param {{ subjectId?: string, numbering?: any } | null} run */
     // `run.numbering` is the Style's Document settings: numbered from 1 for the document when asked.
     sections: (run) => sectionsFor(run && run.subjectId ? renumbered(snapshotFor(run.subjectId), run.numbering) : null),
+    // Report images, kept in the data folder: files/report-images/ and files/standard-images/.
+    images: {
+      /** @param {'report'|'standard'} source @param {File | { name: string, size: number, arrayBuffer: () => Promise<ArrayBuffer> }} file */
+      async store(source, file) {
+        if (!ctx.files) throw new Error('Open the data folder first.');
+        if (file.size > MAX_IMAGE_BYTES) throw new Error(`${file.name} is ${Math.round(file.size / (1024 * 1024))} MB; an image can be at most 20 MB.`);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const info = imageInfo(bytes);
+        if (!info) throw new Error('Only PNG and JPEG images can be used');
+        let name = '';
+        do name = `${newId().replace(/-/g, '').slice(0, 8)}.${info.type === 'png' ? 'png' : 'jpg'}`;
+        while (await ctx.files.exists(imagePath(source, name)));
+        await ctx.files.write(imagePath(source, name), new Blob([bytes], { type: info.mime }));
+        return { file: name, width: info.width, height: info.height };
+      },
+      /** @param {string} path */
+      read: async (path) => (ctx.files ? ctx.files.read(path) : null),
+      /** @param {'report'|'standard'} source @param {string} file */
+      async remove(source, file) { if (ctx.files) await ctx.files.remove(imagePath(source, file)); },
+    },
   };
 
   return {
