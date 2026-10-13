@@ -519,3 +519,24 @@ test('the palette is the same everywhere: preset rows of greys, colours and thei
   assert.deepEqual(RD.PALETTE.map((row) => row.length), [6, 8, 8]);
   for (const row of RD.PALETTE) for (const [hex, name] of row) { assert.match(hex, /^#[0-9a-f]{6}$/); assert.ok(name); }
 });
+
+test('the section list is shown on the Sections tab only', () => {
+  assert.match(paneOf(host(), 'section'), /id="rd-order-host"[\s\S]*data-rd-split/);
+  for (const pane of ['styles', 'templates', 'preview', 'generate']) {
+    const html = paneOf(host(), pane);
+    assert.doesNotMatch(html, /id="rd-order-host"|data-rd-split/, pane);
+  }
+});
+
+test('the Styles preview is laid out like the Sections one: its own column, at 100%, with zoom', () => {
+  const html = paneOf(host(), 'styles', 'page');
+  assert.match(html, /data-rd-style-preview[\s\S]*data-rd-zoom="in" data-rd-zoom-for="styles"/);
+  assert.match(html, />100%</);
+  assert.match(html, /class="dp-page" data-page="1" style="width:595.28px/);
+});
+
+test('Styles calls the marking "Security Classification"', () => {
+  const html = paneOf(host(), 'styles', 'marking');
+  assert.match(html, /data-rd-style-section="marking"[^>]*>Security Classification</);
+  assert.doesNotMatch(html, />Marking</);
+});

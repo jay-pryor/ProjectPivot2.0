@@ -3942,8 +3942,8 @@ import { toWinAnsi } from './doc-fonts.js';
 
     /** The zoom steps of the page previews, and where each starts. */
     var ZOOMS = [0.4, 0.5, 0.6, 0.8, 1, 1.25, 1.5, 2];
-    var ZOOM_FROM = { section: 1, preview: 1 };
-    var ZOOM_KEY = { section: 'secZoom', preview: 'prevZoom' };
+    var ZOOM_FROM = { section: 1, preview: 1, styles: 1 };
+    var ZOOM_KEY = { section: 'secZoom', preview: 'prevZoom', styles: 'styleZoom' };
     function zoomOf(which) { return _rd[ZOOM_KEY[which]] || ZOOM_FROM[which]; }
     /** − 60% + : the zoom buttons for one of the page previews. */
     function zoomBar(which) {
@@ -4273,7 +4273,7 @@ import { toWinAnsi } from './doc-fonts.js';
       { id: 'body', label: 'Body' }, { id: 'caption', label: 'Caption' }, { id: 'code', label: 'Code' },
       { id: 'tables', label: 'Tables' },
       { id: 'headerFooter', label: 'Header & footer' },
-      { id: 'marking', label: 'Marking' },
+      { id: 'marking', label: 'Security Classification' },
       { id: 'numbering', label: 'Numbering & contents' }
     ];
     var FAMILY_LABELS = [{ value: 'helvetica', label: 'Helvetica (sans serif)' }, { value: 'times', label: 'Times (serif)' }, { value: 'courier', label: 'Courier (fixed width)' }];
@@ -4395,11 +4395,11 @@ import { toWinAnsi } from './doc-fonts.js';
       if (section === 'marking') {
         var marking = (project.report || {}).classification;
         var markings = H().classifications || [];
-        return '<label class="rd-lab">Marking for this document <select data-rd-classification aria-label="Classification marking">' +
+        return '<label class="rd-lab">Security classification for this document <select data-rd-classification aria-label="Security classification">' +
             '<option value=""' + (marking ? '' : ' selected') + '>None</option>' +
             markings.map(function (x) { return '<option value="' + esc(x) + '"' + (x === marking ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') +
           '</select></label>' +
-          '<div class="rd-flags">' + flagField('Print the marking on every page', 'marking.show', f.marking.show) + '</div>' +
+          '<div class="rd-flags">' + flagField('Print the classification on every page', 'marking.show', f.marking.show) + '</div>' +
           textFields(f, 'marking');
       }
       if (section === 'numbering') {
@@ -4455,9 +4455,11 @@ import { toWinAnsi } from './doc-fonts.js';
         '<fieldset class="rd-fmt-body"' + (builtin ? ' disabled' : '') + '>' + styleSectionFields(project, f, section) + '</fieldset></div>';
       // The pages are drawn in the Style being EDITED, so a change is seen before it is put in use.
       var laid = laidOut(project, f);
-      var pages = '<div class="rd-style-preview" data-rd-style-preview>' + (laid.error
-        ? '<p class="rd-err">' + esc(laid.error) + '</p>'
-        : pagesHtml(laid.pages, { scale: 0.5 })) + '</div>';
+      var pages = '<div class="rd-style-preview" data-rd-style-preview>' +
+        '<div class="rd-secprev-head">' + (laid.error ? '' : '<span class="rd-state">' + laid.pages.length + ' page' + (laid.pages.length === 1 ? '' : 's') + '</span>') + zoomBar('styles') + '</div>' +
+        (laid.error
+          ? '<p class="rd-err">' + esc(laid.error) + '</p>'
+          : '<div class="rd-preview-pages rd-style-pages">' + pagesHtml(laid.pages, { scale: zoomOf('styles') }) + '</div>') + '</div>';
       return head + locked + '<div class="rd-styles">' + list + fields + pages + '</div>';
     }
 
@@ -4670,8 +4672,11 @@ import { toWinAnsi } from './doc-fonts.js';
           '<div class="modal-sub">' + (subj ? subjectPicker(selId) : 'No ' + esc(noun()) + ' selected.') + '</div></div>' +
           '<button type="button" class="modal-close" data-rd-close aria-label="Close">×</button></div>' +
         '<div class="modal-body"><div class="rpt-body rd-layout">' +
-          renderSectionList(project, view) +
-          '<div class="rd-split" data-rd-split role="separator" aria-orientation="vertical" aria-label="Drag to widen or narrow the Sections list" title="Drag to resize"></div>' +
+          // The section list belongs to the Sections tab; the other tabs have the width.
+          (_rd.pane === 'section'
+            ? renderSectionList(project, view) +
+              '<div class="rd-split" data-rd-split role="separator" aria-orientation="vertical" aria-label="Drag to widen or narrow the Sections list" title="Drag to resize"></div>'
+            : '') +
           '<div class="rd-right"><div class="rd-tabs">' + tabs + '</div>' +
             '<div class="rpt-pane rd-pane">' + paneBody + '</div></div>' +
         '</div></div>' +
@@ -5213,7 +5218,7 @@ import { toWinAnsi } from './doc-fonts.js';
       dom.on(ctx.root, 'change', '[data-rd-subject]', function (e, el) { session().subjectId = el.value; dirty(); repaint(); });
       // The page previews' zoom: a way of looking, so the laid-out pages are kept.
       dom.on(ctx.root, 'click', '[data-rd-zoom]', function (e, el) {
-        var which = el.getAttribute('data-rd-zoom-for') === 'preview' ? 'preview' : 'section';
+        var which = ZOOM_KEY[el.getAttribute('data-rd-zoom-for')] ? el.getAttribute('data-rd-zoom-for') : 'section';
         var i = ZOOMS.indexOf(zoomOf(which));
         if (i === -1) i = ZOOMS.indexOf(ZOOM_FROM[which]);
         i += el.getAttribute('data-rd-zoom') === 'in' ? 1 : -1;

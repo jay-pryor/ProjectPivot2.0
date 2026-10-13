@@ -287,7 +287,8 @@
   .docgen .dp-link { display: block;}
   .docgen .dp-link:hover { background: rgba(20, 65, 140, 0.12);}
   /* PDF-1: the Styles pane — sections, their fields, and the pages beside them. */
-  .docgen .rd-styles { display: grid; grid-template-columns: 170px minmax(280px, 1fr) minmax(320px, auto); gap: 12px; align-items: start; margin-top: 10px;}
+  .docgen .rd-styles { display: grid; grid-template-columns: 170px minmax(280px, 1fr) minmax(320px, 1fr); gap: 12px; align-items: start; margin-top: 10px;}
+  @container (max-width: 820px) { .docgen .rd-styles { grid-template-columns: 170px minmax(0, 1fr); } .docgen .rd-style-preview { grid-column: 1 / -1; } }
   .docgen .rd-style-list { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0;}
   .docgen .rd-style-sec { text-align: left; border: 1px solid transparent; background: none; padding: 5px 8px; font: inherit; font-size: 13px; color: var(--c-text); cursor: pointer;}
   .docgen .rd-style-sec.on { border-color: var(--c-accent); background: var(--c-surface-alt); font-weight: 600;}
@@ -295,7 +296,10 @@
   .docgen .rd-flags { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0;}
   .docgen .rd-held { font-size: 12px; border: 1px solid var(--c-border); border-left-width: 4px; background: var(--c-warn-bg); padding: 6px 10px; margin: 6px 0;}
   .docgen .rd-held ul { margin: 4px 0 0 18px; padding: 0;}
-  .docgen .rd-style-preview { max-height: calc(100vh - 220px); overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; background: var(--c-surface-alt); padding: 10px;}
+  /* The Styles preview, like the Sections one: its own scrolling column, the zoom pinned at its top. */
+  .docgen .rd-style-preview { position: sticky; top: 0; max-height: calc(100vh - 230px); overflow: auto; min-width: 0;}
+  .docgen .rd-style-preview .rd-secprev-head { position: sticky; top: 0; z-index: 2; background: var(--c-bg); padding: 2px 0 6px; margin: 0;}
+  .docgen .rd-style-pages { align-items: safe center; gap: 8px; border: 1px solid var(--c-border); padding: 8px 12px;}
   .docgen .rd-replaced code { font-size: 15px; margin-right: 6px;}
   .docgen .rd-subject { font: inherit; font-size: 13px; padding: 2px 6px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text);}
   .docgen .rd-state { font-size: 12px; color: var(--c-text-muted); margin: 0 0 6px;}

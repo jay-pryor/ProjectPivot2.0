@@ -380,7 +380,7 @@ A report on a platform whose review is overdue is still made, and marked Overdue
 
 ## Designing reports
 
-The report designer also sets the sections, wording, layout, Styles and classification marking that every report uses. The design is shared by everyone using the data folder.
+The report designer also sets the sections, wording, layout, Styles and security classification that every report uses. The design is shared by everyone using the data folder.
 
 ## Good to know
 
