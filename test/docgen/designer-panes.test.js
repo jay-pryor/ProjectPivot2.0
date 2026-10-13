@@ -843,3 +843,29 @@ test('the designer\'s header names what is open and has room for the app\'s Save
   delete h.heading;
   assert.match(paneOf(h, 'section'), /<h3>Report Design<\/h3>/);
 });
+
+test('a paragraph offers numbering only at levels below its section, and shows the number it gets', () => {
+  const content = (level, numberLevel) => {
+    // Sections at Heading 1, 2 and 3 first, so 'mine' can really sit at any level.
+    const h = host({ sections: [{ id: 'a', title: 'A', parts: [] }, { id: 'b', title: 'B', parts: [] }, { id: 'c', title: 'C', parts: [] },
+      { id: 'mine', title: 'Mine', parts: [{ id: 'p1', kind: 'para', text: 'Words.', ...(numberLevel ? { numberLevel } : {}) }] }],
+      order: ['a', 'b', 'c', 'mine'], levels: { a: 1, b: 2, c: 3, mine: level } });
+    App.docHost.set(h); RD.open(); RD.select('mine'); RD._rd.secCat = 'content';
+    const html = RD.render(h.getState()); RD.close();
+    const sel = /<select data-rd-para-level="p1"[^>]*>([\s\S]*?)<\/select>/.exec(html);
+    return sel ? [...sel[1].matchAll(/<option value="(\d*)"( selected)?>([^<]*)</g)].map((m) => m[3] + (m[2] ? '*' : '')) : null;
+  };
+  assert.deepEqual(content(1), ['Not numbered*', 'Heading 2', 'Heading 3', 'Heading 4']);
+  assert.deepEqual(content(3), ['Not numbered*', 'Heading 4']);
+  assert.equal(content(4), null, 'nothing below Heading 4');
+  assert.deepEqual(content(1, 2), ['Not numbered', 'Heading 2 (2.1)*', 'Heading 3', 'Heading 4'], 'Mine is the second Heading 1');
+});
+
+test('choosing a paragraph\'s numbering stores its level; Not numbered stores nothing', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'p1', kind: 'para', text: 'Words.' }] }] });
+  App.docHost.set(h);
+  RD._setParaLevel('mine', 'p1', '3');
+  assert.equal(h.getState().report.sections[0].parts[0].numberLevel, 3);
+  RD._setParaLevel('mine', 'p1', '');
+  assert.equal('numberLevel' in h.getState().report.sections[0].parts[0], false);
+});

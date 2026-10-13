@@ -513,6 +513,21 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         if (b.introNumbered && hasIntro && parent.level !== TITLE_LEVEL) {
           parent.introNumber = bump(childLevel);
         }
+        /* PARA-N: a paragraph of your own section numbered at a level below the section's.
+         * Like a numbered introduction it takes the section's next number at that level, so
+         * the sub-sections after it follow on (4.1, 4.2 paragraphs; 4.3 the next sub-section).
+         * Never above the section, and never skipping a level: either is one below. */
+        if (b.kind === 'custom') {
+          var floor = parent.level === TITLE_LEVEL ? 1 : parent.level === BODY_LEVEL ? (lastHeading || 0) + 1 : parent.level + 1;
+          var paraNumbers = null;
+          (b.parts || []).forEach(function (p) {
+            if (!p || p.kind !== 'para' || !p.numberLevel || !String(p.text || '').trim() || floor > 4) return;
+            var lv = Math.min(4, Math.max(floor, Number(p.numberLevel) || 0));
+            if (lv > depth + 1) lv = Math.max(floor, depth + 1);
+            (paraNumbers = paraNumbers || {})[p.id] = bump(lv);
+          });
+          if (paraNumbers) parent.paraNumbers = paraNumbers;
+        }
         /* TBL-1: a grouped dataset's groups are TABLES, not sub-sections.
          *
          * They used to be placed here as children one level down, which gave each of
@@ -601,6 +616,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var snippet = words.slice(0, PARA_WORDS).join(' ') + (words.length > PARA_WORDS ? '…' : '');
       var where = String(block.title == null ? block.label : block.title).trim();
       var name = snippet || ('a paragraph' + (where ? ' in ' + where : ''));
+      // PARA-N: a numbered paragraph reads as its number, as a section does.
+      var num = block.paraNumbers && block.paraNumbers[part.id];
+      if (num) return { anchor: MD.anchor('par-' + part.id), numberLabel: num, titleLabel: name, label: num + ' ' + name };
       return { anchor: MD.anchor('par-' + part.id), numberLabel: name, titleLabel: name, label: name };
     }
 
@@ -1431,6 +1449,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var style = App.docFormat.resolve(state);
       var resolved = App.doc.outline(blocks, { baseLevel: 1, clampSkips: true, numbered: style.numbering.on });
       var depth = numberDepth(style);
+      // PARA-N: a paragraph number deeper than the format shows is not printed (it still counted).
+      resolved.forEach(function (b) {
+        if (!b.paraNumbers) return;
+        Object.keys(b.paraNumbers).forEach(function (k) {
+          var n = b.paraNumbers[k];
+          if (!n || n.split('.').length > depth) delete b.paraNumbers[k];
+        });
+      });
       // Table numbers, in the order the tables will be emitted.
       var tableList = [], n = 0;
       var figureList = [], nf = 0;
@@ -1520,8 +1546,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             else if (p.kind === 'pagebreak') out.push({ kind: 'pageBreak' });
             else if (p.kind === 'space') out.push({ kind: 'space', mm: Number(p.height) || 0 });
             else if (p.kind === 'para') {
+              var pn = b.paraNumbers && b.paraNumbers[p.id];
               App.md.runs(p.text, { resolveRef: resolveRef }).forEach(function (rs, i) {
-                out.push({ kind: 'paragraph', style: 'body', centre: centre, anchor: i === 0 && p.id ? App.md.anchor('par-' + p.id) : undefined, runs: rs });
+                out.push({ kind: 'paragraph', style: 'body', centre: centre, anchor: i === 0 && p.id ? App.md.anchor('par-' + p.id) : undefined,
+                  runs: (i === 0 && pn ? [{ text: pn + ' ' }] : []).concat(rs) });
               });
             } else if (p.kind === 'table' && (p.header || []).length) {
               var cols = (p.header || []).map(function (h, k) {
@@ -2148,6 +2176,18 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return ok();
     }
 
+    /** PARA-N: the heading level a paragraph is numbered at, or '' / 0 for not numbered. */
+    function setParaLevel(sectionId, partId, level) {
+      if (!P()) return errNoProject();
+      var s0 = findSection(P(), sectionId);
+      if (!s0 || !(s0.parts || []).some(function (x) { return x.id === partId && x.kind === 'para'; })) return err('Unknown paragraph.', partId);
+      var n = Math.round(Number(level));
+      App.docHost.get().commit(function (p) {
+        var part = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0];
+        if (isFinite(n) && n >= 1 && n <= 4) part.numberLevel = n; else delete part.numberLevel;
+      });
+      return ok();
+    }
     function removePart(sectionId, partId) {
       if (!P()) return errNoProject();
       if (!findSection(P(), sectionId)) return err('Unknown section.', sectionId);
@@ -2787,7 +2827,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // OPT-2: what the report is made of, stored with the report rather than the session.
       setReportInclude: setReportInclude, INCLUDE_MAPS: INCLUDE_MAPS,
       addSection: addSection, updateSection: updateSection, removeSection: removeSection,
-      addPart: addPart, updatePart: updatePart, removePart: removePart, movePart: movePart,
+      addPart: addPart, updatePart: updatePart, removePart: removePart, movePart: movePart, setParaLevel: setParaLevel,
       setPartImage: setPartImage, setPartImageField: setPartImageField, addStandardImage: addStandardImage, renameStandardImage: renameStandardImage, removeStandardImage: removeStandardImage, standardImageUses: standardImageUses,
       setCell: setCell, addRow: addRow, removeRow: removeRow,
       // SPC-1: which rows take the table's extra height.
@@ -3832,6 +3872,32 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         'data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"');
     }
 
+    /**
+     * PARA-N: the numbering a paragraph takes: Not numbered, or a heading level below its
+     * section's (the chosen one shows the number it gets). None below Heading 4.
+     */
+    function paraLevelSelect(project, sec, part) {
+      var view = outlineNow(project);
+      var rs = view.resolved, at = -1;
+      for (var k = 0; k < rs.length; k++) if (rs[k].id === sec.id) { at = k; break; }
+      if (at === -1) return '';
+      var b = rs[at], floor;
+      if (b.level === App.doc.TITLE_LEVEL) floor = 1;
+      else if (b.level === App.doc.BODY_LEVEL) {
+        floor = 1;
+        for (var j = at - 1; j >= 0; j--) if (rs[j].level !== App.doc.BODY_LEVEL && rs[j].level !== App.doc.TITLE_LEVEL) { floor = rs[j].level + 1; break; }
+      } else floor = b.level + 1;
+      if (floor > 4) return '';
+      var cur = Number(part.numberLevel) || 0;
+      var num = b.paraNumbers && b.paraNumbers[part.id];
+      var opts2 = '<option value=""' + (cur ? '' : ' selected') + '>Not numbered</option>';
+      for (var lv = floor; lv <= 4; lv++) {
+        var on = cur && Math.min(4, Math.max(floor, cur)) === lv;
+        opts2 += '<option value="' + lv + '"' + (on ? ' selected' : '') + '>' + esc('Heading ' + lv + (on && num ? ' (' + num + ')' : '')) + '</option>';
+      }
+      return '<select data-rd-para-level="' + esc(part.id) + '" class="rd-para-level" data-rd-sec="' + esc(sec.id) + '" aria-label="Numbering" title="Number this paragraph at a level below its section">' + opts2 + '</select>';
+    }
+
     function paraEditor(project, sec, part, i, n) {
       var host = 'data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"';
       return '<div class="rd-part" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
@@ -3840,6 +3906,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             '<button type="button" class="rd-tb" data-rd-ref-open="' + esc(part.id) + '" title="Insert a cross-reference that survives renaming and reordering">🔗 Link</button>' +
           '</span>' +
           cb('data-rd-part-flag="centre" ' + host, 'Centre', part.centre === true) +
+          paraLevelSelect(project, sec, part) +
           partControls(sec, part, i, n) + '</div>' +
         refMenu(project, sec, part) +
         richBox(project, 'data-rd-text="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"',
@@ -5868,6 +5935,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         logIssues(App.docStore.movePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-part-down'), 1));
         dirty(); repaint();
       });
+      dom.on(ctx.root, 'change', '[data-rd-para-level]', function (e, el) {
+        logIssues(App.docStore.setParaLevel(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-para-level'), el.value));
+        dirty(); repaint();
+      });
       dom.on(ctx.root, 'change', '[data-rd-part-flag]', function (e, el) {
         var f = {}; f[el.getAttribute('data-rd-part-flag')] = el.checked;
         quietly(function () { logIssues(App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-part'), f)); });
@@ -6453,7 +6524,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
       laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _stepped: stepped, _renameSection: renameSection, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
-      PANES: PANES, _rd: _rd, _imageAssets: _imageAssets, _keepScroll: keepScroll, _SCROLLERS: SCROLLERS, _strayFileDrop: strayFileDrop
+      PANES: PANES, _rd: _rd, _imageAssets: _imageAssets, _keepScroll: keepScroll, _SCROLLERS: SCROLLERS, _strayFileDrop: strayFileDrop, _setParaLevel: function (s1, p1, v) { return App.docStore.setParaLevel(s1, p1, v); }
     };
   })(App);
 

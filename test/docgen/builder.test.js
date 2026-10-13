@@ -293,3 +293,53 @@ test('a generated section\'s table is centred unless it is told not to', () => {
   const off = build({ centred: { staff: { table: false } } }).document.blocks.find((b) => b.kind === 'table' && /staff/.test(b.anchor ?? ''));
   assert.equal(off.centre, false);
 });
+
+/** The Annex (Heading 1, numbered 4, with Deep — Heading 2 — after it) holding these paragraphs. */
+const annexWith = (parts, more = {}) => build({ sections: [
+  { id: 'c1', title: 'Notes', parts: [] }, { id: 'c2', title: 'Annex', parts },
+  { id: 'c3', title: 'Deep', parts: [] }, { id: 'c4', title: 'Cover', parts: [] }], ...more }).document;
+const paraText = (doc, words) => plain(doc.blocks.find((b) => b.kind === 'paragraph' && plain(b.runs).includes(words)).runs);
+
+test('a numbered paragraph takes its place in its section\'s numbers; sub-sections after it follow on', () => {
+  const doc = annexWith([
+    { id: 'n1', kind: 'para', text: 'First point.', numberLevel: 2 },
+    { id: 'n2', kind: 'para', text: 'Not numbered.' },
+    { id: 'n3', kind: 'para', text: 'A detail.', numberLevel: 3 },
+    { id: 'n4', kind: 'para', text: 'Second point.', numberLevel: 2 },
+  ], { levels: { c4: 0, staff: 1, teams: 2, c1: 1, c2: 1, c3: 2 } });
+  assert.equal(paraText(doc, 'First point.'), '4.1 First point.');
+  assert.equal(paraText(doc, 'Not numbered.'), 'Not numbered.');
+  assert.equal(paraText(doc, 'A detail.'), '4.1.1 A detail.');
+  assert.equal(paraText(doc, 'Second point.'), '4.2 Second point.');
+  assert.equal(heading(doc, 'Deep').number, '4.3', 'the next sub-section follows the paragraphs');
+  assert.ok(!doc.blocks.some((b) => b.kind === 'heading' && /First point/.test(plain(b.runs))), 'a numbered paragraph is not a heading');
+});
+
+test('a paragraph is never numbered above its section: a skipped level or one too high is one below', () => {
+  const skipped = annexWith([{ id: 'n1', kind: 'para', text: 'Skips.', numberLevel: 4 }]);
+  assert.equal(paraText(skipped, 'Skips.'), '4.1 Skips.');
+  const high = annexWith([{ id: 'n1', kind: 'para', text: 'Too high.', numberLevel: 1 }]);
+  assert.equal(paraText(high, 'Too high.'), '4.1 Too high.');
+});
+
+test('only the first paragraph of a block takes the number; numbering off or too deep for the format leaves it plain', () => {
+  const doc = annexWith([{ id: 'n1', kind: 'para', text: 'One.\n\nTwo.', numberLevel: 2 }]);
+  assert.equal(paraText(doc, 'One.'), '4.1 One.');
+  assert.equal(paraText(doc, 'Two.'), 'Two.');
+  const style = (numbering) => ({ id: 's1', name: 'S', page: { margins: {} }, text: {}, numbering });
+  const short = annexWith([{ id: 'n1', kind: 'para', text: 'Shallow.', numberLevel: 2 }, { id: 'n2', kind: 'para', text: 'Deep one.', numberLevel: 3 },
+    { id: 'n3', kind: 'para', text: 'Shallow again.', numberLevel: 2 }], { formats: [style({ format: '1.1' })], formatId: 's1' });
+  assert.equal(paraText(short, 'Shallow.'), '4.1 Shallow.');
+  assert.equal(paraText(short, 'Deep one.'), 'Deep one.', '4.1.1 is deeper than the format shows');
+  assert.equal(paraText(short, 'Shallow again.'), '4.2 Shallow again.');
+  const off = annexWith([{ id: 'n1', kind: 'para', text: 'Plain.', numberLevel: 2 }], { formats: [style({ on: false })], formatId: 's1' });
+  assert.equal(paraText(off, 'Plain.'), 'Plain.');
+});
+
+test('a link to a numbered paragraph reads as its number', () => {
+  const doc = annexWith([
+    { id: 'n1', kind: 'para', text: 'Fire suppression is fitted.', numberLevel: 2 },
+    { id: 'n2', kind: 'para', text: 'See {{refn:n1}}; in full, {{ref:n1}}.' },
+  ]);
+  assert.equal(paraText(doc, 'See '), 'See 4.1; in full, 4.1 Fire suppression is fitted..');
+});
