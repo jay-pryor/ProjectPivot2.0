@@ -76,9 +76,9 @@ test('references print no "(page N)" in the PDF unless a Style asks for it', () 
   assert.equal(normaliseStyle({ refs: { pageInPdf: true } }).style.refs.pageInPdf, true);
 });
 
-test('the Document settings: renumbering hazards, controls and references in the document, all off by default', () => {
-  assert.deepEqual(STANDARD.document, { renumberHazards: false, renumberControls: false, renumberReferences: false });
-  assert.deepEqual(normaliseStyle({ document: { renumberHazards: true } }).style.document, { renumberHazards: true, renumberControls: false, renumberReferences: false });
+test('Register Numbering: using the register\'s numbers for hazards, controls and references, all off by default (the document numbers its own)', () => {
+  assert.deepEqual(STANDARD.document, { registerHazards: false, registerControls: false, registerReferences: false });
+  assert.deepEqual(normaliseStyle({ document: { registerHazards: true } }).style.document, { registerHazards: true, registerControls: false, registerReferences: false });
 });
 
 test('Images: a border, its weight and colour, where the caption goes, and alignment', () => {

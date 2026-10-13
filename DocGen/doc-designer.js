@@ -1187,9 +1187,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      *                  groups?:Array<{value:string,label:string,included:boolean}>}>}
      */
     var CENTRE_PARTS = ['heading', 'intro', 'table', 'content'];
+    /** The parts centred unless a section says not: a generated section's table. */
+    var CENTRE_ON = { table: true };
     function centreParts(v) {
       var out = {};
-      CENTRE_PARTS.forEach(function (k) { out[k] = v === true || !!(v && v[k] === true); });
+      CENTRE_PARTS.forEach(function (k) {
+        out[k] = v === true || !!(v && v[k] === true) || (!!CENTRE_ON[k] && !(v && v[k] === false));
+      });
       return out;
     }
 
@@ -1279,7 +1283,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
            * a house rule ("every H1 starts a page"); this is a decision about ONE
            * section, which is what an annex or a title page needs. App.doc emits the
            * break, so it lands ahead of the heading rather than inside the body. */
-          pageBreakBefore: breaks[b.id] === true,
+          // On unless the section was told otherwise: every section starts a page by default.
+          pageBreakBefore: breaks[b.id] !== false,
           /* SPC-1: millimetres of empty page above this section's heading.
            *
            * Composes with the page break above rather than replacing it: "start a new
@@ -1574,6 +1579,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     App.docGen = {
       // The blocks a document is made of, and the columns a generated one prints.
       reportBlocks: hostBlocks, sectionColumns: hostColumns, sectionColumnKey: sectionColumnKey,
+      centreParts: centreParts, CENTRE_ON: CENTRE_ON,
       // How many rows sit in each of the host's filter categories.
       filterCounts: filterCounts,
       // GEN-TAB: `/[Tag]` placeholders — finding them and filling them.
@@ -1707,10 +1713,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       App.docHost.get().commit(function (p) {
         var b = bag(p);
         b.centred = b.centred || {};
-        var cur = b.centred[blockId];
+        var now = App.docGen.centreParts(b.centred[blockId]);
+        now[part] = !!on;
+        // Stored only where a part differs from what it is by default.
         var next = {};
-        parts.forEach(function (k) { if (cur === true || (cur && cur[k] === true)) next[k] = true; });
-        if (on) next[part] = true; else delete next[part];
+        parts.forEach(function (k) { if (now[k] !== !!App.docGen.CENTRE_ON[k]) next[k] = now[k]; });
         if (Object.keys(next).length) b.centred[blockId] = next; else delete b.centred[blockId];
         if (!Object.keys(b.centred).length) delete b.centred;
         if (!Object.keys(b).length) delete p.report;
@@ -1728,6 +1735,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * @param {'centred'|'pageBreak'|'noToc'} bagKey
      */
     var BLOCK_FLAGS = ['centred', 'pageBreak', 'noToc'];
+    /** The flags that are ON for a section that says nothing: for these it is OFF that is stored. */
+    var FLAGS_ON = { pageBreak: true };
     function setBlockFlag(bagKey, blockId, on) {
       if (!P()) return errNoProject();
       if (!blockId) return err('A section is required.');
@@ -1735,7 +1744,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       App.docHost.get().commit(function (p) {
         var b = bag(p);
         b[bagKey] = b[bagKey] || {};
-        if (on) b[bagKey][blockId] = true; else delete b[bagKey][blockId];
+        if (!!on === !!FLAGS_ON[bagKey]) delete b[bagKey][blockId];
+        else b[bagKey][blockId] = !!on;
         if (!Object.keys(b[bagKey]).length) delete b[bagKey];
         if (!Object.keys(b).length) delete p.report;
       });
@@ -4631,10 +4641,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function styleSectionFields(project, f, section) {
       if (section === 'document') {
         var d = f.document;
-        return '<div class="rd-fieldset"><strong title="For a document that leaves the house: its own numbers, from 1, not the register\'s">Numbering in this document</strong><div class="rd-flags rd-flags-col">' +
-            flagField('Number hazards from HAZ-001', 'document.renumberHazards', d.renumberHazards) +
-            flagField('Number controls from C-001', 'document.renumberControls', d.renumberControls) +
-            flagField('Number references from REF-001', 'document.renumberReferences', d.renumberReferences) +
+        return '<div class="rd-fieldset"><strong title="Left off, the document numbers its own from 1 (HAZ-001, C-001, REF-001), for a document that leaves the house">Register Numbering</strong><div class="rd-flags rd-flags-col">' +
+            flagField('Use register numbering for Hazards', 'document.registerHazards', d.registerHazards) +
+            flagField('Use register numbering for Controls', 'document.registerControls', d.registerControls) +
+            flagField('Use register numbering for References', 'document.registerReferences', d.registerReferences) +
           '</div></div>';
       }
       if (section === 'page') {
