@@ -158,8 +158,8 @@ test('the section preview zooms in and out', () => {
   const dflt = sectionPane(host(), 'things');
   assert.match(dflt, /data-rd-zoom="out"/);
   assert.match(dflt, /data-rd-zoom="in"/);
-  assert.match(dflt, /60%/);
-  assert.ok(Math.abs(at(dflt) - 595.28 * 0.6) < 0.01);
+  assert.match(dflt, />100%</);
+  assert.ok(Math.abs(at(dflt) - 595.28) < 0.01);
   assert.ok(Math.abs(at(sectionPane(host(), 'things', 1.2)) - 595.28 * 1.2) < 0.01);
 });
 
@@ -399,4 +399,99 @@ test('Table ticks every column of a pre-populated section except its first, iden
   App.docStore.setReportInclude('columns', 'things', 'v', false, true);
   const t = App.docGen.documentFor(h, Object.assign({}, App.docSession.options(), { subjectId: 's1' }), {}).document.blocks.find((x) => x.anchor === 'tbl-things');
   assert.deepEqual(t.header.map((c) => c[0].text), ['ID', 'Extra']);
+});
+
+test('the section preview switches between this section (the default) and the whole document', () => {
+  const h = host();
+  const at = (whole) => { RD._rd.secWhole = whole; const html = sectionPane(h, 'things'); RD._rd.secWhole = false; return html; };
+  const one = at(false);
+  assert.match(one, /data-rd-prev-scope="section"[^>]*aria-pressed="true"/);
+  assert.match(one, /data-rd-prev-scope="whole"[^>]*aria-pressed="false"/);
+  assert.doesNotMatch(one, />O-1</, 'just this section');
+  const all = at(true);
+  assert.match(all, /data-rd-prev-scope="whole"[^>]*aria-pressed="true"/);
+  assert.match(all, />O-1</, 'the other sections too');
+  assert.match(all, /<span class="dp-anchor" id="sec-things"[^>]*data-rd-here/, 'it marks where this section starts, to scroll to');
+});
+
+test('the toolbar shows the formatting where the cursor is: bold, italic and code from the nodes around it', () => {
+  const box = { nodeName: 'DIV', parentNode: null };
+  const node = (name, parent) => ({ nodeName: name, parentNode: parent });
+  const text = (parent) => ({ nodeName: '#text', parentNode: parent });
+  assert.deepEqual(RD._formatsAt(text(box), box), []);
+  assert.deepEqual(RD._formatsAt(text(node('EM', node('STRONG', box))), box), ['b', 'i']);
+  assert.deepEqual(RD._formatsAt(text(node('B', box)), box), ['b']);
+  assert.deepEqual(RD._formatsAt(text(node('CODE', box)), box), ['c']);
+  assert.deepEqual(RD._formatsAt(text(node('STRONG', node('DIV', null))), box), [], 'outside the box counts for nothing');
+});
+
+test('the toolbar buttons centre their marks, and a link chip is the size of the text around it', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../../DocGen/doc-designer.css', import.meta.url), 'utf8');
+  assert.match(css, /\.docgen \.rd-tb \{[^}]*display: inline-flex;[^}]*align-items: center;[^}]*justify-content: center;/);
+  assert.match(css, /\.docgen \.rd-tb\.on \{/);
+  assert.match(css, /\.docgen \.rd-chip \{[^}]*display: inline;[^}]*font-size: inherit;[^}]*line-height: inherit;/);
+});
+
+test('a redraw asked for during a redraw waits for it to finish', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../DocGen/doc-designer.js', import.meta.url), 'utf8');
+  assert.match(src, /if \(_painting\) \{ _paintAgain = true; return true; \}/);
+});
+
+test('typing after pressing I with nothing selected types in italics: the box\'s placeholder character never reaches the text', () => {
+  const RT = App.ui.richText;
+  const t = (v) => ({ nodeType: 3, nodeName: '#text', nodeValue: v, childNodes: [] });
+  const el = (name, kids) => ({ nodeType: 1, nodeName: name, childNodes: kids, getAttribute: () => null, hasAttribute: () => false });
+  assert.equal(RT.fromNode(el('DIV', [t('Plain '), el('EM', [t('​slanted')])])), 'Plain {{i}}slanted{{/i}}');
+  assert.equal(RT.fromNode(el('DIV', [t('a​')])), 'a');
+});
+
+test('pressing a lit B, I or code with nothing selected ends that style at the cursor', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../DocGen/doc-designer.js', import.meta.url), 'utf8');
+  const wrap = /function wrapSelection\(btn, tag\) \{([\s\S]*?)\n    \}\n/.exec(src);
+  assert.ok(wrap && /endFormat\(/.test(wrap[1]), 'wrapSelection ends a style that is on at a collapsed caret');
+  assert.match(src, /function endFormat\(el, tag\) \{/);
+});
+
+test('Placement: centring under "Centre content", the rest under "Section placement", no "On the page"', () => {
+  const html = sectionAt(host(), 'things', 'placement');
+  const f = html.slice(html.indexOf('data-rd-sec-fields'), html.indexOf('data-rd-sec-prev'));
+  assert.doesNotMatch(f, /On the page/);
+  assert.match(f, /<strong>Centre content<\/strong>[\s\S]*data-rd-centre-part="heading"[\s\S]*data-rd-centre-part="table"[\s\S]*<strong>Section placement<\/strong>[\s\S]*data-rd-pagebreak[\s\S]*data-rd-notoc[\s\S]*data-rd-space-block/);
+});
+
+test('Table: column ticks sit in a three-column grid, and the wording is "Table Headers and Caption"', async () => {
+  const html = sectionAt(host(), 'things', 'table');
+  assert.match(html, /<strong>Columns<\/strong><div class="rd-ticks">[\s\S]*data-rd-key="v"[\s\S]*data-rd-key="extra"[\s\S]*<\/div>/);
+  assert.match(html, /<strong[^>]*>Table Headers and Caption<\/strong>/);
+  assert.doesNotMatch(html, />Table wording</);
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../../DocGen/doc-designer.css', import.meta.url), 'utf8');
+  assert.match(css, /\.docgen \.rd-ticks \{[^}]*display: grid;[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+});
+
+/** Toggle a format over the visible text between two markers [ and ] in a token string. */
+function toggled(marked, tag) {
+  const s = marked.indexOf('['), e = marked.indexOf(']') - 1;
+  const text = marked.replace('[', '').replace(']', '');
+  const r = App.ui.richText.toggleFormat(text, s, e, tag);
+  return r.text.slice(0, r.start) + '[' + r.text.slice(r.start, r.end) + ']' + r.text.slice(r.end);
+}
+
+test('formatting a selection follows the usual editor rule: all on → off; none or some → all on; the selection stays', () => {
+  assert.equal(toggled('a [plain] b', 'i'), 'a [{{i}}plain{{/i}}] b');
+  assert.equal(toggled('a [{{i}}slanted{{/i}}] b', 'i'), 'a [slanted] b', 'all italic → none');
+  assert.equal(toggled('{{i}}ab[cd{{/i}}ef]g', 'i'), '{{i}}ab[cdef{{/i}}]g', 'part italic → all italic');
+  assert.equal(toggled('{{i}}ab[cd]ef{{/i}}', 'i'), '{{i}}ab{{/i}}[cd]{{i}}ef{{/i}}', 'a middle piece un-italicised');
+  assert.equal(toggled('[{{b}}one{{/b}} two]', 'b'), '[{{b}}one two{{/b}}]');
+  assert.equal(toggled('{{b}}[bold {{i}}both{{/i}}]{{/b}}', 'b'), '[bold {{i}}both{{/i}}]', 'bold off, italic kept');
+});
+
+test('formatting keeps references whole and never runs across a paragraph break', () => {
+  assert.equal(toggled('[see {{ref:x}} now]', 'b'), '[{{b}}see {{ref:x}} now{{/b}}]');
+  assert.equal(toggled('[one\n\ntwo]', 'i'), '[{{i}}one{{/i}}\n\n{{i}}two{{/i}}]');
+  assert.equal(toggled('[{{c}}code{{/c}} x]', 'c'), '[{{c}}code x{{/c}}]');
+  assert.equal(toggled('{{c}}[code]{{/c}}', 'c'), '[code]');
 });

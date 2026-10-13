@@ -3078,7 +3078,8 @@ import { toWinAnsi } from './doc-fonts.js';
 
     function walk(node, emit, mark, st) {
       if (!node) return;
-      if (node.nodeType === 3) { emit('text', node.nodeValue || '', node); return; }
+      // U+200B is the placeholder a format button leaves to type into; it is not text.
+      if (node.nodeType === 3) { emit('text', String(node.nodeValue || '').replace(/\u200B/g, ''), node); return; }
       if (node.nodeType !== 1) return;
       var name = node.nodeName;
       if (name === 'BR') { emit('markup', '\n'); return; }
@@ -3160,6 +3161,36 @@ import { toWinAnsi } from './doc-fonts.js';
     }
 
     /** Put the caret at a token offset. Silent when the box cannot take it. */
+    /** Select from one token offset to another (after a format was toggled over them). */
+    function placeSelection(node, from, to, win) {
+      var w = win || (node && node.ownerDocument && node.ownerDocument.defaultView);
+      if (!w || !w.getSelection || !node) return;
+      // `atStart`: a start on the edge between two runs belongs to the run after it.
+      function point(at, atStart) {
+        var len = 0, hit = null, lastText = null;
+        run(node, function (kind, s, n) {
+          if (hit) return;
+          if (kind === 'text') {
+            lastText = { node: n, offset: n.nodeValue ? n.nodeValue.length : 0 };
+            if (atStart ? len + s.length > at : len + s.length >= at) { hit = { node: n, offset: Math.max(0, at - len) }; return; }
+          }
+          len += s.length;
+        });
+        // Past the last text (after a closing mark): the end of that text.
+        return hit || lastText;
+      }
+      try {
+        if (node.focus) node.focus();
+        var a = point(from, from < to), b = point(to);
+        if (!a || !b) { placeCaret(node, to, w); return; }
+        var r = node.ownerDocument.createRange();
+        r.setStart(a.node, a.offset); r.setEnd(b.node, b.offset);
+        var sel = w.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } catch (e) { /* a detached box */ }
+    }
+
     function placeCaret(node, at, win) {
       var w = win || (node && node.ownerDocument && node.ownerDocument.defaultView);
       if (!w || !w.getSelection || !node) return;
@@ -3232,10 +3263,88 @@ import { toWinAnsi } from './doc-fonts.js';
         caret: s + open.length + body.length + close.length };
     }
 
+    /**
+     * Bold, italic or code over a selection, the way any editor does it: if everything
+     * selected already has it, it comes off; if none or only some does, all of it gets
+     * it. The text is read into characters (and whole references and breaks) each
+     * carrying its formatting, the formatting is changed for the selected ones, and the
+     * tokens are written back afresh — so nothing is left half-open, a paragraph break
+     * is never spanned, and a code span is never asked to hold a token.
+     * @param {string} text tokens @param {number} start @param {number} end token offsets
+     * @param {'b'|'i'|'c'} tag
+     * @returns {{text:string, start:number, end:number}} the new text and the selection in it
+     */
+    function toggleFormat(text, start, end, tag) {
+      var v = String(text == null ? '' : text);
+      var atoms = [], open = { b: false, i: false }, last = 0, m;
+      function chars(str, at, code) {
+        for (var k = 0; k < str.length; k++) atoms.push({ v: str[k], at: at + k, b: open.b, i: open.i, c: !!code });
+      }
+      var re = new RegExp(MD.TOKEN.source, 'g');
+      while ((m = re.exec(v)) !== null) {
+        chars(v.slice(last, m.index), last, false);
+        var close = m[1] === '/', t = m[2];
+        if (t === 'c' && !close) {
+          var stop = v.indexOf('{{/c}}', re.lastIndex);
+          var inner = stop === -1 ? v.slice(re.lastIndex) : v.slice(re.lastIndex, stop);
+          chars(inner, re.lastIndex, true);
+          last = stop === -1 ? v.length : stop + 6;
+          re.lastIndex = last;
+          continue;
+        }
+        if (t === 'b' || t === 'i') { if (close === open[t]) open[t] = !close; }
+        else if (MD.REF_TAG.test(t) && !close) {
+          var w = v.indexOf('{{/ref}}', re.lastIndex);
+          var whole = w === -1 ? m[0] : v.slice(m.index, w + 8);
+          atoms.push({ v: whole, at: m.index, b: open.b, i: open.i, c: false, opaque: true });
+          last = m.index + whole.length;
+          re.lastIndex = last;
+          continue;
+        } else if (!close) {
+          atoms.push({ v: m[0], at: m.index, b: open.b, i: open.i, c: false, opaque: true });
+        }
+        last = m.index + m[0].length;
+      }
+      chars(v.slice(last), last, false);
+
+      var chosen = atoms.filter(function (a) { return a.at >= start && a.at < end; });
+      var visible = chosen.filter(function (a) { return a.v !== '\n' && !(tag === 'c' && a.opaque); });
+      var on = !(visible.length && visible.every(function (a) { return a[tag]; }));
+      chosen.forEach(function (a) { if (!(tag === 'c' && a.opaque)) a[tag] = on; });
+
+      var out = '', cur = { b: false, i: false, c: false }, s0 = -1, e0 = -1, endOpen = false;
+      function closes(want) {
+        if (cur.c && (!want.c || want.b !== cur.b || want.i !== cur.i)) { out += '{{/c}}'; cur.c = false; }
+        if (cur.b && !want.b) { out += '{{/b}}'; cur.b = false; }
+        if (cur.i && !want.i) { out += '{{/i}}'; cur.i = false; }
+      }
+      function opens(want) {
+        if (want.b && !cur.b) { out += '{{b}}'; cur.b = true; }
+        if (want.i && !cur.i) { out += '{{i}}'; cur.i = true; }
+        if (want.c && !cur.c) { out += '{{c}}'; cur.c = true; }
+      }
+      var none = { b: false, i: false, c: false };
+      atoms.forEach(function (a) {
+        var sel = a.at >= start && a.at < end;
+        var want = a.v === '\n' ? none : { b: a.b, i: a.i, c: a.c };
+        closes(want);
+        // Closing tokens that end the selection belong to it; opening ones that start it do too.
+        if (endOpen && !sel) { e0 = out.length; endOpen = false; }
+        if (sel && s0 === -1) s0 = out.length;
+        opens(want);
+        out += a.v;
+        if (sel) { e0 = out.length; endOpen = true; }
+      });
+      closes(none);
+      if (endOpen) e0 = out.length;
+      if (s0 === -1) { s0 = e0 = Math.min(out.length, start); }
+      return { text: out, start: s0, end: e0 };
+    }
+
     App.ui = App.ui || {};
     App.ui.richText = {
       toHtml: toHtml, fromNode: fromNode, selectionIn: selectionIn, offsetOf: offsetOf,
-      placeCaret: placeCaret, applyToken: applyToken, CHIP: CHIP, REFLINK: REFLINK
+      placeCaret: placeCaret, placeSelection: placeSelection, applyToken: applyToken, toggleFormat: toggleFormat, CHIP: CHIP, REFLINK: REFLINK
     };
   })(App);
 
@@ -3295,6 +3404,7 @@ import { toWinAnsi } from './doc-fonts.js';
       styleSection: null,    // which part of that Style is open (PDF-1)
       held: null,            // what the last edit asked for that the Style could not use
       secCat: null,          // the open category of the Sections pane
+      secWhole: false,       // whether the section preview shows the whole document
       listWidth: null,       // the Sections list's width, once dragged
       secZoom: null,         // the section preview's zoom, when changed from the default
       prevZoom: null,        // the Preview pane's zoom, likewise
@@ -3831,7 +3941,7 @@ import { toWinAnsi } from './doc-fonts.js';
 
     /** The zoom steps of the page previews, and where each starts. */
     var ZOOMS = [0.4, 0.5, 0.6, 0.8, 1, 1.25, 1.5, 2];
-    var ZOOM_FROM = { section: 0.6, preview: 1 };
+    var ZOOM_FROM = { section: 1, preview: 1 };
     var ZOOM_KEY = { section: 'secZoom', preview: 'prevZoom' };
     function zoomOf(which) { return _rd[ZOOM_KEY[which]] || ZOOM_FROM[which]; }
     /** − 60% + : the zoom buttons for one of the page previews. */
@@ -3871,9 +3981,17 @@ import { toWinAnsi } from './doc-fonts.js';
       var k = zoomOf('section');
       var zoom = zoomBar('section');
       var pages = lastPage - mine.page + 1;
-      return '<div class="rd-secprev-head"><span class="rd-state">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
+      var whole = !!_rd.secWhole;
+      var scope = '<span class="rd-scope">' + [['section', 'This section'], ['whole', 'Whole document']].map(function (o) {
+        var on = (o[0] === 'whole') === whole;
+        return '<button type="button" class="' + (on ? 'on' : '') + '" data-rd-prev-scope="' + o[0] + '" aria-pressed="' + on + '">' + o[1] + '</button>';
+      }).join('') + '</span>';
+      return '<div class="rd-secprev-head">' + scope + '<span class="rd-state">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
         ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
-        '<div class="rd-secprev rd-preview-pages">' + pagesHtml(bands, { scale: k }) + '</div>';
+        // The whole document, opened at this section; or just this section, cut from it.
+        '<div class="rd-secprev rd-preview-pages">' + (whole
+          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: included[at].anchor })
+          : pagesHtml(bands, { scale: k })) + '</div>';
     }
 
     function metaPane(project) {
@@ -3914,8 +4032,8 @@ import { toWinAnsi } from './doc-fonts.js';
       var lvl = resolved ? resolved.level : null;
       var lvStyle = App.docFormat.resolve(project).text[lvl === App.doc.TITLE_LEVEL ? 'title' : 'h' + lvl];
       var byLevel = !!(lvStyle && lvStyle.pageBreakBefore);
-      return '<div class="rd-fieldset"><strong>On the page</strong>' +
-        centreTicks(block) +
+      return '<div class="rd-fieldset"><strong>Centre content</strong><div class="rd-flags">' + centreTicks(block) + '</div></div>' +
+        '<div class="rd-fieldset"><strong>Section placement</strong>' +
         cb('data-rd-pagebreak="' + esc(block.id) + '"',
           'Start this section on a new page', byLevel || block.pageBreakBefore === true, byLevel) +
         (byLevel ? '<p class="rd-state">' + esc(levelName(lvl)) + ' starts a new page in this Style.</p>' : '') +
@@ -3975,7 +4093,7 @@ import { toWinAnsi } from './doc-fonts.js';
                 ' placeholder="' + esc(c.label) + '" aria-label="Heading for the ' + esc(c.label) + ' column"></label>';
           }).join('') + '</div></div>';
       }).join('');
-      return '<div class="rd-fieldset"><strong title="Blank means the standard wording">Table wording</strong>' + body + '</div>';
+      return '<div class="rd-fieldset"><strong title="Blank means the standard wording">Table Headers and Caption</strong>' + body + '</div>';
     }
 
     /**
@@ -4042,17 +4160,17 @@ import { toWinAnsi } from './doc-fonts.js';
       var groups = b.groups || [];
       var out = '';
       if (groups.length) {
-        out += '<div class="rd-fieldset"><strong>Groups</strong>' + groups.map(function (g) {
+        out += '<div class="rd-fieldset"><strong>Groups</strong><div class="rd-ticks">' + groups.map(function (g) {
           return cb('data-rd-dsmap="datasetSections" data-rd-ds="' + esc(b.dsId) + '" data-rd-key="' + esc(g.value) + '"', g.label, g.included);
-        }).join('') + '</div>';
+        }).join('') + '</div></div>';
       }
       if (optional.length) {
         // COL-3: ticked iff the column will actually be there; stored under the key the builder reads.
         var key = App.docGen.sectionColumnKey(H(), b, opts());
         var colOpts = (opts().columns || {})[key] || {};
-        out += '<div class="rd-fieldset"><strong>Columns</strong>' + optional.map(function (c) {
+        out += '<div class="rd-fieldset"><strong>Columns</strong><div class="rd-ticks">' + optional.map(function (c) {
           return cb('data-rd-dsmap="columns" data-rd-ds="' + esc(key) + '" data-rd-key="' + esc(c.id) + '"', c.label, App.report.columnOn(c, colOpts));
-        }).join('') + '</div>';
+        }).join('') + '</div></div>';
       }
       return out;
     }
@@ -4571,11 +4689,21 @@ import { toWinAnsi } from './doc-fonts.js';
      * threw away where you were in a long section list on every click.
      * @returns {boolean} false when the workspace is not open (caller falls back)
      */
+    /* Replacing the workspace removes the box that has focus, which fires its save, which
+     * asks for another redraw while this one is still writing. That one waits its turn. */
+    var _painting = false, _paintAgain = false;
     function refresh() {
       var host = document.getElementById('rd-modal-host');
       if (!host) return false;
       var project = App.docHost.get().getState(); if (!project) return false;
       if (!H()) return false;
+      if (_painting) { _paintAgain = true; return true; }
+      _painting = true;
+      try { paintInto(host, project); } finally { _painting = false; }
+      if (_paintAgain) { _paintAgain = false; setTimeout(repaint, 0); }
+      return true;
+    }
+    function paintInto(host, project) {
       var body = host.querySelector('.modal-body');
       var top = body ? body.scrollTop : 0;
       var pane = host.querySelector('.rd-pane');
@@ -4585,7 +4713,8 @@ import { toWinAnsi } from './doc-fonts.js';
       if (again) again.scrollTop = top;
       var pane2 = host.querySelector('.rd-pane');
       if (pane2) pane2.scrollTop = paneTop;
-      return true;
+      scrollToHere();
+      showFormats();
     }
     /* Leaving a text box saves it and redraws — on the press of whatever was clicked
      * next. Redrawn then, the button under the pointer is a new one by the release, and
@@ -4756,6 +4885,45 @@ import { toWinAnsi } from './doc-fonts.js';
       var view = outlineNow(project);
       var block = view.blocks.filter(function (b) { return b.id === _rd.selected; })[0];
       if (block) col.innerHTML = sectionPreview(project, block);
+      scrollToHere();
+    }
+    /** In the whole-document preview, bring the selected section's start into view. */
+    function scrollToHere() {
+      var box = document.querySelector('[data-rd-sec-prev]');
+      var here = box && box.querySelector('[data-rd-here]');
+      if (!here) return;
+      var head = box.querySelector('.rd-secprev-head');
+      box.scrollTop += here.getBoundingClientRect().top - box.getBoundingClientRect().top - (head ? head.offsetHeight : 0) - 8;
+    }
+
+    /** Which of bold, italic and code apply at a node inside a box: b, i, c, in that order. */
+    function formatsAt(node, box) {
+      var on = {};
+      for (var n = node; n && n !== box; n = n.parentNode) {
+        var name = n.nodeName;
+        if (name === 'STRONG' || name === 'B') on.b = true;
+        if (name === 'EM' || name === 'I') on.i = true;
+        if (name === 'CODE') on.c = true;
+        if (!n.parentNode) return [];           // walked out without meeting the box
+      }
+      return ['b', 'i', 'c'].filter(function (k) { return on[k]; });
+    }
+    /** Light the toolbar buttons for the formatting where the cursor is in the focused box. */
+    function showFormats() {
+      if (typeof document === 'undefined') return;
+      var box = document.activeElement && document.activeElement.closest ? document.activeElement.closest('[data-rd-rich]') : null;
+      var sel = window.getSelection && window.getSelection();
+      var on = box && sel && sel.anchorNode && box.contains(sel.anchorNode) ? formatsAt(sel.anchorNode, box) : [];
+      var scope = box ? (box.closest('.rd-part, .rd-fieldset') || box.parentNode) : null;
+      Array.prototype.forEach.call(document.querySelectorAll('[data-rd-wrap].on'), function (b) { if (!scope || !scope.contains(b)) { b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); } });
+      if (!scope) return;
+      Array.prototype.forEach.call(scope.querySelectorAll('[data-rd-wrap]'), function (b) {
+        var k = b.getAttribute('data-rd-wrap');
+        if (k === 'br') return;
+        var lit = on.indexOf(k) !== -1;
+        b.classList.toggle('on', lit);
+        b.setAttribute('aria-pressed', lit ? 'true' : 'false');
+      });
     }
 
     /** The document's reference resolver, for re-rendering a box after an edit. */
@@ -4807,6 +4975,17 @@ import { toWinAnsi } from './doc-fonts.js';
       if (_sel && el.matches && el.matches(_sel.key) && (!live || _sel.end > _sel.start)) {
         s = _sel.start; e = _sel.end;
       }
+      if (s < e && (tag === 'b' || tag === 'i' || tag === 'c')) {
+        // A selection: on if any of it lacks the style, off if all of it has it.
+        var t = RT.toggleFormat(text, s, e, tag);
+        quietly(function () { logIssues(boxSaver(el)(t.text)); });
+        dirty();
+        el.innerHTML = boxHtml(t.text);
+        _sel = { key: boxKey(el), start: t.start, end: t.end };
+        RT.placeSelection(el, t.start, t.end, window);
+        showFormats();
+        return;
+      }
       var res = RT.applyToken(text, s, e, tag);
       var save = boxSaver(el);
       quietly(function () { logIssues(save(res.text)); });
@@ -4818,10 +4997,62 @@ import { toWinAnsi } from './doc-fonts.js';
       // Link, most often — acts where the last one left off rather than at the start.
       _sel = { key: boxKey(el), start: res.caret, end: res.caret };
       RT.placeCaret(el, res.caret, window);
+      // Nothing was selected: the button opened an empty bold/italic/code run. A browser
+      // types beside an empty element, not in it, so it is given a placeholder to hold
+      // the caret, and what is typed next is in that style.
+      if (s === e && (tag === 'b' || tag === 'i' || tag === 'c')) {
+        var empty = Array.prototype.filter.call(el.querySelectorAll('strong, b, em, i, code'), function (n) { return !n.textContent; })[0];
+        if (empty) {
+          var hold = document.createTextNode('\u200B');
+          empty.appendChild(hold);
+          var r = document.createRange();
+          r.setStart(hold, 1); r.collapse(true);
+          var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+          showFormats();
+        }
+      }
     }
 
     /** RTX-1: one entry point for all three surfaces — the button says which box. */
-    function wrapSelection(btn, tag) { insertToken(boxFor(btn), tag); }
+    function wrapSelection(btn, tag) {
+      var el = boxFor(btn);
+      if (el && endFormat(el, tag)) return;
+      insertToken(el, tag);
+    }
+
+    /**
+     * A lit B, I or code pressed with nothing selected: the style ends at the caret, so
+     * what is typed next is plain. Mid-run, the run is split there; either way the caret
+     * is given a placeholder outside it to type into. False when it does not apply.
+     */
+    function endFormat(el, tag) {
+      var names = { b: ['STRONG', 'B'], i: ['EM', 'I'], c: ['CODE'] }[tag];
+      var sel = window.getSelection();
+      if (!names || !sel || !sel.rangeCount || !sel.isCollapsed || !el.contains(sel.anchorNode)) return false;
+      var run = null;
+      for (var n = sel.anchorNode; n && n !== el; n = n.parentNode) if (names.indexOf(n.nodeName) !== -1) run = n;
+      if (!run) return false;
+      // What follows the caret inside the run moves to a run of its own after it.
+      var rest = document.createRange();
+      rest.setStart(sel.anchorNode, sel.anchorOffset);
+      rest.setEndAfter(run.lastChild || run);
+      var tail = rest.extractContents();
+      var hold = document.createTextNode('\u200B');
+      run.parentNode.insertBefore(hold, run.nextSibling);
+      if (tail.textContent) {
+        var again = run.cloneNode(false);
+        again.appendChild(tail);
+        run.parentNode.insertBefore(again, hold.nextSibling);
+      }
+      if (!run.textContent) run.parentNode.removeChild(run);
+      var r = document.createRange();
+      r.setStart(hold, 1); r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+      quietly(function () { logIssues(boxSaver(el)(RT.fromNode(el))); });
+      dirty();
+      showFormats();
+      return true;
+    }
 
     // ======================================================================
     // wiring
@@ -4931,6 +5162,7 @@ import { toWinAnsi } from './doc-fonts.js';
       // ---- preview ----------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-refresh-preview]', function () { dirty(); repaint(); });
       dom.on(ctx.root, 'click', '[data-rd-sec-cat]', function (e, el) { _rd.secCat = el.getAttribute('data-rd-sec-cat'); repaint(); });
+      dom.on(ctx.root, 'click', '[data-rd-prev-scope]', function (e, el) { _rd.secWhole = el.getAttribute('data-rd-prev-scope') === 'whole'; repaint(); });
       // The Sections list's grip: dragging resizes the list in place; the width is kept on release.
       dom.on(ctx.root, 'pointerdown', '[data-rd-split]', function (e, el) {
         var pane = el.previousElementSibling, layout = el.parentNode;
@@ -5264,6 +5496,19 @@ import { toWinAnsi } from './doc-fonts.js';
 
     function wireText(h) {
       var dom = h.dom, ctx = h.ctx;
+
+      // The toolbar follows the cursor: bold, italic and code light up where they apply.
+      document.addEventListener('selectionchange', showFormats);
+      dom.on(ctx.root, 'focusin', '[data-rd-rich]', function () { showFormats(); });
+      dom.on(ctx.root, 'input', '[data-rd-rich]', function () {
+        var sel = window.getSelection();
+        var n = sel && sel.anchorNode;
+        if (!n || n.nodeType !== 3 || n.nodeValue.indexOf('\u200B') === -1 || n.nodeValue.length < 2) return;
+        var at = sel.anchorOffset - (n.nodeValue.slice(0, sel.anchorOffset).split('\u200B').length - 1);
+        n.nodeValue = n.nodeValue.replace(/\u200B/g, '');
+        var r = document.createRange(); r.setStart(n, Math.max(0, Math.min(at, n.nodeValue.length))); r.collapse(true);
+        sel.removeAllRanges(); sel.addRange(r);
+      });
 
       // The Sections preview follows typing: half a second after a live box stops
       // changing, its value is saved and the preview column alone is redrawn.
@@ -5646,7 +5891,7 @@ import { toWinAnsi } from './doc-fonts.js';
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
-      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _holds: holds, _releaseOn: RELEASE_ON,
+      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
       PANES: PANES, _rd: _rd
     };
   })(App);

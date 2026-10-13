@@ -19,13 +19,14 @@ const px = (n) => `${Math.round(n * 1000) / 1000}px`;
  * `anchors` (from the layout) become empty spans with those ids, where each lands, so a
  * contents entry or a reference can jump to it.
  * @param {{ size: [number, number], items: any[] }[]} pages
- * @param {{ scale?: number, anchors?: Record<string, { page: number, y: number }> }} [o]
+ * `here` marks one anchor (data-rd-here), for the designer to scroll to.
+ * @param {{ scale?: number, anchors?: Record<string, { page: number, y: number }>, here?: string }} [o]
  */
 export function pagesHtml(pages, o = {}) {
   const k = o.scale ?? 1;
   const anchors = Object.entries(o.anchors ?? {});
   return pages.map((p, i) => `<div class="dp-page" data-page="${i + 1}" style="width:${px(p.size[0] * k)};height:${px(p.size[1] * k)}">` +
-    anchors.filter(([, a]) => a.page === i).map(([id, a]) => `<span class="dp-anchor" id="${esc(id)}" style="top:${px(a.y * k)}"></span>`).join('') + p.items.map((it) => {
+    anchors.filter(([, a]) => a.page === i).map(([id, a]) => `<span class="dp-anchor" id="${esc(id)}" style="top:${px(a.y * k)}"${id === o.here ? ' data-rd-here' : ''}></span>`).join('') + p.items.map((it) => {
     if (it.kind === 'fill') return `<div class="dp-fill" style="left:${px(it.x * k)};top:${px(it.y * k)};width:${px(it.w * k)};height:${px(it.h * k)};background:${esc(it.colour)}"></div>`;
     if (it.kind === 'rule') {
       const flat = it.y1 === it.y2;

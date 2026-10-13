@@ -297,6 +297,8 @@ section { margin: 0 0 22px; }
 .docgen .rd-style-sec { background: transparent; border: 0; padding: 6px 10px; color: var(--p-fg); }
 .docgen .rd-style-sec:hover:not(:disabled) { background: var(--p-surface-2); border: 0; color: var(--p-accent); }
 .docgen .rd-style-sec.on { background: var(--p-surface-2); border: 0; box-shadow: inset 3px 0 0 var(--p-accent); font-weight: 700; }
+.docgen .rd-scope button { padding: 3px 10px; background: var(--p-surface); color: var(--p-muted); }
+.docgen .rd-scope button.on, .docgen .rd-scope button.on:hover:not(:disabled) { background: var(--p-accent); border-color: var(--p-accent); color: var(--p-accent-fg); }
 .docgen .rd-cat { background: transparent; border: 0; padding: 6px 10px; color: var(--p-fg); }
 .docgen .rd-cat:hover:not(:disabled) { background: var(--p-surface-2); border: 0; color: var(--p-accent); }
 .docgen .rd-cat.on { background: var(--p-surface-2); border: 0; box-shadow: inset 3px 0 0 var(--p-accent); font-weight: 700; }

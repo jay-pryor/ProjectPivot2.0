@@ -168,7 +168,8 @@
   .docgen .rd-part-note { font-size: 12px;}
   .docgen .rd-part-move { margin-left: auto; display: flex; gap: 2px;}
   .docgen .rd-tbs { display: flex; gap: 2px;}
-  .docgen .rd-tb { font: inherit; font-size: 12px; min-width: 26px; padding: 2px 6px; border: 1px solid var(--c-border); border-radius: 4px; background: var(--c-surface); color: var(--c-text); cursor: pointer;}
+  .docgen .rd-tb { display: inline-flex; align-items: center; justify-content: center; gap: 3px; font: inherit; font-size: 12px; line-height: 1; min-width: 26px; height: 24px; padding: 0 6px; border: 1px solid var(--c-border); border-radius: 4px; background: var(--c-surface); color: var(--c-text); cursor: pointer;}
+  .docgen .rd-tb.on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-text);}
   .docgen .rd-para, .docgen .rd-title, .docgen .rd-cap { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--c-border); border-radius: 4px; background: var(--c-surface); color: var(--c-text);}
   .docgen .rd-para { resize: vertical; font-family: var(--font-mono, ui-monospace, monospace);}
   .docgen .rd-rich { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; line-height: 1.45;
@@ -179,9 +180,11 @@
   .docgen .rd-rich:empty::before { content: attr(data-rd-ph); color: var(--c-text-muted);}
   .docgen .rd-rich code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.92em;
     background: var(--c-surface-alt); padding: 0 3px; border-radius: 3px;}
-  .docgen .rd-chip { display: inline-block; background: var(--c-badge-bg); border: 1px solid var(--c-border);
-    border-radius: 10px; padding: 0 7px; font-size: 12px; line-height: 1.5; white-space: nowrap;
-    max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: baseline; user-select: none;}
+  /* A reference that prints its target's words: shown as those words, the size of the
+     text around it, tinted so it reads as one piece. */
+  .docgen .rd-chip { display: inline; font-size: inherit; line-height: inherit; padding: 0 2px; border: 0;
+    background: var(--c-badge-bg); color: inherit; text-decoration: underline; text-decoration-style: dotted;
+    text-underline-offset: 2px; white-space: normal; user-select: none;}
   .docgen .rd-reflink { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px;}
   .docgen .rd-broken { color: var(--c-error); border-color: var(--c-error);}
   .docgen .rd-cellbox { min-height: 20px; padding: 3px 5px; border: 0; border-radius: 0; font-size: 12px;}
@@ -309,3 +312,14 @@
   .docgen .rd-sec-fields > h5 { margin: 0 0 8px;}
   .docgen .rd-sec-prev { position: sticky; top: 0; max-height: calc(100vh - 230px); overflow: auto; min-width: 0;}
   .docgen .rd-sec-prev .rd-secprev { max-height: none;}
+  .docgen .rd-scope { display: inline-flex;}
+  .docgen .rd-scope button { font: inherit; font-size: 12px; padding: 3px 10px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-muted); cursor: pointer;}
+  .docgen .rd-scope button + button { border-left: 0;}
+  .docgen .rd-scope button.on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-text); font-weight: 600;}
+  .docgen .rd-secprev-head { flex-wrap: wrap;}
+  /* The preview column scrolls; its switch and zoom stay at the top of it. */
+  .docgen .rd-sec-prev .rd-secprev-head { position: sticky; top: 0; z-index: 2; background: var(--c-bg); padding: 2px 0 6px; margin: 0;}
+  /* Ticks in three even columns; a long name wraps under its own box. */
+  .docgen .rd-ticks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 12px; margin-top: 4px;}
+  .docgen .rd-ticks .gen-opt { display: flex; align-items: flex-start; margin: 0; white-space: normal; overflow-wrap: break-word; min-width: 0;}
+  .docgen .rd-ticks .gen-opt input { flex: none; margin-top: 2px;}

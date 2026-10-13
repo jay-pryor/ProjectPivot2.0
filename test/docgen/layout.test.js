@@ -139,10 +139,10 @@ test('page numbers settle even when the contents itself pushes the headings on',
 test('a reference prints its words, adds "(page N)" in the PDF when the style says, and links to its target', () => {
   const blocks = [para('See', {}), { kind: 'paragraph', style: 'body', runs: [{ text: 'See ' }, { text: 'Section 2', ref: { anchor: 'sec-2' } }] },
     { kind: 'pageBreak' }, head(1, 'Two', 'sec-2')];
-  const r = layout(doc(blocks), style());
+  const r = layout(doc(blocks), style({ refs: { pageInPdf: true } }));
   assert.match(words(r.pages[0]), /Section 2 \(page 2\)/);
   assert.ok(r.pages[0].items.some((x) => x.kind === 'link' && x.to === 'sec-2'));
-  assert.doesNotMatch(words(layout(doc(blocks), style({ refs: { pageInPdf: false } })).pages[0]), /page 2/);
+  assert.doesNotMatch(words(layout(doc(blocks), style()).pages[0]), /page 2/, 'the Standard style prints no page');
 });
 
 test('code runs are set in Courier; bold and italic runs in the matching face', () => {
@@ -179,6 +179,6 @@ test('Final review I2: a very long unbroken word lays out in linear time', () =>
 });
 
 test('Final review I4: a reference whose target never lands prints no "(page 00)"', () => {
-  const r = layout(doc([{ kind: 'paragraph', style: 'body', runs: [{ text: 'See ' }, { text: 'nowhere', ref: { anchor: 'sec-gone' } }] }]), style());
+  const r = layout(doc([{ kind: 'paragraph', style: 'body', runs: [{ text: 'See ' }, { text: 'nowhere', ref: { anchor: 'sec-gone' } }] }]), style({ refs: { pageInPdf: true } }));
   assert.doesNotMatch(words(r.pages[0]), /page 00/);
 });
