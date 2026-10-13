@@ -540,3 +540,58 @@ test('Styles calls the marking "Security Classification"', () => {
   assert.match(html, /data-rd-style-section="marking"[^>]*>Security Classification</);
   assert.doesNotMatch(html, />Marking</);
 });
+
+test('Styles lists Numbering and Contents separately, straight after Page, with the Table of Contents wording', () => {
+  const html = paneOf(host(), 'styles', 'numbering');
+  const order = [...html.matchAll(/data-rd-style-section="([a-zA-Z0-9]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order.slice(0, 4), ['page', 'numbering', 'contents', 'title']);
+  assert.match(html, />\s*Show the numbers in the Table of Contents</);
+  const contents = paneOf(host(), 'styles', 'contents');
+  assert.match(contents, />\s*Include a Table of Contents</);
+  assert.match(contents, /data-rd-fmt="toc\.depth"/);
+  assert.doesNotMatch(html.slice(html.indexOf('rd-style-fields'), html.indexOf('rd-style-preview')), /toc\.include|Contents level/, 'contents settings are in Contents');
+});
+
+test('every number box has up and down arrows that step by a sensible amount', () => {
+  const steps = (section) => {
+    const html = paneOf(host(), 'styles', section);
+    return Object.fromEntries([...html.matchAll(/data-rd-step="\+" data-rd-step-key="([^"]+)" data-rd-step-by="([^"]+)"/g)].map((m) => [m[1], Number(m[2])]));
+  };
+  const h1 = steps('h1');
+  assert.deepEqual([h1['text.h1.size'], h1['text.h1.lineSpacing'], h1['text.h1.spaceBefore'], h1['text.h1.spaceAfter']], [0.5, 0.05, 1, 1]);
+  const page = steps('page');
+  assert.equal(page['page.margins.top'], 1);
+  const t = steps('tables');
+  assert.deepEqual([t['tables.fontSize'], t['tables.header.size'], t['tables.borderWidth'], t['tables.padding']], [0.5, 0.5, 0.25, 0.5]);
+  const html = paneOf(host(), 'styles', 'h1');
+  assert.match(html, /data-rd-step="-" data-rd-step-key="text\.h1\.size" data-rd-step-by="0\.5"/);
+});
+
+test('a step moves the value by its step from what is there, without float noise', () => {
+  assert.equal(RD._stepped('10.5', 0.5, 1), 11);
+  assert.equal(RD._stepped('1.15', 0.05, 1), 1.2);
+  assert.equal(RD._stepped('1.15', 0.05, -1), 1.1);
+  assert.equal(RD._stepped('', 1, 1), 1);
+  assert.equal(RD._stepped('0.5', 0.25, -1), 0.25);
+});
+
+test('double-clicking a section in the list edits its heading there', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  App.docHost.set(h); RD.open(); RD.pane('section'); RD._rd.renaming = 'things';
+  const html = RD.render(h.getState()); RD.close(); RD._rd.renaming = null;
+  const list = html.slice(html.indexOf('rd-order-host'), html.indexOf('rd-split'));
+  assert.match(list, /<input class="rd-rename" data-rd-rename="things" value="Things"/);
+  assert.doesNotMatch(list, /data-rd-select="things"/, 'the name is the box while it is being edited');
+  assert.match(list, /data-rd-select="mine"/);
+});
+
+test('a renamed section saves its heading where its Heading box does; blank puts back the standard wording', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  App.docHost.set(h);
+  RD._renameSection('things', 'Our things');
+  assert.equal(h.getState().report.headings.things, 'Our things');
+  RD._renameSection('mine', 'My own');
+  assert.equal(h.getState().report.sections[0].title, 'My own');
+  RD._renameSection('things', '');
+  assert.equal((h.getState().report.headings || {}).things, undefined);
+});
