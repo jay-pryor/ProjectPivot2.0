@@ -119,12 +119,14 @@ test('Controls and Implemented controls sections', async () => {
   const secs = docs.host.sections({ subjectId: 'p1' });
   const ctl = secs.find((s) => s.id === 'controls');
   assert.equal(ctl.label, 'Controls');
-  assert.deepEqual(ctl.columns.map((c) => c.id), ['number', 'control', 'tier', 'description', 'kind', 'recommendation', 'justification', 'state', 'reason', 'owner']);
+  assert.equal(ctl.keyColumn.label, 'ID');
+  assert.deepEqual(ctl.columns.map((c) => c.id), ['control', 'hazards', 'tier', 'description', 'kind', 'recommendation', 'justification', 'state', 'reason', 'owner']);
   const sprinklers = ctl.rows().find((r) => r.title === 'Sprinklers');
   assert.deepEqual(['recommendation', 'justification', 'state', 'reason'].map((id) => ctl.columns.find((c) => c.id === id).get(sprinklers)), ['Fit', 'Because', 'Rejected', 'No water']);
   const ex = secs.find((s) => s.id === 'existing');
   assert.equal(ex.label, 'Implemented controls', 'kept as existing, so saved designs still find it');
-  assert.deepEqual(ex.columns.map((c) => c.id), ['tier', 'number', 'control', 'description', 'kind', 'owner']);
+  assert.equal(ex.keyColumn.label, 'ID');
+  assert.deepEqual(ex.columns.map((c) => c.id), ['control', 'hazards', 'tier', 'description', 'kind', 'owner']);
   assert.deepEqual(ex.rows().map((r) => ex.columns.find((c) => c.id === 'control').get(r)), ['Fire drills'], 'only those implemented on the platform');
 });
 
@@ -143,8 +145,10 @@ test('Hazards has a Lifecycle phases column; a Safety reports section; markup st
   assert.equal(hz.columns.find((c) => c.id === 'phases').get(hz.rows()[0]), 'Design, Operation');
   const sr = secs.find((s) => s.id === 'safetyReports');
   assert.equal(sr.label, 'Safety reports');
-  assert.deepEqual(sr.columns.map((c) => c.id), ['number', 'date', 'type', 'summary', 'location', 'parties', 'description']);
-  assert.deepEqual(['number', 'date', 'type', 'summary'].map((id) => sr.columns.find((c) => c.id === id).get(sr.rows()[0])), ['HAZ-001-A-1', '2026-04-01', 'Occurrence', 'Spill <b>x</b>']);
+  assert.equal(sr.keyColumn.label, 'Report ID');
+  assert.deepEqual(sr.columns.map((c) => c.id), ['summary', 'hazards', 'date', 'type', 'location', 'parties', 'description']);
+  assert.equal(sr.keyColumn.get(sr.rows()[0]), 'HAZ-001-A-1');
+  assert.deepEqual(['summary', 'hazards', 'date', 'type'].map((id) => sr.columns.find((c) => c.id === id).get(sr.rows()[0])), ['Spill <b>x</b>', 'HAZ-001', '2026-04-01', 'Occurrence']);
 });
 
 test('markup in a safety report or a justification is shown literally in the produced report', async () => {
@@ -204,4 +208,55 @@ test('the Implemented by columns start switched off, so saved designs keep their
   const table = blocks.slice(at).find((b) => b.kind === 'table');
   assert.ok(at >= 0 && table);
   assert.doesNotMatch(table.header.map(runText).join('|'), /Implemented by/, 'no Implemented by column until someone ticks it on');
+});
+
+test('Controls has one row per control, its ID first, the hazards it serves listed, and per-hazard values once or per hazard', async () => {
+  const { setControlAnalysis, linkControl } = await import('../../src/core/ops/controls.js');
+  const { setControlStatus } = await import('../../src/core/ops/assessment.js');
+  const { linkHazard } = await import('../../src/core/ops/platforms.js');
+  let data = assignHazardNumbers(linkHazard(seed(), act, { hazardId: 'h2', platformId: 'p1' }));
+  data = linkControl(data, act, { hazardId: 'h2', controlId: 'c1', kind: 'preventative' });
+  data = setControlAnalysis(data, act, { hazardId: 'h1', controlId: 'c1', recommendation: 'Fit', justification: 'Because' });
+  data = setControlAnalysis(data, act, { hazardId: 'h2', controlId: 'c1', recommendation: 'Fit', justification: 'Also because' });
+  data = setControlStatus(data, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'implemented' });
+  const docs = createDocHost({ getData: () => data, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id });
+  const ctl = docs.host.sections({ subjectId: 'p1' }).find((s) => s.id === 'controls');
+  const rows = ctl.rows();
+  assert.deepEqual(rows.map((r) => ctl.keyColumn.get(r)), ['C-001', 'C-002'], 'one row per control, in number order');
+  const get = (id, r) => ctl.columns.find((c) => c.id === id).get(r);
+  assert.equal(get('control', rows[0]), 'Sprinklers');
+  assert.equal(get('hazards', rows[0]), 'HAZ-001, HAZ-002');
+  assert.equal(get('kind', rows[0]), 'preventative', 'the same for both hazards: shown once');
+  assert.equal(get('recommendation', rows[0]), 'Fit');
+  assert.equal(get('justification', rows[0]), 'HAZ-001: Because\nHAZ-002: Also because', 'different: one line per hazard');
+  assert.equal(get('state', rows[0]), 'HAZ-001: Implemented\nHAZ-002: Recommended');
+  assert.equal(get('hazards', rows[1]), 'HAZ-001');
+  assert.equal(get('reason', rows[0]), '', 'nothing recorded for either hazard: blank');
+  const data2 = setControlStatus(data, act, { hazardId: 'h2', controlId: 'c1', platformId: 'p1', status: 'rejected', reason: 'No water' });
+  const ctl2 = createDocHost({ getData: () => data2, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id })
+    .host.sections({ subjectId: 'p1' }).find((s) => s.id === 'controls');
+  assert.equal(ctl2.columns.find((c) => c.id === 'reason').get(ctl2.rows()[0]), 'HAZ-002: No water', 'a hazard with nothing recorded is left out');
+});
+
+test('Implemented controls: one row per control, its ID first; a safety report on two hazards is one row', async () => {
+  const { setControlStatus } = await import('../../src/core/ops/assessment.js');
+  const { linkControl } = await import('../../src/core/ops/controls.js');
+  const { linkHazard } = await import('../../src/core/ops/platforms.js');
+  let data = assignHazardNumbers(linkHazard(seed(), act, { hazardId: 'h2', platformId: 'p1' }));
+  data = linkControl(data, act, { hazardId: 'h2', controlId: 'c2', kind: 'mitigating' });
+  data = setControlStatus(data, act, { hazardId: 'h1', controlId: 'c2', platformId: 'p1', status: 'implemented' });
+  data = setControlStatus(data, act, { hazardId: 'h2', controlId: 'c2', platformId: 'p1', status: 'implemented' });
+  const docs = createDocHost({ getData: () => data, setDesign: () => {}, clock: fixedClock('2026-09-28T10:00:00+10:00'), profileName: (id) => id });
+  const ex = docs.host.sections({ subjectId: 'p1' }).find((s) => s.id === 'existing');
+  const rows = ex.rows();
+  assert.equal(rows.length, 1);
+  assert.equal(ex.keyColumn.get(rows[0]), 'C-002');
+  assert.equal(ex.columns.find((c) => c.id === 'hazards').get(rows[0]), 'HAZ-001, HAZ-002');
+});
+
+test('tables whose rows have no ID of their own keep the hazard first', () => {
+  const { docs } = setup();
+  const secs = docs.host.sections({ subjectId: 'p1' });
+  for (const id of ['causes', 'assessments', 'sfarp']) assert.equal(secs.find((s) => s.id === id).keyColumn.label, 'Hazard', id);
+  for (const id of ['hazards', 'references']) assert.equal(secs.find((s) => s.id === id).keyColumn.label, 'ID', id);
 });

@@ -25,6 +25,37 @@ function metaRows(s) {
 }
 
 /**
+ * Rows that are one thing on several hazards (a control, a safety report), gathered into one
+ * row per thing: its own fields from the first, and every hazard's entry kept in `entries`.
+ * @param {any[]} list @param {(x: any) => string} keyOf
+ */
+function byItem(list, keyOf) {
+  /** @type {Map<string, any>} */
+  const out = new Map();
+  for (const x of list) {
+    const k = keyOf(x);
+    if (!out.has(k)) out.set(k, { ...x, key: k, entries: [] });
+    out.get(k).entries.push(x);
+  }
+  return [...out.values()];
+}
+/** @param {any[]} list */
+const byControl = (list) => byItem(list, (c) => c.number ?? c.title).sort((a, b) => String(a.key).localeCompare(String(b.key), undefined, { numeric: true }));
+/** The hazards a gathered row is on, as a list that wraps in its column. @param {any} r */
+const hazardsOf = (r) => [...new Set(r.entries.map((/** @type {any} */ e) => e.reportId))].join(', ');
+/**
+ * A value recorded per hazard: once when every hazard has the same, else one line per hazard
+ * that has one.
+ * @param {any} r @param {(entry: any) => any} get
+ */
+function perHazard(r, get) {
+  const vals = r.entries.map((/** @type {any} */ e) => ({ h: e.reportId, v: String(get(e) ?? '') }));
+  if (new Set(vals.map((/** @type {any} */ x) => x.v)).size <= 1) return vals[0]?.v ?? '';
+  // A hazard with nothing recorded is left out of the list.
+  return vals.filter((/** @type {any} */ x) => x.v).map((/** @type {any} */ x) => `${x.h}: ${x.v}`).join('\n');
+}
+
+/**
  * The report's tables, declared for DocGen. Unbound (no snapshot) they have no rows, which is
  * all the designer needs to draw a section it is not generating.
  * @param {Snapshot | null} s
@@ -51,36 +82,38 @@ function sectionsFor(s) {
       rows: rows((x) => x.rows),
     },
     {
+      // One row per control, its ID first; what is recorded per hazard is shown once when
+      // every hazard agrees, else one line per hazard.
       id: 'controls', label: 'Controls',
-      keyColumn: hazardKey,
+      keyColumn: { id: '_key', label: 'ID', w: 2, get: (/** @type {any} */ r) => r.number ?? '' },
       columns: [
-        { id: 'number', label: 'ID', w: 2, get: (/** @type {any} */ r) => r.number ?? '' },
         { id: 'control', label: 'Control measure', w: 4, get: (/** @type {any} */ r) => r.title },
+        { id: 'hazards', label: 'Hazards', w: 3, get: (/** @type {any} */ r) => hazardsOf(r) },
         { id: 'tier', label: 'Tier', w: 3, optional: true, get: (/** @type {any} */ r) => r.tier ?? '' },
         { id: 'description', label: 'Description', w: 5, optional: true, get: (/** @type {any} */ r) => r.description ?? '' },
-        { id: 'kind', label: 'Kind', w: 2, get: (/** @type {any} */ r) => r.kind },
-        { id: 'recommendation', label: 'Recommendation', w: 5, get: (/** @type {any} */ r) => r.recommendation ?? '' },
-        { id: 'justification', label: 'Justification', w: 5, get: (/** @type {any} */ r) => r.justification ?? '' },
-        { id: 'state', label: 'Status', w: 2, get: (/** @type {any} */ r) => STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (r.state)] ?? r.state },
-        { id: 'reason', label: 'Reason rejected', w: 4, optional: true, get: (/** @type {any} */ r) => r.reason },
+        { id: 'kind', label: 'Kind', w: 2, get: (/** @type {any} */ r) => perHazard(r, (c) => c.kind) },
+        { id: 'recommendation', label: 'Recommendation', w: 5, get: (/** @type {any} */ r) => perHazard(r, (c) => c.recommendation ?? '') },
+        { id: 'justification', label: 'Justification', w: 5, get: (/** @type {any} */ r) => perHazard(r, (c) => c.justification ?? '') },
+        { id: 'state', label: 'Status', w: 2, get: (/** @type {any} */ r) => perHazard(r, (c) => STATUS_WORD[/** @type {keyof typeof STATUS_WORD} */ (c.state)] ?? c.state) },
+        { id: 'reason', label: 'Reason rejected', w: 4, optional: true, get: (/** @type {any} */ r) => perHazard(r, (c) => c.reason ?? '') },
         { id: 'owner', label: 'Implemented by', w: 3, optional: true, defaultOff: true, get: (/** @type {any} */ r) => r.implementedBy ?? '' },
       ],
-      rows: rows((x) => x.rows.flatMap((h) => h.controls.map((c) => ({ reportId: h.reportId, ...c })))),
+      rows: rows((x) => byControl(x.rows.flatMap((h) => h.controls.map((c) => ({ reportId: h.reportId, ...c }))))),
     },
     {
-      // The controls implemented on the platform. Kept as 'existing', so designs made when these
-      // were the existing controls still find them.
+      // The controls implemented on the platform, one row each. Kept as 'existing', so designs
+      // made when these were the existing controls still find it.
       id: 'existing', label: 'Implemented controls',
-      keyColumn: hazardKey,
+      keyColumn: { id: '_key', label: 'ID', w: 2, get: (/** @type {any} */ r) => r.number ?? '' },
       columns: [
-        { id: 'tier', label: 'Tier', w: 3, get: (/** @type {any} */ r) => r.tier || 'Not set' },
-        { id: 'number', label: 'ID', w: 2, get: (/** @type {any} */ r) => r.number },
         { id: 'control', label: 'Control', w: 5, get: (/** @type {any} */ r) => r.title },
+        { id: 'hazards', label: 'Hazards', w: 3, get: (/** @type {any} */ r) => hazardsOf(r) },
+        { id: 'tier', label: 'Tier', w: 3, get: (/** @type {any} */ r) => r.tier || 'Not set' },
         { id: 'description', label: 'Description', w: 5, optional: true, get: (/** @type {any} */ r) => r.description },
-        { id: 'kind', label: 'Kind', w: 2, get: (/** @type {any} */ r) => r.kind },
+        { id: 'kind', label: 'Kind', w: 2, get: (/** @type {any} */ r) => perHazard(r, (c) => c.kind) },
         { id: 'owner', label: 'Implemented by', w: 3, optional: true, defaultOff: true, get: (/** @type {any} */ r) => r.implementedBy ?? '' },
       ],
-      rows: rows((x) => x.rows.flatMap((h) => h.controls.filter((c) => c.state === 'implemented').map((c) => ({ reportId: h.reportId, ...c })))),
+      rows: rows((x) => byControl(x.rows.flatMap((h) => h.controls.filter((c) => c.state === 'implemented').map((c) => ({ reportId: h.reportId, ...c }))))),
     },
     {
       id: 'causes', label: 'Causal factors and consequences',
@@ -130,18 +163,19 @@ function sectionsFor(s) {
       rows: rows((x) => x.rows.map((h) => ({ reportId: h.reportId, ...(h.sfarp ?? { justification: '', conclusion: '', conditions: '' }) }))),
     },
     {
+      // One row per safety report, its ID first, with every hazard it is about.
       id: 'safetyReports', label: 'Safety reports',
-      keyColumn: hazardKey,
+      keyColumn: { id: '_key', label: 'Report ID', w: 2, get: (/** @type {any} */ r) => r.number },
       columns: [
-        { id: 'number', label: 'Report ID', w: 2, get: (/** @type {any} */ r) => r.number },
+        { id: 'summary', label: 'Summary', w: 5, get: (/** @type {any} */ r) => r.summary },
+        { id: 'hazards', label: 'Hazards', w: 3, get: (/** @type {any} */ r) => hazardsOf(r) },
         { id: 'date', label: 'Date', w: 2, get: (/** @type {any} */ r) => r.date ?? '' },
         { id: 'type', label: 'Type', w: 2, get: (/** @type {any} */ r) => r.type },
-        { id: 'summary', label: 'Summary', w: 5, get: (/** @type {any} */ r) => r.summary },
         { id: 'location', label: 'Location', w: 3, get: (/** @type {any} */ r) => r.location },
         { id: 'parties', label: 'Parties involved', w: 3, get: (/** @type {any} */ r) => r.parties },
         { id: 'description', label: 'Description', w: 5, optional: true, get: (/** @type {any} */ r) => r.description },
       ],
-      rows: rows((x) => x.rows.flatMap((h) => (h.safetyReports ?? []).map((s) => ({ reportId: h.reportId, ...s })))),
+      rows: rows((x) => byItem(x.rows.flatMap((h) => (h.safetyReports ?? []).map((s) => ({ reportId: h.reportId, ...s }))), (s) => s.number)),
     },
   ];
 }

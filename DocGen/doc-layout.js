@@ -156,6 +156,8 @@ function flow(doc, style, pageOf) {
   /** @type {any} */
   let page = null;
   let y = 0;
+  /** @type {{ page: any, from: number, y: number, anchor: string } | null} the heading just placed, while nothing follows it */
+  let lastHeading = null;
   /** @type {Record<string, { page: number, y: number }>} */
   const anchors = {};
   /** @type {{ title: string, anchor: string, level: number }[]} */
@@ -220,8 +222,29 @@ function flow(doc, style, pageOf) {
     if (before + lines.length * ts.leading + (ts.keepWithNext ? ts.spaceAfter + keepNeed(next) : 0) > room() && !atTop()) newPage();
     if (!atTop()) y += ts.spaceBefore;
     headings.push({ title: plain(runs).replace(/\s+/g, ' ').trim(), anchor: b.anchor, level: b.level });
+    const start = { page, from: page.items.length, y, anchor: b.anchor };
     setLines(lines, ts, left, W, b.centre ? 'centre' : ts.align, b.anchor);
     y += ts.spaceAfter;
+    // Kept, so a table that has to start overleaf can take its heading with it.
+    lastHeading = start.page === page ? start : null;
+  };
+
+  /** Move the heading just placed (if it is the last thing on this page) to the top of a new page. */
+  const carryHeading = () => {
+    const h = lastHeading;
+    if (!h || h.page !== page || atTop()) return false;
+    const moved = page.items.splice(h.from);
+    const end = y;                       // where the heading ended, space after it included
+    newPage();
+    const dy = y - h.y;                  // the heading's top goes to the new page's top
+    for (const it of moved) {
+      if (it.kind === 'rule') { it.y1 += dy; it.y2 += dy; } else it.y += dy;
+      page.items.push(it);
+    }
+    if (h.anchor && anchors[h.anchor]) anchors[h.anchor] = { page: pages.length - 1, y: anchors[h.anchor].y + dy };
+    y = end + dy;
+    lastHeading = null;
+    return true;
   };
 
   const paragraph = (/** @type {any} */ b) => {
@@ -268,9 +291,10 @@ function flow(doc, style, pageOf) {
 
   const blocks = doc.blocks ?? [];
   blocks.forEach((/** @type {any} */ b, /** @type {number} */ i) => {
+    if (i > 0 && blocks[i - 1].kind !== 'heading') lastHeading = null;   // something else came between
     if (b.kind === 'heading') heading(b, blocks[i + 1]);
     else if (b.kind === 'paragraph') paragraph(b);
-    else if (b.kind === 'table') layoutTable(b, { style, ctx, left, W, get y() { return y; }, set y(v) { y = v; }, get page() { return page; }, newPage, atTop, room, mark });
+    else if (b.kind === 'table') layoutTable(b, { style, ctx, left, W, get y() { return y; }, set y(v) { y = v; }, get page() { return page; }, newPage, atTop, room, mark, carryHeading });
     else if (b.kind === 'toc') toc();
     else if (b.kind === 'pageBreak') { if (!atTop()) newPage(); }
     else if (b.kind === 'space') { mark(b.anchor); y += (Number(b.mm) || 0) * MM; if (y > bottom) newPage(); }
@@ -460,7 +484,7 @@ export function layoutTable(b, f) {
 
   const capAbove = tb.captionPosition === 'above';
   const firstH = headsH + (bodyRows[0]?.h ?? 0) + (capAbove && b.caption ? 3 * textStyle(st, 'caption').leading : 0);
-  if (firstH > f.room() && !f.atTop()) f.newPage();
+  if (firstH > f.room() && !f.atTop() && !f.carryHeading()) f.newPage();
   f.mark(b.anchor);
   if (capAbove) caption();
   heads.forEach((r) => drawRow(r, -1));

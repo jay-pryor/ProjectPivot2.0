@@ -131,3 +131,16 @@ test('Final review I3: a row taller than a page under a repeated header stays ab
     if (ws.includes('Notes')) assert.ok(ws.some((w) => /^L\d+$|^a$|continues/.test(w)), `a page holds only the header: ${ws.join(' ')}`);
   }
 });
+
+test('a heading moves to the next page with its table when the table\'s first row will not fit under it', () => {
+  const filler = Array.from({ length: 24 }, () => ({ kind: 'paragraph', style: 'body', runs: [{ text: 'filler line of text' }] }));
+  const tall = Array.from({ length: 30 }, (_, i) => [{ text: `line ${i}` }, { br: true }]).flat();
+  const b = { kind: 'table', anchor: 'tbl-x', columns: [{}, {}], header: [cell('A'), cell('B')], rows: [[cell('a'), tall]] };
+  const head = { kind: 'heading', level: 1, number: '3', anchor: 'sec-x', runs: [{ text: 'Controls' }] };
+  const r = layout(doc([...filler, head, b]), style());
+  const pageOf = (word) => r.pages.findIndex((p) => texts(p).some((t) => t.text === word));
+  assert.equal(pageOf('Controls'), pageOf('A'), 'the heading sits on the page its table starts on');
+  assert.equal(r.anchors['sec-x'].page, pageOf('Controls'));
+  const top = texts(r.pages[pageOf('Controls')]).find((t) => t.text === 'Controls');
+  assert.ok(top.y < 25 * MM + 30, 'at the top of that page');
+});
