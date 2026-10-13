@@ -222,3 +222,50 @@ test('your own section centres its heading and its content separately', () => {
   assert.equal(heading(doc2, 'Annex').centre, true);
   assert.equal(doc2.blocks.find((b) => b.kind === 'paragraph' && plain(b.runs) === 'Annex text.').centre, false);
 });
+
+const pic = (file, o = {}) => ({ source: 'report', file, name: file, ...o });
+
+test('image parts are figures, numbered apart from tables, with one caption or one each', () => {
+  const { document, refs } = build({ sections: [{ id: 'c1', title: 'Pictures', parts: [
+    { id: 'i1', kind: 'image', layout: 'pair', captions: 'one', caption: 'Both of them', images: [pic('a.png', { width: 40 }), pic('b.png', { source: 'standard', noBorder: true })] },
+    { id: 't1', kind: 'table', caption: 'A table', header: ['A'], rows: [['1']] },
+    { id: 'i2', kind: 'image', layout: 'grid4', captions: 'separate', caption: '', images: [pic('c.png', { caption: 'Third' }), null, pic('d.png')] },
+    { id: 'i3', kind: 'image', layout: 'single', captions: 'none', images: [pic('e.png')] },
+    { id: 'i4', kind: 'image', layout: 'single', captions: 'one', caption: 'Empty', images: [null] },
+  ] }], order: ['c1'] });
+  const figs = document.blocks.filter((b) => b.kind === 'figure');
+  assert.equal(figs.length, 3, 'a block with no image is left out');
+  assert.equal(plain(figs[0].caption.runs), 'Figure 1: Both of them');
+  assert.equal(figs[0].anchor, 'fig-i1');
+  assert.deepEqual(figs[0].images.map((i) => [i.src, i.width, i.border]), [['files/report-images/a.png', 0.4, true], ['files/standard-images/b.png', 1, false]]);
+  assert.equal(figs[1].caption, null);
+  assert.equal(figs[1].images.length, 4);
+  assert.equal(plain(figs[1].images[0].caption.runs), 'Figure 2: Third');
+  assert.equal(figs[1].images[0].anchor, 'fig-i2-1');
+  assert.equal(figs[1].images[1], null);
+  assert.equal(plain(figs[1].images[2].caption.runs), 'Figure 3');
+  assert.equal(figs[2].caption, null);
+  assert.equal(figs[2].images[0].caption, null);
+  const t = document.blocks.find((b) => b.kind === 'table' && b.anchor === 'tbl-t1');
+  assert.match(plain(t.caption.runs), /^Table \d+: A table$/);
+  const f = refs.targets.filter((x) => x.kind === 'figure');
+  assert.deepEqual(f.map((x) => [x.id, x.label, x.numberLabel, x.titleLabel]), [
+    ['i1', 'Figure 1: Both of them', 'Figure 1', 'Both of them'], ['i2.1', 'Figure 2: Third', 'Figure 2', 'Third'], ['i2.3', 'Figure 3', 'Figure 3', 'Figure 3']]);
+});
+
+test('a link to a figure reads as the figure and jumps to it', () => {
+  const { document } = build({ sections: [{ id: 'c1', title: 'Pictures', parts: [
+    { id: 'p1', kind: 'para', text: 'See {{refn:i1}} and {{ref:i2.1}}.' },
+    { id: 'i1', kind: 'image', layout: 'single', captions: 'one', caption: 'Map', images: [pic('a.png')] },
+    { id: 'i2', kind: 'image', layout: 'pair', captions: 'separate', images: [pic('b.png', { caption: 'Left' }), pic('c.png')] },
+  ] }], order: ['c1'] });
+  const para = document.blocks.find((b) => b.kind === 'paragraph' && /See/.test(plain(b.runs)));
+  assert.equal(plain(para.runs), 'See Figure 1 and Figure 2: Left.');
+  assert.ok(para.runs.some((r) => r.ref && r.ref.anchor === 'fig-i1'));
+});
+
+test('more images than the layout has boxes: the extra ones are kept but not shown', () => {
+  const { document } = build({ sections: [{ id: 'c1', title: 'P', parts: [
+    { id: 'i1', kind: 'image', layout: 'single', captions: 'none', images: [pic('a.png'), pic('b.png')] }] }], order: ['c1'] });
+  assert.deepEqual(document.blocks.find((b) => b.kind === 'figure').images.map((i) => i.name), ['a.png']);
+});

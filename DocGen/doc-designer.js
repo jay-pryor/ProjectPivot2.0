@@ -3,6 +3,7 @@ import { STANDARD as STYLE_STANDARD, PAPER_MM as STYLE_PAPER_MM, normaliseStyle,
 import { layout } from './doc-layout.js';
 import { pagesHtml, cropPage } from './doc-preview.js';
 import { toWinAnsi } from './doc-fonts.js';
+import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO, figureSources as FIGURE_SOURCES, FIGURE_LAYOUTS } from './doc-images.js';
   /* App namespace root. Exported at the bottom of this file. */
   var App = {};
 
@@ -581,6 +582,13 @@ import { toWinAnsi } from './doc-fonts.js';
         label: num + (t.caption ? ': ' + t.caption : '')
       };
     }
+    function figureRef(f) {
+      var num = 'Figure ' + f.number;
+      return {
+        anchor: f.anchor, numberLabel: num, titleLabel: f.caption || num,
+        label: num + (f.caption ? ': ' + f.caption : '')
+      };
+    }
     /* REF-1: a PARAGRAPH is a link target too.
      *
      * "See section 4" is often more precision than the writer has and less than the
@@ -597,7 +605,7 @@ import { toWinAnsi } from './doc-fonts.js';
     }
 
     /** Every link target in the document, keyed by id. One walk, three consumers. */
-    function refIndex(resolved, tables) {
+    function refIndex(resolved, tables, figures) {
       var byId = {}, order = [];
       function add(id, kind, ref) { if (!byId[id]) order.push({ id: id, kind: kind }); byId[id] = ref; }
       (resolved || []).forEach(function (b) {
@@ -611,6 +619,7 @@ import { toWinAnsi } from './doc-fonts.js';
         }
       });
       (tables || []).forEach(function (t) { add(t.id, 'table', tableRef(t)); });
+      (figures || []).forEach(function (f) { add(f.id, 'figure', figureRef(f)); });
       return { byId: byId, order: order };
     }
 
@@ -619,14 +628,14 @@ import { toWinAnsi } from './doc-fonts.js';
      * @param {Array} resolved  the output of outline()
      * @param {Array<{id:string,number:string,caption:string,anchor:string}>} [tables]
      */
-    function refResolver(resolved, tables) {
-      var idx = refIndex(resolved, tables);
+    function refResolver(resolved, tables, figures) {
+      var idx = refIndex(resolved, tables, figures);
       return function (id) { return idx.byId[id] || null; };
     }
 
     /** The pickable link targets, for the designer's "insert reference" menu. */
-    function refTargets(resolved, tables) {
-      var idx = refIndex(resolved, tables);
+    function refTargets(resolved, tables, figures) {
+      var idx = refIndex(resolved, tables, figures);
       return idx.order.map(function (e) {
         var r = idx.byId[e.id];
         return { id: e.id, kind: e.kind, label: r.label, numberLabel: r.numberLabel, titleLabel: r.titleLabel };
@@ -1419,11 +1428,23 @@ import { toWinAnsi } from './doc-fonts.js';
       var depth = numberDepth(style);
       // Table numbers, in the order the tables will be emitted.
       var tableList = [], n = 0;
+      var figureList = [], nf = 0;
       resolved.forEach(function (b) {
         if (b.kind === 'custom') {
           (b.parts || []).forEach(function (p) {
             if (p.kind === 'table' && p.noCaption !== true && (p.header || []).length) {
               n++; tableList.push({ id: p.id, number: String(n), caption: App.doc.autoCaption(b, p), anchor: App.md.anchor('tbl-' + p.id) });
+            }
+            if (p.kind === 'image' && (p.images || []).slice(0, FIG_BOXES(p.layout)).some(Boolean)) {
+              if (p.captions === 'separate') {
+                (p.images || []).slice(0, FIG_BOXES(p.layout)).forEach(function (im, k) {
+                  if (!im) return;
+                  nf++; var fid = p.id + '.' + (k + 1);
+                  figureList.push({ id: fid, number: String(nf), caption: String(im.caption || '').trim(), anchor: App.md.anchor('fig-' + fid) });
+                });
+              } else if (p.captions !== 'none') {
+                nf++; figureList.push({ id: p.id, number: String(nf), caption: String(p.caption || '').trim(), anchor: App.md.anchor('fig-' + p.id) });
+              }
             }
           });
         } else if (Array.isArray(b.content)) {
@@ -1432,7 +1453,8 @@ import { toWinAnsi } from './doc-fonts.js';
           });
         }
       });
-      var resolveRef = App.doc.refResolver(resolved, tableList);
+      var resolveRef = App.doc.refResolver(resolved, tableList, figureList);
+      var figById = {}; figureList.forEach(function (f) { figById[f.id] = f; });
       var byId = {}; tableList.forEach(function (t) { byId[t.id] = t; });
       var tags = meta.tags || {};
       function tag(s) { return applyTags(s, tags); }
@@ -1447,6 +1469,27 @@ import { toWinAnsi } from './doc-fonts.js';
         return out.length ? out : [Object.assign({ text: '' }, extra || {})];
       }
       function caption(t) { return t ? { runs: [{ text: 'Table ' + t.number + ': ' + tag(t.caption) }] } : null; }
+      function figCaption(f) { return f ? { runs: [{ text: 'Figure ' + f.number + (f.caption ? ': ' + tag(f.caption) : '') }] } : null; }
+      /** An image part as a figure block, or null when it has no image in any of its boxes. */
+      function figureBlock(p) {
+        var count = FIG_BOXES(p.layout);
+        var ims = (p.images || []).slice(0, count);
+        if (!ims.some(Boolean)) return null;
+        while (ims.length < count) ims.push(null);
+        var sep = p.captions === 'separate';
+        return {
+          kind: 'figure', layout: FIGURE_LAYOUTS[p.layout] ? p.layout : 'single',
+          anchor: sep ? undefined : App.md.anchor('fig-' + p.id),
+          caption: sep ? null : figCaption(figById[p.id]),
+          images: ims.map(function (im, k) {
+            if (!im) return null;
+            var fid = p.id + '.' + (k + 1);
+            var pct = Math.min(100, Math.max(5, Number(im.width) || 100));
+            return { src: IMAGE_PATH(im.source, im.file), name: String(im.name || im.file), width: pct / 100, border: !im.noBorder,
+              caption: sep ? figCaption(figById[fid]) : null, anchor: sep ? App.md.anchor('fig-' + fid) : undefined };
+          })
+        };
+      }
       /** Whether a part of a block is centred (`centre` is per part, or `true` for all). */
       function centres(b, part) { return b.centre === true || !!(b.centre && b.centre[part]); }
       var out = [];
@@ -1482,7 +1525,7 @@ import { toWinAnsi } from './doc-fonts.js';
               out.push({ kind: 'table', anchor: App.md.anchor('tbl-' + p.id), caption: caption(byId[p.id]), columns: cols, centre: centre,
                 header: p.header.map(runs1), rows: (p.rows || []).map(function (r) { return p.header.map(function (_, k) { return runs1(r && r[k] != null ? r[k] : ''); }); }),
                 rowHeight: Number(p.rowHeight) || 0, tallRows: (p.tallRows && p.tallRows.length === (p.rows || []).length) ? p.tallRows : null });
-            }
+            } else if (p.kind === 'image') { var fb = figureBlock(p); if (fb) out.push(fb); }
           });
           return;
         }
@@ -1509,7 +1552,7 @@ import { toWinAnsi } from './doc-fonts.js';
         document: { title: docTitle, meta: { title: docTitle, platform: meta.platform || '', date: meta.date || '', marking: meta.classification || '' }, blocks: out },
         style: tagged, tags: findTags(all),
         // What a reference can point at, and how each reads — for the designer's link menu and editors.
-        refs: { resolve: resolveRef, targets: App.doc.refTargets(resolved, tableList) }
+        refs: { resolve: resolveRef, targets: App.doc.refTargets(resolved, tableList, figureList) }
       };
     }
 
