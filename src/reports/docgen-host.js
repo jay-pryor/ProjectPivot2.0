@@ -8,6 +8,14 @@ import { toIsoUtc, aestDate } from '../core/time.js';
 import { imageInfo, imagePath, MAX_IMAGE_BYTES, tooManyPixels } from '../../DocGen/doc-images.js';
 import { newId } from '../core/ids.js';
 
+/** The parts of the design every report shares: Styles, templates and Standard Images. */
+export const LIBRARY_KEYS = Object.freeze(['formats', 'sectionTemplates', 'reportTemplates', 'standardImages']);
+const STAGE_LABEL = /** @type {Record<string, string>} */ ({ 'in-progress': 'In-Progress', 'for-review': 'For Review' });
+/** @param {Record<string, any>} d */
+const libraryOf = (d) => Object.fromEntries(LIBRARY_KEYS.filter((k) => d?.[k] !== undefined).map((k) => [k, structuredClone(d[k])]));
+/** @param {Record<string, any>} d */
+export const arrangementOf = (d) => Object.fromEntries(Object.entries(structuredClone(d ?? {})).filter(([k]) => !LIBRARY_KEYS.includes(k)));
+
 /** @typedef {import('./snapshot.js').Snapshot} Snapshot */
 
 /** @param {{ platformName: string, producedAt: string }} s */
@@ -246,6 +254,7 @@ export function imagesInUse(data) {
   for (const t of d.reportTemplates ?? []) for (const s of t.sections ?? []) visit(s.parts);
   const prefix = 'files/report-images/';
   for (const r of Object.values(data.records.report ?? {})) {
+    if (r?.status !== 'deleted' && r?.design) for (const s of r.design.sections ?? []) visit(s.parts);
     for (const b of r?.document?.blocks ?? []) {
       if (b.kind === 'figure') for (const im of b.images ?? []) if (im?.src?.startsWith(prefix)) used.add(im.src.slice(prefix.length));
     }
@@ -256,6 +265,7 @@ export function imagesInUse(data) {
 /**
  * @param {{ getData: () => import('../core/data.js').Data, setDesign: (design: Record<string, any>) => void,
  *   clock: import('../core/time.js').Clock, profileName: (id: string) => string,
+ *   setReportDesign?: (id: string, design: Record<string, any> | undefined, platformId?: string | null) => void,
  *   files?: { read: (path: string) => Promise<Uint8Array | null>, write: (path: string, blob: Blob) => Promise<void>, exists: (path: string) => Promise<boolean>, remove: (path: string) => Promise<void> } }} ctx
  */
 export function createDocHost(ctx) {
@@ -267,6 +277,7 @@ export function createDocHost(ctx) {
     : buildSnapshot(ctx.getData(), platformId, { profileName: ctx.profileName, at: ctx.clock.now(), by: '', title: '', classification: '' }));
 
   const host = {
+    heading: { title: 'Default for new reports' },
     getState: () => ({ report: structuredClone(ctx.getData().reportDesign) }),
     /** @param {(state: { report?: Record<string, any> }) => void} mutator */
     commit(mutator) {
@@ -311,19 +322,61 @@ export function createDocHost(ctx) {
     },
   };
 
+  /** @type {Map<string, any>} one host per report, so the designer keeps its place */
+  const reportHosts = new Map();
+  /** A host for one report: its own arrangement laid over the shared library. @param {string} id */
+  const hostFor = (id) => {
+    if (reportHosts.has(id)) return reportHosts.get(id);
+    const rec = () => ctx.getData().records.report[id];
+    const own = () => { const r = rec(); return r?.design ? structuredClone(r.design) : arrangementOf(ctx.getData().reportDesign); };
+    const h = {
+      ...host,
+      get heading() { const r = rec(); return { title: r?.title ?? '', tag: STAGE_LABEL[r?.stage === 'in-progress' ? 'in-progress' : 'for-review'] }; },
+      getState: () => ({ report: { ...libraryOf(ctx.getData().reportDesign), ...own() } }),
+      /** @param {(state: { report?: Record<string, any> }) => void} mutator */
+      commit(mutator) {
+        const state = { report: { ...libraryOf(ctx.getData().reportDesign), ...own() } };
+        mutator(state);
+        const next = state.report ?? {};
+        const shared = ctx.getData().reportDesign;
+        const lib = libraryOf(next);
+        if (LIBRARY_KEYS.some((k) => JSON.stringify(shared?.[k]) !== JSON.stringify(lib[k]))) ctx.setDesign({ ...arrangementOf(shared), ...lib });
+        ctx.setReportDesign?.(id, arrangementOf(next));
+      },
+      /** @param {string} platformId */
+      rememberSubject(platformId) { ctx.setReportDesign?.(id, undefined, platformId); },
+    };
+    reportHosts.set(id, h);
+    return h;
+  };
+  /**
+   * A new report's design, from the shared arrangement or a report template applied to it; and
+   * the shared library after (a template may bring its Style with it).
+   * @param {string} from '' for the shared design, else a report template's id
+   */
+  const newDesign = (from) => {
+    const shared = structuredClone(ctx.getData().reportDesign ?? {});
+    const t = from ? (shared.reportTemplates ?? []).find((/** @type {any} */ x) => x.id === from) : null;
+    const applied = t ? App.docStore.applyReportTemplate(shared, t, true) : shared;
+    return { design: arrangementOf(applied), library: libraryOf(applied) };
+  };
+
   return {
     host,
+    hostFor,
+    newDesign,
     /**
-     * @param {string} platformId @param {{ at: string, by: string, title: string }} o
+     * @param {string} platformId @param {{ at: string, by: string, title: string, reportId?: string }} o
      */
-    produce(platformId, { at, by, title }) {
-      App.docHost.set(host);
+    produce(platformId, { at, by, title, reportId }) {
+      const h = reportId ? hostFor(reportId) : host;
+      App.docHost.set(h);
       const options = App.docSession.options();
       const snapshot = buildSnapshot(ctx.getData(), platformId, { profileName: ctx.profileName, at, by, title, classification: options.classification || '' });
       producing = snapshot;
       try {
         const o = { ...options, subjectId: platformId };
-        const { document, style } = App.docGen.documentFor(host, o, {
+        const { document, style } = App.docGen.documentFor(h, o, {
           title, date: aestDate(at), platform: snapshot.platformName, classification: snapshot.classification, utc: toIsoUtc(at),
         });
         return { report: { ...snapshot, document, style }, baseName: reportFileBase(snapshot) };

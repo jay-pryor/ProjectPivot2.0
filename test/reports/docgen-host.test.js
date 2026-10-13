@@ -350,3 +350,93 @@ test('the host refuses an image over 50 megapixels with its size', async () => {
   const { host } = createDocHost({ ...ctxFor(), files: memFiles().api });
   await assert.rejects(host.images.store('report', fileOf(makeJpeg(10000, 6000), 'scan.jpg')), /scan\.jpg is 10000 × 6000 pixels; an image can be at most 50 megapixels/);
 });
+
+import { startReport, setOwnReportDesign } from '../../src/core/ops/reports.js';
+import { LIBRARY_KEYS } from '../../src/reports/docgen-host.js';
+
+/** A host whose data holds a report r1 with its own design, and the shared design with a library. */
+function withReport(own) {
+  const box = { data: setReportDesign(seed(), { order: ['hazards', 'controls'], formats: [{ id: 'house', name: 'House', page: { margins: {} }, text: {} }], formatId: 'house', sectionTemplates: [{ id: 't1', name: 'T', parts: [] }] }) };
+  box.data = startReport(box.data, act, { id: 'r1', title: 'Customer pack', design: own });
+  const docs = createDocHost({
+    getData: () => box.data,
+    setDesign: (design) => { box.data = setReportDesign(box.data, design); },
+    setReportDesign: (id, design, platformId) => { box.data = setOwnReportDesign(box.data, act, { id, design, platformId }); },
+    clock: fixedClock('2026-09-28T15:00:00+10:00'),
+    profileName: (id) => id,
+  });
+  return { box, docs };
+}
+
+test('a report host shows its own arrangement over the shared library, and writes each back where it belongs', () => {
+  assert.deepEqual(LIBRARY_KEYS, ['formats', 'sectionTemplates', 'reportTemplates', 'standardImages']);
+  const { box, docs } = withReport({ order: ['controls'], formatId: 'house' });
+  const h = docs.hostFor('r1');
+  const st = h.getState().report;
+  assert.deepEqual(st.order, ['controls']);
+  assert.equal(st.formats[0].id, 'house', 'the library is there to use');
+  assert.deepEqual(h.heading, { title: 'Customer pack', tag: 'In-Progress' });
+  h.commit((s) => { s.report.order = ['hazards']; s.report.formats.push({ id: 'new', name: 'New', page: { margins: {} }, text: {} }); });
+  assert.deepEqual(box.data.records.report.r1.design.order, ['hazards']);
+  assert.equal(box.data.records.report.r1.design.formats, undefined, 'the library is not copied into the report');
+  assert.deepEqual(box.data.reportDesign.order, ['hazards', 'controls'], 'the shared arrangement is untouched');
+  assert.deepEqual(box.data.reportDesign.formats.map((f) => f.id), ['house', 'new'], 'a Style made in a report joins the shared Styles');
+  assert.deepEqual(docs.host.heading, { title: 'Default for new reports' });
+});
+
+test('a report with no design of its own opens on a copy of the shared one', () => {
+  const { box, docs } = withReport({});
+  box.data = { ...box.data, records: { ...box.data.records, report: { ...box.data.records.report, r1: { ...box.data.records.report.r1, design: undefined, stage: undefined } } } };
+  const h = docs.hostFor('r1');
+  assert.deepEqual(h.getState().report.order, ['hazards', 'controls']);
+  assert.equal(h.heading.tag, 'For Review');
+});
+
+test('a new report\'s design: the shared arrangement, or a template applied to it', () => {
+  const { box, docs } = withReport({});
+  box.data = setReportDesign(box.data, { ...box.data.reportDesign, reportTemplates: [{ id: 'rpt1', name: 'Pack', order: ['controls'], sections: [] }] });
+  const shared = docs.newDesign('');
+  assert.deepEqual(shared.design.order, ['hazards', 'controls']);
+  assert.equal(shared.design.formats, undefined);
+  const fromT = docs.newDesign('rpt1');
+  assert.deepEqual(fromT.design.order, ['controls']);
+  assert.ok(Array.isArray(fromT.library.reportTemplates));
+});
+
+test('the report host remembers the platform chosen for it', () => {
+  const { box, docs } = withReport({});
+  docs.hostFor('r1').rememberSubject('p2');
+  assert.equal(box.data.records.report.r1.platformId, 'p2');
+});
+
+test('producing a report keeps the designer on that report\'s host', () => {
+  const { docs } = withReport({ order: ['hazards'] });
+  const { report } = docs.produce('p1', { at: '2026-09-28T15:00:00+10:00', by: 'u1', title: 'Customer pack', reportId: 'r1' });
+  assert.ok(report.document);
+  assert.deepEqual(App.docHost.get().heading, { title: 'Customer pack', tag: 'In-Progress' });
+});
+
+test('images in a report\'s own design are in use', () => {
+  const data = { reportDesign: {}, records: { report: { r1: { status: 'live', design: { sections: [{ parts: [{ kind: 'image', images: [{ source: 'report', file: 'x.png' }] }] }] } } } } };
+  assert.deepEqual([...imagesInUse(data)], ['x.png']);
+});
+
+test('choosing a platform for an old report changes nothing else about it', () => {
+  const { box, docs } = withReport({});
+  box.data = { ...box.data, records: { ...box.data.records, report: { ...box.data.records.report, r1: { ...box.data.records.report.r1, design: undefined, stage: undefined } } } };
+  docs.hostFor('r1').rememberSubject('p1');
+  const r = box.data.records.report.r1;
+  assert.deepEqual([r.platformId, r.stage, r.design], ['p1', undefined, undefined]);
+});
+
+test('starting from a template never rewrites a Style others use: a clashing Style comes in under a new id', () => {
+  const { box, docs } = withReport({});
+  const house = box.data.reportDesign.formats[0];
+  const older = { ...house, page: { margins: { top: 10 } } };
+  box.data = setReportDesign(box.data, { ...box.data.reportDesign, reportTemplates: [{ id: 'rpt1', name: 'Pack', order: ['controls'], sections: [], format: older }] });
+  const { design, library } = docs.newDesign('rpt1');
+  const kept = library.formats.find((f) => f.id === 'house');
+  assert.deepEqual(kept, house, 'the shared House Style is as it was');
+  assert.notEqual(design.formatId, 'house');
+  assert.ok(library.formats.some((f) => f.id === design.formatId), 'the template\'s Style is in the library under its own id');
+});

@@ -4,13 +4,20 @@ import { dataTable } from './table.js';
 import { all } from '../../core/data.js';
 import { hasUnsavedRecords } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
+import { stageOf } from '../../core/ops/reports.js';
 
 /** @param {any} state @param {import('../../core/data.js').Data} data */
 export function reportsView(state, data) {
   const unsaved = state.session ? hasUnsavedRecords(state.session) : false;
   const reports = all(data, 'report').filter((r) => r.status !== 'deleted').reverse();
-  return html`<div class="head"><h1>Reports</h1><button type="button" class="primary" ${dataAttrs({ action: 'openDesigner' })}>Open the report designer</button></div>
-    <p class="muted">Reports are made in the report designer: choose the platform there, then <strong>Make PDF</strong> or <strong>Make HTML</strong> on its Generate tab. Sections, wording, layout and the classification marking are set there too, and are shared by everyone using this folder.</p>
+  const templates = data.reportDesign?.reportTemplates ?? [];
+  // A new report: its name and what it starts from, then straight into the designer.
+  const start = html`<section class="panel report-new" aria-labelledby="report-new-h"><h2 id="report-new-h">New report</h2><form data-action="startReport" class="report-start">
+      <label class="report-start-name">Report name <input name="title" required placeholder="e.g. Harbour Patrol Boat safety case" aria-label="Report name"></label>
+      <label>Start from <select name="from" aria-label="Start from"><option value="">The shared design</option>${templates.map((t) => html`<option value="${t.id}">${t.name}</option>`)}</select></label>
+      <button type="submit" class="primary">Open in Report Designer</button></form></section>`;
+  return html`<div class="head"><h1>Reports</h1></div>
+    ${start}
     ${unsaved ? html`<p class="note">Save your changes first: a report is made from what is stored.</p>` : ''}
     <section><h2>Produced reports</h2>
       ${dataTable(state, {
@@ -19,16 +26,19 @@ export function reportsView(state, data) {
         rows: reports,
         empty: 'No reports yet.',
         columns: [
-          { key: 'produced', label: 'Produced', width: 160, value: (r) => r.producedAt, render: (r) => when(r.producedAt) },
-          { key: 'platform', label: 'Platform', width: 180, value: (r) => r.platformName },
+          { key: 'produced', label: 'Produced', width: 160, value: (r) => r.producedAt ?? '', render: (r) => (r.producedAt ? when(r.producedAt) : '—') },
+          { key: 'platform', label: 'Platform', width: 180, value: (r) => r.platformName || '—' },
           { key: 'title', label: 'Title', width: 320, value: (r) => r.title,
             render: (r) => html`${r.title}${r.review?.state === 'overdue' ? html` <span class="tag review-overdue" title="Produced while ${r.platformName} was overdue for review">Overdue</span>` : ''}` },
+          { key: 'stage', label: 'Status', width: 120, value: (r) => stageOf(r),
+            render: (r) => (stageOf(r) === 'in-progress' ? html`<span class="tag stage-progress">In-Progress</span>` : html`<span class="tag stage-review">For Review</span>`) },
           { key: 'marking', label: 'Marking', width: 170, value: (r) => r.classification || '—' },
-          { key: 'by', label: 'By', width: 140, value: (r) => profileName(state, r.producedBy) },
-          { key: 'download', label: 'Download', width: 150, sortable: false, render: (r) => html`<div class="actions">
+          { key: 'by', label: 'By', width: 140, value: (r) => (r.producedBy ? profileName(state, r.producedBy) : '—') },
+          { key: 'download', label: 'Download', width: 150, sortable: false, render: (r) => (r.document || r.html ? html`<div class="actions">
             ${r.document ? html`<button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'pdf' })}>PDF</button>` : ''}
-            <button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'html' })}>HTML</button></div>` },
-          removeColumn((r) => removeButton(`Delete ${r.title}`, `Delete ${r.title}?`, `The report produced for ${r.platformName} on ${when(r.producedAt)} will be deleted for everyone using this folder.`, { run: 'deleteReport', id: r.id })),
+            <button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'html' })}>HTML</button></div>` : '') },
+          { key: 'open', label: '', width: 48, sortable: false, render: (r) => html`<button type="button" class="icon-btn" ${dataAttrs({ action: 'openReportDesigner', id: r.id })} title="Open in Report Designer" aria-label="Open in Report Designer">✎</button>` },
+          removeColumn((r) => removeButton(`Delete ${r.title}`, `Delete ${r.title}?`, r.producedAt ? `The report produced for ${r.platformName} on ${when(r.producedAt)} will be deleted for everyone using this folder.` : `The report "${r.title}" will be deleted for everyone using this folder.`, { run: 'deleteReport', id: r.id })),
         ],
       })}
     </section>`;

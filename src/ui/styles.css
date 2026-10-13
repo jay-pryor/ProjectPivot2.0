@@ -1421,3 +1421,15 @@ ul.dots { display: grid; gap: 3px; }
 @keyframes tour-pulse { 0%, 100% { outline: 2px solid transparent; } 50% { outline: 2px solid var(--p-accent); } }
 .tour-invite { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--p-accent); background: var(--p-surface-2); }
 .tour-invite-buttons { display: flex; gap: 8px; margin-left: auto; }
+
+/* Reports: a new report's name and starting point; its status; the Open icon. */
+.report-new { margin: 0 0 22px; max-width: 900px; }
+.report-new h2 { margin: 0 0 10px; }
+.report-start { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin: 0; }
+.report-start label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
+.report-start label input, .report-start label select { font-weight: 400; }
+.report-start-name { flex: 1 1 320px; }
+.report-start-name input { width: 100%; box-sizing: border-box; }
+.tag.stage-progress { background: var(--p-warn-bg); color: var(--p-warn); }
+.tag.stage-review { background: var(--p-info-bg); color: var(--p-info-fg); }
+.icon-btn { padding: 2px 8px; line-height: 1.2; }

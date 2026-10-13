@@ -55,3 +55,14 @@ test('Final review I4: saved reports\' documents are left out of the mirror and 
   assert.deepEqual(m.working.records.report.r2.style, { id: 's' }, 'an unsaved report keeps its documents in the mirror');
   assert.deepEqual(m.base, legacy);
 });
+
+test('a saved report made again since the save keeps its new document in the browser copy', () => {
+  const s = new MemoryStorage();
+  const rep = (at, blocks) => ({ id: 'r1', status: 'live', title: 'T', producedAt: at, document: { blocks }, style: {} });
+  const base = { ...emptyData(), records: { ...emptyData().records, report: { r1: rep('2026-10-13T09:00:00+10:00', ['old']) } } };
+  const working = { ...base, records: { ...base.records, report: { r1: rep('2026-10-13T10:00:00+10:00', ['new']) } } };
+  assert.equal(writeMirror(s, { folderName: 'x', base, working, loadedStamp: null }), null);
+  const back = restoreReportDocuments(readMirror(s, 'x'), base);
+  assert.deepEqual(back.working.records.report.r1.document.blocks, ['new']);
+  assert.deepEqual(back.base.records.report.r1.document.blocks, ['old']);
+});

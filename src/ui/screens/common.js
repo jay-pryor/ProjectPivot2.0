@@ -173,18 +173,22 @@ const MENU_SVG = '<svg viewBox="0 0 20 20" width="20" height="20" focusable="fal
 /** The moon on the theme switch: a solid crescent (the text moon draws only an outline in some fonts). */
 const MOON_SVG = '<svg class="moon" viewBox="0 0 16 16" focusable="false"><path d="M10.6 1.2A7 7 0 1 0 14.8 10.4 5.6 5.6 0 0 1 10.6 1.2Z" fill="currentColor"/></svg>';
 
-/** @param {any} state @param {import('../html.js').Raw} body */
-export function shell(state, body) {
+/** The one button that says where things stand: Unsaved (click to save), Saving… with a bar, or Saved. @param {any} state */
+export function saveButton(state) {
   const unsaved = state.session ? hasUnsaved(state.session) : false;
-  const current = SECTION[/** @type {keyof typeof SECTION} */ (state.view?.name)] ?? '';
-  const theme = themeOf(state);
-  const other = theme === 'dark' ? 'light' : 'dark';
-  // One button says where things stand: Unsaved (click to save), Saving… with a bar, or Saved.
-  const save = state.saving
+  return state.saving
     ? html`<button type="button" class="save saving" ${dataAttrs({ action: 'save' })} disabled>Saving…</button>`
     : unsaved
       ? html`<button type="button" class="save unsaved" ${dataAttrs({ action: 'save' })} title="You have unsaved changes: click to save">Unsaved</button>`
       : html`<button type="button" class="save saved" ${dataAttrs({ action: 'save' })} title="Everything is saved">Saved</button>`;
+}
+
+/** @param {any} state @param {import('../html.js').Raw} body */
+export function shell(state, body) {
+  const current = SECTION[/** @type {keyof typeof SECTION} */ (state.view?.name)] ?? '';
+  const theme = themeOf(state);
+  const other = theme === 'dark' ? 'light' : 'dark';
+  const save = saveButton(state);
   // Home carries a dot while the active profile's platforms need attention: changes to
   // acknowledge, overdue reviews, controls awaiting a status decision, unrated hazards, ratings without justification, control properties not set, SFARP incomplete (Home's own list).
   const data = state.session?.working;
