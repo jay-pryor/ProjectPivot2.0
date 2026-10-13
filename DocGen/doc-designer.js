@@ -3403,6 +3403,7 @@ import { toWinAnsi } from './doc-fonts.js';
       fmtId: null,           // Style being edited in the Styles pane
       styleSection: null,    // which part of that Style is open (PDF-1)
       held: null,            // what the last edit asked for that the Style could not use
+      colourOpen: null,      // the colour field whose palette is open (its Style path)
       secCat: null,          // the open category of the Sections pane
       secWhole: false,       // whether the section preview shows the whole document
       listWidth: null,       // the Sections list's width, once dragged
@@ -4278,9 +4279,31 @@ import { toWinAnsi } from './doc-fonts.js';
     var FAMILY_LABELS = [{ value: 'helvetica', label: 'Helvetica (sans serif)' }, { value: 'times', label: 'Times (serif)' }, { value: 'courier', label: 'Courier (fixed width)' }];
     var ALIGN_LABELS = [{ value: 'left', label: 'Left' }, { value: 'centre', label: 'Centre' }, { value: 'right', label: 'Right' }, { value: 'justify', label: 'Justified' }];
 
+    /** Preset colours: greys, then main colours, then a pastel of each for light shading. */
+    var PALETTE = [
+      [['#000000', 'Black'], ['#404040', 'Dark grey'], ['#808080', 'Grey'], ['#bfbfbf', 'Light grey'], ['#f2f2f2', 'Pale grey'], ['#ffffff', 'White']],
+      [['#c00000', 'Red'], ['#e46c0a', 'Orange'], ['#ffc000', 'Yellow'], ['#00b050', 'Green'], ['#008080', 'Teal'], ['#0070c0', 'Blue'], ['#1f3864', 'Navy'], ['#7030a0', 'Purple']],
+      [['#f4cccc', 'Pastel red'], ['#fce4d6', 'Pastel orange'], ['#fff2cc', 'Pastel yellow'], ['#e2efda', 'Pastel green'], ['#d9f0ef', 'Pastel teal'], ['#ddebf7', 'Pastel blue'], ['#d9e2f3', 'Pastel navy'], ['#e4dfec', 'Pastel purple']]
+    ];
+
+    /** A colour: its swatch and code; pressed, the preset swatches, with the full picker behind "More colours…". */
     function colourField(label, key, val) {
-      return '<label class="rd-lab rd-lab-s">' + esc(label) +
-        '<input type="color" class="rd-shade" value="' + esc(val || '#000000') + '" data-rd-fmt="' + esc(key) + '" aria-label="' + esc(label) + '"></label>';
+      var cur = String(val || '#000000').toLowerCase();
+      var open = _rd.colourOpen === key;
+      var palette = open
+        ? '<div class="rd-palette" role="dialog" aria-label="' + esc(label) + '">' + PALETTE.map(function (row) {
+            return '<div class="rd-palrow">' + row.map(function (c) {
+              return '<button type="button" data-rd-colour-pick="' + c[0] + '" data-rd-colour-key="' + esc(key) + '" class="rd-sw' + (c[0] === cur ? ' on' : '') + '"' +
+                ' style="background:' + c[0] + '" title="' + esc(c[1]) + '" aria-label="' + esc(c[1]) + '"></button>';
+            }).join('') + '</div>';
+          }).join('') +
+          '<label class="rd-more">More colours&hellip;<input type="color" value="' + esc(cur) + '" data-rd-fmt="' + esc(key) + '" aria-label="' + esc(label) + ', any colour"></label>' +
+          '</div>'
+        : '';
+      return '<div class="rd-lab rd-lab-s rd-colour">' + esc(label) +
+        '<span class="rd-colour-now"><button type="button" class="rd-swatch-btn" data-rd-colour-open="' + esc(key) + '" style="background:' + esc(cur) + '"' +
+          ' aria-expanded="' + open + '" aria-label="' + esc(label) + ': ' + esc(cur) + '. Choose a colour"></button>' +
+          '<span class="rd-colour-hex">' + esc(cur) + '</span></span>' + palette + '</div>';
     }
     function flagField(label, key, on) {
       return '<label class="gen-opt"><input type="checkbox" data-rd-fmt-bool="' + esc(key) + '"' + (on ? ' checked' : '') + '> ' + esc(label) + '</label>';
@@ -5848,7 +5871,26 @@ import { toWinAnsi } from './doc-fonts.js';
       dom.on(ctx.root, 'change', '[data-rd-hf-first]', function (e, el) {
         fmtPatch('headerFooter.firstDifferent', el.checked);
       });
-      dom.on(ctx.root, 'change', '[data-rd-fmt]', function (e, el) { fmtPatch(el.getAttribute('data-rd-fmt'), el.value); });
+      dom.on(ctx.root, 'change', '[data-rd-fmt]', function (e, el) {
+        if (el.type === 'color') _rd.colourOpen = null;
+        fmtPatch(el.getAttribute('data-rd-fmt'), el.value);
+      });
+      // Colours: the swatch opens the presets; a preset is chosen with one click.
+      dom.on(ctx.root, 'click', '[data-rd-colour-open]', function (e, el) {
+        var key = el.getAttribute('data-rd-colour-open');
+        _rd.colourOpen = _rd.colourOpen === key ? null : key;
+        repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-colour-pick]', function (e, el) {
+        _rd.colourOpen = null;
+        fmtPatch(el.getAttribute('data-rd-colour-key'), el.getAttribute('data-rd-colour-pick'));
+      });
+      // A click anywhere else closes an open palette.
+      ctx.root.addEventListener('click', function (e) {
+        if (!_rd.colourOpen || (e.target && e.target.closest && e.target.closest('.rd-colour'))) return;
+        _rd.colourOpen = null;
+        repaint();
+      });
       dom.on(ctx.root, 'change', '[data-rd-fmt-bool]', function (e, el) { fmtPatch(el.getAttribute('data-rd-fmt-bool'), el.checked); });
 
       // ---- templates --------------------------------------------------------
@@ -5891,7 +5933,7 @@ import { toWinAnsi } from './doc-fonts.js';
       isOpen: function () { return !!_rd.open; },
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
-      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
+      laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
       PANES: PANES, _rd: _rd
     };
   })(App);

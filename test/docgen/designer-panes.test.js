@@ -64,14 +64,16 @@ test('every field on every Styles section names a real path in the Style', () =>
 
 test('a text section offers font, size, weight, slope, underline, colour, alignment, spacing and breaks', () => {
   const html = paneOf(host(), 'styles', 'h1');
-  for (const f of ['family', 'size', 'colour', 'align', 'lineSpacing', 'spaceBefore', 'spaceAfter']) assert.match(html, new RegExp(`data-rd-fmt="text\\.h1\\.${f}"`), f);
+  for (const f of ['family', 'size', 'align', 'lineSpacing', 'spaceBefore', 'spaceAfter']) assert.match(html, new RegExp(`data-rd-fmt="text\\.h1\\.${f}"`), f);
+  assert.match(html, /data-rd-colour-open="text\.h1\.colour"/, 'colour');
   for (const f of ['bold', 'italic', 'underline', 'keepWithNext', 'pageBreakBefore']) assert.match(html, new RegExp(`data-rd-fmt-bool="text\\.h1\\.${f}"`), f);
   assert.ok(TEXT_KEYS.includes('h1'));
 });
 
 test('the tables section sets every table: borders, header row, banding and first column', () => {
   const html = paneOf(host(), 'styles', 'tables');
-  for (const p of ['tables.borders', 'tables.header.fill', 'tables.banding.fill', 'tables.firstColumn.fill', 'tables.captionPosition']) assert.match(html, new RegExp(`data-rd-fmt="${p.replace(/\./g, '\\.')}"`), p);
+  for (const p of ['tables.borders', 'tables.captionPosition']) assert.match(html, new RegExp(`data-rd-fmt="${p.replace(/\./g, '\\.')}"`), p);
+  for (const p of ['tables.header.fill', 'tables.banding.fill', 'tables.firstColumn.fill']) assert.match(html, new RegExp(`data-rd-colour-open="${p.replace(/\./g, '\\.')}"`), p);
   for (const p of ['tables.header.repeat', 'tables.banding.on', 'tables.firstColumn.on']) assert.match(html, new RegExp(`data-rd-fmt-bool="${p.replace(/\./g, '\\.')}"`), p);
 });
 
@@ -494,4 +496,26 @@ test('formatting keeps references whole and never runs across a paragraph break'
   assert.equal(toggled('[one\n\ntwo]', 'i'), '[{{i}}one{{/i}}\n\n{{i}}two{{/i}}]');
   assert.equal(toggled('[{{c}}code{{/c}} x]', 'c'), '[{{c}}code x{{/c}}]');
   assert.equal(toggled('{{c}}[code]{{/c}}', 'c'), '[code]');
+});
+
+test('a colour field shows its colour and opens preset swatches, with the full picker behind "More colours…"', () => {
+  const h = host();
+  const closed = paneOf(h, 'styles', 'tables');
+  const fields = closed.slice(closed.indexOf('rd-style-fields'), closed.indexOf('rd-style-preview'));
+  assert.doesNotMatch(fields, /type="color"/, 'no full picker up front');
+  assert.match(fields, /data-rd-colour-open="tables\.header\.fill"[^>]*style="background:#d9e2f3"/);
+  RD._rd.colourOpen = 'tables.header.fill';
+  const open = paneOf(h, 'styles', 'tables');
+  RD._rd.colourOpen = null;
+  const pal = open.slice(open.indexOf('class="rd-palette"'));
+  const picks = [...pal.matchAll(/data-rd-colour-pick="(#[0-9a-f]{6})" data-rd-colour-key="tables\.header\.fill"/g)].map((m) => m[1]);
+  assert.ok(picks.length >= 20, `${picks.length} presets`);
+  for (const c of ['#000000', '#ffffff', '#c00000', '#0070c0', '#f4cccc', '#ddebf7', '#d9e2f3']) assert.ok(picks.includes(c), c);
+  assert.match(pal, /More colours&hellip;<input type="color"[^>]*data-rd-fmt="tables\.header\.fill"/);
+  assert.match(pal, /data-rd-colour-pick="#d9e2f3"[^>]*class="rd-sw on"|class="rd-sw on"[^>]*data-rd-colour-pick="#d9e2f3"/, 'the current colour is marked');
+});
+
+test('the palette is the same everywhere: preset rows of greys, colours and their pastels', () => {
+  assert.deepEqual(RD.PALETTE.map((row) => row.length), [6, 8, 8]);
+  for (const row of RD.PALETTE) for (const [hex, name] of row) { assert.match(hex, /^#[0-9a-f]{6}$/); assert.ok(name); }
 });
