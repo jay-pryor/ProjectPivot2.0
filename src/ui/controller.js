@@ -1,5 +1,7 @@
 import { createReport, deleteReport } from '../core/ops/reports.js';
-import { reportFileBase } from '../reports/docgen-host.js';
+import { reportFileBase, imagesInUse } from '../reports/docgen-host.js';
+import { loadImages } from '../../DocGen/doc-images.js';
+import { readFile, writeWhole, exists as fileExists, removeFile, listNames } from '../storage/folder.js';
 import { renderPdf, renderHtml } from '../../DocGen/doc-render.js';
 import { when } from './names.js';
 import * as store from '../storage/store.js';
@@ -41,6 +43,9 @@ import { asUnit } from './screens/reviews.js';
 import { DEFAULT_WORKFLOWS_PREFS, RECENT_DAYS, readWorkflowsPrefs, writeWorkflowsPrefs, workflowsPrefsKey } from './workflows-prefs.js';
 import { sampleRegister, SAMPLE_PROFILE } from './tour/sample.js';
 import { TOUR_STEPS } from './tour/steps.js';
+
+/** Report images nothing uses are removed on save only once this old, so one just dropped by someone yet to save is kept. */
+export const SWEEP_AFTER_MS = 24 * 60 * 60 * 1000;
 
 /** Every edit is an op called with the working data, the act, and the action's own fields. */
 const EDITS = {
@@ -194,7 +199,31 @@ export function createController(env) {
     },
     clock: env.clock,
     profileName: nameOf,
+    files: {
+      read: async (/** @type {string} */ path) => {
+        if (!handle) return null;
+        const f = await readFile(handle, path);
+        return f ? new Uint8Array(await f.arrayBuffer()) : null;
+      },
+      write: async (/** @type {string} */ path, /** @type {Blob} */ blob) => { if (!handle) throw new PivotError('no-data', 'Open the data folder first.'); await writeWhole(handle, path, blob); },
+      exists: async (/** @type {string} */ path) => (handle ? fileExists(handle, path) : false),
+      remove: async (/** @type {string} */ path) => { if (handle) await removeFile(handle, path); },
+    },
   });
+
+  /** After a save: report images that nothing uses and that are a day old leave the folder. Never throws. */
+  async function sweepReportImages() {
+    if (!handle || !state.session) return;
+    try {
+      const used = imagesInUse(state.session.working);
+      for (const name of await listNames(handle, 'files/report-images')) {
+        if (used.has(name)) continue;
+        const f = await readFile(handle, `files/report-images/${name}`);
+        if (!f || Date.now() - f.lastModified < SWEEP_AFTER_MS) continue;
+        await removeFile(handle, `files/report-images/${name}`);
+      }
+    } catch { /* a sweep that cannot finish leaves the files for the next save */ }
+  }
 
   /** Mirror the working state, and take a backup if one is due. Never throws. */
   async function afterChange() {
@@ -515,6 +544,7 @@ export function createController(env) {
         }
       }
       set({ message: saveMessage(r), warnings });
+      void sweepReportImages();
     },
     async setTheme({ theme }) {
       if (!THEMES.includes(theme)) throw new PivotError('prefs.theme', `There is no ${theme} theme.`);
@@ -991,8 +1021,11 @@ export function createController(env) {
       const ext = format === 'html' ? 'html' : 'pdf';
       if (ext === 'pdf' && !r.document) throw new PivotError('report.legacy', 'This report was made before PDF; download its HTML.');
       const file = await env.pickSaveFile(`${reportFileBase(r)}.${ext}`);
-      // The PDF and HTML are drawn from the finished document when downloaded; a report made before PDF has only its HTML.
-      const content = ext === 'pdf' ? renderPdf(r.document, r.style, { date: r.producedAt }).bytes : r.document ? renderHtml(r.document, r.style) : r.html;
+      const images = r.document ? await loadImages(r.document, docs.host.images.read) : {};
+      // The PDF and HTML are drawn from the finished document when downloaded, with the images as they are in the folder now;
+      // a report made before PDF has only its HTML.
+      const content = ext === 'pdf' ? renderPdf(r.document, r.style, { date: r.producedAt, images }).bytes
+        : r.document ? renderHtml(r.document, r.style, { images }) : r.html;
       await store.writeExport(file, content);
       set({ message: { kind: 'info', text: `Saved ${file.name}.` } });
     },
