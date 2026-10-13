@@ -151,9 +151,17 @@ export function layout(doc, style, assets = {}) {
  * @param {{ images?: Record<string, any> }} assets
  */
 function flow(doc, style, pageOf, assets) {
-  const [pw, ph] = pageSize(style);
+  const [pw0, ph0] = pageSize(style);
   const m = style.page.margins;
-  const left = m.left * MM, top = m.top * MM, bottom = ph - m.bottom * MM, W = pw - (m.left + m.right) * MM;
+  const left = m.left * MM, top = m.top * MM;
+  // The page in force: the Style's own, or (at a landscape break) its paper with the long side across.
+  let pw = pw0, ph = ph0, bottom = 0, W = 0;
+  const orient = (/** @type {boolean} */ landscape) => {
+    [pw, ph] = landscape ? [Math.max(pw0, ph0), Math.min(pw0, ph0)] : [pw0, ph0];
+    bottom = ph - m.bottom * MM;
+    W = pw - (m.left + m.right) * MM;
+  };
+  orient(false);
   /** @type {any[]} */
   const pages = [];
   /** @type {any} */
@@ -301,7 +309,15 @@ function flow(doc, style, pageOf, assets) {
     else if (b.kind === 'figure') layoutFigure(b, { style, ctx, left, W, get y() { return y; }, set y(v) { y = v; }, get page() { return page; },
       pageH: bottom - top, images: assets.images ?? {}, newPage, atTop, room, mark, carryHeading });
     else if (b.kind === 'toc') toc();
-    else if (b.kind === 'pageBreak') { if (!atTop()) newPage(); }
+    else if (b.kind === 'pageBreak') {
+      if (b.orientation) {
+        const was = [pw, ph];
+        orient(b.orientation === 'landscape');
+        const changed = was[0] !== pw || was[1] !== ph;
+        if (changed && atTop() && page.items.length === 0) page.size = [pw, ph];
+        else if (changed || !atTop()) newPage();
+      } else if (!atTop()) newPage();
+    }
     else if (b.kind === 'space') { mark(b.anchor); y += (Number(b.mm) || 0) * MM; if (y > bottom) newPage(); }
     else if (b.kind === 'rule') {
       if (room() < 12) newPage();

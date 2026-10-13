@@ -182,3 +182,32 @@ test('Final review I4: a reference whose target never lands prints no "(page 00)
   const r = layout(doc([{ kind: 'paragraph', style: 'body', runs: [{ text: 'See ' }, { text: 'nowhere', ref: { anchor: 'sec-gone' } }] }]), style({ refs: { pageInPdf: true } }));
   assert.doesNotMatch(words(r.pages[0]), /page 00/);
 });
+
+test('an orientation break turns the page: wider text, landscape size, kept on overflow, and back', () => {
+  const s = style();
+  const long = 'word '.repeat(40);
+  const r = layout(doc([para('portrait one'), { kind: 'pageBreak', orientation: 'landscape' }, ...Array.from({ length: 60 }, () => para(long)),
+    { kind: 'pageBreak', orientation: 'portrait' }, para('portrait two')]), s);
+  const [pw, ph] = r.pages[0].size;
+  assert.ok(ph > pw, 'starts portrait');
+  assert.deepEqual(r.pages[1].size, [ph, pw], 'then landscape');
+  const landscapePages = r.pages.filter((p) => p.size[0] > p.size[1]);
+  assert.ok(landscapePages.length >= 2, 'overflow pages stay landscape');
+  const last = r.pages.at(-1);
+  assert.deepEqual(last.size, [pw, ph], 'and back to portrait');
+  const right = (p) => Math.max(...p.items.filter((i) => i.kind === 'text' && !/Page|of/.test(i.text)).map((i) => i.x));
+  assert.ok(right(r.pages[1]) > pw - 20, 'text runs wider than a portrait page');
+});
+
+test('an orientation break at the top of an empty page turns that page rather than adding a blank one', () => {
+  const r = layout(doc([{ kind: 'pageBreak', orientation: 'landscape' }, para('wide')]), style());
+  assert.equal(r.pages.length, 1);
+  assert.ok(r.pages[0].size[0] > r.pages[0].size[1]);
+});
+
+test('on a landscape page the header and footer run along the long edge', () => {
+  const s = style({ headerFooter: { footer: { left: '', centre: '', right: 'Page #page' } } });
+  const r = layout(doc([para('a'), { kind: 'pageBreak', orientation: 'landscape' }, para('b')]), s);
+  const foot = r.pages[1].items.find((i) => i.kind === 'text' && i.text === '2');
+  assert.ok(foot.x > r.pages[0].size[0], 'the page number sits beyond a portrait page\'s width');
+});
