@@ -1,6 +1,6 @@
 import { PivotError } from './errors.js';
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /**
  * A produced report's documents: the finished document and Style it is drawn from (or, for one

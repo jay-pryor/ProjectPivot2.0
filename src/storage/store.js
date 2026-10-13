@@ -1,4 +1,5 @@
 import { epochOf, formatAest, compactStamp } from '../core/time.js';
+import { sameJson } from '../core/json.js';
 import { backupName, backupTime, BACKUP_RE } from './envelope.js';
 import { listNames, removeFile } from './folder.js';
 import { mergeData } from '../core/merge.js';
@@ -24,6 +25,59 @@ export const FILES = Object.freeze({
   superseded: 'Superseded Saves',
   files: 'files',
 });
+
+/** Where each report's own design is kept: one file per report. */
+export const REPORTS_DIR = `${FILES.files}/reports`;
+/** @param {string} id */
+export const designPath = (id) => `${REPORTS_DIR}/${id}.json`;
+const DESIGN_FORMAT = 'pivot-report-design';
+
+/** A design file's text, or null when it is not one. @param {string | null} text @param {string} id */
+function designOf(text, id) {
+  if (text === null) return null;
+  try {
+    const f = JSON.parse(text);
+    return f && f.format === DESIGN_FORMAT && f.reportId === id && f.design && typeof f.design === 'object' ? f.design : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Each live report's design, read from its own file. A report whose file is missing or is not
+ * a design file comes back without one, and is named in `missing`.
+ * @param {Dir} handle @param {Data} data
+ */
+async function withDesigns(handle, data) {
+  const live = Object.values(data.records.report).filter((r) => r.status !== 'deleted');
+  const read = await Promise.all(live.map(async (r) => [r.id, designOf(await readText(handle, designPath(r.id)).catch(() => null), r.id)]));
+  /** @type {Record<string, any>} */
+  const reports = { ...data.records.report };
+  /** @type {string[]} */
+  const missing = [];
+  for (const [id, design] of read) {
+    if (design) reports[id] = { ...reports[id], design };
+    else { const { design: _d, ...rest } = reports[id]; reports[id] = rest; missing.push(/** @type {string} */ (id)); }
+  }
+  return { data: { ...data, records: { ...data.records, report: reports } }, missing };
+}
+
+/** The data as data.json holds it: no report carries its design. @param {Data} data */
+function withoutDesigns(data) {
+  /** @type {Record<string, any>} */
+  const reports = {};
+  for (const [id, r] of Object.entries(data.records.report)) { const { design: _d, ...rest } = r; reports[id] = rest; }
+  return { ...data, records: { ...data.records, report: reports } };
+}
+
+/** Write each live report's design whose file differs from `onDisk`'s. @param {Dir} handle @param {Data} data @param {Data | null} onDisk */
+async function writeDesigns(handle, data, onDisk) {
+  for (const r of Object.values(data.records.report)) {
+    if (r.status === 'deleted' || !r.design) continue;
+    if (onDisk && sameJson(onDisk.records.report[r.id]?.design, r.design)) continue;
+    await writeWhole(handle, designPath(r.id), JSON.stringify({ format: DESIGN_FORMAT, version: 1, reportId: r.id, design: r.design }, null, 2));
+  }
+}
 
 /** @param {Dir} handle @returns {Promise<{ failed: { file: string, reason: string, detail: string }[] }>} */
 export async function checkFolder(handle) {
@@ -65,17 +119,20 @@ export async function dataFromText(text) {
   return (await openData(text)).data;
 }
 
-/** @param {Dir} handle @returns {Promise<{ text: string | null, data: Data, stamp: SaveStamp | null }>} */
-export async function readDisk(handle) {
+/** @param {Dir} handle @param {{ designs?: boolean }} [o] @returns {Promise<{ text: string | null, data: Data, stamp: SaveStamp | null, missingDesigns: string[] }>} */
+export async function readDisk(handle, o = {}) {
   const text = await readText(handle, FILES.data);
-  if (text === null) return { text: null, data: emptyData(), stamp: null };
-  return { text, ...(await openData(text)) };
+  if (text === null) return { text: null, data: emptyData(), stamp: null, missingDesigns: [] };
+  const opened = await openData(text);
+  if (o.designs === false) return { text, ...opened, missingDesigns: [] };
+  const { data, missing } = await withDesigns(handle, opened.data);
+  return { text, data, stamp: opened.stamp, missingDesigns: missing };
 }
 
 /** @param {Dir} handle */
 export async function load(handle) {
-  const { data, stamp } = await readDisk(handle);
-  return { data, stamp };
+  const { data, stamp, missingDesigns } = await readDisk(handle);
+  return { data, stamp, missingDesigns };
 }
 
 /** @param {Dir} handle @returns {Promise<Profile[]>} */
@@ -170,11 +227,14 @@ export async function save(handle, session, profileId, clock, hooks = {}) {
     merged = assignNumbers(merged);
     if (conflicts.length) merged = recordOverride(merged, act, conflicts);
     const stamp = newStamp(profileId, at);
-    const text = serialize(await seal('data', merged, stamp, at));
+    const text = serialize(await seal('data', withoutDesigns(merged), stamp, at));
 
     if (hooks.beforeWrite) await hooks.beforeWrite();
-    const now = await readDisk(handle);
+    const now = await readDisk(handle, { designs: false });
     if (!sameStamp(now.stamp, disk.stamp)) continue;
+
+    // Each report's own design goes to its own file first: a failed write stops the save before data.json changes.
+    await writeDesigns(handle, merged, disk.data);
 
     let supersededFile = null;
     if (changedOnDisk && disk.stamp) {
@@ -236,7 +296,9 @@ export async function restore(handle, data, profileId, clock) {
     await writeWhole(handle, supersededFile, current);
   }
   const stamp = newStamp(profileId, at);
-  await writeWhole(handle, FILES.data, serialize(await seal('data', data, stamp, at)));
+  // Each report's own design to its file, then data.json without them.
+  await writeDesigns(handle, data, null);
+  await writeWhole(handle, FILES.data, serialize(await seal('data', withoutDesigns(data), stamp, at)));
   return { data, stamp, supersededFile };
 }
 
