@@ -2596,6 +2596,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     // ---- DS-5: formatting profiles -------------------------------------------
 
+    /** A new Style's id: random, so two people adding Styles at once never make the same one. */
+    function freshStyleId() { return 'fmt-' + (Math.random().toString(36) + '00000000').slice(2, 10); }
+
     function addFormat(name, from) {
       if (!P()) return errNoProject();
       if (!String(name || '').trim()) return err('A formatting profile needs a name.');
@@ -2603,7 +2606,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       App.docHost.get().commit(function (p) {
         var b = bag(p);
         b.formats = b.formats || [];
-        id = nextId('fmt', b.formats);
+        id = freshStyleId();
         var base = App.docFormat.normalise(from || App.docFormat.standard());
         delete base.builtin;                        // a copy of the built-in is not the built-in
         base.id = id;
@@ -2776,8 +2779,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * Destructive by design — "apply this template" means "make the document look
      * like that" — so the UI confirms first and the whole thing is one undo step.
      */
-    /** RPT-T: what applying a report template does to a design bag (pure: a new bag). */
-    function applyReportTemplate(bag0, t) {
+    /**
+     * RPT-T: what applying a report template does to a design bag (pure: a new bag). With
+     * `keepStyles`, a template Style that clashes with a different Style of the same id comes
+     * in under a new id rather than replacing it, so a new report never changes another's look.
+     */
+    function applyReportTemplate(bag0, t, keepStyles) {
       var b = JSON.parse(JSON.stringify(bag0 || {}));
       b.order = (t.order || []).slice();
       ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
@@ -2790,7 +2797,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (t.format) {
         var f = App.docFormat.normalise(t.format);
         delete f.builtin;
-        if (f.id === 'standard') { f.id = nextId('fmt', b.formats || []); f.name = t.name + ' formatting'; }
+        if (f.id === 'standard') { f.id = freshStyleId(); f.name = t.name + ' formatting'; }
+        var clash = (b.formats || []).filter(function (x) { return x.id === f.id; })[0];
+        if (keepStyles && clash && JSON.stringify(App.docFormat.normalise(clash)) !== JSON.stringify(f)) f.id = freshStyleId();
         b.formats = (b.formats || []).filter(function (x) { return x.id !== f.id; }).concat([f]);
         b.formatId = f.id;
       }

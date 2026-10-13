@@ -420,3 +420,23 @@ test('images in a report\'s own design are in use', () => {
   const data = { reportDesign: {}, records: { report: { r1: { status: 'live', design: { sections: [{ parts: [{ kind: 'image', images: [{ source: 'report', file: 'x.png' }] }] }] } } } } };
   assert.deepEqual([...imagesInUse(data)], ['x.png']);
 });
+
+test('choosing a platform for an old report changes nothing else about it', () => {
+  const { box, docs } = withReport({});
+  box.data = { ...box.data, records: { ...box.data.records, report: { ...box.data.records.report, r1: { ...box.data.records.report.r1, design: undefined, stage: undefined } } } };
+  docs.hostFor('r1').rememberSubject('p1');
+  const r = box.data.records.report.r1;
+  assert.deepEqual([r.platformId, r.stage, r.design], ['p1', undefined, undefined]);
+});
+
+test('starting from a template never rewrites a Style others use: a clashing Style comes in under a new id', () => {
+  const { box, docs } = withReport({});
+  const house = box.data.reportDesign.formats[0];
+  const older = { ...house, page: { margins: { top: 10 } } };
+  box.data = setReportDesign(box.data, { ...box.data.reportDesign, reportTemplates: [{ id: 'rpt1', name: 'Pack', order: ['controls'], sections: [], format: older }] });
+  const { design, library } = docs.newDesign('rpt1');
+  const kept = library.formats.find((f) => f.id === 'house');
+  assert.deepEqual(kept, house, 'the shared House Style is as it was');
+  assert.notEqual(design.formatId, 'house');
+  assert.ok(library.formats.some((f) => f.id === design.formatId), 'the template\'s Style is in the library under its own id');
+});

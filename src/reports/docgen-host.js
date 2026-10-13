@@ -14,7 +14,7 @@ const STAGE_LABEL = /** @type {Record<string, string>} */ ({ 'in-progress': 'In-
 /** @param {Record<string, any>} d */
 const libraryOf = (d) => Object.fromEntries(LIBRARY_KEYS.filter((k) => d?.[k] !== undefined).map((k) => [k, structuredClone(d[k])]));
 /** @param {Record<string, any>} d */
-const arrangementOf = (d) => Object.fromEntries(Object.entries(structuredClone(d ?? {})).filter(([k]) => !LIBRARY_KEYS.includes(k)));
+export const arrangementOf = (d) => Object.fromEntries(Object.entries(structuredClone(d ?? {})).filter(([k]) => !LIBRARY_KEYS.includes(k)));
 
 /** @typedef {import('./snapshot.js').Snapshot} Snapshot */
 
@@ -265,7 +265,7 @@ export function imagesInUse(data) {
 /**
  * @param {{ getData: () => import('../core/data.js').Data, setDesign: (design: Record<string, any>) => void,
  *   clock: import('../core/time.js').Clock, profileName: (id: string) => string,
- *   setReportDesign?: (id: string, design: Record<string, any>, platformId?: string | null) => void,
+ *   setReportDesign?: (id: string, design: Record<string, any> | undefined, platformId?: string | null) => void,
  *   files?: { read: (path: string) => Promise<Uint8Array | null>, write: (path: string, blob: Blob) => Promise<void>, exists: (path: string) => Promise<boolean>, remove: (path: string) => Promise<void> } }} ctx
  */
 export function createDocHost(ctx) {
@@ -344,7 +344,7 @@ export function createDocHost(ctx) {
         ctx.setReportDesign?.(id, arrangementOf(next));
       },
       /** @param {string} platformId */
-      rememberSubject(platformId) { ctx.setReportDesign?.(id, own(), platformId); },
+      rememberSubject(platformId) { ctx.setReportDesign?.(id, undefined, platformId); },
     };
     reportHosts.set(id, h);
     return h;
@@ -357,7 +357,7 @@ export function createDocHost(ctx) {
   const newDesign = (from) => {
     const shared = structuredClone(ctx.getData().reportDesign ?? {});
     const t = from ? (shared.reportTemplates ?? []).find((/** @type {any} */ x) => x.id === from) : null;
-    const applied = t ? App.docStore.applyReportTemplate(shared, t) : shared;
+    const applied = t ? App.docStore.applyReportTemplate(shared, t, true) : shared;
     return { design: arrangementOf(applied), library: libraryOf(applied) };
   };
 

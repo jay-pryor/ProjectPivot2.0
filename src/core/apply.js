@@ -37,5 +37,6 @@ export function commit(data, act, action, recs) {
     for (const pl of platformsReached(data, p.kind, p.before ?? p.after)) platforms.add(pl);
     for (const pl of platformsReached(next, p.kind, p.after)) platforms.add(pl);
   }
-  return recordChange(next, act, action, pairs, [...platforms]);
+  // A record about no platform yet (a report not yet made) reaches none.
+  return recordChange(next, act, action, pairs, [...platforms].filter(Boolean));
 }

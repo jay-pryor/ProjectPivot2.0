@@ -33,7 +33,7 @@ export function reportsView(state, data) {
           { key: 'stage', label: 'Status', width: 120, value: (r) => stageOf(r),
             render: (r) => (stageOf(r) === 'in-progress' ? html`<span class="tag stage-progress">In-Progress</span>` : html`<span class="tag stage-review">For Review</span>`) },
           { key: 'marking', label: 'Marking', width: 170, value: (r) => r.classification || '—' },
-          { key: 'by', label: 'By', width: 140, value: (r) => profileName(state, r.producedBy) },
+          { key: 'by', label: 'By', width: 140, value: (r) => (r.producedBy ? profileName(state, r.producedBy) : '—') },
           { key: 'download', label: 'Download', width: 150, sortable: false, render: (r) => (r.document || r.html ? html`<div class="actions">
             ${r.document ? html`<button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'pdf' })}>PDF</button>` : ''}
             <button type="button" ${dataAttrs({ action: 'downloadReport', id: r.id, format: 'html' })}>HTML</button></div>` : '') },

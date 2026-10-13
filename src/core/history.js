@@ -108,9 +108,17 @@ export function hazardOfItem(data, item) {
  * @param {{ kind: string, id: string, reason: string, overriddenBy: string | null, theirs: any, mine: any }[]} conflicts
  */
 export function recordOverride(data, act, conflicts) {
+  // A report's documents and design stay out of the history here too: a conflict over one would otherwise keep both whole.
+  const kept = (/** @type {string} */ kind, /** @type {any} */ rec) => {
+    const skip = NOT_IN_HISTORY[/** @type {keyof typeof NOT_IN_HISTORY} */ (kind)];
+    if (!rec || !skip) return rec;
+    const out = { ...rec };
+    for (const f of skip) delete out[f];
+    return out;
+  };
   return append(data, {
     id: newId(), type: 'override', at: act.at, by: act.by,
-    items: conflicts.map((c) => ({ kind: c.kind, id: c.id, reason: c.reason, overriddenBy: c.overriddenBy, theirs: c.theirs, mine: c.mine })),
+    items: conflicts.map((c) => ({ kind: c.kind, id: c.id, reason: c.reason, overriddenBy: c.overriddenBy, theirs: kept(c.kind, c.theirs), mine: kept(c.kind, c.mine) })),
   });
 }
 
