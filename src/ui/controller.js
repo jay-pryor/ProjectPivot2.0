@@ -1,4 +1,4 @@
-import { createReport, deleteReport } from '../core/ops/reports.js';
+import { createReport, deleteReport, startReport as startReportOp, setOwnReportDesign, makeReport } from '../core/ops/reports.js';
 import { reportFileBase, imagesInUse } from '../reports/docgen-host.js';
 import { loadImages } from '../../DocGen/doc-images.js';
 import { readFile, writeWhole, exists as fileExists, removeFile, listNames } from '../storage/folder.js';
@@ -108,7 +108,7 @@ const QUIET_DATES = new Set(['completeWorkflow', 'acknowledgeReviewDate']);
 /** Actions that only change what is on screen or a preference: they never mark the app busy. */
 /** What the tutorial switches off: anything that would reach the folder or another session. */
 const TOUR_OFF = new Set(['retireProfile', 'restoreProfile', 'save', 'changeFolder', 'chooseFolder', 'recallFolder', 'selectProfile', 'createProfile', 'showBackups', 'prepareRestore', 'prepareRestoreFromFile', 'confirmRestore',
-  'produceReport', 'addReference', 'uploadReferenceFile', 'uploadTechFile', 'uploadUpdateFile', 'addPlatformImage']);
+  'produceReport', 'startReport', 'openReportDesigner', 'addReference', 'uploadReferenceFile', 'uploadTechFile', 'uploadUpdateFile', 'addPlatformImage']);
 /** The page state the tutorial sets aside and puts back, so nothing from the sample follows you out. */
 const TOUR_KEPT = Object.freeze(['sections', 'workspace', 'reviewsPrefs', 'workflowsPrefs', 'homeOwner', 'tables', 'infoTools', 'bowtieDetails', 'openBundles',
   'bundling', 'draftControl', 'ruleDraft', 'reviewPanel', 'lastReportId', 'bowtieReplace', 'favouritesEditing']);
@@ -127,7 +127,7 @@ export function initialState() {
     screen: 'open', folderName: '', check: { failed: [] }, profiles: [], profileId: null, dataBlocked: false,
     session: null, recoverable: null, notices: [], view: { name: 'hazards' },
     filters: { hazards: {}, controls: {} }, backups: [], pendingRestore: null,
-    message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null,
+    message: null, warnings: [], busy: false, designerRevision: 0, lastReportId: null, designerReportId: null,
     tables: {}, editing: null, saving: false, picker: null, confirmDelete: null, undo: null, lastFolder: null,
     today: aestDate(systemClock.now()), homeOwner: 'me', missingFiles: [],
     workspace: emptyWorkspace(), bowtieReplace: null, bowtieDetails: [], bundling: null, openBundles: [], favouritesEditing: false, draftControl: null, sections: {}, viewHistory: [], confirm: null, tour: null,
@@ -199,6 +199,14 @@ export function createController(env) {
     },
     clock: env.clock,
     profileName: nameOf,
+    setReportDesign: (id, design, platformId) => {
+      if (!state.session) return;
+      const working = setOwnReportDesign(state.session.working, act(), { id, design, platformId });
+      if (working !== state.session.working) {
+        set({ session: { ...state.session, working } });
+        void afterChange();
+      }
+    },
     files: {
       read: async (/** @type {string} */ path) => {
         if (!handle) return null;
@@ -998,7 +1006,32 @@ export function createController(env) {
       if (!state.session) throw new PivotError('no-data', 'Open the data before designing reports.');
       DocGen.docHost.set(docs.host);
       DocGen.ui.views.reportDesign.open();
-      set({ designerRevision: state.designerRevision + 1 });
+      set({ designerReportId: null, designerRevision: state.designerRevision + 1 });
+    },
+    // A new report: a name, its own copy of the shared design or of a report template, In-Progress; the designer opens on it.
+    async startReport({ title, from }) {
+      if (!state.session) throw new PivotError('no-data', 'Open the data before making a report.');
+      const name = String(title ?? '').trim();
+      if (!name) throw new PivotError('report.name', 'Give the report a name.');
+      const { design, library } = docs.newDesign(String(from ?? ''));
+      let working = state.session.working;
+      if (JSON.stringify(library) !== JSON.stringify(Object.fromEntries(Object.entries(working.reportDesign).filter(([k]) => k in library)))) {
+        working = setReportDesign(working, { ...working.reportDesign, ...library });
+      }
+      const id = newId();
+      working = startReportOp(working, act(), { id, title: name, design });
+      set({ session: { ...state.session, working } });
+      await afterChange();
+      await handlers.openReportDesigner({ id });
+    },
+    async openReportDesigner({ id }) {
+      const r = state.session?.working.records.report[id];
+      if (!r || r.status === 'deleted') throw new PivotError('not-found', 'That report no longer exists.');
+      const h = docs.hostFor(id);
+      DocGen.docHost.set(h);
+      if (r.platformId) DocGen.docSession.set({ subjectId: r.platformId });
+      DocGen.ui.views.reportDesign.open();
+      set({ designerReportId: id, designerRevision: state.designerRevision + 1 });
     },
     async produceReport({ platformId, title }) {
       if (!state.session) throw new PivotError('no-data', 'There is no data to report on.');
@@ -1032,7 +1065,19 @@ export function createController(env) {
     async generateFromDesigner({ format }) {
       const platformId = DocGen.docSession.selectedSubjectId();
       if (!platformId) throw new PivotError('not-found', 'Choose a platform in the designer first.');
-      await handlers.produceReport({ platformId });
+      const id = state.designerReportId;
+      if (!id) {
+        await handlers.produceReport({ platformId });
+      } else {
+        if (!state.session) throw new PivotError('no-data', 'There is no data to report on.');
+        if (hasUnsavedRecords(state.session)) throw new PivotError('report.unsaved', 'Save your changes before making a report, so the report matches what is stored.');
+        const r = state.session.working.records.report[id];
+        const at = env.clock.now();
+        const { report } = docs.produce(platformId, { at, by: /** @type {string} */ (state.profileId), title: r.title, reportId: id });
+        const working = makeReport(state.session.working, act(), { id, report });
+        set({ session: { ...state.session, working }, lastReportId: id, message: { kind: 'info', text: `${r.title} made. Save to keep it.` } });
+        await afterChange();
+      }
       if (state.message?.kind === 'error') return;
       await handlers.downloadReport({ id: state.lastReportId, format });
     },
