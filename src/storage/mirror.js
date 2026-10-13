@@ -11,15 +11,16 @@ export const MIRROR_KEY = 'pivot.unsaved.v2';
 
 /**
  * A saved report is already in the folder, and its documents can be large, so the mirror leaves
- * them out; `restoreReportDocuments` puts them back from the folder on recovery. Reports are never
- * edited after they are produced, so the working copy of a saved report is the saved one.
- * @param {import('../core/data.js').Data} data @param {Set<string>} savedIds
+ * them out; `restoreReportDocuments` puts them back from the folder on recovery. A report made
+ * again since it was saved (its producedAt differs) keeps its new documents here.
+ * @param {import('../core/data.js').Data} data @param {Record<string, any>} saved the saved reports, by id
  */
-function withoutSavedDocuments(data, savedIds) {
+function withoutSavedDocuments(data, saved) {
   /** @type {Record<string, any>} */
   const reports = {};
   for (const [id, r] of Object.entries(data.records.report)) {
-    if (savedIds.has(id)) {
+    const s = saved[id];
+    if (s && s.producedAt === r.producedAt) {
       const rest = { ...r };
       for (const k of REPORT_DOCUMENTS) delete rest[k];
       reports[id] = rest;
@@ -33,8 +34,8 @@ function withoutSavedDocuments(data, savedIds) {
 /** @param {Storage} storage @param {Mirror} mirror @returns {string | null} a warning, or null */
 export function writeMirror(storage, mirror) {
   try {
-    const savedIds = new Set(Object.keys(mirror.base.records.report));
-    const compact = { ...mirror, base: withoutSavedDocuments(mirror.base, savedIds), working: withoutSavedDocuments(mirror.working, savedIds) };
+    const saved = mirror.base.records.report;
+    const compact = { ...mirror, base: withoutSavedDocuments(mirror.base, saved), working: withoutSavedDocuments(mirror.working, saved) };
     storage.setItem(MIRROR_KEY, JSON.stringify(compact));
     return null;
   } catch (e) {
