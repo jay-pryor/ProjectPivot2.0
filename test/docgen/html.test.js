@@ -78,3 +78,11 @@ test('with the Style\'s border None, HTML images have no border, as in the PDF',
   assert.doesNotMatch(html, /class="bordered"/);
   assert.doesNotMatch(html, /img\.bordered \{ border:/);
 });
+
+test('landscape stretches print landscape: a named page and a wrapping div', () => {
+  const html = renderHtml({ blocks: [{ kind: 'paragraph', style: 'body', runs: [{ text: 'a' }] }, { kind: 'pageBreak', orientation: 'landscape' },
+    { kind: 'paragraph', style: 'body', runs: [{ text: 'wide' }] }, { kind: 'pageBreak', orientation: 'portrait' }, { kind: 'paragraph', style: 'body', runs: [{ text: 'b' }] }] }, normaliseStyle({}).style);
+  assert.match(html, /@page landscape \{ size: a4 landscape; \}/);
+  assert.match(html, /\.landscape \{ page: landscape; \}/);
+  assert.match(html, /<div class="page-break"><\/div>\n?<div class="landscape">[\s\S]*?wide[\s\S]*?<\/div>\n?<div class="page-break"><\/div>/);
+});
