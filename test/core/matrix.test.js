@@ -54,7 +54,7 @@ test('a value outside the scales is refused, not rated', () => {
 });
 
 test('formatRating writes a rating the way DEC-002 locks in', () => {
-  assert.equal(formatRating({ consequence: 2, likelihood: 'C' }), '2C = Serious');
+  assert.equal(formatRating({ consequence: 2, likelihood: 'C' }), 'Serious (2C)');
   assert.equal(formatRating({ consequence: 2, likelihood: null }), 'Uncategorised');
   assert.equal(formatRating(null), 'Uncategorised');
 });

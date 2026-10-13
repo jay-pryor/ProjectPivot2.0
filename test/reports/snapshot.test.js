@@ -107,7 +107,7 @@ test('a snapshot carries the four assessments with their justifications, and SFA
   const row = buildSnapshot(d, 'p1', opts).rows[0];
   assert.deepEqual(row.ratings.initialEnvironment, { consequence: 4, likelihood: 'E' });
   assert.deepEqual(row.assessments.map((a) => [a.stage, a.receptor]), [['initial', 'personnel'], ['initial', 'environment'], ['initial', 'capability'], ['residual', 'personnel'], ['residual', 'environment'], ['residual', 'capability']]);
-  assert.deepEqual(row.assessments[1], { stage: 'initial', receptor: 'environment', likelihood: 'E', likelihoodWhy: 'Rare <spill>', consequence: 4, consequenceWhy: 'Contained', level: '4E = Low' });
+  assert.deepEqual(row.assessments[1], { stage: 'initial', receptor: 'environment', likelihood: 'E', likelihoodWhy: 'Rare <spill>', consequence: 4, consequenceWhy: 'Contained', level: 'Low (4E)' });
   assert.deepEqual(row.sfarp, { justification: 'J', conclusion: 'C', conditions: 'V' });
 });
 
@@ -143,5 +143,5 @@ test('a snapshot carries capability like the other receptors', () => {
   const row = buildSnapshot(d, 'p1', opts).rows[0];
   assert.deepEqual(row.ratings.initialCapability, { consequence: 2, likelihood: 'D' });
   assert.equal(row.assessments.length, 6);
-  assert.deepEqual(row.assessments[2], { stage: 'initial', receptor: 'capability', likelihood: 'D', likelihoodWhy: '', consequence: 2, consequenceWhy: 'Mission <lost>', level: '2D = Medium' });
+  assert.deepEqual(row.assessments[2], { stage: 'initial', receptor: 'capability', likelihood: 'D', likelihoodWhy: '', consequence: 2, consequenceWhy: 'Mission <lost>', level: 'Medium (2D)' });
 });
