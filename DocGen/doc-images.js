@@ -78,7 +78,7 @@ export function figureSources(doc) {
 
 /** zlib in or out, through the platform's streams. @param {Uint8Array} data @param {boolean} inflate */
 async function zlib(data, inflate) {
-  const s = new Blob([data]).stream().pipeThrough(inflate ? new DecompressionStream('deflate') : new CompressionStream('deflate'));
+  const s = new Blob([/** @type {BlobPart} */ (data)]).stream().pipeThrough(inflate ? new DecompressionStream('deflate') : new CompressionStream('deflate'));
   return new Uint8Array(await new Response(s).arrayBuffer());
 }
 

@@ -1,10 +1,11 @@
+import { layoutFigure } from './doc-figure.js';
 import { fontName, toWinAnsi, textWidth } from './doc-fonts.js';
 import { PAPER_MM } from './doc-style.js';
 
 /** Points per millimetre. */
 export const MM = 72 / 25.4;
-const ASCENT = 0.78;   // of the size: where the baseline sits in a line box
-const EPS = 0.01;
+export const ASCENT = 0.78;   // of the size: where the baseline sits in a line box
+export const EPS = 0.01;
 
 /**
  * A text style resolved for setting: its fonts and leading.
@@ -123,15 +124,16 @@ const plain = (runs) => (runs ?? []).map((r) => (r.br ? ' ' : r.text ?? '')).joi
  * The document laid out on pages. Two or three passes: each pass sets the page numbers
  * the previous one found (contents, "(page N)" references), until they stop moving.
  * @param {any} doc @param {any} style a normalised Style
+ * @param {{ images?: Record<string, any> }} [assets] the size of each image a figure shows, by source; one not here is missing
  */
-export function layout(doc, style) {
+export function layout(doc, style, assets = {}) {
   /** @type {Record<string, number> | null} */
   let pageOf = null;
   /** @type {any} */
   let res = null;
   let passes = 0;
   for (; passes < 3; passes++) {
-    res = flow(doc, style, pageOf);
+    res = flow(doc, style, pageOf, assets);
     /** @type {Record<string, number>} */
     const now = {};
     for (const [k, v] of Object.entries(res.anchors)) now[k] = /** @type {any} */ (v).page;
@@ -146,8 +148,9 @@ export function layout(doc, style) {
 /**
  * One pass.
  * @param {any} doc @param {any} style @param {Record<string, number> | null} pageOf
+ * @param {{ images?: Record<string, any> }} assets
  */
-function flow(doc, style, pageOf) {
+function flow(doc, style, pageOf, assets) {
   const [pw, ph] = pageSize(style);
   const m = style.page.margins;
   const left = m.left * MM, top = m.top * MM, bottom = ph - m.bottom * MM, W = pw - (m.left + m.right) * MM;
@@ -295,6 +298,8 @@ function flow(doc, style, pageOf) {
     if (b.kind === 'heading') heading(b, blocks[i + 1]);
     else if (b.kind === 'paragraph') paragraph(b);
     else if (b.kind === 'table') layoutTable(b, { style, ctx, left, W, get y() { return y; }, set y(v) { y = v; }, get page() { return page; }, newPage, atTop, room, mark, carryHeading });
+    else if (b.kind === 'figure') layoutFigure(b, { style, ctx, left, W, get y() { return y; }, set y(v) { y = v; }, get page() { return page; },
+      pageH: bottom - top, images: assets.images ?? {}, newPage, atTop, room, mark, carryHeading });
     else if (b.kind === 'toc') toc();
     else if (b.kind === 'pageBreak') { if (!atTop()) newPage(); }
     else if (b.kind === 'space') { mark(b.anchor); y += (Number(b.mm) || 0) * MM; if (y > bottom) newPage(); }
