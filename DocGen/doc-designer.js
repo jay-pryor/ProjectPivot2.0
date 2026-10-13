@@ -3161,6 +3161,36 @@ import { toWinAnsi } from './doc-fonts.js';
     }
 
     /** Put the caret at a token offset. Silent when the box cannot take it. */
+    /** Select from one token offset to another (after a format was toggled over them). */
+    function placeSelection(node, from, to, win) {
+      var w = win || (node && node.ownerDocument && node.ownerDocument.defaultView);
+      if (!w || !w.getSelection || !node) return;
+      // `atStart`: a start on the edge between two runs belongs to the run after it.
+      function point(at, atStart) {
+        var len = 0, hit = null, lastText = null;
+        run(node, function (kind, s, n) {
+          if (hit) return;
+          if (kind === 'text') {
+            lastText = { node: n, offset: n.nodeValue ? n.nodeValue.length : 0 };
+            if (atStart ? len + s.length > at : len + s.length >= at) { hit = { node: n, offset: Math.max(0, at - len) }; return; }
+          }
+          len += s.length;
+        });
+        // Past the last text (after a closing mark): the end of that text.
+        return hit || lastText;
+      }
+      try {
+        if (node.focus) node.focus();
+        var a = point(from, from < to), b = point(to);
+        if (!a || !b) { placeCaret(node, to, w); return; }
+        var r = node.ownerDocument.createRange();
+        r.setStart(a.node, a.offset); r.setEnd(b.node, b.offset);
+        var sel = w.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } catch (e) { /* a detached box */ }
+    }
+
     function placeCaret(node, at, win) {
       var w = win || (node && node.ownerDocument && node.ownerDocument.defaultView);
       if (!w || !w.getSelection || !node) return;
@@ -3233,10 +3263,88 @@ import { toWinAnsi } from './doc-fonts.js';
         caret: s + open.length + body.length + close.length };
     }
 
+    /**
+     * Bold, italic or code over a selection, the way any editor does it: if everything
+     * selected already has it, it comes off; if none or only some does, all of it gets
+     * it. The text is read into characters (and whole references and breaks) each
+     * carrying its formatting, the formatting is changed for the selected ones, and the
+     * tokens are written back afresh — so nothing is left half-open, a paragraph break
+     * is never spanned, and a code span is never asked to hold a token.
+     * @param {string} text tokens @param {number} start @param {number} end token offsets
+     * @param {'b'|'i'|'c'} tag
+     * @returns {{text:string, start:number, end:number}} the new text and the selection in it
+     */
+    function toggleFormat(text, start, end, tag) {
+      var v = String(text == null ? '' : text);
+      var atoms = [], open = { b: false, i: false }, last = 0, m;
+      function chars(str, at, code) {
+        for (var k = 0; k < str.length; k++) atoms.push({ v: str[k], at: at + k, b: open.b, i: open.i, c: !!code });
+      }
+      var re = new RegExp(MD.TOKEN.source, 'g');
+      while ((m = re.exec(v)) !== null) {
+        chars(v.slice(last, m.index), last, false);
+        var close = m[1] === '/', t = m[2];
+        if (t === 'c' && !close) {
+          var stop = v.indexOf('{{/c}}', re.lastIndex);
+          var inner = stop === -1 ? v.slice(re.lastIndex) : v.slice(re.lastIndex, stop);
+          chars(inner, re.lastIndex, true);
+          last = stop === -1 ? v.length : stop + 6;
+          re.lastIndex = last;
+          continue;
+        }
+        if (t === 'b' || t === 'i') { if (close === open[t]) open[t] = !close; }
+        else if (MD.REF_TAG.test(t) && !close) {
+          var w = v.indexOf('{{/ref}}', re.lastIndex);
+          var whole = w === -1 ? m[0] : v.slice(m.index, w + 8);
+          atoms.push({ v: whole, at: m.index, b: open.b, i: open.i, c: false, opaque: true });
+          last = m.index + whole.length;
+          re.lastIndex = last;
+          continue;
+        } else if (!close) {
+          atoms.push({ v: m[0], at: m.index, b: open.b, i: open.i, c: false, opaque: true });
+        }
+        last = m.index + m[0].length;
+      }
+      chars(v.slice(last), last, false);
+
+      var chosen = atoms.filter(function (a) { return a.at >= start && a.at < end; });
+      var visible = chosen.filter(function (a) { return a.v !== '\n' && !(tag === 'c' && a.opaque); });
+      var on = !(visible.length && visible.every(function (a) { return a[tag]; }));
+      chosen.forEach(function (a) { if (!(tag === 'c' && a.opaque)) a[tag] = on; });
+
+      var out = '', cur = { b: false, i: false, c: false }, s0 = -1, e0 = -1, endOpen = false;
+      function closes(want) {
+        if (cur.c && (!want.c || want.b !== cur.b || want.i !== cur.i)) { out += '{{/c}}'; cur.c = false; }
+        if (cur.b && !want.b) { out += '{{/b}}'; cur.b = false; }
+        if (cur.i && !want.i) { out += '{{/i}}'; cur.i = false; }
+      }
+      function opens(want) {
+        if (want.b && !cur.b) { out += '{{b}}'; cur.b = true; }
+        if (want.i && !cur.i) { out += '{{i}}'; cur.i = true; }
+        if (want.c && !cur.c) { out += '{{c}}'; cur.c = true; }
+      }
+      var none = { b: false, i: false, c: false };
+      atoms.forEach(function (a) {
+        var sel = a.at >= start && a.at < end;
+        var want = a.v === '\n' ? none : { b: a.b, i: a.i, c: a.c };
+        closes(want);
+        // Closing tokens that end the selection belong to it; opening ones that start it do too.
+        if (endOpen && !sel) { e0 = out.length; endOpen = false; }
+        if (sel && s0 === -1) s0 = out.length;
+        opens(want);
+        out += a.v;
+        if (sel) { e0 = out.length; endOpen = true; }
+      });
+      closes(none);
+      if (endOpen) e0 = out.length;
+      if (s0 === -1) { s0 = e0 = Math.min(out.length, start); }
+      return { text: out, start: s0, end: e0 };
+    }
+
     App.ui = App.ui || {};
     App.ui.richText = {
       toHtml: toHtml, fromNode: fromNode, selectionIn: selectionIn, offsetOf: offsetOf,
-      placeCaret: placeCaret, applyToken: applyToken, CHIP: CHIP, REFLINK: REFLINK
+      placeCaret: placeCaret, placeSelection: placeSelection, applyToken: applyToken, toggleFormat: toggleFormat, CHIP: CHIP, REFLINK: REFLINK
     };
   })(App);
 
@@ -3833,7 +3941,7 @@ import { toWinAnsi } from './doc-fonts.js';
 
     /** The zoom steps of the page previews, and where each starts. */
     var ZOOMS = [0.4, 0.5, 0.6, 0.8, 1, 1.25, 1.5, 2];
-    var ZOOM_FROM = { section: 0.6, preview: 1 };
+    var ZOOM_FROM = { section: 1, preview: 1 };
     var ZOOM_KEY = { section: 'secZoom', preview: 'prevZoom' };
     function zoomOf(which) { return _rd[ZOOM_KEY[which]] || ZOOM_FROM[which]; }
     /** − 60% + : the zoom buttons for one of the page previews. */
@@ -4866,6 +4974,17 @@ import { toWinAnsi } from './doc-fonts.js';
       // repaints), so the remembered offsets are the authority when they are for it.
       if (_sel && el.matches && el.matches(_sel.key) && (!live || _sel.end > _sel.start)) {
         s = _sel.start; e = _sel.end;
+      }
+      if (s < e && (tag === 'b' || tag === 'i' || tag === 'c')) {
+        // A selection: on if any of it lacks the style, off if all of it has it.
+        var t = RT.toggleFormat(text, s, e, tag);
+        quietly(function () { logIssues(boxSaver(el)(t.text)); });
+        dirty();
+        el.innerHTML = boxHtml(t.text);
+        _sel = { key: boxKey(el), start: t.start, end: t.end };
+        RT.placeSelection(el, t.start, t.end, window);
+        showFormats();
+        return;
       }
       var res = RT.applyToken(text, s, e, tag);
       var save = boxSaver(el);

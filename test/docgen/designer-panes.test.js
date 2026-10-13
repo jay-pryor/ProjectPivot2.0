@@ -158,8 +158,8 @@ test('the section preview zooms in and out', () => {
   const dflt = sectionPane(host(), 'things');
   assert.match(dflt, /data-rd-zoom="out"/);
   assert.match(dflt, /data-rd-zoom="in"/);
-  assert.match(dflt, /60%/);
-  assert.ok(Math.abs(at(dflt) - 595.28 * 0.6) < 0.01);
+  assert.match(dflt, />100%</);
+  assert.ok(Math.abs(at(dflt) - 595.28) < 0.01);
   assert.ok(Math.abs(at(sectionPane(host(), 'things', 1.2)) - 595.28 * 1.2) < 0.01);
 });
 
@@ -470,4 +470,28 @@ test('Table: column ticks sit in a three-column grid, and the wording is "Table 
   const fs = await import('node:fs');
   const css = fs.readFileSync(new URL('../../DocGen/doc-designer.css', import.meta.url), 'utf8');
   assert.match(css, /\.docgen \.rd-ticks \{[^}]*display: grid;[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+});
+
+/** Toggle a format over the visible text between two markers [ and ] in a token string. */
+function toggled(marked, tag) {
+  const s = marked.indexOf('['), e = marked.indexOf(']') - 1;
+  const text = marked.replace('[', '').replace(']', '');
+  const r = App.ui.richText.toggleFormat(text, s, e, tag);
+  return r.text.slice(0, r.start) + '[' + r.text.slice(r.start, r.end) + ']' + r.text.slice(r.end);
+}
+
+test('formatting a selection follows the usual editor rule: all on → off; none or some → all on; the selection stays', () => {
+  assert.equal(toggled('a [plain] b', 'i'), 'a [{{i}}plain{{/i}}] b');
+  assert.equal(toggled('a [{{i}}slanted{{/i}}] b', 'i'), 'a [slanted] b', 'all italic → none');
+  assert.equal(toggled('{{i}}ab[cd{{/i}}ef]g', 'i'), '{{i}}ab[cdef{{/i}}]g', 'part italic → all italic');
+  assert.equal(toggled('{{i}}ab[cd]ef{{/i}}', 'i'), '{{i}}ab{{/i}}[cd]{{i}}ef{{/i}}', 'a middle piece un-italicised');
+  assert.equal(toggled('[{{b}}one{{/b}} two]', 'b'), '[{{b}}one two{{/b}}]');
+  assert.equal(toggled('{{b}}[bold {{i}}both{{/i}}]{{/b}}', 'b'), '[bold {{i}}both{{/i}}]', 'bold off, italic kept');
+});
+
+test('formatting keeps references whole and never runs across a paragraph break', () => {
+  assert.equal(toggled('[see {{ref:x}} now]', 'b'), '[{{b}}see {{ref:x}} now{{/b}}]');
+  assert.equal(toggled('[one\n\ntwo]', 'i'), '[{{i}}one{{/i}}\n\n{{i}}two{{/i}}]');
+  assert.equal(toggled('[{{c}}code{{/c}} x]', 'c'), '[{{c}}code x{{/c}}]');
+  assert.equal(toggled('{{c}}[code]{{/c}}', 'c'), '[code]');
 });
