@@ -606,3 +606,53 @@ test('Styles starts with Document, set apart, then Page Setup and Section Number
   const f = html.slice(html.indexOf('rd-style-fields'), html.indexOf('rd-style-preview'));
   for (const k of ['renumberHazards', 'renumberControls', 'renumberReferences']) assert.match(f, new RegExp(`data-rd-fmt-bool="document\\.${k}"`), k);
 });
+
+test('an image part: added blank, boxes filled and emptied, fields held to their limits', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
+  App.docHost.set(h);
+  const r = App.docStore.addPart('mine', 'image');
+  assert.equal(r.ok, true);
+  const part = () => h.getState().report.sections[0].parts[0];
+  assert.deepEqual(part(), { id: r.id, kind: 'image', layout: 'single', captions: 'one', caption: '', images: [] });
+  App.docStore.setPartImage('mine', r.id, 2, { source: 'report', file: 'a.png', name: 'a.png' });
+  assert.deepEqual(part().images, [null, null, { source: 'report', file: 'a.png', name: 'a.png' }]);
+  App.docStore.setPartImageField('mine', r.id, 2, 'width', '42.6');
+  App.docStore.setPartImageField('mine', r.id, 2, 'noBorder', true);
+  App.docStore.setPartImageField('mine', r.id, 2, 'caption', 'Left');
+  assert.deepEqual(part().images[2], { source: 'report', file: 'a.png', name: 'a.png', width: 43, noBorder: true, caption: 'Left' });
+  App.docStore.setPartImageField('mine', r.id, 2, 'width', 900);
+  assert.equal(part().images[2].width, undefined, '100% is the default, so it is not stored');
+  App.docStore.setPartImageField('mine', r.id, 2, 'width', 1);
+  assert.equal(part().images[2].width, 5);
+  App.docStore.setPartImage('mine', r.id, 2, null);
+  assert.deepEqual(part().images, [null, null, null]);
+});
+
+test('a layout with fewer boxes keeps the extra images for later', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'grid4', captions: 'one', caption: '',
+    images: [{ source: 'report', file: 'a.png', name: 'a' }, { source: 'report', file: 'b.png', name: 'b' }, { source: 'report', file: 'c.png', name: 'c' }] }] }] });
+  App.docHost.set(h);
+  App.docStore.updatePart('mine', 'i1', { layout: 'single' });
+  App.docStore.updatePart('mine', 'i1', { layout: 'grid21' });
+  assert.deepEqual(h.getState().report.sections[0].parts[0].images.map((i) => i.name), ['a', 'b', 'c']);
+});
+
+test('Standard Images: added, renamed, counted where used, removed', () => {
+  const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'i1', kind: 'image', layout: 'pair', captions: 'one', caption: '',
+    images: [{ source: 'standard', file: 's1.png', name: 'Logo' }, { source: 'standard', file: 's1.png', name: 'Logo' }] }] }],
+    sectionTemplates: [{ id: 'tpl1', name: 'T', parts: [{ id: 'i9', kind: 'image', layout: 'single', images: [{ source: 'standard', file: 's1.png', name: 'Logo' }] }] }] });
+  App.docHost.set(h);
+  const a = App.docStore.addStandardImage('Logo', 's1.png');
+  assert.equal(a.ok, true);
+  App.docStore.renameStandardImage(a.id, 'Company logo');
+  assert.deepEqual(h.getState().report.standardImages, [{ id: a.id, name: 'Company logo', file: 's1.png' }]);
+  assert.equal(App.docStore.standardImageUses('s1.png'), 3);
+  assert.equal(App.docStore.addStandardImage('  ', 'x.png').ok, false);
+  App.docStore.removeStandardImage(a.id);
+  assert.deepEqual(h.getState().report.standardImages, []);
+});
+
+test('a section template may hold image parts', () => {
+  const parsed = App.docTemplates.parseImport(JSON.stringify({ kind: 'ch-config-tool/section-templates', items: [{ name: 'Pics', parts: [{ kind: 'image', layout: 'pair', images: [] }] }] }), 'sections');
+  assert.equal(parsed.issues.filter((i) => i.severity === 'error').length, 0, JSON.stringify(parsed.issues));
+});

@@ -2064,6 +2064,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     /** A new part of the given kind, with the empty shape that kind needs. */
     function blankPart(kind, id) {
+      if (kind === 'image') return { id: id, kind: 'image', layout: 'single', captions: 'one', caption: '', images: [] };
       if (kind === 'table') {
         return { id: id, kind: 'table', caption: '', centre: false, align: ['l', 'l'], header: ['Column 1', 'Column 2'], rows: [['', '']] };
       }
@@ -2095,13 +2096,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
 
     /**
-     * @param {string} sectionId @param {'para'|'table'|'rule'|'pagebreak'|'space'} kind
+     * @param {string} sectionId @param {'para'|'table'|'rule'|'pagebreak'|'space'|'image'} kind
      * @param {number} [at]  insert position; appended when omitted
      */
     function addPart(sectionId, kind, at) {
       if (!P()) return errNoProject();
       if (!findSection(P(), sectionId)) return err('Unknown section.', sectionId);
-      if (['para', 'table', 'rule', 'pagebreak', 'space'].indexOf(kind) === -1) return err('Unknown part type "' + kind + '".');
+      if (['para', 'table', 'rule', 'pagebreak', 'space', 'image'].indexOf(kind) === -1) return err('Unknown part type "' + kind + '".');
       var id = null;
       App.docHost.get().commit(function (p) {
         var s = findSection(p, sectionId);
@@ -2145,6 +2146,81 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         s.parts = (s.parts || []).filter(function (x) { return x.id !== partId; });
       });
       return ok();
+    }
+
+    /** IMG-1: one box of an image part: an image ({ source, file, name }) or null to empty it. */
+    function setPartImage(sectionId, partId, index, img) {
+      if (!P()) return errNoProject();
+      var s0 = findSection(P(), sectionId);
+      if (!s0 || !(s0.parts || []).some(function (x) { return x.id === partId && x.kind === 'image'; })) return err('Unknown image part.', partId);
+      App.docHost.get().commit(function (p) {
+        var part = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0];
+        part.images = part.images || [];
+        while (part.images.length <= index) part.images.push(null);
+        part.images[index] = img ? { source: img.source === 'standard' ? 'standard' : 'report', file: String(img.file), name: String(img.name || img.file) } : null;
+      });
+      return ok();
+    }
+
+    /** IMG-1: an image's width (% of the text width, 5–100), its "no border" tick, or its own caption. */
+    function setPartImageField(sectionId, partId, index, field, value) {
+      if (!P()) return errNoProject();
+      if (['width', 'noBorder', 'caption'].indexOf(field) === -1) return err('Unknown image setting "' + field + '".');
+      var s0 = findSection(P(), sectionId);
+      var p0 = s0 && (s0.parts || []).filter(function (x) { return x.id === partId; })[0];
+      if (!p0 || !(p0.images || [])[index]) return err('There is no image there.', partId);
+      App.docHost.get().commit(function (p) {
+        var im = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0].images[index];
+        if (field === 'width') {
+          var n = Math.round(Number(value));
+          if (!isFinite(n) || n >= 100) delete im.width; else im.width = Math.max(5, n);
+        } else if (field === 'noBorder') {
+          if (value) im.noBorder = true; else delete im.noBorder;
+        } else {
+          var c = String(value == null ? '' : value);
+          if (c.trim()) im.caption = c; else delete im.caption;
+        }
+      });
+      return ok();
+    }
+
+    /** IMG-2: Standard Images — images any report can use, by reference. */
+    function addStandardImage(name, file) {
+      if (!P()) return errNoProject();
+      if (!String(name || '').trim()) return err('A standard image needs a name.');
+      var id = null;
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        b.standardImages = b.standardImages || [];
+        id = nextId('img', b.standardImages);
+        b.standardImages.push({ id: id, name: String(name).trim(), file: String(file) });
+      });
+      return { ok: true, id: id, issues: [] };
+    }
+    function renameStandardImage(id, name) {
+      if (!P()) return errNoProject();
+      if (!String(name || '').trim()) return err('A standard image needs a name.');
+      App.docHost.get().commit(function (p) {
+        (bag(p).standardImages || []).forEach(function (s) { if (s.id === id) s.name = String(name).trim(); });
+      });
+      return ok();
+    }
+    function removeStandardImage(id) {
+      if (!P()) return errNoProject();
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        b.standardImages = (b.standardImages || []).filter(function (s) { return s.id !== id; });
+      });
+      return ok();
+    }
+    /** How many image boxes, in sections and section templates, show this standard image. */
+    function standardImageUses(file) {
+      var n = 0;
+      if (!P()) return 0;
+      allParts(P()).forEach(function (part) {
+        if (part && part.kind === 'image') (part.images || []).forEach(function (im) { if (im && im.source === 'standard' && im.file === file) n++; });
+      });
+      return n;
     }
 
     /**
@@ -2711,6 +2787,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       setReportInclude: setReportInclude, INCLUDE_MAPS: INCLUDE_MAPS,
       addSection: addSection, updateSection: updateSection, removeSection: removeSection,
       addPart: addPart, updatePart: updatePart, removePart: removePart, movePart: movePart,
+      setPartImage: setPartImage, setPartImageField: setPartImageField, addStandardImage: addStandardImage, renameStandardImage: renameStandardImage, removeStandardImage: removeStandardImage, standardImageUses: standardImageUses,
       setCell: setCell, addRow: addRow, removeRow: removeRow,
       // SPC-1: which rows take the table's extra height.
       setRowTall: setRowTall, rowTall: rowTall,
@@ -2823,11 +2900,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       parts.forEach(function (p, i) {
         var l = loc + '.parts[' + i + ']';
         if (!p || typeof p !== 'object') { issues.push(issue('error', 'A part must be an object.', l)); ok = false; return; }
-        if (['para', 'table', 'rule', 'pagebreak'].indexOf(p.kind) === -1) {
+        if (['para', 'table', 'rule', 'pagebreak', 'space', 'image'].indexOf(p.kind) === -1) {
           issues.push(issue('error', 'Unknown part kind "' + p.kind + '".', l)); ok = false; return;
         }
         if (p.kind === 'para' && p.text !== undefined && typeof p.text !== 'string') {
           issues.push(issue('error', 'A paragraph\'s text must be a string.', l)); ok = false;
+        }
+        if (p.kind === 'image' && p.images !== undefined && !Array.isArray(p.images)) {
+          issues.push(issue('error', 'An image part\'s images must be an array.', l)); ok = false;
         }
         if (p.kind === 'table') {
           if (!Array.isArray(p.header) || !p.header.length) { issues.push(issue('error', 'A table needs a header row.', l)); ok = false; }
