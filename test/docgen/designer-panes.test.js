@@ -375,7 +375,7 @@ test('Heading has no level box (the list sets it); Introduction comes before Pla
 test('Placement centres the heading, the introduction and the table separately, in that order', () => {
   const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }], centred: { things: { intro: true } } });
   const parts = (id) => { const html = sectionAt(h, id, 'placement'); return [...html.matchAll(/data-rd-centre-part="([a-z]+)"[^>]*?( checked)?>/g)].map((m) => m[1] + (m[2] ? '*' : '')); };
-  assert.deepEqual(parts('things'), ['heading', 'intro*', 'table']);
+  assert.deepEqual(parts('things'), ['heading', 'intro*', 'table*'], 'the table is centred by default');
   assert.deepEqual(parts('mine'), ['heading', 'content']);
   assert.deepEqual(parts('toc'), ['heading']);
   assert.doesNotMatch(sectionAt(h, 'things', 'placement'), /Centre this section/);
@@ -385,11 +385,13 @@ test('a centring tick is stored per part; ticking a part of an old "centre every
   const h = host({ centred: { things: true } });
   App.docHost.set(h);
   App.docStore.setBlockCentrePart('things', 'table', false);
-  assert.deepEqual(h.getState().report.centred.things, { heading: true, intro: true, content: true });
+  assert.deepEqual(h.getState().report.centred.things, { heading: true, intro: true, table: false, content: true });
   App.docStore.setBlockCentrePart('things', 'heading', false);
   App.docStore.setBlockCentrePart('things', 'intro', false);
   App.docStore.setBlockCentrePart('things', 'content', false);
-  assert.equal(h.getState().report.centred, undefined, 'nothing centred leaves nothing stored');
+  assert.deepEqual(h.getState().report.centred, { things: { table: false } }, 'only the table, off against its default, is stored');
+  App.docStore.setBlockCentrePart('things', 'table', true);
+  assert.equal(h.getState().report.centred, undefined, 'every part at its default leaves nothing stored');
 });
 
 test('Table ticks every column of a pre-populated section except its first, identifying one', () => {
@@ -799,4 +801,22 @@ test('"Start this section on a new page" is ticked unless it was turned off; off
   assert.equal(tick(h), false);
   App.docStore.setBlockFlag('pageBreak', 'things', true);
   assert.equal(h.getState().report.pageBreak, undefined, 'on is the default, so nothing is stored');
+});
+
+test('"Centre table" is ticked unless it was turned off; off is what is stored', () => {
+  const h = host();
+  const ticked = (hh) => {
+    App.docHost.set(hh); RD.open(); RD.select('things'); RD._rd.secCat = 'placement';
+    const html = RD.render(hh.getState()); RD.close();
+    return /<input type="checkbox" data-rd-centre-part="table" data-rd-block="things" checked>/.test(html);
+  };
+  assert.equal(ticked(h), true);
+  App.docHost.set(h);
+  App.docStore.setBlockCentrePart('things', 'table', false);
+  assert.deepEqual(h.getState().report.centred, { things: { table: false } });
+  assert.equal(ticked(h), false);
+  App.docStore.setBlockCentrePart('things', 'heading', true);
+  assert.deepEqual(h.getState().report.centred, { things: { heading: true, table: false } });
+  App.docStore.setBlockCentrePart('things', 'table', true);
+  assert.deepEqual(h.getState().report.centred, { things: { heading: true } }, 'on is the default, so nothing is stored for it');
 });

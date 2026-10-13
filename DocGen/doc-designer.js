@@ -1187,9 +1187,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      *                  groups?:Array<{value:string,label:string,included:boolean}>}>}
      */
     var CENTRE_PARTS = ['heading', 'intro', 'table', 'content'];
+    /** The parts centred unless a section says not: a generated section's table. */
+    var CENTRE_ON = { table: true };
     function centreParts(v) {
       var out = {};
-      CENTRE_PARTS.forEach(function (k) { out[k] = v === true || !!(v && v[k] === true); });
+      CENTRE_PARTS.forEach(function (k) {
+        out[k] = v === true || !!(v && v[k] === true) || (!!CENTRE_ON[k] && !(v && v[k] === false));
+      });
       return out;
     }
 
@@ -1575,6 +1579,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     App.docGen = {
       // The blocks a document is made of, and the columns a generated one prints.
       reportBlocks: hostBlocks, sectionColumns: hostColumns, sectionColumnKey: sectionColumnKey,
+      centreParts: centreParts, CENTRE_ON: CENTRE_ON,
       // How many rows sit in each of the host's filter categories.
       filterCounts: filterCounts,
       // GEN-TAB: `/[Tag]` placeholders — finding them and filling them.
@@ -1708,10 +1713,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       App.docHost.get().commit(function (p) {
         var b = bag(p);
         b.centred = b.centred || {};
-        var cur = b.centred[blockId];
+        var now = App.docGen.centreParts(b.centred[blockId]);
+        now[part] = !!on;
+        // Stored only where a part differs from what it is by default.
         var next = {};
-        parts.forEach(function (k) { if (cur === true || (cur && cur[k] === true)) next[k] = true; });
-        if (on) next[part] = true; else delete next[part];
+        parts.forEach(function (k) { if (now[k] !== !!App.docGen.CENTRE_ON[k]) next[k] = now[k]; });
         if (Object.keys(next).length) b.centred[blockId] = next; else delete b.centred[blockId];
         if (!Object.keys(b.centred).length) delete b.centred;
         if (!Object.keys(b).length) delete p.report;

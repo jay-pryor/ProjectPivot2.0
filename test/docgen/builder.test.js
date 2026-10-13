@@ -32,7 +32,8 @@ function hostWith(design = {}) {
       // Every section starts a page unless told not to; here only the Annex does.
       pageBreak: { c4: false, toc: false, meta: false, staff: false, teams: false, c1: false, c3: false },
       space: { c2: 30 },
-      centred: { teams: true },
+      // Tables are centred unless told not to; here only the Teams section's are.
+      centred: { teams: true, staff: { table: false }, meta: { table: false } },
       noToc: { c3: true },
       tables: { staff: { _all: { title: 'Everyone', columns: { role: 'Job' } } } },
       ...design,
@@ -209,10 +210,11 @@ test('Final review I5: a Style that leaves out the contents list leaves out the 
 test('centring is chosen per part: heading, introduction and table separately; an old "centre everything" still centres everything', () => {
   const kindsCentred = (design) => build(design).document.blocks
     .filter((b) => b.centre && (b.kind === 'heading' ? plain(b.runs) === 'Teams' : true)).map((b) => b.kind);
-  assert.deepEqual(kindsCentred({ centred: { teams: { heading: true } } }), ['heading']);
-  assert.deepEqual(kindsCentred({ centred: { teams: { intro: true } } }), ['paragraph']);
-  assert.deepEqual(kindsCentred({ centred: { teams: { table: true } } }), ['table', 'table']);
-  assert.deepEqual(kindsCentred({ centred: { teams: true } }), ['heading', 'paragraph', 'table', 'table']);
+  const others = { staff: { table: false }, meta: { table: false } };
+  assert.deepEqual(kindsCentred({ centred: { ...others, teams: { heading: true, table: false } } }), ['heading']);
+  assert.deepEqual(kindsCentred({ centred: { ...others, teams: { intro: true, table: false } } }), ['paragraph']);
+  assert.deepEqual(kindsCentred({ centred: { ...others, teams: { table: true } } }), ['table', 'table']);
+  assert.deepEqual(kindsCentred({ centred: { ...others, teams: true } }), ['heading', 'paragraph', 'table', 'table']);
 });
 
 test('your own section centres its heading and its content separately', () => {
@@ -280,4 +282,14 @@ test('every section starts on a new page unless it is told not to', () => {
   const { document: d2 } = build({ pageBreak: { staff: false } });
   const staff = d2.blocks.indexOf(heading(d2, 'Staff'));
   assert.notEqual(d2.blocks[staff - 1].kind, 'pageBreak');
+});
+
+test('a generated section\'s table is centred unless it is told not to', () => {
+  const tbl = (design) => build(design).document.blocks.filter((b) => b.kind === 'table');
+  const all = tbl({ centred: undefined });
+  const handWritten = all.filter((t) => /^tbl-t\d/.test(t.anchor ?? ''));
+  assert.ok(all.filter((t) => !handWritten.includes(t)).every((t) => t.centre === true), 'every generated table');
+  assert.ok(handWritten.every((t) => t.centre === false), 'your own section\'s tables follow Centre content');
+  const off = build({ centred: { staff: { table: false } } }).document.blocks.find((b) => b.kind === 'table' && /staff/.test(b.anchor ?? ''));
+  assert.equal(off.centre, false);
 });
