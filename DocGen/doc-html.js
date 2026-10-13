@@ -25,7 +25,7 @@ function css(s) {
     `main { max-width: 190mm; margin: 0 auto; padding: 8mm; }`,
     `.marking { ${textCss(t.marking)} text-align: center; margin: 4pt 0; }`,
     `h1.title { ${textCss(t.title)} }`, ...[1, 2, 3, 4].map((n) => `h${n + 1}.h${n} { ${textCss(t[`h${n}`])} }`),
-    `p.body { ${textCss(t.body)} }`, `p.caption, caption { ${textCss(t.caption)} }`, `p.code { ${textCss(t.code)} white-space: pre-wrap; }`,
+    `p.body { ${textCss(t.body)} }`, `p.caption, caption, figcaption.caption { ${textCss(t.caption)} }`, `p.code { ${textCss(t.code)} white-space: pre-wrap; }`,
     `code { font-family: ${FAMILY_CSS.courier}; }`, '.num { margin-right: .4em; }', '.centre { text-align: center; }',
     `.toc .toc1 { ${textCss(t.toc1)} } .toc .toc2 { ${textCss(t.toc2)} padding-left: 14pt; } .toc .toc3 { ${textCss(t.toc3)} padding-left: 28pt; }`,
     '.toc a { color: inherit; text-decoration: none; }',

@@ -65,3 +65,8 @@ test('figures are embedded images in grid rows, with figcaptions, anchors and th
   assert.match(html, /\.fig-cell img\.bordered \{ border: 1pt solid #ff0000; \}/);
   assert.match(html, /\.figure \{[^}]*text-align: left;/);
 });
+
+test('an image\'s own caption takes the Caption text style, like any other caption', () => {
+  const html = renderHtml({ blocks: [] }, normaliseStyle({}).style);
+  assert.match(html, /p\.caption, caption, figcaption\.caption \{ font-family: Helvetica/);
+});
