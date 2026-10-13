@@ -53,3 +53,19 @@ test('the backups view warns before a restore, listing the changes that would be
   assert.match(out, /data-action="prepareRestore" data-name="data-20260928-100000.json"/);
   assert.match(out, /data-action="prepareRestoreFromFile"/);
 });
+
+import { startReport, setReportDesign } from '../../src/core/ops/reports.js';
+
+test('the reports view: a name and a starting point open a new report; Status; downloads once made; an Open icon on every row', () => {
+  let d = setReportDesign(assignHazardNumbers(seed()), { reportTemplates: [{ id: 'rpt1', name: 'Customer pack' }] });
+  d = createReport(d, act, { id: 'r0', report: { platformId: 'p1', platformName: 'Alpha', producedAt: '2026-09-28T15:00:00+10:00', producedBy: 'u1', title: 'Made', classification: '', document: { blocks: [] }, style: {} } });
+  d = startReport(d, act, { id: 'r1', title: 'Draft one', design: {} });
+  const h = reportsView(main(d), d).toString();
+  assert.match(h, /<form data-action="startReport" class="report-start">[\s\S]*?<input name="title" required[^>]*placeholder="Report name"[\s\S]*?<select name="from"[^>]*><option value="">The shared design<\/option><option value="rpt1">Customer pack<\/option><\/select>[\s\S]*?<button type="submit" class="primary">Open in Report Designer<\/button><\/form>/);
+  assert.match(h, /<th[^>]*>[\s\S]*?Status/);
+  assert.match(h, /data-id="r1"[\s\S]*?In-Progress|In-Progress[\s\S]*?data-id="r1"/);
+  assert.match(h, /For Review/);
+  assert.doesNotMatch(h, /data-action="downloadReport" data-id="r1"/, 'nothing to download before it is made');
+  assert.match(h, /data-action="downloadReport" data-id="r0" data-format="pdf"/);
+  for (const id of ['r0', 'r1']) assert.match(h, new RegExp(`data-action="openReportDesigner" data-id="${id}"[^>]*title="Open in Report Designer"[^>]*aria-label="Open in Report Designer"`));
+});
