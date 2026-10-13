@@ -1,3 +1,5 @@
+import { FIGURE_LAYOUTS, dataUri } from './doc-images.js';
+
 const FAMILY_CSS = {
   helvetica: 'Helvetica, Arial, "Liberation Sans", sans-serif',
   times: '"Times New Roman", Times, "Liberation Serif", serif',
@@ -36,6 +38,10 @@ function css(s) {
     `.doc-table thead { display: ${tb.header.repeat ? 'table-header-group' : 'table-row-group'}; }`,
     tb.banding.on ? `.doc-table tbody tr:nth-child(even) td { background: ${tb.banding.fill}; }` : '',
     tb.firstColumn.on ? `.doc-table tbody td:first-child { background: ${tb.firstColumn.fill}; font-weight: ${tb.firstColumn.bold ? 700 : 400}; }` : '',
+    `.figure { margin: 6pt 0; break-inside: avoid; text-align: ${s.images.align === 'left' ? 'left' : 'center'}; }`,
+    '.fig-row { display: grid; gap: 4mm; margin-bottom: 4mm; }', '.fig-cell { margin: 0; }', '.fig-cell img { max-width: 100%; height: auto; }',
+    `.fig-cell img.bordered { border: ${s.images.borderWidth}pt solid ${s.images.borderColour}; }`,
+    '.fig-missing { display: inline-block; width: 100%; aspect-ratio: 4 / 3; background: #eeeeee; border: 0.5pt solid #999999; color: #555555; font-size: 8pt; }',
     '.doc-table tr { break-inside: avoid; }', '.page-break { break-after: page; }', 'hr { border: 0; border-top: 1px solid #999; }',
     '@media screen { .page-break { border-top: 1px dashed #bbb; margin: 16pt 0; } }',
   ].filter(Boolean).join('\n');
@@ -59,8 +65,9 @@ const plain = (/** @type {any[]} */ runs) => (runs ?? []).map((r) => (r.br ? ' '
  * The document as one standalone HTML page, styled from the Style: no page numbers
  * (it is a web page), references are links, the marking sits above and below.
  * @param {any} doc @param {any} style a normalised Style
+ * @param {{ images?: Record<string, any> }} [opts] the document's images, prepared; one missing is a placeholder
  */
-export function renderHtml(doc, style) {
+export function renderHtml(doc, style, opts = {}) {
   const meta = doc.meta ?? {};
   const headings = (doc.blocks ?? []).filter((b) => b.kind === 'heading' && !b.noToc && b.level <= style.toc.depth);
   const body = (doc.blocks ?? []).map((b) => {
@@ -78,6 +85,26 @@ export function renderHtml(doc, style) {
       return `<table class="doc-table"${id}>${b.caption ? `<caption>${runsHtml(b.caption.runs)}</caption>` : ''}${cols}` +
         `<thead>${title}<tr>${(b.header ?? []).map((/** @type {any} */ c) => `<th>${runsHtml(c)}</th>`).join('')}</tr></thead>` +
         `<tbody>${(b.rows ?? []).map((/** @type {any[]} */ r) => `<tr>${r.map((c) => `<td>${runsHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    }
+    if (b.kind === 'figure') {
+      const above = style.images.captionPosition === 'above';
+      const imgs = opts.images ?? {};
+      const shape = /** @type {number[][]} */ (/** @type {any} */ (FIGURE_LAYOUTS)[b.layout] ?? FIGURE_LAYOUTS.single);
+      // Every layout's rows are equal shares, so one 1fr column per box is exact.
+      const cols = (/** @type {number[]} */ fr) => fr.map(() => '1fr').join(' ');
+      let k = 0;
+      const rows = shape.map((fr) => `<div class="fig-row" style="grid-template-columns:${cols(fr)}">` + fr.map((share) => {
+        const im = (b.images ?? [])[k++];
+        if (!im) return '<div class="fig-cell"></div>';
+        const got = imgs[im.src];
+        const pct = Math.min(100, Math.round((100 * Math.min(1, im.width || 1)) / share));
+        const pic = got ? `<img${im.border ? ' class="bordered"' : ''} src="${dataUri(got)}" alt="${esc(im.name)}" style="width:${pct}%">`
+          : `<div class="fig-missing">Image missing: ${esc(im.name)}</div>`;
+        const cap = im.caption ? `<figcaption class="caption">${runsHtml(im.caption.runs)}</figcaption>` : '';
+        return `<figure class="fig-cell"${im.anchor ? ` id="${esc(im.anchor)}"` : ''}>${above ? cap : ''}${pic}${above ? '' : cap}</figure>`;
+      }).join('') + '</div>').join('');
+      const one = b.caption ? `<p class="caption fig-caption">${runsHtml(b.caption.runs)}</p>` : '';
+      return `<div class="figure"${id}>${above ? one : ''}${rows}${above ? '' : one}</div>`;
     }
     if (b.kind === 'toc') {
       return `<nav class="toc">${headings.map((h) => `<p class="toc${Math.min(3, Math.max(1, h.level))}"><a href="#${esc(h.anchor)}">${style.numbering.inToc && h.number ? `${esc(h.number)} ` : ''}${esc(plain(h.runs))}</a></p>`).join('')}</nav>`;

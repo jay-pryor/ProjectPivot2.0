@@ -45,3 +45,23 @@ test('CSS comes from the style: fonts, sizes, colours, table header fill, page s
   assert.match(h, /p\.body \{[^}]*font-family: "Times New Roman"[^}]*font-size: 12pt[^}]*color: #112233/);
   assert.match(h, /\.doc-table thead th \{[^}]*background: #abcdef/);
 });
+
+import { prepareImage } from '../../DocGen/doc-images.js';
+import { makePng } from './image-fixtures.js';
+
+test('figures are embedded images in grid rows, with figcaptions, anchors and the Style\'s border', async () => {
+  const style = normaliseStyle({ images: { border: 'line', borderWidth: 1, borderColour: '#ff0000', captionPosition: 'above', align: 'left' } }).style;
+  const a = await prepareImage(await makePng({ width: 2, height: 2, sample: () => [1, 2, 3] }));
+  const doc = { blocks: [
+    { kind: 'figure', layout: 'grid21', anchor: 'fig-p1', caption: { runs: [{ text: 'Figure 1: All' }] }, images: [
+      { src: 'a', name: 'a.png', width: 0.25, border: true, caption: null }, null, { src: 'gone', name: 'gone.png', width: 1, border: false, caption: null }] },
+    { kind: 'figure', layout: 'single', caption: null, images: [{ src: 'a', name: 'a.png', width: 1, border: false, caption: { runs: [{ text: 'Figure 2: Own' }] }, anchor: 'fig-p2-1' }] }] };
+  const html = renderHtml(doc, style, { images: { a, gone: null } });
+  assert.match(html, /<div class="figure" id="fig-p1"><p class="caption fig-caption">Figure 1: All<\/p><div class="fig-row" style="grid-template-columns:1fr 1fr">/);
+  assert.match(html, /<img class="bordered" src="data:image\/png;base64,[A-Za-z0-9+/=]+" alt="a\.png" style="width:50%">/);
+  assert.match(html, /<div class="fig-cell"><\/div>/);
+  assert.match(html, /<div class="fig-missing">Image missing: gone\.png<\/div>/);
+  assert.match(html, /<figure class="fig-cell" id="fig-p2-1"><figcaption class="caption">Figure 2: Own<\/figcaption><img src="data:image\/png/);
+  assert.match(html, /\.fig-cell img\.bordered \{ border: 1pt solid #ff0000; \}/);
+  assert.match(html, /\.figure \{[^}]*text-align: left;/);
+});
