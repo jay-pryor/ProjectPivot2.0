@@ -11,12 +11,12 @@ export function reportsView(state, data) {
   const unsaved = state.session ? hasUnsavedRecords(state.session) : false;
   const reports = all(data, 'report').filter((r) => r.status !== 'deleted').reverse();
   const templates = data.reportDesign?.reportTemplates ?? [];
-  const start = html`<form data-action="startReport" class="report-start">
-      <label>Report name <input name="title" required placeholder="Report name" aria-label="Report name"></label>
+  // A new report: its name and what it starts from, then straight into the designer.
+  const start = html`<section class="panel report-new" aria-labelledby="report-new-h"><h2 id="report-new-h">New report</h2><form data-action="startReport" class="report-start">
+      <label class="report-start-name">Report name <input name="title" required placeholder="e.g. Harbour Patrol Boat safety case" aria-label="Report name"></label>
       <label>Start from <select name="from" aria-label="Start from"><option value="">The shared design</option>${templates.map((t) => html`<option value="${t.id}">${t.name}</option>`)}</select></label>
-      <button type="submit" class="primary">Open in Report Designer</button></form>`;
-  return html`<div class="head"><h1>Reports</h1><button type="button" ${dataAttrs({ action: 'openDesigner' })} title="The design new reports start from">Open the report designer</button></div>
-    <p class="muted">Each report has its own copy of a design. The report designer button edits the default for new reports.</p>
+      <button type="submit" class="primary">Open in Report Designer</button></form></section>`;
+  return html`<div class="head"><h1>Reports</h1></div>
     ${start}
     ${unsaved ? html`<p class="note">Save your changes first: a report is made from what is stored.</p>` : ''}
     <section><h2>Produced reports</h2>

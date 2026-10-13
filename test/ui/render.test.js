@@ -27,7 +27,7 @@ test('the reports view: the designer button, a note while unsaved, and produced 
   const d = createReport(assignHazardNumbers(seed()), act, { id: 'r1', report: { platformId: 'p1', platformName: 'Alpha', producedAt: '2026-09-28T15:00:00+10:00', producedBy: 'u1', title: 'Alpha hazards', classification: 'PROTECTED', rows: [], document: { blocks: [] }, style: {} } });
   const clean = reportsView(main(d), d).toString();
   assert.doesNotMatch(clean, /produceReport|Produce a report/, 'reports are made in the designer');
-  assert.match(clean, /data-action="openDesigner"/);
+  assert.doesNotMatch(clean, /data-action="openDesigner"/, 'reports are opened from the list or made new');
   assert.match(clean, /data-action="downloadReport" data-id="r1" data-format="pdf">PDF</);
   assert.match(clean, /data-action="downloadReport" data-id="r1" data-format="html">HTML</);
   assert.doesNotMatch(clean, /data-format="md"/);
@@ -61,7 +61,7 @@ test('the reports view: a name and a starting point open a new report; Status; d
   d = createReport(d, act, { id: 'r0', report: { platformId: 'p1', platformName: 'Alpha', producedAt: '2026-09-28T15:00:00+10:00', producedBy: 'u1', title: 'Made', classification: '', document: { blocks: [] }, style: {} } });
   d = startReport(d, act, { id: 'r1', title: 'Draft one', design: {} });
   const h = reportsView(main(d), d).toString();
-  assert.match(h, /<form data-action="startReport" class="report-start">[\s\S]*?<input name="title" required[^>]*placeholder="Report name"[\s\S]*?<select name="from"[^>]*><option value="">The shared design<\/option><option value="rpt1">Customer pack<\/option><\/select>[\s\S]*?<button type="submit" class="primary">Open in Report Designer<\/button><\/form>/);
+  assert.match(h, /<form data-action="startReport" class="report-start">[\s\S]*?<input name="title" required[^>]*placeholder="[^"]+"[\s\S]*?<select name="from"[^>]*><option value="">The shared design<\/option><option value="rpt1">Customer pack<\/option><\/select>[\s\S]*?<button type="submit" class="primary">Open in Report Designer<\/button><\/form>/);
   assert.match(h, /<th[^>]*>[\s\S]*?Status/);
   assert.match(h, /data-id="r1"[\s\S]*?In-Progress|In-Progress[\s\S]*?data-id="r1"/);
   assert.match(h, /For Review/);
@@ -83,4 +83,13 @@ test('a report never made shows no one in By', () => {
   const d = startReport(assignHazardNumbers(seed()), act, { id: 'r1', title: 'Draft', design: {} });
   const h = reportsView(main(d), d).toString();
   assert.doesNotMatch(h, /someone/);
+});
+
+test('the Reports tab: a New report panel with its own heading, and no designer button or explanation', () => {
+  const d = assignHazardNumbers(seed());
+  const h = reportsView(main(d), d).toString();
+  assert.match(h, /<h1>Reports<\/h1>/);
+  assert.doesNotMatch(h, /Open the report designer|Each report has its own copy/);
+  assert.match(h, /<section class="panel report-new" aria-labelledby="report-new-h"><h2 id="report-new-h">New report<\/h2><form data-action="startReport" class="report-start">/);
+  assert.ok(h.indexOf('New report') < h.indexOf('Produced reports'), 'New report comes first');
 });
