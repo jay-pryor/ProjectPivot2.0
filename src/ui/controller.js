@@ -1075,7 +1075,8 @@ export function createController(env) {
         const at = env.clock.now();
         const { report } = docs.produce(platformId, { at, by: /** @type {string} */ (state.profileId), title: r.title, reportId: id });
         const working = makeReport(state.session.working, act(), { id, report });
-        set({ session: { ...state.session, working }, lastReportId: id, message: { kind: 'info', text: `${r.title} made. Save to keep it.` } });
+        // The designer is redrawn so its header shows the new stage.
+        set({ session: { ...state.session, working }, lastReportId: id, designerRevision: state.designerRevision + 1, message: { kind: 'info', text: `${r.title} made. Save to keep it.` } });
         await afterChange();
       }
       if (state.message?.kind === 'error') return;

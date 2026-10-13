@@ -67,3 +67,12 @@ test('a blank name starts nothing', async () => {
   assert.equal(c.getState().message?.kind, 'error');
   assert.equal(reports(c).length, 0);
 });
+
+test('making a report redraws the designer, so its header shows For Review', async () => {
+  const { c, go } = await setup();
+  await go({ type: 'startReport', title: 'A', from: '' });
+  const rev = c.getState().designerRevision;
+  await go({ type: 'generateFromDesigner', format: 'html' });
+  assert.ok(c.getState().designerRevision > rev);
+  assert.equal(DocGen.docHost.get().heading.tag, 'For Review');
+});

@@ -367,3 +367,4 @@
   .docgen .rd-save-slot { margin-left: auto; display: flex; align-items: center;}
   .docgen .modal-head h3 { display: inline-block; vertical-align: middle;}
   .docgen .rd-stage { margin-left: 8px; vertical-align: middle;}
+  .docgen .rd-save-slot + .modal-close { margin-left: 8px;}

@@ -1426,6 +1426,6 @@ ul.dots { display: grid; gap: 3px; }
 .report-start { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; margin: 8px 0 16px; }
 .report-start label { display: flex; flex-direction: column; gap: 4px; }
 .report-start input { min-width: 260px; }
-.tag.stage-progress { background: var(--p-warn-bg); color: var(--p-warn-fg); }
+.tag.stage-progress { background: var(--p-warn-bg); color: var(--p-warn); }
 .tag.stage-review { background: var(--p-info-bg); color: var(--p-info-fg); }
 .icon-btn { padding: 2px 8px; line-height: 1.2; }
