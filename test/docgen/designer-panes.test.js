@@ -784,3 +784,19 @@ test('a file dropped anywhere in the designer but a drop box is caught, so the b
   RD._strayFileDrop(text);
   assert.equal(text.prevented, false, 'dragging a section or a part is left alone');
 });
+
+test('"Start this section on a new page" is ticked unless it was turned off; off is what is stored', () => {
+  const h = host();
+  const tick = (hh) => {
+    App.docHost.set(hh); RD.open(); RD.select('things'); RD._rd.secCat = 'placement';
+    const html = RD.render(hh.getState()); RD.close();
+    return /data-rd-pagebreak="things"[^>]*checked/.test(html) || /<input[^>]*checked[^>]*data-rd-pagebreak="things"/.test(html);
+  };
+  assert.equal(tick(h), true);
+  App.docHost.set(h);
+  App.docStore.setBlockFlag('pageBreak', 'things', false);
+  assert.deepEqual(h.getState().report.pageBreak, { things: false });
+  assert.equal(tick(h), false);
+  App.docStore.setBlockFlag('pageBreak', 'things', true);
+  assert.equal(h.getState().report.pageBreak, undefined, 'on is the default, so nothing is stored');
+});

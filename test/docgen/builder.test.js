@@ -29,7 +29,8 @@ function hostWith(design = {}) {
       levels: { c4: 0, staff: 1, teams: 2, c1: 1, c2: 1, c3: 3 },
       intros: { staff: 'About the staff.', teams: 'Unnumbered intro, see {{refn:c2}}.' },
       introNumbered: { staff: true },
-      pageBreak: { c2: true },
+      // Every section starts a page unless told not to; here only the Annex does.
+      pageBreak: { c4: false, toc: false, meta: false, staff: false, teams: false, c1: false, c3: false },
       space: { c2: 30 },
       centred: { teams: true },
       noToc: { c3: true },
@@ -268,4 +269,15 @@ test('more images than the layout has boxes: the extra ones are kept but not sho
   const { document } = build({ sections: [{ id: 'c1', title: 'P', parts: [
     { id: 'i1', kind: 'image', layout: 'single', captions: 'none', images: [pic('a.png'), pic('b.png')] }] }], order: ['c1'] });
   assert.deepEqual(document.blocks.find((b) => b.kind === 'figure').images.map((i) => i.name), ['a.png']);
+});
+
+test('every section starts on a new page unless it is told not to', () => {
+  const { document } = build({ pageBreak: undefined });
+  for (const t of ['Contents', 'Staff', 'Teams', 'Notes for 12 Oct 2026', 'Annex', 'Deep']) {
+    const at = document.blocks.indexOf(heading(document, t));
+    assert.equal(document.blocks[at - 1].kind, 'pageBreak', t);
+  }
+  const { document: d2 } = build({ pageBreak: { staff: false } });
+  const staff = d2.blocks.indexOf(heading(d2, 'Staff'));
+  assert.notEqual(d2.blocks[staff - 1].kind, 'pageBreak');
 });

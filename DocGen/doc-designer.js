@@ -1279,7 +1279,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
            * a house rule ("every H1 starts a page"); this is a decision about ONE
            * section, which is what an annex or a title page needs. App.doc emits the
            * break, so it lands ahead of the heading rather than inside the body. */
-          pageBreakBefore: breaks[b.id] === true,
+          // On unless the section was told otherwise: every section starts a page by default.
+          pageBreakBefore: breaks[b.id] !== false,
           /* SPC-1: millimetres of empty page above this section's heading.
            *
            * Composes with the page break above rather than replacing it: "start a new
@@ -1728,6 +1729,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * @param {'centred'|'pageBreak'|'noToc'} bagKey
      */
     var BLOCK_FLAGS = ['centred', 'pageBreak', 'noToc'];
+    /** The flags that are ON for a section that says nothing: for these it is OFF that is stored. */
+    var FLAGS_ON = { pageBreak: true };
     function setBlockFlag(bagKey, blockId, on) {
       if (!P()) return errNoProject();
       if (!blockId) return err('A section is required.');
@@ -1735,7 +1738,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       App.docHost.get().commit(function (p) {
         var b = bag(p);
         b[bagKey] = b[bagKey] || {};
-        if (on) b[bagKey][blockId] = true; else delete b[bagKey][blockId];
+        if (!!on === !!FLAGS_ON[bagKey]) delete b[bagKey][blockId];
+        else b[bagKey][blockId] = !!on;
         if (!Object.keys(b[bagKey]).length) delete b[bagKey];
         if (!Object.keys(b).length) delete p.report;
       });
