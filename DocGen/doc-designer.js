@@ -3740,6 +3740,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       colourOpen: null,      // the colour field whose palette is open (its Style path)
       renaming: null,        // the section whose heading is being edited in the list
       secCat: null,          // the open category of the Sections pane
+      fieldFor: null,        // DS-1: the box whose Field menu is open
+      cat: null,             // DS-2: the catalogue bound to the subject, until the next change
       imgMenu: null,         // 'partId:box' whose choose-menu is open
       imgPick: false,        // that menu showing Standard Images
       secWhole: false,       // whether the section preview shows the whole document
@@ -3754,6 +3756,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     var _ctx = null;
     var _dragId = null;      // section being dragged
     var _dragPart = null;    // part being dragged inside a section
+    var _dragField = null;   // DS-1: a field being dragged from the Field menu
 
     /* OPT-2: the report options, exactly as the Generate button will see them — the
      * project's four include-maps plus this run's filename, tags and classification.
@@ -3777,6 +3780,98 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     /** What the host calls the thing a document is about (`host.subject.noun`), for the UI's wording. */
     function noun() { var sj = H() && H().subject; return (sj && sj.noun) || 'subject'; }
     function bag(project) { return (project && project.report) || {}; }
+    /* ------------------------------------------------------------------
+     * DS-1/DS-2: register fields and repeats, as the designer shows them.
+     * ------------------------------------------------------------------ */
+    /** The host's catalogue, unbound: what menus and chips name. Null without one. */
+    function catalogue() { return App.docHost.catalogue(null); }
+    /** The catalogue bound to the chosen subject (for counts), kept until the next change. */
+    function boundCatalogue(project) {
+      if (_rd.cat !== undefined && _rd.cat !== null) return _rd.cat;
+      var id = selectedSubjectId(project);
+      _rd.cat = id ? App.docHost.catalogue({ subjectId: id, numbering: App.docFormat.resolve(project).document }) : null;
+      return _rd.cat;
+    }
+    function collLabel(c, coll, plural) {
+      var d = c && c.collections[coll];
+      return d ? (plural ? (d.plural || d.label) : d.label) : coll;
+    }
+    /** `Hazard › Title`, or null for a field the catalogue does not have. */
+    function fieldLabel(tag) {
+      var c = catalogue();
+      var p = DATA.parseFieldTag(tag);
+      var def = c && p ? DATA.fieldDef(c, p.coll, p.field) : null;
+      return def ? collLabel(c, p.coll) + ' \u203a ' + def.label : null;
+    }
+    /**
+     * Where a section sits among the repeats: the collections whose entry is in scope above it
+     * (`outer`, the root first), what it repeats for itself (`own`), and the sections that
+     * repeat with it (`group`). Read from the outline, as the document builder groups them.
+     */
+    function scopeOf(project, secId) {
+      var c = catalogue();
+      var root = c ? c.root : 'platform';
+      var view = outlineNow(project);
+      var byId = {};
+      view.blocks.forEach(function (b) { byId[b.id] = b; });
+      var rs = view.resolved, stack = [];
+      var eachOf = function (b) { return b && b.kind === 'custom' && b.repeat && b.repeat.each ? b.repeat.each : null; };
+      for (var i = 0; i < rs.length; i++) {
+        var lv = rs[i].level;
+        while (stack.length && !(lv !== App.doc.TITLE_LEVEL && lv > stack[stack.length - 1].level)) stack.pop();
+        var each = eachOf(byId[rs[i].id]);
+        if (rs[i].id === secId) {
+          var group = [];
+          if (each) for (var j = i + 1; j < rs.length && rs[j].level !== App.doc.TITLE_LEVEL && rs[j].level > lv; j++) group.push(rs[j]);
+          return { outer: [root].concat(stack.map(function (x) { return x.each; })), own: each, group: group };
+        }
+        if (each) stack.push({ level: lv, each: each });
+      }
+      return { outer: [root], own: eachOf(byId[secId]), group: [] };
+    }
+    /** The collections a box in this section can read: single entries, and lists. */
+    function reachIn(project, secId) {
+      var c = catalogue();
+      if (!c) return { single: [], lists: [] };
+      var sc = scopeOf(project, secId);
+      return DATA.available(sc.outer.concat(sc.own ? [sc.own] : []), c);
+    }
+    /** A chip's label in this section: null (a broken chip) when the field cannot be read here. */
+    function fieldLabelIn(project, secId) {
+      var reach = null;
+      return function (tag) {
+        var l = fieldLabel(tag);
+        if (!l || !secId) return l;
+        reach = reach || reachIn(project, secId);
+        var p = DATA.parseFieldTag(tag);
+        return reach.single.indexOf(p.coll) !== -1 || reach.lists.indexOf(p.coll) !== -1 ? l : null;
+      };
+    }
+    /** What a heading or a list row shows for text that may hold fields. */
+    function shownText(t) { return App.md.plain(t, { fieldLabel: fieldLabel }); }
+    /** The Field button, beside Link, wherever a box can take one. */
+    function fieldButton(id) {
+      return catalogue() ? '<button type="button" class="rd-tb" data-rd-field-open="' + esc(id) + '" title="Insert a field from the registers">{ } Field</button>' : '';
+    }
+    /** The Field menu: the fields of what is in scope, then the lists below it. Click or drag. */
+    function fieldMenu(project, secId, id) {
+      if (_rd.fieldFor !== id) return '';
+      var c = catalogue();
+      if (!c) return '';
+      var reach = reachIn(project, secId);
+      function group(coll, list) {
+        var def = c.collections[coll];
+        return '<div class="rd-fieldgroup"><div class="rd-fieldgroup-h">' + esc(collLabel(c, coll, list)) + (list ? ' <em>list</em>' : '') + '</div>' +
+          '<div class="rd-fieldpicks">' + def.fields.map(function (f) {
+            return '<button type="button" class="rd-fieldpick" data-rd-field-pick="' + esc('f:' + coll + '.' + f.id) + '" draggable="true"' +
+              ' title="' + esc(list ? 'Every ' + collLabel(c, coll).toLowerCase() + '\'s ' + f.label.toLowerCase() + ', as a list' : f.label) + '">' + esc(f.label) + '</button>';
+          }).join('') + '</div></div>';
+      }
+      return '<div class="rd-fieldmenu"><div class="rd-refmenu-h">Insert a field <span class="rd-state">click, or drag it into the text</span></div>' +
+        reach.single.map(function (k) { return group(k, false); }).join('') +
+        reach.lists.map(function (k) { return group(k, true); }).join('') + '</div>';
+    }
+
     function customSection(project, id) {
       return (bag(project).sections || []).filter(function (s) { return s.id === id; })[0] || null;
     }
@@ -3859,7 +3954,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var byId = {};
       view.resolved.forEach(function (r) { if (!r.parentId) byId[r.id] = r; });
 
+      var cat0 = catalogue();
       var rows = view.blocks.map(function (b, i) {
+        // DS-1: a heading with fields in it reads by their names.
+        b = Object.assign({}, b, { label: shownText(b.label) });
         var off = !b.included;
         var r = byId[b.id];
         var num = (off || !r) ? '—' : (r.number || '·');
@@ -3874,7 +3972,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var warn = (r && r.skipped)
           ? '<span class="rd-warn" title="There is no heading one level above this one. It has been pulled up to ' + levelName(r.level) + '.">↰ ' + levelName(r.level) + '</span>'
           : '';
-        var kind = b.kind === 'custom' ? ''
+        var kind = b.kind === 'custom'
+          ? (b.repeat && b.repeat.each ? '<span class="rd-kind rd-repeats" title="Printed once for each entry, with the sections under it">\u21bb per ' + esc(collLabel(cat0, b.repeat.each)) + '</span>' : '')
           : '<span class="rd-kind">' + esc(b.kind === 'meta' ? 'Meta' : b.kind === 'toc' ? 'Table of Contents' : 'Auto-populated') + '</span>';
         var sel = _rd.selected === b.id ? ' sel' : '';
 
@@ -3961,11 +4060,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * @param {string} attrs   the data attributes identifying what this box writes to
      * @param {string} tokens  the stored token text
      */
-    function richBox(project, attrs, tokens, cls, placeholder) {
+    function richBox(project, attrs, tokens, cls, placeholder, secId) {
       return '<div class="rd-rich ' + (cls || '') + '" contenteditable="true" role="textbox"' +
         ' aria-multiline="true" spellcheck="true" data-rd-rich data-rd-live ' + attrs +
         (placeholder ? ' data-rd-ph="' + esc(placeholder) + '"' : '') + '>' +
-        App.ui.richText.toHtml(tokens || '', { resolveRef: refResolver(project) }) + '</div>';
+        App.ui.richText.toHtml(tokens || '', { resolveRef: refResolver(project), fieldLabel: fieldLabelIn(project, secId) }) + '</div>';
     }
 
     /* RTX-1: the four formatting buttons, wherever prose is written. `host` is the data
@@ -4068,13 +4167,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         '<div class="rd-part-head"><span class="rd-part-kind">Paragraph</span>' +
           '<span class="rd-tbs">' + toolbar(host) +
             '<button type="button" class="rd-tb" data-rd-ref-open="' + esc(part.id) + '" title="Insert a cross-reference that survives renaming and reordering">🔗 Link</button>' +
+            fieldButton(part.id) +
           '</span>' +
           cb('data-rd-part-flag="centre" ' + host, 'Centre', part.centre === true) +
           paraLevelSelect(project, sec, part) +
           partControls(sec, part, i, n) + '</div>' +
-        refMenu(project, sec, part) +
+        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id) +
         richBox(project, 'data-rd-text="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"',
-          part.text, '', 'Write the paragraph. Enter is a line break; a blank line starts a new paragraph.') +
+          part.text, '', 'Write the paragraph. Enter is a line break; a blank line starts a new paragraph.', sec.id) +
         hostileHint(part.text || '') + '</div>';
     }
 
@@ -4201,7 +4301,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         // RTX-2: a heading is prose like any other cell, so it takes the same box.
         return '<th>' + richBox(project,
             'data-rd-cell="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-row="-1" data-rd-col="' + c + '"' +
-            ' aria-label="Column ' + (c + 1) + ' heading"', h, 'rd-cellbox') +
+            ' aria-label="Column ' + (c + 1) + ' heading"', h, 'rd-cellbox', '', sec.id) +
           '<span class="rd-colbar">' +
             '<select data-rd-align="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-col="' + c + '" aria-label="Column ' + (c + 1) + ' alignment" title="Column alignment">' +
               ['l', 'c', 'r'].map(function (a) { return '<option value="' + a + '"' + ((align[c] || 'l') === a ? ' selected' : '') + '>' + (a === 'l' ? '⇤' : a === 'c' ? '↔' : '⇥') + '</option>'; }).join('') +
@@ -4217,7 +4317,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         return '<tr>' + head.map(function (_, c) {
           return '<td>' + richBox(project,
             'data-rd-cell="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-row="' + ri + '" data-rd-col="' + c + '"' +
-            ' aria-label="Row ' + (ri + 1) + ' column ' + (c + 1) + '"', r[c], 'rd-cellbox') + '</td>';
+            ' aria-label="Row ' + (ri + 1) + ' column ' + (c + 1) + '"', r[c], 'rd-cellbox', '', sec.id) + '</td>';
         }).join('') + '<td class="rd-rowdel">' +
           (rowMm
             ? '<input type="checkbox" class="rd-tallbox" data-rd-tallrow="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) +
@@ -4238,6 +4338,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
            * needs a reference usually ends up. */
           '<span class="rd-tbs">' + toolbar(host) +
             '<button type="button" class="rd-tb" data-rd-ref-open="' + esc(part.id) + '" title="Insert a cross-reference into the cell you were writing in">🔗 Link</button>' +
+            fieldButton(part.id) +
           '</span>' +
           cb('data-rd-part-flag="centre" ' + host, 'Centre', part.centre === true) +
           // TBS-1: this table opts in; the Formatting pane decides what opting in looks like.
@@ -4246,7 +4347,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           // a layout, does not want "Table 7:" underneath it.
           cb('data-rd-part-flag="noCaption" data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"', 'No caption', part.noCaption === true) +
           partControls(sec, part, i, n) + '</div>' +
-        refMenu(project, sec, part) +
+        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id) +
         (part.noCaption === true
           ? '<p class="rd-state">No caption: this table is not numbered.</p>'
           : '<input class="rd-cap" value="' + esc(part.caption || '') + '" data-rd-caption="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" placeholder="Table caption — left blank, the section’s heading is used" aria-label="Table caption">') +
@@ -4465,9 +4566,25 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var included = view.resolved.filter(function (r) { return r.included !== false; });
       var at = included.map(function (r) { return r.id; }).indexOf(block.id);
       var mine = at === -1 ? null : p.anchors[included[at].anchor];
-      if (!mine) return '<p class="rd-state">' + (at === -1 ? 'This section is not in the document.' : 'This section is not on the page.') + '</p>';
+      var here = at === -1 ? null : included[at].anchor, note = '';
       var end = null;
-      for (var i = at + 1; i < included.length && !end; i++) end = p.anchors[included[i].anchor] || null;
+      if (at !== -1 && block.kind === 'custom' && block.repeat && block.repeat.each) {
+        /* DS-2: a repeating section is shown by its FIRST copy, up to the next heading at its
+         * level or above; the whole document shows every copy. */
+        var pre = App.md.anchor('sec-' + block.id) + '-';
+        var heads = (p.document.blocks || []).filter(function (x) { return x.kind === 'heading' && x.anchor; });
+        var copies = heads.filter(function (x) { return x.anchor.indexOf(pre) === 0; });
+        if (!copies.length) return '<p class="rd-state">No copies of this section: there are no entries to repeat it for.</p>';
+        var first = copies[0], k0 = heads.indexOf(first);
+        var level0 = copies.filter(function (x) { return x.level <= first.level; }).length;
+        mine = p.anchors[first.anchor]; here = first.anchor;
+        for (var h2 = k0 + 1; h2 < heads.length && !end; h2++) if (heads[h2].level <= first.level) end = p.anchors[heads[h2].anchor] || null;
+        var cc = catalogue();
+        note = '1 of ' + level0 + ' ' + esc((level0 === 1 ? collLabel(cc, block.repeat.each) : collLabel(cc, block.repeat.each, true)).toLowerCase()) + '. ';
+      } else {
+        for (var i = at + 1; i < included.length && !end; i++) end = p.anchors[included[i].anchor] || null;
+      }
+      if (!mine) return '<p class="rd-state">' + (at === -1 ? 'This section is not in the document.' : 'This section is not on the page.') + '</p>';
       var m = p.style.page.margins, MMPT = 72 / 25.4;
       var bands = [];
       var lastPage = end ? end.page : p.pages.length - 1;
@@ -4485,11 +4602,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var on = (o[0] === 'whole') === whole;
         return '<button type="button" class="' + (on ? 'on' : '') + '" data-rd-prev-scope="' + o[0] + '" aria-pressed="' + on + '">' + o[1] + '</button>';
       }).join('') + '</span>';
-      return '<div class="rd-secprev-head">' + scope + '<span class="rd-state">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
+      return '<div class="rd-secprev-head">' + scope + '<span class="rd-state">' + note + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
         ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
         // The whole document, opened at this section; or just this section, cut from it.
         '<div class="rd-secprev rd-preview-pages">' + (whole
-          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: included[at].anchor, imageUrl: imageUrl })
+          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: here, imageUrl: imageUrl })
           : pagesHtml(bands, { scale: k, imageUrl: imageUrl })) + '</div>';
     }
 
@@ -4632,21 +4749,88 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         '<div class="rd-part-head"><span class="rd-tbs">' + toolbar('data-rd-block="' + esc(block.id) + '"') +
           '<button type="button" class="rd-tb" data-rd-ref-open="' + esc('intro:' + block.id) + '"' +
             ' title="Insert a cross-reference that survives renaming and reordering">\ud83d\udd17 Link</button>' +
+          fieldButton('intro:' + block.id) +
         '</span></div>' +
         (refOpen ? refMenuFor(project, block.id, 'data-rd-ref-block="' + esc(block.id) + '"') : '') +
+        fieldMenu(project, block.id, 'intro:' + block.id) +
         richBox(project, 'data-rd-intro="' + esc(block.id) + '"' +
-          ' aria-label="Introduction for ' + esc(block.label) + '"', block.intro, '',
-          'Optional. A blank line starts a new paragraph.') +
+          ' aria-label="Introduction for ' + esc(shownText(block.label)) + '"', block.intro, '',
+          'Optional. A blank line starts a new paragraph.', block.id) +
         hostileHint(block.intro || '') +
         '<span title="The introduction takes the section\'s first number, such as 5.1">' + cb('data-rd-intro-num="' + esc(block.id) + '"', 'Number it', block.introNumbered === true) + '</span>' +
         '</div>';
     }
 
+    /**
+     * DS-2: the Repeat category — what this section repeats for (the lists reachable where it
+     * sits), the one filter, the sort, and what the choice means on the chosen subject.
+     */
+    function repeatPane(project, block) {
+      var c = catalogue();
+      var sec = customSection(project, block.id);
+      if (!c || !sec) return '';
+      var sc = scopeOf(project, block.id);
+      var lists = DATA.available(sc.outer, c).lists;
+      var r = sec.repeat || null, each = r ? r.each : '';
+      var here = !each || lists.indexOf(each) !== -1;
+      var id = esc(block.id);
+      var opts2 = '<option value=""' + (each ? '' : ' selected') + '>Don\'t repeat</option>' +
+        lists.map(function (k) { return '<option value="' + esc(k) + '"' + (k === each ? ' selected' : '') + '>' + esc(collLabel(c, k)) + '</option>'; }).join('') +
+        (here ? '' : '<option value="' + esc(each) + '" selected>' + esc(collLabel(c, each)) + ' (not available here)</option>');
+      var out = '<div class="rd-fieldset"><strong>Repeat this section</strong>' +
+        '<label class="rd-lab">For each<select data-rd-repeat-each="' + id + '" aria-label="Repeat for each">' + opts2 + '</select></label>';
+      if (!each) {
+        return out + '<p class="rd-state">Choose a register to print this section once for each of its entries, with the sections under it. ' +
+          'Fields in it then read that entry.</p></div>';
+      }
+      if (!here) {
+        return out + '<p class="rpt-omit">' + esc(collLabel(c, each, true)) + ' cannot be repeated here: there is no ' + esc(collLabel(c, each).toLowerCase()) +
+          ' list where this section sits. It prints once, and its ' + esc(collLabel(c, each).toLowerCase()) + ' fields print as [unknown field].</p></div>';
+      }
+      var fields = (c.collections[each] || { fields: [] }).fields;
+      var w = (r && r.where) || {}, so = (r && r.sort) || {};
+      var fieldOpts = function (cur, none) {
+        return '<option value="">' + esc(none) + '</option>' + fields.map(function (f) {
+          return '<option value="' + esc(f.id) + '"' + (f.id === cur ? ' selected' : '') + '>' + esc(f.label) + '</option>';
+        }).join('');
+      };
+      var noValue = w.op === 'empty' || w.op === 'set';
+      out += '<div class="rd-grid">' +
+        '<label class="rd-lab rd-lab-s">Only where<select data-rd-repeat-wfield="' + id + '" aria-label="Filter field">' + fieldOpts(w.field, 'Every one') + '</select></label>' +
+        (w.field
+          ? '<label class="rd-lab rd-lab-s">&nbsp;<select data-rd-repeat-wop="' + id + '" aria-label="Filter test">' + DATA.OPS.map(function (o) {
+              return '<option value="' + o + '"' + (o === (w.op || 'is') ? ' selected' : '') + '>' + esc(DATA.OP_LABELS[o]) + '</option>';
+            }).join('') + '</select></label>' +
+            (noValue ? '' : '<label class="rd-lab rd-lab-s">&nbsp;<input data-rd-repeat-wval="' + id + '" value="' + esc(w.value || '') + '" aria-label="Filter value"></label>')
+          : '') +
+        '<label class="rd-lab rd-lab-s">Sort by<select data-rd-repeat-sfield="' + id + '" aria-label="Sort by">' + fieldOpts(so.field, 'Register order') + '</select></label>' +
+        (so.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select data-rd-repeat-sdir="' + id + '" aria-label="Sort direction">' +
+          '<option value="asc"' + (so.dir === 'desc' ? '' : ' selected') + '>Ascending</option><option value="desc"' + (so.dir === 'desc' ? ' selected' : '') + '>Descending</option></select></label>' : '') +
+        '</div>';
+      // What it means: the sections that repeat with it, and how many copies the subject gives.
+      if (sc.group.length) out += '<p class="rd-state">Repeats with: ' + sc.group.map(function (g) { return esc(shownText(g.label)); }).join(', ') + '.</p>';
+      if (sc.outer.length > 1) {
+        out += '<p class="rd-state">Once for each ' + esc(collLabel(c, each).toLowerCase()) + ' of each ' + esc(collLabel(c, sc.outer[sc.outer.length - 1]).toLowerCase()) + '.</p>';
+      } else {
+        var bc = boundCatalogue(project);
+        if (bc && bc.data) {
+          var kids = DATA.childrenIn(DATA.rootScope(bc.data, bc.root), each, bc) || [];
+          var n = DATA.select(kids, r.where, r.sort).length;
+          var subj = (latest().filter(function (x) { return x.id === selectedSubjectId(project); })[0] || {}).label || '';
+          out += n
+            ? '<p class="rd-state">' + n + ' ' + esc((n === 1 ? collLabel(c, each) : collLabel(c, each, true)).toLowerCase()) + ' on ' + esc(subj) + '.</p>'
+            : '<p class="rpt-omit">No ' + esc(collLabel(c, each, true).toLowerCase()) + ' on ' + esc(subj) + (r.where ? ' pass the filter' : '') + ': nothing prints.</p>';
+        }
+      }
+      return out + '</div>';
+    }
+
     /** The categories of a section's settings, by kind. */
-    var SEC_CATEGORIES = { heading: 'Heading', placement: 'Placement', introduction: 'Introduction', table: 'Table', rows: 'Rows', content: 'Content' };
+    var SEC_CATEGORIES = { heading: 'Heading', repeat: 'Repeat', placement: 'Placement', introduction: 'Introduction', table: 'Table', rows: 'Rows', content: 'Content' };
     function categoriesFor(block) {
       var ids = block.kind === 'toc' ? ['heading', 'placement']
-        : block.kind === 'custom' ? ['heading', 'placement', 'content']
+        // DS-2: an own section can repeat per register entry, where the host has registers.
+        : block.kind === 'custom' ? (catalogue() ? ['heading', 'repeat', 'placement', 'content'] : ['heading', 'placement', 'content'])
         : ['heading', 'introduction', 'placement'].concat(
             ((App.docGen.sectionColumns(H(), block, opts()) || { all: [] }).all.length ? ['table'] : []),
             block.kind === 'meta' ? ['rows'] : []);
@@ -4679,12 +4863,17 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function categoryFields(project, view, block, resolved, cat) {
       var sec = block.kind === 'custom' ? customSection(project, block.id) : null;
       if (cat === 'heading') {
+        // DS-1: an own section's heading is a one-line box, so a field can sit in it.
         return (sec
-          ? '<label class="rd-lab">Heading<input class="rd-title" value="' + esc(sec.title || '') + '" data-rd-live data-rd-sec-title="' + esc(sec.id) + '"' +
-              ' placeholder="None: the section is body text" aria-label="Section heading"></label>'
+          ? '<div class="rd-fieldset"><strong>Heading</strong>' +
+              (catalogue() ? '<div class="rd-part-head"><span class="rd-tbs">' + fieldButton('head:' + sec.id) + '</span></div>' : '') +
+              fieldMenu(project, sec.id, 'head:' + sec.id) +
+              richBox(project, 'data-rd-sec-heading-rich="' + esc(sec.id) + '" aria-label="Section heading" aria-multiline="false"', sec.title || '', 'rd-title rd-oneline',
+                'None: the section is body text', sec.id) + '</div>'
           : nameField(block, block.defaultTitle));
       }
       if (cat === 'placement') return centreToggle(project, block, resolved);
+      if (cat === 'repeat') return repeatPane(project, block);
       if (cat === 'introduction') return introField(project, block);
       if (cat === 'rows') return metaPane(project);
       if (cat === 'table') {
@@ -4736,7 +4925,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           (c.id === cat.id ? ' aria-current="true"' : '') + '>' + esc(c.label) + '</button>';
       }).join('') + '</nav>';
       return '<div class="rd-secgrid">' + list +
-        '<div class="rd-sec-fields" data-rd-sec-fields><h5>' + esc(block.label) + ' \u2014 ' + esc(cat.label) + '</h5>' +
+        '<div class="rd-sec-fields" data-rd-sec-fields><h5>' + esc(shownText(block.label)) + ' \u2014 ' + esc(cat.label) + '</h5>' +
           categoryFields(project, view, block, resolved, cat.id) + '</div>' +
         '<div class="rd-sec-prev" data-rd-sec-prev>' + sectionPreview(project, block) + '</div></div>';
     }
@@ -5371,7 +5560,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
     function quietly(fn) { if (_ctx && _ctx.quietEdit) _ctx.quietEdit(fn); else fn(); }
     /** Any project write invalidates the cached preview — it is a render of the project. */
-    function dirty() { _rd.preview = null; _rd.refs = null; }
+    function dirty() { _rd.preview = null; _rd.refs = null; _rd.cat = null; }
 
     /** RPT-3: persist a reorder — move one block id by a step, or before another. */
     function moveSection(project, id, delta, beforeId) {
@@ -5475,6 +5664,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!el || !el.getAttribute) return '';
       if (el.hasAttribute('data-rd-text')) return '[data-rd-text="' + el.getAttribute('data-rd-text') + '"]';
       if (el.hasAttribute('data-rd-intro')) return '[data-rd-intro="' + el.getAttribute('data-rd-intro') + '"]';
+      if (el.hasAttribute('data-rd-sec-heading-rich')) return '[data-rd-sec-heading-rich="' + el.getAttribute('data-rd-sec-heading-rich') + '"]';
       if (el.hasAttribute('data-rd-cell')) {
         return '[data-rd-cell="' + el.getAttribute('data-rd-cell') + '"]' +
           '[data-rd-row="' + el.getAttribute('data-rd-row') + '"]' +
@@ -5493,6 +5683,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (el.hasAttribute('data-rd-intro')) {
         var block = el.getAttribute('data-rd-intro');
         return function (next) { return App.docStore.setBlockIntro(block, next); };
+      }
+      if (el.hasAttribute('data-rd-sec-heading-rich')) {
+        // DS-1: a heading is one line of plain text and fields: no breaks, no emphasis.
+        var hid = el.getAttribute('data-rd-sec-heading-rich');
+        return function (next) {
+          return App.docStore.updateSection(hid, { title: String(next).replace(/\{\{\/?(b|i|c)\}\}/g, '').replace(/\s*\n\s*/g, ' ') });
+        };
       }
       if (el.hasAttribute('data-rd-cell')) {
         var tbl = el.getAttribute('data-rd-cell');
@@ -6139,6 +6336,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
       // drag to reorder parts within the open section
       dom.on(ctx.root, 'dragstart', '[data-rd-partrow]', function (e, el) {
+        // A field dragged out of the Field menu is not the part being moved.
+        if (e.target && e.target.closest && e.target.closest('[data-rd-field-pick]')) return;
         _dragPart = el.getAttribute('data-rd-partrow');
         if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', _dragPart); } catch (err) {} }
         el.classList.add('dragging');
@@ -6253,6 +6452,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     function wireText(h) {
       var dom = h.dom, ctx = h.ctx;
+      var P = h.P;
 
       // The toolbar follows the cursor: bold, italic and code light up where they apply.
       document.addEventListener('selectionchange', showFormats);
@@ -6317,6 +6517,79 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         // survives the repaint that opens the menu — which is what lets picking a target
         // link the words that were highlighted when the button was pressed.
         repaint();
+      });
+      // DS-1: the Field menu, opened and picked like the reference menu; or a field dragged in.
+      dom.on(ctx.root, 'mousedown', '[data-rd-field-open], [data-rd-field-pick]', function (e, el) {
+        e.preventDefault();
+        var live = liveBox(el);
+        if (live) noteSelection(live);
+      });
+      dom.on(ctx.root, 'click', '[data-rd-field-open]', function (e, el) {
+        var id = el.getAttribute('data-rd-field-open');
+        _rd.fieldFor = _rd.fieldFor === id ? null : id;
+        _rd.refFor = null;
+        repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-field-pick]', function (e, el) {
+        wrapSelection(el, el.getAttribute('data-rd-field-pick'));
+        _rd.fieldFor = null;
+        repaint();
+      });
+      dom.on(ctx.root, 'dragstart', '[data-rd-field-pick]', function (e, el) {
+        _dragField = el.getAttribute('data-rd-field-pick');
+        if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'copy'; try { e.dataTransfer.setData('text/x-rd-token', _dragField); } catch (err) {} }
+        e.stopPropagation();
+      });
+      dom.on(ctx.root, 'dragend', '[data-rd-field-pick]', function () { _dragField = null; });
+      dom.on(ctx.root, 'dragover', '[data-rd-rich]', function (e) { if (_dragField) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } });
+      dom.on(ctx.root, 'drop', '[data-rd-rich]', function (e, el) {
+        if (!_dragField) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var tag = _dragField;
+        _dragField = null;
+        // The caret goes where the field was let go, then it is inserted there.
+        var r = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY)
+          : (document.caretPositionFromPoint ? (function (pos) { if (!pos) return null; var rr = document.createRange(); rr.setStart(pos.offsetNode, pos.offset); return rr; })(document.caretPositionFromPoint(e.clientX, e.clientY)) : null);
+        el.focus();
+        if (r && el.contains(r.startContainer)) { var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+        _sel = null;
+        insertToken(el, tag);
+        _rd.fieldFor = null;
+      });
+      // A heading is one line: Enter finishes it.
+      dom.on(ctx.root, 'keydown', '[data-rd-sec-heading-rich]', function (e, el) {
+        if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+      });
+      // DS-2: the Repeat category.
+      function repeatOf(id) { var s0 = customSection(P(), id); return (s0 && s0.repeat) || null; }
+      function setRepeat(id, next) {
+        quietly(function () { logIssues(App.docStore.setSectionRepeat(id, next)); });
+        dirty(); repaint();
+      }
+      dom.on(ctx.root, 'change', '[data-rd-repeat-each]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-each'), cur = repeatOf(id), v = el.value;
+        setRepeat(id, v ? (cur && cur.each === v ? cur : { each: v }) : null);
+      });
+      dom.on(ctx.root, 'change', '[data-rd-repeat-wfield]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-wfield'), cur = repeatOf(id) || {}, w = cur.where || {};
+        setRepeat(id, Object.assign({}, cur, { where: el.value ? { field: el.value, op: w.op || 'is', value: w.value || '' } : null }));
+      });
+      dom.on(ctx.root, 'change', '[data-rd-repeat-wop]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-wop'), cur = repeatOf(id) || {};
+        setRepeat(id, Object.assign({}, cur, { where: Object.assign({}, cur.where, { op: el.value }) }));
+      });
+      dom.on(ctx.root, 'change', '[data-rd-repeat-wval]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-wval'), cur = repeatOf(id) || {};
+        setRepeat(id, Object.assign({}, cur, { where: Object.assign({}, cur.where, { value: el.value }) }));
+      });
+      dom.on(ctx.root, 'change', '[data-rd-repeat-sfield]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-sfield'), cur = repeatOf(id) || {};
+        setRepeat(id, Object.assign({}, cur, { sort: el.value ? { field: el.value, dir: (cur.sort && cur.sort.dir) || 'asc' } : null }));
+      });
+      dom.on(ctx.root, 'change', '[data-rd-repeat-sdir]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-sdir'), cur = repeatOf(id) || {};
+        setRepeat(id, Object.assign({}, cur, { sort: Object.assign({}, cur.sort, { dir: el.value }) }));
       });
       dom.on(ctx.root, 'click', '[data-rd-ref-pick]', function (e, el) {
         // REF-1: the reading (`ref` / `refn` / `reft`) rides on the button, so the same
