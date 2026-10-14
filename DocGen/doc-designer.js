@@ -3,6 +3,7 @@ import { STANDARD as STYLE_STANDARD, PAPER_MM as STYLE_PAPER_MM, normaliseStyle,
 import { layout } from './doc-layout.js';
 import { pagesHtml, cropPage } from './doc-preview.js';
 import { toWinAnsi } from './doc-fonts.js';
+import { parseFillTag as FILL_PARSE } from './doc-data.js';
 import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO, figureSources as FIGURE_SOURCES, FIGURE_LAYOUTS } from './doc-images.js';
   /* App namespace root. Exported at the bottom of this file. */
   var App = {};
@@ -215,8 +216,17 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
   (function (App) {
     'use strict';
 
-    var TOKEN = /\{\{(\/?)(b|i|c|br|(?:ref|refn|reft):[A-Za-z0-9:._-]+|ref)\}\}/g;
+    // DS-1: `{{f:collection.field?options}}` and `{{fill:id?label=…}}` are markers like a
+    // reference without words: they stand for text the document fills in (doc-data.js).
+    var TOKEN = /\{\{(\/?)(b|i|c|br|(?:ref|refn|reft):[A-Za-z0-9:._-]+|ref|f:[A-Za-z0-9._-]+(?:\?[A-Za-z0-9._~%&=:-]*)?|fill:[A-Za-z0-9_-]+(?:\?[A-Za-z0-9._~%&=:-]*)?)\}\}/g;
     var REF_TAG = /^(ref|refn|reft):(.+)$/;
+    var FIELD_TAG = /^f:/, FILL_TAG = /^fill:/;
+    /** What a field or fill token is called where it cannot be filled in: its label, or its path. */
+    function markerName(tag, opts) {
+      if (FILL_TAG.test(tag)) { var f = FILL_PARSE(tag); return 'To fill in: ' + ((f && f.label) || 'text'); }
+      var l = opts && opts.fieldLabel ? opts.fieldLabel(tag) : null;
+      return l || String(tag).slice(2).split('?')[0];
+    }
     /** What a resolved reference reads as, per token. */
     var REF_READING = { ref: 'label', refn: 'numberLabel', reft: 'titleLabel' };
 
@@ -276,6 +286,16 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             out.push(run(wrapped !== null ? wrapped : String(r[REF_READING[bits[1]]] || r.label || ''), { ref: { anchor: r.anchor } }));
           }
           if (wrapped !== null) continue;
+        } else if ((FIELD_TAG.test(tag) || FILL_TAG.test(tag)) && !close) {
+          // DS-1: what the field reads as, from the resolver; its text is never markup.
+          var got = opts.resolveField ? opts.resolveField(tag) : null;
+          (got || [{ text: '\u2039' + markerName(tag, opts) + '\u203a' }]).forEach(function (g) {
+            if (g.br) { out.push({ br: true }); return; }
+            if (!g.text) return;
+            var extra = {};
+            Object.keys(g).forEach(function (k) { if (k !== 'text') extra[k] = g[k]; });
+            out.push(run(g.text, extra));
+          });
         }
         last = m.index + m[0].length;
       }
@@ -285,8 +305,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
 
     /** The plain-text reading of a token string — for previews, summaries and titles. */
-    function plain(s) {
+    function plain(s, opts) {
       return String(s == null ? '' : s).replace(TOKEN, function (m0, close, tag) {
+        if (!close && (FIELD_TAG.test(tag) || FILL_TAG.test(tag))) return '\u2039' + markerName(tag, opts) + '\u203a';
         return (!close && REF_TAG.test(tag)) ? '→' : tag === 'br' ? ' ' : '';
       });
     }
@@ -299,7 +320,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return String(id == null ? '' : id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
     }
 
-    App.md = { runs: runs, plain: plain, anchor: anchor, TOKEN: TOKEN, REF_TAG: REF_TAG, REF_READING: REF_READING };
+    App.md = { runs: runs, plain: plain, anchor: anchor, TOKEN: TOKEN, REF_TAG: REF_TAG, REF_READING: REF_READING,
+      FIELD_TAG: FIELD_TAG, FILL_TAG: FILL_TAG, markerName: markerName };
   })(App);
   /* =============================================================================
    * MODULE: App.docFormat  — named Styles: how the finished document looks
@@ -3229,6 +3251,20 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           }
           continue;
         }
+        if (!close && MD.FIELD_TAG.test(tag)) {
+          // DS-1: a field is a chip naming the field, not a value: the box is a template.
+          var fl = opts.fieldLabel ? opts.fieldLabel(tag) : undefined;
+          out += '<span class="' + CHIP + ' rd-field' + (fl === null ? ' rd-broken' : '') + '" contenteditable="false" data-rd-tok="' + esc(tag) + '"' +
+            ' title="' + esc(fl === null ? 'This field is not available here' : 'Filled in from the registers') + '">' +
+            esc(fl || MD.markerName(tag, {})) + '</span>';
+          continue;
+        }
+        if (!close && MD.FILL_TAG.test(tag)) {
+          var fi = FILL_PARSE(tag);
+          out += '<span class="' + CHIP + ' rd-fill" contenteditable="false" data-rd-tok="' + esc(tag) + '"' +
+            ' title="Written by hand for each entry: see Fill in">\u270e ' + esc((fi && fi.label) || 'To fill in') + '</span>';
+          continue;
+        }
         // An unknown or unmatched token is literal text, exactly as App.md reads it.
         out += lit(m[0]);
       }
@@ -3441,7 +3477,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (tag === 'br') return { text: v.slice(0, s) + '\n' + v.slice(e), caret: s + 1 };
       var isRef = MD.REF_TAG.test(tag);
       var open = '{{' + tag + '}}', close;
-      if (isRef) close = sel ? '{{/ref}}' : '';
+      // DS-1: a field or a fill is a marker: it lands at the caret, in place of any selection.
+      if (MD.FIELD_TAG.test(tag) || MD.FILL_TAG.test(tag)) close = '';
+      else if (isRef) close = sel ? '{{/ref}}' : '';
       else close = '{{/' + tag + '}}';
       // With a closing token the selection is kept BETWEEN the two; without one the
       // token is a marker and simply lands at the caret, leaving the text either side.
