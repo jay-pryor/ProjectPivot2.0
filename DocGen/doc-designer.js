@@ -3,7 +3,8 @@ import { STANDARD as STYLE_STANDARD, PAPER_MM as STYLE_PAPER_MM, normaliseStyle,
 import { layout } from './doc-layout.js';
 import { pagesHtml, cropPage } from './doc-preview.js';
 import { toWinAnsi } from './doc-fonts.js';
-import { parseFillTag as FILL_PARSE } from './doc-data.js';
+import * as DATA from './doc-data.js';
+var FILL_PARSE = DATA.parseFillTag;
 import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO, figureSources as FIGURE_SOURCES, FIGURE_LAYOUTS } from './doc-images.js';
   /* App namespace root. Exported at the bottom of this file. */
   var App = {};
@@ -1282,7 +1283,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       (bag.sections || []).forEach(function (s) {
         d.push({
           id: s.id, kind: 'custom', label: String(s.title || '').trim() || '(untitled section)',
-          title: s.title || '', parts: s.parts || [], included: sec[s.id] !== false
+          title: s.title || '', parts: s.parts || [], included: sec[s.id] !== false,
+          // DS-2: repeated per register entry, with the sections under it (doc-data.js).
+          repeat: s.repeat && s.repeat.each ? s.repeat : null
         });
       });
 
@@ -1478,7 +1481,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * the outline and its numbers, table numbers in
      * emitted order, the reference index, intros, custom parts, and `/[Tag]` values.
      */
-    function buildDocument(host, blocks, meta) {
+    function buildDocument(host, blocks, meta, catalogue) {
       meta = meta || {};
       var state = (host && typeof host.getState === 'function' && host.getState()) || {};
       var style = App.docFormat.resolve(state);
@@ -1519,12 +1522,54 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           });
         }
       });
-      var resolveRef = App.doc.refResolver(resolved, tableList, figureList);
+      var baseRef = App.doc.refResolver(resolved, tableList, figureList);
+      /* DS-2: a reference to a repeating section (or a part of one) reaches its FIRST copy;
+       * from inside a copy, one to a section or part of the same group reaches that copy's own. */
+      var firstCopy = {};
+      resolved.forEach(function (b) {
+        if (!b.suffix) return;
+        if (!firstCopy[b.templateId]) firstCopy[b.templateId] = b.id;
+        (b.parts || []).forEach(function (p) {
+          var tid = String(p.id).slice(0, String(p.id).length - b.suffix.length);
+          if (!firstCopy[tid]) firstCopy[tid] = p.id;
+        });
+      });
+      function resolveRef(id) { return baseRef(id) || (firstCopy[id] ? baseRef(firstCopy[id]) : null); }
+      function refIn(b) {
+        if (!b.suffix) return resolveRef;
+        return function (id) {
+          for (var sfx = b.suffix; sfx; sfx = sfx.replace(/~[^~]*$/, '')) { var r = baseRef(id + sfx); if (r) return r; }
+          return resolveRef(id);
+        };
+      }
+      /* DS-1: what a field reads as in a block: its scope's value, printed per its options;
+       * "[unknown field]" in bold where it cannot be read. Its text is never markup. */
+      var rootSc = catalogue ? DATA.rootScope(catalogue.data, catalogue.root) : [];
+      function fieldsIn(b) {
+        var scope = b.scope || rootSc;
+        return function (tag) {
+          if (App.md.FILL_TAG.test(tag)) {
+            var fl = DATA.parseFillTag(tag);
+            return [{ text: '[To fill in: ' + ((fl && fl.label) || 'text') + ']', bold: true }];
+          }
+          var parsed = DATA.parseFieldTag(tag);
+          var res = catalogue ? DATA.resolveField(scope, parsed, catalogue) : { kind: 'unknown' };
+          if (res.kind === 'unknown') return [{ text: '[unknown field]', bold: true }];
+          if (res.kind === 'unbound') return [{ text: '\u2039' + DATA.fieldLabelOf(catalogue, parsed) + '\u203a' }];
+          var out2 = [];
+          DATA.fieldText(res, parsed.opts).split('\n').forEach(function (line, i) {
+            if (i) out2.push({ br: true });
+            if (line) out2.push({ text: line });
+          });
+          return out2;
+        };
+      }
+      var cur = { ref: resolveRef, field: fieldsIn({}) };
       var figById = {}; figureList.forEach(function (f) { figById[f.id] = f; });
       var byId = {}; tableList.forEach(function (t) { byId[t.id] = t; });
       var tags = meta.tags || {};
       function tag(s) { return applyTags(s, tags); }
-      function runs1(s) { var ps = App.md.runs(s, { resolveRef: resolveRef }); return ps.length ? ps.reduce(function (a, p, i) { return i ? a.concat([{ br: true }, { br: true }], p) : p; }, []) : []; }
+      function runs1(s) { var ps = App.md.runs(s, { resolveRef: cur.ref, resolveField: cur.field }); return ps.length ? ps.reduce(function (a, p, i) { return i ? a.concat([{ br: true }, { br: true }], p) : p; }, []) : []; }
       // A line break typed into register text (a description, a justification) is a break in the cell.
       function textRuns(s, extra) {
         var out = [];
@@ -1561,6 +1606,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var out = [];
       var orientation = 'portrait';
       resolved.forEach(function (b) {
+        cur = { ref: refIn(b), field: fieldsIn(b) };
         // LND-1: a section's own orientation; a change turns the page (and stands in for its page break).
         // A landscape Style is landscape already: the tick changes nothing there.
         var want = (b.landscape && style.page.orientation !== 'landscape') ? 'landscape' : 'portrait';
@@ -1573,7 +1619,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           out.push({ kind: 'heading', level: b.level, number: num, anchor: b.anchor, runs: textRuns(title),
             centre: centres(b, 'heading'), spaceBefore: b.spaceBefore || 0, noToc: b.kind === 'toc' || !!b.noToc });
         } else out.push({ kind: 'space', mm: b.spaceBefore || 0, anchor: b.anchor });   // where a reference to it lands
-        var intro = App.md.runs(b.intro || '', { resolveRef: resolveRef });
+        var intro = App.md.runs(b.intro || '', { resolveRef: cur.ref, resolveField: cur.field });
         intro.forEach(function (rs, i) {
           out.push({ kind: 'paragraph', style: 'body', centre: centres(b, 'intro'),
             runs: (i === 0 && b.introNumber ? [{ text: b.introNumber + ' ' }] : []).concat(rs) });
@@ -1587,7 +1633,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             else if (p.kind === 'space') out.push({ kind: 'space', mm: Number(p.height) || 0 });
             else if (p.kind === 'para') {
               var pn = b.paraNumbers && b.paraNumbers[p.id];
-              App.md.runs(p.text, { resolveRef: resolveRef }).forEach(function (rs, i) {
+              App.md.runs(p.text, { resolveRef: cur.ref, resolveField: cur.field }).forEach(function (rs, i) {
                 out.push({ kind: 'paragraph', style: 'body', centre: centre, anchor: i === 0 && p.id ? App.md.anchor('par-' + p.id) : undefined,
                   runs: (i === 0 && pn ? [{ text: pn + ' ' }] : []).concat(rs) });
               });
@@ -1629,6 +1675,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       };
     }
 
+    /** DS-1: a host's catalogue for a run, or null. */
+    function catalogueOf(host, run) {
+      return host && typeof host.catalogue === 'function' ? (host.catalogue(run || null) || null) : null;
+    }
+
     /** PDF-1: the whole document for a run, built the way the host's produce builds it. */
     function documentFor(host, opts, meta) {
       var o = Object.assign({}, opts || {});
@@ -1640,8 +1691,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var utc = (meta && meta.utc) || (host && host.clock && host.clock.nowIso ? host.clock.nowIso() : '');
       var m = o.subjectId ? App.docHost.chosenMeta(o.subjectId, utc) : null;
       var ctx = o.subjectId ? App.docHost.context(o.subjectId, utc) : {};
+      // DS-2: each repeating group becomes a copy per entry, before anything is numbered.
+      var cat = catalogueOf(host, runOf(o));
+      var levels = {};
+      App.doc.outline(blocks, { baseLevel: 1, clampSkips: true, numbered: false }).forEach(function (r) { levels[r.id] = r.level; });
+      blocks = DATA.expandRepeats(blocks, cat, levels);
       var prepared = blocks.map(function (b) { return contentOf(host, b, o, ctx, m); });
-      return buildDocument(host, prepared, Object.assign({}, meta, { tags: (meta && meta.tags) || o.tags || {} }));
+      return buildDocument(host, prepared, Object.assign({}, meta, { tags: (meta && meta.tags) || o.tags || {} }), cat);
     }
 
     App.docGen = {

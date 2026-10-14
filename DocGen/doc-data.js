@@ -215,3 +215,98 @@ export function fieldText(res, opts) {
 export function instanceKey(scope) {
   return (scope || []).slice(1).map((s) => s.coll + ':' + s.entry.key).join('/');
 }
+
+// A field or fill token, wherever it is written: the same two shapes App.md reads.
+const MARKER = /\{\{(f:[A-Za-z0-9._-]+(?:\?[A-Za-z0-9._~%&=:-]*)?|fill:[A-Za-z0-9_-]+(?:\?[A-Za-z0-9._~%&=:-]*)?)\}\}/g;
+
+/** A field's label, for where a field shows by name. */
+export function fieldLabelOf(catalogue, parsed) {
+  const def = parsed && fieldDef(catalogue, parsed.coll, parsed.field);
+  return def ? def.label : (parsed ? parsed.coll + '.' + parsed.field : 'field');
+}
+
+/**
+ * Text with no markup of its own (a heading, a caption) with its fields filled in: one line,
+ * a list joined with commas unless it asks for another style.
+ */
+export function plainFields(s, scope, catalogue) {
+  return String(s == null ? '' : s).replace(MARKER, (whole, tag) => {
+    if (tag.indexOf('fill:') === 0) { const fl = parseFillTag(tag); return '[To fill in: ' + ((fl && fl.label) || 'text') + ']'; }
+    const p = parseFieldTag(tag);
+    const r = catalogue ? resolveField(scope, p, catalogue) : { kind: 'unknown' };
+    if (r.kind === 'unknown') return '[unknown field]';
+    if (r.kind === 'unbound') return '‹' + fieldLabelOf(catalogue, p) + '›';
+    const o = Object.assign({}, p.opts);
+    if (r.kind === 'list' && !o.list) o.list = 'comma';
+    return fieldText(r, o).replace(/\s*\n\s*/g, ' ');
+  });
+}
+
+/** Contents and Metadata print once, where they are: they are never part of a repeat. */
+const SINGLE = { toc: true, meta: true };
+const TITLE = 0;
+
+/**
+ * DS-2: the document's blocks with each repeating group replaced by a copy per entry.
+ *
+ * A custom block with `repeat: { each, where?, sort? }` repeats WITH the blocks after it whose
+ * resolved level is deeper (body text included, a title not), up to the next at its level or
+ * above. Each copy, and every block inside it, gets its id and its parts' ids suffixed with the
+ * entry keys (`s1~h1`, `c~h1~c3`), its level pinned to the one its template resolved to (an
+ * automatic level would drift under the previous copy's sub-headings), and its SCOPE — the chain
+ * of entries its fields read from. Headings and captions are plain text, so their fields are
+ * filled in here; everything else is read at render time with the scope.
+ *
+ * @param {Array<Object>} blocks the included blocks, in order
+ * @param {?Object} catalogue the host's, bound or not
+ * @param {Object<string, number>} levels each block's resolved level, by id
+ */
+export function expandRepeats(blocks, catalogue, levels) {
+  const cat = catalogue || null;
+  const root = cat ? rootScope(cat.data, cat.root) : [];
+  const lv = (b) => (levels && levels[b.id] !== undefined && levels[b.id] !== null ? levels[b.id] : b.level);
+  const deeper = (a, than) => a !== TITLE && typeof a === 'number' && typeof than === 'number' && a > than;
+  const out = [];
+  const caption = (v, scope) => (typeof v === 'string' ? plainFields(v, scope, cat) : v);
+
+  function emit(b, scope, suffix, pin) {
+    const c = Object.assign({}, b, { scope });
+    if (typeof b.title === 'string') c.title = plainFields(b.title, scope, cat);
+    if (typeof b.label === 'string') c.label = plainFields(b.label, scope, cat);
+    if (suffix) { c.id = b.id + suffix; c.templateId = b.id; c.suffix = suffix; }
+    if (pin) c.level = lv(b);
+    if (Array.isArray(b.parts)) {
+      c.parts = b.parts.map((p) => {
+        const q = Object.assign({}, p, { id: suffix ? p.id + suffix : p.id });
+        if (typeof p.caption === 'string') q.caption = caption(p.caption, scope);
+        if (Array.isArray(p.images)) q.images = p.images.map((im) => (im && typeof im.caption === 'string' ? Object.assign({}, im, { caption: caption(im.caption, scope) }) : im));
+        return q;
+      });
+    }
+    out.push(c);
+  }
+
+  function walk(list, scope, suffix) {
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      if (!(b.kind === 'custom' && b.repeat && b.repeat.each)) { emit(b, scope, suffix, !!suffix); continue; }
+      let j = i + 1;
+      while (j < list.length && deeper(lv(list[j]), lv(b))) j++;
+      const group = list.slice(i + 1, j);
+      i = j - 1;
+      group.filter((x) => SINGLE[x.kind]).forEach((x) => emit(x, scope, '', false));
+      const rest = group.filter((x) => !SINGLE[x.kind]);
+      if (!scope.length) continue;                       // unbound: no entries to repeat for
+      const kids = childrenIn(scope, b.repeat.each, cat);
+      if (kids === null) { emit(b, scope, suffix, !!suffix); walk(rest, scope, suffix); continue; }
+      select(kids, b.repeat.where, b.repeat.sort).forEach((e) => {
+        const s2 = scope.concat([{ coll: b.repeat.each, entry: e }]);
+        const suf = suffix + '~' + e.key;
+        emit(b, s2, suf, true);
+        walk(rest, s2, suf);
+      });
+    }
+  }
+  walk(blocks || [], root, '');
+  return out;
+}
