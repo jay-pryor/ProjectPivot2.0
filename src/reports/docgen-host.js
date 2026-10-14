@@ -2,6 +2,7 @@ import { App } from '../../DocGen/doc-designer.js';
 import { CLASSIFICATIONS } from './classifications.js';
 import { buildSnapshot } from './snapshot.js';
 import { catalogueFor, STATUS_WORD, byItem, byControl, hazardsOf, perHazard } from './catalogue.js';
+import { STARTERS } from './starters.js';
 import { live } from '../core/data.js';
 import { formatRating } from '../core/matrix.js';
 import { RECEPTORS, RECEPTOR_WORD, stageKey } from '../core/receptors.js';
@@ -334,7 +335,8 @@ export function createDocHost(ctx) {
    */
   const newDesign = (from) => {
     const shared = structuredClone(ctx.getData().reportDesign ?? {});
-    const t = from ? (shared.reportTemplates ?? []).find((/** @type {any} */ x) => x.id === from) : null;
+    // A starter PIVOT ships, or one of the user's report templates.
+    const t = from ? (STARTERS[/** @type {keyof typeof STARTERS} */ (from)] ? structuredClone(STARTERS[/** @type {keyof typeof STARTERS} */ (from)]) : (shared.reportTemplates ?? []).find((/** @type {any} */ x) => x.id === from)) : null;
     const applied = t ? App.docStore.applyReportTemplate(shared, t, true) : shared;
     return { design: t ? arrangementOf(applied) : {}, library: libraryOf(applied) };
   };
