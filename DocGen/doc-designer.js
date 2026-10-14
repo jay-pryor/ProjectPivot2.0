@@ -2147,6 +2147,38 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     // ---- DS-3: custom sections and their parts -------------------------------
 
     /** @returns {{ok:boolean, id?:string, issues:Issue[]}} */
+    /**
+     * DS-2: a section's repeat, checked and tidied: `{ each, where?, sort? }`, or null for none.
+     * A filter or sort with no field is dropped; anything else malformed is an error.
+     * @returns {{repeat:?Object, error:?string}}
+     */
+    function normRepeat(r) {
+      if (r === null || r === undefined || r === false) return { repeat: null, error: null };
+      if (typeof r !== 'object' || Array.isArray(r)) return { repeat: null, error: 'A repeat must be an object.' };
+      if (r.each === undefined || r.each === null || r.each === '') return { repeat: null, error: null };
+      if (typeof r.each !== 'string' || !/^[A-Za-z0-9_-]+$/.test(r.each)) return { repeat: null, error: 'A repeat names what it repeats for.' };
+      var out = { each: r.each };
+      if (r.where && typeof r.where === 'object' && r.where.field) {
+        if (DATA.OPS.indexOf(r.where.op) === -1) return { repeat: null, error: 'Unknown filter "' + r.where.op + '".' };
+        out.where = { field: String(r.where.field), op: r.where.op, value: r.where.value === undefined || r.where.value === null ? '' : String(r.where.value) };
+      }
+      if (r.sort && typeof r.sort === 'object' && r.sort.field) out.sort = { field: String(r.sort.field), dir: r.sort.dir === 'desc' ? 'desc' : 'asc' };
+      return { repeat: out, error: null };
+    }
+
+    /** DS-2: repeat a section (and the sections under it) per register entry; null stops it. */
+    function setSectionRepeat(id, repeat) {
+      if (!P()) return errNoProject();
+      if (!findSection(P(), id)) return err('Unknown section.', id);
+      var n = normRepeat(repeat);
+      if (n.error) return err(n.error, id);
+      App.docHost.get().commit(function (p) {
+        var s = findSection(p, id);
+        if (n.repeat) s.repeat = n.repeat; else delete s.repeat;
+      });
+      return ok();
+    }
+
     function addSection(title, opts) {
       if (!P()) return errNoProject();
       opts = opts || {};
@@ -2778,6 +2810,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           title: src.title || '',
           parts: JSON.parse(JSON.stringify(src.parts || []))
         });
+        // DS-2: what it repeats for is part of the section's design.
+        if (src.repeat) b.sectionTemplates[b.sectionTemplates.length - 1].repeat = JSON.parse(JSON.stringify(src.repeat));
       });
       return { ok: true, id: id, issues: [] };
     }
@@ -2810,7 +2844,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           used.push(copy);
           parts.push(copy);
         });
-        b.sections.push({ id: id, title: t.title || '', parts: parts });
+        var made = { id: id, title: t.title || '', parts: parts };
+        if (t.repeat) made.repeat = JSON.parse(JSON.stringify(t.repeat));
+        b.sections.push(made);
         if (Array.isArray(b.order) && b.order.length && b.order.indexOf(id) === -1) b.order.push(id);
       });
       return { ok: true, id: id, issues: [] };
@@ -2932,7 +2968,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       setTableNoCaption: setTableNoCaption,
       // OPT-2: what the report is made of, stored with the report rather than the session.
       setReportInclude: setReportInclude, INCLUDE_MAPS: INCLUDE_MAPS,
-      addSection: addSection, updateSection: updateSection, removeSection: removeSection,
+      addSection: addSection, setSectionRepeat: setSectionRepeat, normRepeat: normRepeat, updateSection: updateSection, removeSection: removeSection,
       addPart: addPart, updatePart: updatePart, removePart: removePart, movePart: movePart, setParaLevel: setParaLevel,
       setPartImage: setPartImage, setPartImageField: setPartImageField, addStandardImage: addStandardImage, renameStandardImage: renameStandardImage, removeStandardImage: removeStandardImage, standardImageUses: standardImageUses,
       setCell: setCell, addRow: addRow, removeRow: removeRow,
@@ -3075,7 +3111,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       }
       if (kindKey === 'sections') {
         if (!validParts(raw.parts, loc, issues)) return null;
-        return { id: String(raw.id || ''), name: String(raw.name), title: String(raw.title || ''), parts: raw.parts || [] };
+        var rp = App.docStore.normRepeat(raw.repeat);
+        if (rp.error) { issues.push(issue('error', rp.error, loc + '.repeat')); return null; }
+        var sec = { id: String(raw.id || ''), name: String(raw.name), title: String(raw.title || ''), parts: raw.parts || [] };
+        if (rp.repeat) sec.repeat = rp.repeat;
+        return sec;
       }
       // reports
       if (raw.order !== undefined && !Array.isArray(raw.order)) { issues.push(issue('error', 'order must be an array.', loc)); return null; }
@@ -3084,6 +3124,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       (raw.sections || []).forEach(function (s, i) {
         if (!s || typeof s !== 'object') { issues.push(issue('error', 'A section must be an object.', loc + '.sections[' + i + ']')); sectionsOk = false; return; }
         if (!validParts(s.parts, loc + '.sections[' + i + ']', issues)) sectionsOk = false;
+        var rr = App.docStore.normRepeat(s.repeat);
+        if (rr.error) { issues.push(issue('error', rr.error, loc + '.sections[' + i + '].repeat')); sectionsOk = false; }
       });
       if (!sectionsOk) return null;
       var out = {
