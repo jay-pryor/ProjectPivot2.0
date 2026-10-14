@@ -459,3 +459,19 @@ test('the shared design is only the library: it shows nothing else and keeps not
   assert.equal(box.data.reportDesign.order, undefined, 'a commit through it keeps only the library');
   assert.equal(box.data.reportDesign.formats.length, 2);
 });
+
+test('the host declares the register catalogue, bound to the chosen platform', async () => {
+  const { createDocHost } = await import('../../src/reports/docgen-host.js');
+  const { seed } = await import('../helpers.js');
+  const { assignHazardNumbers } = await import('../../src/core/ops/hazards.js');
+  const data = assignHazardNumbers(seed());
+  const { host } = createDocHost({ getData: () => data, setDesign: () => {}, clock: { now: () => '2026-10-14T10:00:00+10:00' }, profileName: (id) => id });
+  assert.equal(host.catalogue(null).data, null);
+  assert.deepEqual(host.catalogue({ subjectId: 'p1' }).data.children.hazard.map((h) => h.key), ['h1']);
+});
+
+test('an image inside a Repeat part is in use', () => {
+  const data = { reportDesign: { sections: [{ id: 's', parts: [{ id: 'r', kind: 'repeat', repeat: { each: 'hazard' }, parts: [
+    { id: 'i', kind: 'image', images: [{ source: 'report', file: 'deep.png' }] }] }] }] }, records: { report: {} } };
+  assert.deepEqual([...imagesInUse(data)], ['deep.png']);
+});

@@ -61,7 +61,7 @@ test('the reports view: a name and a starting point open a new report; Status; d
   d = createReport(d, act, { id: 'r0', report: { platformId: 'p1', platformName: 'Alpha', producedAt: '2026-09-28T15:00:00+10:00', producedBy: 'u1', title: 'Made', classification: '', document: { blocks: [] }, style: {} } });
   d = startReport(d, act, { id: 'r1', title: 'Draft one', design: {} });
   const h = reportsView(main(d), d).toString();
-  assert.match(h, /<form data-action="startReport" class="report-start">[\s\S]*?<input name="title" required[^>]*placeholder="[^"]+"[\s\S]*?<select name="from"[^>]*><option value="">Default Report Template<\/option><option value="rpt1">Customer pack<\/option><\/select>[\s\S]*?<button type="submit" class="primary">Open in Report Designer<\/button><\/form>/);
+  assert.match(h, /<form data-action="startReport" class="report-start">[\s\S]*?<input name="title" required[^>]*placeholder="[^"]+"[\s\S]*?<select name="from"[^>]*><option value="">Default Report Template<\/option><option value="starter:ssra">SSRA \(by hazard\)<\/option><option value="rpt1">Customer pack<\/option><\/select>[\s\S]*?<button type="submit" class="primary">Open in Report Designer<\/button><\/form>/);
   assert.match(h, /<th[^>]*>[\s\S]*?Status/);
   assert.match(h, /data-id="r1"[\s\S]*?In-Progress|In-Progress[\s\S]*?data-id="r1"/);
   assert.match(h, /For Review/);
@@ -98,7 +98,7 @@ test('Start from offers the Default Report Template first; a report without its 
   let d = setReportDesign(assignHazardNumbers(seed()), { reportTemplates: [{ id: 'rpt1', name: 'Customer pack' }] });
   d = startReport(d, act, { id: 'r1', title: 'Lost', design: {} });
   const h = reportsView({ ...main(d), missingDesigns: ['r1'] }, d).toString();
-  assert.match(h, /<select name="from"[^>]*><option value="">Default Report Template<\/option><option value="rpt1">Customer pack<\/option>/);
+  assert.match(h, /<select name="from"[^>]*><option value="">Default Report Template<\/option><option value="starter:ssra">SSRA \(by hazard\)<\/option><option value="rpt1">Customer pack<\/option>/);
   assert.doesNotMatch(h, /The shared design/);
   assert.match(h, /Lost <span class="tag tag-warn" title="Its design file is not in the folder; it opens on the Default Report Template">Design missing<\/span>/);
 });

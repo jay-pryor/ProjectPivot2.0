@@ -3,6 +3,8 @@ import { STANDARD as STYLE_STANDARD, PAPER_MM as STYLE_PAPER_MM, normaliseStyle,
 import { layout } from './doc-layout.js';
 import { pagesHtml, cropPage } from './doc-preview.js';
 import { toWinAnsi } from './doc-fonts.js';
+import * as DATA from './doc-data.js';
+var FILL_PARSE = DATA.parseFillTag;
 import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO, figureSources as FIGURE_SOURCES, FIGURE_LAYOUTS } from './doc-images.js';
   /* App namespace root. Exported at the bottom of this file. */
   var App = {};
@@ -215,8 +217,17 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
   (function (App) {
     'use strict';
 
-    var TOKEN = /\{\{(\/?)(b|i|c|br|(?:ref|refn|reft):[A-Za-z0-9:._-]+|ref)\}\}/g;
+    // DS-1: `{{f:collection.field?options}}` and `{{fill:id?label=…}}` are markers like a
+    // reference without words: they stand for text the document fills in (doc-data.js).
+    var TOKEN = /\{\{(\/?)(b|i|c|br|(?:ref|refn|reft):[A-Za-z0-9:._-]+|ref|f:[A-Za-z0-9._-]+(?:\?[A-Za-z0-9._~%&=:-]*)?|fill:[A-Za-z0-9_-]+(?:\?[A-Za-z0-9._~%&=:-]*)?)\}\}/g;
     var REF_TAG = /^(ref|refn|reft):(.+)$/;
+    var FIELD_TAG = /^f:/, FILL_TAG = /^fill:/;
+    /** What a field or fill token is called where it cannot be filled in: its label, or its path. */
+    function markerName(tag, opts) {
+      if (FILL_TAG.test(tag)) { var f = FILL_PARSE(tag); return 'To fill in: ' + ((f && f.label) || 'text'); }
+      var l = opts && opts.fieldLabel ? opts.fieldLabel(tag) : null;
+      return l || String(tag).slice(2).split('?')[0];
+    }
     /** What a resolved reference reads as, per token. */
     var REF_READING = { ref: 'label', refn: 'numberLabel', reft: 'titleLabel' };
 
@@ -276,6 +287,19 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             out.push(run(wrapped !== null ? wrapped : String(r[REF_READING[bits[1]]] || r.label || ''), { ref: { anchor: r.anchor } }));
           }
           if (wrapped !== null) continue;
+        } else if ((FIELD_TAG.test(tag) || FILL_TAG.test(tag)) && !close) {
+          // DS-1: what the field reads as, from the resolver; its text is never markup.
+          // The resolver may render rich text itself (a blank's value), which reuses TOKEN: keep our place.
+          var keepAt = TOKEN.lastIndex;
+          var got = opts.resolveField ? opts.resolveField(tag) : null;
+          TOKEN.lastIndex = keepAt;
+          (got || [{ text: '\u2039' + markerName(tag, opts) + '\u203a' }]).forEach(function (g) {
+            if (g.br) { out.push({ br: true }); return; }
+            if (!g.text) return;
+            var extra = {};
+            Object.keys(g).forEach(function (k) { if (k !== 'text') extra[k] = g[k]; });
+            out.push(run(g.text, extra));
+          });
         }
         last = m.index + m[0].length;
       }
@@ -285,8 +309,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
 
     /** The plain-text reading of a token string — for previews, summaries and titles. */
-    function plain(s) {
+    function plain(s, opts) {
       return String(s == null ? '' : s).replace(TOKEN, function (m0, close, tag) {
+        if (!close && (FIELD_TAG.test(tag) || FILL_TAG.test(tag))) return '\u2039' + markerName(tag, opts) + '\u203a';
         return (!close && REF_TAG.test(tag)) ? '→' : tag === 'br' ? ' ' : '';
       });
     }
@@ -299,7 +324,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return String(id == null ? '' : id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
     }
 
-    App.md = { runs: runs, plain: plain, anchor: anchor, TOKEN: TOKEN, REF_TAG: REF_TAG, REF_READING: REF_READING };
+    App.md = { runs: runs, plain: plain, anchor: anchor, TOKEN: TOKEN, REF_TAG: REF_TAG, REF_READING: REF_READING,
+      FIELD_TAG: FIELD_TAG, FILL_TAG: FILL_TAG, markerName: markerName };
   })(App);
   /* =============================================================================
    * MODULE: App.docFormat  — named Styles: how the finished document looks
@@ -844,7 +870,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // build() and linkTerms() are a host's own business — the designer builds the
       // document itself (App.docGen.documentFor) — but a host that declares one must
       // declare a function.
-      ['build', 'linkTerms'].forEach(function (k) {
+      // DS-1: the register data a document can show, by field and by repeat. Optional.
+      ['build', 'linkTerms', 'catalogue'].forEach(function (k) {
         if (host[k] !== undefined && typeof host[k] !== 'function') errs.push('host.' + k + ' must be a function');
       });
       if (host.filter) {
@@ -892,6 +919,16 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      */
     function log(issue) {
       if (_host && typeof _host.log === 'function') _host.log(issue);
+    }
+
+    /**
+     * DS-1: the host's data catalogue for one run — `{ root, collections, data }`, `data`
+     * null when unbound — or null when the host declares none.
+     */
+    function catalogue(run) {
+      var h = _host;
+      if (!h || typeof h.catalogue !== 'function') return null;
+      return h.catalogue(run || null) || null;
     }
 
     /* -------------------------------------------------------------------------
@@ -986,7 +1023,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return (sj.meta(subjectId) || []).filter(function (r) { return chosen[r.id] !== false; });
     }
 
-    App.docHost = { set: set, get: get, validate: validate, sections: sections, log: log,
+    App.docHost = { set: set, get: get, validate: validate, sections: sections, log: log, catalogue: catalogue,
                     context: subjectContext, chosenMeta: chosenMeta };
     App.docSession = { get: sessionGet, set: sessionSet, run: sessionRun, options: sessionOptions,
                        selectedSubjectId: selectedSubjectId, KEYS: SESSION_KEYS };
@@ -1242,14 +1279,20 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
        * used to iterate the platform's datasets and then push `control` and
        * `guidelines` by hand, which is what made three of CH's concepts structural
        * facts about the document module. */
-      sectionsOf(host, runOf(opts)).forEach(function (pv) { d.push(providerBlock(pv, opts)); });
+      /* DS-6: the register tables the design holds, in the order the host declares them. A
+       * design that has never chosen (no `registers`) holds them all, as every design did before
+       * they could be chosen; a list, even an empty one, holds exactly those. */
+      var held = Array.isArray(bag.registers) ? bag.registers : null;
+      sectionsOf(host, runOf(opts)).forEach(function (pv) { if (!held || held.indexOf(pv.id) !== -1) d.push(providerBlock(pv, opts)); });
 
       // DOC-4: hand-authored sections join the SAME list, which is what lets them be
       // interleaved with the generated ones rather than bolted on at the end.
       (bag.sections || []).forEach(function (s) {
         d.push({
           id: s.id, kind: 'custom', label: String(s.title || '').trim() || '(untitled section)',
-          title: s.title || '', parts: s.parts || [], included: sec[s.id] !== false
+          title: s.title || '', parts: s.parts || [], included: sec[s.id] !== false,
+          // DS-2: repeated per register entry, with the sections under it (doc-data.js).
+          repeat: s.repeat && s.repeat.each ? s.repeat : null
         });
       });
 
@@ -1445,7 +1488,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * the outline and its numbers, table numbers in
      * emitted order, the reference index, intros, custom parts, and `/[Tag]` values.
      */
-    function buildDocument(host, blocks, meta) {
+    function buildDocument(host, blocks, meta, catalogue) {
       meta = meta || {};
       var state = (host && typeof host.getState === 'function' && host.getState()) || {};
       var style = App.docFormat.resolve(state);
@@ -1486,12 +1529,61 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           });
         }
       });
-      var resolveRef = App.doc.refResolver(resolved, tableList, figureList);
+      var baseRef = App.doc.refResolver(resolved, tableList, figureList);
+      /* DS-2: a reference to a repeating section (or a part of one) reaches its FIRST copy;
+       * from inside a copy, one to a section or part of the same group reaches that copy's own. */
+      var firstCopy = {}, copyOf = {};
+      function firstOf(tid, id) { if (!firstCopy[tid]) { firstCopy[tid] = id; copyOf[id] = tid; } }
+      resolved.forEach(function (b) {
+        if (b.suffix) firstOf(b.templateId, b.id);
+        (b.parts || []).forEach(function (p) { if (p.sfx) firstOf(p.tplId, p.id); });
+      });
+      function resolveRef(id) { return baseRef(id) || (firstCopy[id] ? baseRef(firstCopy[id]) : null); }
+      /** References read from inside a copy (`sfx`): the same copy's first, then outward, then the first copy. */
+      function refAt(sfx) {
+        if (!sfx) return resolveRef;
+        return function (id) {
+          for (var x = sfx; x; x = x.replace(/~[^~]*$/, '')) { var r = baseRef(id + x); if (r) return r; }
+          return resolveRef(id);
+        };
+      }
+      function refIn(b) { return refAt(b.suffix); }
+      /* DS-1: what a field reads as in a block: its scope's value, printed per its options;
+       * "[unknown field]" in bold where it cannot be read. Its text is never markup. */
+      var rootSc = catalogue ? DATA.rootScope(catalogue.data, catalogue.root) : [];
+      // DS-5: what has been written into each blank, per entry.
+      var fills = (state.report || {}).fills || {};
+      function fieldsIn(b) { return fieldsAt(b.scope || rootSc); }
+      function fieldsAt(scope) {
+        return function (tag) {
+          if (App.md.FILL_TAG.test(tag)) {
+            /* DS-5: the text written for this blank and this entry, or a visible gap — the
+             * same rule as a missing reference: an unfinished document must look unfinished. */
+            var fl = DATA.parseFillTag(tag);
+            var v = fl ? String(((fills[fl.id] || {})[DATA.instanceKey(scope)]) || '') : '';
+            if (v.trim()) {
+              return App.md.runs(v, { resolveRef: cur.ref }).reduce(function (a, ps, i) { return i ? a.concat([{ br: true }, { br: true }], ps) : ps; }, []);
+            }
+            return [{ text: '[To fill in: ' + ((fl && fl.label) || 'text') + ']', bold: true }];
+          }
+          var parsed = DATA.parseFieldTag(tag);
+          var res = catalogue ? DATA.resolveField(scope, parsed, catalogue) : { kind: 'unknown' };
+          if (res.kind === 'unknown') return [{ text: '[unknown field]', bold: true }];
+          if (res.kind === 'unbound') return [{ text: '\u2039' + DATA.fieldLabelOf(catalogue, parsed) + '\u203a' }];
+          var out2 = [];
+          DATA.protect(DATA.fieldText(res, parsed.opts)).split('\n').forEach(function (line, i) {
+            if (i) out2.push({ br: true });
+            if (line) out2.push({ text: line });
+          });
+          return out2;
+        };
+      }
+      var cur = { ref: resolveRef, field: fieldsIn({}) };
       var figById = {}; figureList.forEach(function (f) { figById[f.id] = f; });
       var byId = {}; tableList.forEach(function (t) { byId[t.id] = t; });
       var tags = meta.tags || {};
       function tag(s) { return applyTags(s, tags); }
-      function runs1(s) { var ps = App.md.runs(s, { resolveRef: resolveRef }); return ps.length ? ps.reduce(function (a, p, i) { return i ? a.concat([{ br: true }, { br: true }], p) : p; }, []) : []; }
+      function runs1(s) { var ps = App.md.runs(s, { resolveRef: cur.ref, resolveField: cur.field }); return ps.length ? ps.reduce(function (a, p, i) { return i ? a.concat([{ br: true }, { br: true }], p) : p; }, []) : []; }
       // A line break typed into register text (a description, a justification) is a break in the cell.
       function textRuns(s, extra) {
         var out = [];
@@ -1528,6 +1620,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var out = [];
       var orientation = 'portrait';
       resolved.forEach(function (b) {
+        cur = { ref: refIn(b), field: fieldsIn(b) };
         // LND-1: a section's own orientation; a change turns the page (and stands in for its page break).
         // A landscape Style is landscape already: the tick changes nothing there.
         var want = (b.landscape && style.page.orientation !== 'landscape') ? 'landscape' : 'portrait';
@@ -1540,21 +1633,25 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           out.push({ kind: 'heading', level: b.level, number: num, anchor: b.anchor, runs: textRuns(title),
             centre: centres(b, 'heading'), spaceBefore: b.spaceBefore || 0, noToc: b.kind === 'toc' || !!b.noToc });
         } else out.push({ kind: 'space', mm: b.spaceBefore || 0, anchor: b.anchor });   // where a reference to it lands
-        var intro = App.md.runs(b.intro || '', { resolveRef: resolveRef });
+        var intro = App.md.runs(b.intro || '', { resolveRef: cur.ref, resolveField: cur.field });
         intro.forEach(function (rs, i) {
           out.push({ kind: 'paragraph', style: 'body', centre: centres(b, 'intro'),
             runs: (i === 0 && b.introNumber ? [{ text: b.introNumber + ' ' }] : []).concat(rs) });
         });
         if (b.content === 'toc') { out.push({ kind: 'toc' }); return; }
         if (b.kind === 'custom') {
+          var blockField = cur.field, blockRef = cur.ref;
           (b.parts || []).forEach(function (p) {
+            // DS-4: a part printed by a Repeat part reads its fields, and its references, in its own copy.
+            cur.field = p.scope ? fieldsAt(p.scope) : blockField;
+            cur.ref = p.sfx && p.sfx !== b.suffix ? refAt(p.sfx) : blockRef;
             var centre = !!(p.centre || centres(b, 'content'));
             if (p.kind === 'rule') out.push({ kind: 'rule' });
             else if (p.kind === 'pagebreak') out.push({ kind: 'pageBreak' });
             else if (p.kind === 'space') out.push({ kind: 'space', mm: Number(p.height) || 0 });
             else if (p.kind === 'para') {
               var pn = b.paraNumbers && b.paraNumbers[p.id];
-              App.md.runs(p.text, { resolveRef: resolveRef }).forEach(function (rs, i) {
+              App.md.runs(p.text, { resolveRef: cur.ref, resolveField: cur.field }).forEach(function (rs, i) {
                 out.push({ kind: 'paragraph', style: 'body', centre: centre, anchor: i === 0 && p.id ? App.md.anchor('par-' + p.id) : undefined,
                   runs: (i === 0 && pn ? [{ text: pn + ' ' }] : []).concat(rs) });
               });
@@ -1562,9 +1659,29 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
               var cols = (p.header || []).map(function (h, k) {
                 return { width: (p.widths && p.widths.length === p.header.length) ? p.widths[k] : undefined, align: (p.align || [])[k] || 'l' };
               });
+              var tpl = p.rows || [];
+              var tall = (p.tallRows && p.tallRows.length === tpl.length) ? p.tallRows : null;
+              var cellsOf = function (r) { return p.header.map(function (_, k) { return runs1(r && r[k] != null ? r[k] : ''); }); };
+              var rowsOut = [], tallOut = [];
+              var rpt = p.repeat && p.repeat.each ? p.repeat : null;
+              var scope0 = p.scope || b.scope || rootSc;
+              var items = rpt && scope0.length ? DATA.childrenIn(scope0, rpt.each, catalogue) : null;
+              if (items) {
+                /* DS-3: each row is a template, printed once per item in the item's scope;
+                 * none at all is one row saying so. */
+                var keep = cur.field;
+                DATA.select(items, rpt.where, rpt.sort).forEach(function (e) {
+                  cur.field = fieldsAt(scope0.concat([{ coll: rpt.each, entry: e }]));
+                  tpl.forEach(function (r, ri) { rowsOut.push(cellsOf(r)); tallOut.push(tall ? tall[ri] : false); });
+                });
+                cur.field = keep;
+                if (!rowsOut.length) { rowsOut.push(p.header.map(function (_, k) { return [{ text: k ? '' : DATA.EMPTY_TEXT }]; })); tallOut.push(false); }
+              } else {
+                rowsOut = tpl.map(cellsOf); tallOut = tall ? tall.slice() : [];
+              }
               out.push({ kind: 'table', anchor: App.md.anchor('tbl-' + p.id), caption: caption(byId[p.id]), columns: cols, centre: centre,
-                header: p.header.map(runs1), rows: (p.rows || []).map(function (r) { return p.header.map(function (_, k) { return runs1(r && r[k] != null ? r[k] : ''); }); }),
-                rowHeight: Number(p.rowHeight) || 0, tallRows: (p.tallRows && p.tallRows.length === (p.rows || []).length) ? p.tallRows : null });
+                header: p.header.map(runs1), rows: rowsOut,
+                rowHeight: Number(p.rowHeight) || 0, tallRows: tall ? tallOut : null });
             } else if (p.kind === 'image') { var fb = figureBlock(p); if (fb) out.push(fb); }
           });
           return;
@@ -1588,12 +1705,28 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
       var all = JSON.stringify(out) + JSON.stringify(tagged.headerFooter);
       var docTitle = tag(String(meta.title || ''));
+      // DS-1: register text was kept from tags and markup (DATA.protect); now it reads as written.
+      out = JSON.parse(DATA.unprotect(JSON.stringify(out)));
+      var unRef = function (r) { return r ? JSON.parse(DATA.unprotect(JSON.stringify(r))) : r; };
+      /* DS-2: a link target in a copy is offered once, by what it was made from — a link to it
+       * reaches the first copy, or from inside a copy that copy's own. */
+      var targets = [];
+      App.doc.refTargets(resolved, tableList, figureList).forEach(function (t) {
+        if (t.id.indexOf('~') === -1) { targets.push(unRef(t)); return; }
+        if (!copyOf[t.id]) return;
+        targets.push(unRef(Object.assign({}, t, { id: copyOf[t.id], label: t.label + ' (each copy)' })));
+      });
       return {
         document: { title: docTitle, meta: { title: docTitle, platform: meta.platform || '', date: meta.date || '', marking: meta.classification || '' }, blocks: out },
         style: tagged, tags: findTags(all),
         // What a reference can point at, and how each reads — for the designer's link menu and editors.
-        refs: { resolve: resolveRef, targets: App.doc.refTargets(resolved, tableList, figureList) }
+        refs: { resolve: function (id) { return unRef(resolveRef(id)); }, targets: targets }
       };
+    }
+
+    /** DS-1: a host's catalogue for a run, or null. */
+    function catalogueOf(host, run) {
+      return host && typeof host.catalogue === 'function' ? (host.catalogue(run || null) || null) : null;
     }
 
     /** PDF-1: the whole document for a run, built the way the host's produce builds it. */
@@ -1607,11 +1740,83 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var utc = (meta && meta.utc) || (host && host.clock && host.clock.nowIso ? host.clock.nowIso() : '');
       var m = o.subjectId ? App.docHost.chosenMeta(o.subjectId, utc) : null;
       var ctx = o.subjectId ? App.docHost.context(o.subjectId, utc) : {};
+      // DS-2: each repeating group becomes a copy per entry, before anything is numbered.
+      var cat = catalogueOf(host, runOf(o));
+      var levels = {};
+      App.doc.outline(blocks, { baseLevel: 1, clampSkips: true, numbered: false }).forEach(function (r) { levels[r.id] = r.level; });
+      blocks = DATA.expandRepeats(blocks, cat, levels);
       var prepared = blocks.map(function (b) { return contentOf(host, b, o, ctx, m); });
-      return buildDocument(host, prepared, Object.assign({}, meta, { tags: (meta && meta.tags) || o.tags || {} }));
+      return buildDocument(host, prepared, Object.assign({}, meta, { tags: (meta && meta.tags) || o.tags || {} }), cat);
+    }
+
+    /**
+     * DS-5: every blank in the document, once per entry it is printed for — its id, label,
+     * instance key, the entry's name (`HAZ-001 › C-003`), the section it is written in and
+     * what has been written — with the values kept for entries no longer printed counted per
+     * blank (`leftovers`, only with a subject chosen) and the live keys (`live`) to prune by.
+     */
+    function fillsIn(host, opts) {
+      var o = Object.assign({}, opts || {});
+      var state = (host && typeof host.getState === 'function' && host.getState()) || {};
+      if (!o.numbering) o.numbering = App.docFormat.resolve(state).document;
+      var fills = (state.report || {}).fills || {};
+      var blocks = hostBlocks(host, o).filter(function (b) { return b.included; });
+      var cat = catalogueOf(host, runOf(o));
+      var levels = {};
+      App.doc.outline(blocks, { baseLevel: 1, clampSkips: true, numbered: false }).forEach(function (r) { levels[r.id] = r.level; });
+      var root = cat ? DATA.rootScope(cat.data, cat.root) : [];
+      var items = [], seen = {}, live = {};
+      var RE = /\{\{(fill:[A-Za-z0-9_-]+(?:\?[A-Za-z0-9._~%&=:-]*)?)\}\}/g;
+      function where(scope) {
+        return scope.slice(1).map(function (x) { return DATA.textOf(x.entry.values.id) || DATA.textOf(x.entry.values.title) || x.entry.key; }).join(' \u203a ');
+      }
+      function scan(text, scope, secId) {
+        var m;
+        RE.lastIndex = 0;
+        while ((m = RE.exec(String(text || ''))) !== null) {
+          var fl = DATA.parseFillTag(m[1]);
+          var key = DATA.instanceKey(scope);
+          if (!fl || seen[fl.id + '|' + key]) continue;
+          seen[fl.id + '|' + key] = true;
+          (live[fl.id] = live[fl.id] || {})[key] = true;
+          items.push({ id: fl.id, label: fl.label, key: key, where: where(scope), sectionId: secId, value: String(((fills[fl.id] || {})[key]) || '') });
+        }
+      }
+      DATA.expandRepeats(blocks, cat, levels).forEach(function (b) {
+        var sc = b.scope || root, sid = b.templateId || b.id;
+        scan(b.intro, sc, sid);
+        (b.parts || []).forEach(function (p) {
+          var ps = p.scope || sc;
+          if (p.kind === 'para') scan(p.text, ps, sid);
+          if (p.kind !== 'table') return;
+          (p.header || []).forEach(function (h) { scan(h, ps, sid); });
+          var rowScopes = [ps];
+          if (p.repeat && p.repeat.each && ps.length) {
+            var its = DATA.childrenIn(ps, p.repeat.each, cat);
+            if (its) rowScopes = DATA.select(its, p.repeat.where, p.repeat.sort).map(function (e) { return ps.concat([{ coll: p.repeat.each, entry: e }]); });
+          }
+          rowScopes.forEach(function (rs) { (p.rows || []).forEach(function (r) { (r || []).forEach(function (c) { scan(c, rs, sid); }); }); });
+        });
+      });
+      // A blank in a section left out for now keeps its answers: they are not leftovers.
+      var heldBack = {};
+      hostBlocks(host, o).filter(function (b) { return !b.included && b.kind === 'custom'; }).forEach(function (b) {
+        var m2, txt = JSON.stringify(b.parts || []), re = /\{\{fill:([A-Za-z0-9_-]+)/g;
+        while ((m2 = re.exec(txt)) !== null) heldBack[m2[1]] = true;
+      });
+      var leftovers = {};
+      if (cat && cat.data) {
+        Object.keys(fills).filter(function (id) { return !heldBack[id]; }).forEach(function (id) {
+          var n = Object.keys(fills[id] || {}).filter(function (k) { return !(live[id] && live[id][k]); }).length;
+          if (n) leftovers[id] = n;
+        });
+      }
+      return { items: items, leftovers: leftovers, live: live };
     }
 
     App.docGen = {
+      // DS-5: the blanks written by hand, per entry.
+      fillsIn: fillsIn,
       // The blocks a document is made of, and the columns a generated one prints.
       reportBlocks: hostBlocks, sectionColumns: hostColumns, sectionColumnKey: sectionColumnKey,
       centreParts: centreParts, CENTRE_ON: CENTRE_ON,
@@ -1675,9 +1880,28 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      *  a part id must be unique document-wide or a table reference could aim at two. */
     function allParts(p) {
       var out = [];
-      ((p.report && p.report.sections) || []).forEach(function (s) { out = out.concat(s.parts || []); });
-      ((p.report && p.report.sectionTemplates) || []).forEach(function (t) { out = out.concat(t.parts || []); });
+      // DS-4: a Repeat part's own parts count too, however deep.
+      function walk(list) { (list || []).forEach(function (x) { out.push(x); if (x && x.kind === 'repeat') walk(x.parts); }); }
+      ((p.report && p.report.sections) || []).forEach(function (s) { walk(s.parts); });
+      ((p.report && p.report.sectionTemplates) || []).forEach(function (t) { walk(t.parts); });
       return out;
+    }
+
+    /**
+     * DS-4: where a part is in a section, however deep in Repeat parts: the part, the list
+     * holding it, its index there, and the Repeat part around it (or null). Null when absent.
+     */
+    function locate(p, sectionId, partId) {
+      var s = findSection(p, sectionId);
+      function walk(list, parent) {
+        for (var i = 0; i < (list || []).length; i++) {
+          var x = list[i];
+          if (x && x.id === partId) return { part: x, list: list, index: i, parent: parent };
+          if (x && x.kind === 'repeat') { var r = walk(x.parts, x); if (r) return r; }
+        }
+        return null;
+      }
+      return s ? walk(s.parts || (s.parts = []), null) : null;
     }
 
     function findSection(p, id) {
@@ -2058,6 +2282,100 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     // ---- DS-3: custom sections and their parts -------------------------------
 
     /** @returns {{ok:boolean, id?:string, issues:Issue[]}} */
+    /**
+     * DS-2: a section's repeat, checked and tidied: `{ each, where?, sort? }`, or null for none.
+     * A filter or sort with no field is dropped; anything else malformed is an error.
+     * @returns {{repeat:?Object, error:?string}}
+     */
+    function normRepeat(r) {
+      if (r === null || r === undefined || r === false) return { repeat: null, error: null };
+      if (typeof r !== 'object' || Array.isArray(r)) return { repeat: null, error: 'A repeat must be an object.' };
+      if (r.each === undefined || r.each === null || r.each === '') return { repeat: null, error: null };
+      if (typeof r.each !== 'string' || !/^[A-Za-z0-9_-]+$/.test(r.each)) return { repeat: null, error: 'A repeat names what it repeats for.' };
+      var out = { each: r.each };
+      if (r.where && typeof r.where === 'object' && r.where.field) {
+        if (DATA.OPS.indexOf(r.where.op) === -1) return { repeat: null, error: 'Unknown filter "' + r.where.op + '".' };
+        out.where = { field: String(r.where.field), op: r.where.op, value: r.where.value === undefined || r.where.value === null ? '' : String(r.where.value) };
+      }
+      if (r.sort && typeof r.sort === 'object' && r.sort.field) out.sort = { field: String(r.sort.field), dir: r.sort.dir === 'desc' ? 'desc' : 'asc' };
+      return { repeat: out, error: null };
+    }
+
+    /* DS-5: blanks written by hand, kept per entry in the report's own design. */
+    var FILL_ID = /\{\{fill:([A-Za-z0-9_-]+)/g;
+    /** Every blank id written in the sections and the templates. */
+    function fillIdsUsed(b) {
+      var used = {}, m, txt = JSON.stringify([b.sections || [], b.sectionTemplates || [], b.reportTemplates || []]);
+      FILL_ID.lastIndex = 0;
+      while ((m = FILL_ID.exec(txt)) !== null) used[m[1]] = true;
+      return used;
+    }
+    /** The id a new blank takes: one no section, template or kept value uses. */
+    function nextFillId() {
+      var b = (P() && P().report) || {};
+      return nextId('fill', Object.keys(fillIdsUsed(b)).concat(Object.keys(b.fills || {})));
+    }
+    /** What is written in one blank for one entry; empty text removes it. */
+    function setFill(id, key, tokens) {
+      if (!P()) return errNoProject();
+      if (!/^[A-Za-z0-9_-]+$/.test(String(id || ''))) return err('Unknown blank.', id);
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        var v = String(tokens == null ? '' : tokens);
+        if (v.trim()) { b.fills = b.fills || {}; (b.fills[id] = b.fills[id] || {})[String(key || '')] = v; }
+        else if (b.fills && b.fills[id]) {
+          delete b.fills[id][String(key || '')];
+          if (!Object.keys(b.fills[id]).length) delete b.fills[id];
+          if (!Object.keys(b.fills).length) delete b.fills;
+        }
+      });
+      return ok();
+    }
+    /**
+     * Drop what is written for entries no longer in the document: `live` is { id: { key: true } },
+     * and only the blanks named in `ids` are touched (all of them when it is not given).
+     */
+    function pruneFills(live, ids) {
+      if (!P()) return errNoProject();
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        Object.keys(b.fills || {}).filter(function (id) { return !ids || ids.indexOf(id) !== -1; }).forEach(function (id) {
+          Object.keys(b.fills[id]).forEach(function (k) { if (!(live && live[id] && live[id][k])) delete b.fills[id][k]; });
+          if (!Object.keys(b.fills[id]).length) delete b.fills[id];
+        });
+        if (b.fills && !Object.keys(b.fills).length) delete b.fills;
+      });
+      return ok();
+    }
+
+    /** DS-3: a table's rows repeated per register entry (each row a template); null stops it. */
+    function setPartRepeat(sectionId, partId, repeat) {
+      if (!P()) return errNoProject();
+      var t0 = part(P(), sectionId, partId);
+      if (!t0) return err('Unknown part.', partId);
+      if (t0.kind !== 'table' && t0.kind !== 'repeat') return err('Only a table or a Repeat part repeats.', partId);
+      var n = normRepeat(repeat);
+      if (n.error) return err(n.error, partId);
+      App.docHost.get().commit(function (p) {
+        var t = part(p, sectionId, partId);
+        if (n.repeat) t.repeat = n.repeat; else if (t.kind === 'repeat') t.repeat = { each: '' }; else delete t.repeat;
+      });
+      return ok();
+    }
+
+    /** DS-2: repeat a section (and the sections under it) per register entry; null stops it. */
+    function setSectionRepeat(id, repeat) {
+      if (!P()) return errNoProject();
+      if (!findSection(P(), id)) return err('Unknown section.', id);
+      var n = normRepeat(repeat);
+      if (n.error) return err(n.error, id);
+      App.docHost.get().commit(function (p) {
+        var s = findSection(p, id);
+        if (n.repeat) s.repeat = n.repeat; else delete s.repeat;
+      });
+      return ok();
+    }
+
     function addSection(title, opts) {
       if (!P()) return errNoProject();
       opts = opts || {};
@@ -2086,22 +2404,60 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return ok();
     }
 
+    /**
+     * Everything keyed by a block's id goes with the block, or a deleted section would leave a
+     * name and an introduction behind for an id nothing can reach.
+     */
+    function dropBlock(b, id) {
+      ['levels', 'centred', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
+        'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) {
+        if (!b[k]) return;
+        delete b[k][id];
+        if (!Object.keys(b[k]).length) delete b[k];
+      });
+      if (Array.isArray(b.order)) b.order = b.order.filter(function (x) { return x !== id; });
+      if (Array.isArray(b.order) && !b.order.length) delete b.order;
+    }
+
+    /** DS-6: put one of the host's register tables in the document, at the end. */
+    function addRegister(id) {
+      if (!P()) return errNoProject();
+      if (!App.docHost.sections(null).some(function (pv) { return pv.id === id; })) return err('Unknown register table.', id);
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        if (!Array.isArray(b.registers)) return;          // holds them all already
+        if (b.registers.indexOf(id) === -1) b.registers.push(id);
+        if (Array.isArray(b.order) && b.order.length && b.order.indexOf(id) === -1) b.order.push(id);
+      });
+      return ok();
+    }
+    /** DS-6: take a register table out of the document, with its settings. */
+    function removeRegister(id) {
+      if (!P()) return errNoProject();
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        // A design that held them all now holds the rest; an empty list is kept: it means none.
+        var all = App.docHost.sections(null).map(function (pv) { return pv.id; });
+        b.registers = (Array.isArray(b.registers) ? b.registers : all).filter(function (x) { return x !== id; });
+        dropBlock(b, id);
+        if (!Object.keys(b).length) delete p.report;
+      });
+      return ok();
+    }
+
     function removeSection(id) {
       if (!P()) return errNoProject();
       App.docHost.get().commit(function (p) {
         var b = bag(p);
         b.sections = (b.sections || []).filter(function (s) { return s.id !== id; });
         if (!b.sections.length) delete b.sections;
-        // Everything keyed by block id goes with the block, or a deleted section would
-        // leave a name and an introduction behind for an id nothing can reach.
-        ['levels', 'centred', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
-          'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) {
-          if (!b[k]) return;
-          delete b[k][id];
-          if (!Object.keys(b[k]).length) delete b[k];
-        });
-        if (Array.isArray(b.order)) b.order = b.order.filter(function (x) { return x !== id; });
-        if (Array.isArray(b.order) && !b.order.length) delete b.order;
+        dropBlock(b, id);
+        // DS-5: what was written into blanks no section holds any more goes with them.
+        if (b.fills) {
+          var used = fillIdsUsed(b);
+          Object.keys(b.fills).forEach(function (f) { if (!used[f]) delete b.fills[f]; });
+          if (!Object.keys(b.fills).length) delete b.fills;
+        }
         if (!Object.keys(b).length) delete p.report;
       });
       return ok();
@@ -2114,6 +2470,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         return { id: id, kind: 'table', caption: '', centre: false, align: ['l', 'l'], header: ['Column 1', 'Column 2'], rows: [['', '']] };
       }
       if (kind === 'rule') return { id: id, kind: 'rule' };
+      if (kind === 'repeat') return { id: id, kind: 'repeat', repeat: { each: '' }, parts: [] };
       if (kind === 'pagebreak') return { id: id, kind: 'pagebreak' };
       // SPC-1: 10mm is about four blank lines at 11pt — visibly a gap, and small enough
       // that a part added by accident does not throw the page out.
@@ -2144,29 +2501,32 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * @param {string} sectionId @param {'para'|'table'|'rule'|'pagebreak'|'space'|'image'} kind
      * @param {number} [at]  insert position; appended when omitted
      */
-    function addPart(sectionId, kind, at) {
+    function addPart(sectionId, kind, at, parentId) {
       if (!P()) return errNoProject();
       if (!findSection(P(), sectionId)) return err('Unknown section.', sectionId);
-      if (['para', 'table', 'rule', 'pagebreak', 'space', 'image'].indexOf(kind) === -1) return err('Unknown part type "' + kind + '".');
+      if (PART_KINDS.indexOf(kind) === -1) return err('Unknown part type "' + kind + '".');
+      // DS-4: into a Repeat part, when one is named.
+      if (parentId) { var host0 = locate(P(), sectionId, parentId); if (!host0 || host0.part.kind !== 'repeat') return err('Unknown Repeat part.', parentId); }
       var id = null;
       App.docHost.get().commit(function (p) {
-        var s = findSection(p, sectionId);
-        s.parts = s.parts || [];
+        var list = parentId ? (locate(p, sectionId, parentId).part.parts = locate(p, sectionId, parentId).part.parts || []) : (findSection(p, sectionId).parts = findSection(p, sectionId).parts || []);
         id = nextId('part', allParts(p));
         var part = blankPart(kind, id);
-        if (at === undefined || at === null || at < 0 || at > s.parts.length) s.parts.push(part);
-        else s.parts.splice(at, 0, part);
+        if (at === undefined || at === null || at < 0 || at > list.length) list.push(part);
+        else list.splice(at, 0, part);
       });
       return { ok: true, id: id, issues: [] };
     }
+    /** The kinds of part a section holds. DS-4: `repeat` holds parts of its own. */
+    var PART_KINDS = ['para', 'table', 'rule', 'pagebreak', 'space', 'image', 'repeat'];
 
     function updatePart(sectionId, partId, fields) {
       if (!P()) return errNoProject();
       var s0 = findSection(P(), sectionId);
       if (!s0) return err('Unknown section.', sectionId);
-      if (!(s0.parts || []).some(function (x) { return x.id === partId; })) return err('Unknown part.', partId);
+      if (!locate(P(), sectionId, partId)) return err('Unknown part.', partId);
       App.docHost.get().commit(function (p) {
-        var part = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0];
+        var part = locate(p, sectionId, partId).part;
         Object.keys(fields || {}).forEach(function (k) {
           if (k === 'id' || k === 'kind') return;             // identity is not editable
           // SPC-1: the two measurements are sanitised HERE rather than at the point of
@@ -2187,10 +2547,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function setParaLevel(sectionId, partId, level) {
       if (!P()) return errNoProject();
       var s0 = findSection(P(), sectionId);
-      if (!s0 || !(s0.parts || []).some(function (x) { return x.id === partId && x.kind === 'para'; })) return err('Unknown paragraph.', partId);
+      var at0 = s0 && locate(P(), sectionId, partId);
+      if (!at0 || at0.part.kind !== 'para') return err('Unknown paragraph.', partId);
       var n = Math.round(Number(level));
       App.docHost.get().commit(function (p) {
-        var part = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0];
+        var part = locate(p, sectionId, partId).part;
         if (isFinite(n) && n >= 1 && n <= 4) part.numberLevel = n; else delete part.numberLevel;
       });
       return ok();
@@ -2199,8 +2560,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (!findSection(P(), sectionId)) return err('Unknown section.', sectionId);
       App.docHost.get().commit(function (p) {
-        var s = findSection(p, sectionId);
-        s.parts = (s.parts || []).filter(function (x) { return x.id !== partId; });
+        var at = locate(p, sectionId, partId);
+        if (at) at.list.splice(at.index, 1);
       });
       return ok();
     }
@@ -2209,9 +2570,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function setPartImage(sectionId, partId, index, img) {
       if (!P()) return errNoProject();
       var s0 = findSection(P(), sectionId);
-      if (!s0 || !(s0.parts || []).some(function (x) { return x.id === partId && x.kind === 'image'; })) return err('Unknown image part.', partId);
+      var im0 = s0 && locate(P(), sectionId, partId);
+      if (!im0 || im0.part.kind !== 'image') return err('Unknown image part.', partId);
       App.docHost.get().commit(function (p) {
-        var part = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0];
+        var part = locate(p, sectionId, partId).part;
         part.images = part.images || [];
         while (part.images.length <= index) part.images.push(null);
         part.images[index] = img ? { source: img.source === 'standard' ? 'standard' : 'report', file: String(img.file), name: String(img.name || img.file) } : null;
@@ -2224,10 +2586,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (['width', 'noBorder', 'caption'].indexOf(field) === -1) return err('Unknown image setting "' + field + '".');
       var s0 = findSection(P(), sectionId);
-      var p0 = s0 && (s0.parts || []).filter(function (x) { return x.id === partId; })[0];
+      var l0 = s0 && locate(P(), sectionId, partId), p0 = l0 && l0.part;
       if (!p0 || !(p0.images || [])[index]) return err('There is no image there.', partId);
       App.docHost.get().commit(function (p) {
-        var im = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0].images[index];
+        var im = locate(p, sectionId, partId).part.images[index];
         if (field === 'width') {
           var n = Math.round(Number(value));
           if (!isFinite(n) || n >= 100) delete im.width; else im.width = Math.max(5, n);
@@ -2284,23 +2646,42 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * Reorder parts within a section: by one step, or before a named part (drag).
      * @param {number} delta  -1 / +1, ignored when beforeId is given
      */
-    function movePart(sectionId, partId, delta, beforeId) {
+    function movePart(sectionId, partId, delta, beforeId, intoId) {
       if (!P()) return errNoProject();
       var s0 = findSection(P(), sectionId);
       if (!s0) return err('Unknown section.', sectionId);
       App.docHost.get().commit(function (p) {
-        var s = findSection(p, sectionId), parts = s.parts || [];
-        var from = parts.map(function (x) { return x.id; }).indexOf(partId);
-        if (from === -1) return;
-        var moved = parts.splice(from, 1)[0], to;
-        if (beforeId != null) {
-          var at = parts.map(function (x) { return x.id; }).indexOf(beforeId);
-          to = at === -1 ? parts.length : at;
-        } else {
-          to = from + delta;
-          if (to < 0) to = 0;
-          if (to > parts.length) to = parts.length;
+        var src = locate(p, sectionId, partId);
+        if (!src) return;
+        // DS-4: to the END of a Repeat part (`intoId`), or of the section ('').
+        if (intoId !== undefined && intoId !== null) {
+          var list;
+          if (intoId === '') list = findSection(p, sectionId).parts;
+          else {
+            var box = locate(p, sectionId, intoId);
+            if (!box || box.part.kind !== 'repeat' || intoId === partId) return;
+            for (var anc = box.parent; anc; anc = (locate(p, sectionId, anc.id) || {}).parent) if (anc.id === partId) return;
+            list = box.part.parts = box.part.parts || [];
+          }
+          src.list.splice(src.index, 1);
+          list.push(src.part);
+          return;
         }
+        // DS-4: a drag may land in another list (into or out of a Repeat part) — never inside itself.
+        if (beforeId != null) {
+          var dst = locate(p, sectionId, beforeId);
+          if (!dst || beforeId === partId) return;
+          for (var up = dst.parent; up; up = (locate(p, sectionId, up.id) || {}).parent) if (up.id === partId) return;
+          src.list.splice(src.index, 1);
+          dst = locate(p, sectionId, beforeId);
+          dst.list.splice(dst.index, 0, src.part);
+          return;
+        }
+        var parts = src.list, from = src.index;
+        var moved = parts.splice(from, 1)[0];
+        var to = from + delta;
+        if (to < 0) to = 0;
+        if (to > parts.length) to = parts.length;
         parts.splice(to, 0, moved);
       });
       return ok();
@@ -2310,8 +2691,18 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     /** Read a part out of the live project (helper for the table ops below). */
     function part(p, sectionId, partId) {
-      var s = findSection(p, sectionId);
-      return s ? (s.parts || []).filter(function (x) { return x.id === partId; })[0] : null;
+      var at = locate(p, sectionId, partId);
+      return at ? at.part : null;
+    }
+    /** A part of a section, for a view that only reads it. */
+    function findPart(p, sectionId, partId) { return part(p, sectionId, partId) || null; }
+    /** DS-4: what the Repeat parts around a part repeat for, outermost first. */
+    function enclosingRepeats(p, sectionId, partId) {
+      var out = [];
+      for (var at = locate(p, sectionId, partId); at && at.parent; at = locate(p, sectionId, at.parent.id)) {
+        if (at.parent.repeat && at.parent.repeat.each) out.unshift(at.parent.repeat.each);
+      }
+      return out;
     }
 
     /** Set one cell. `row === -1` addresses the header. */
@@ -2689,6 +3080,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           title: src.title || '',
           parts: JSON.parse(JSON.stringify(src.parts || []))
         });
+        // DS-2: what it repeats for is part of the section's design.
+        if (src.repeat) b.sectionTemplates[b.sectionTemplates.length - 1].repeat = JSON.parse(JSON.stringify(src.repeat));
       });
       return { ok: true, id: id, issues: [] };
     }
@@ -2714,14 +3107,26 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var b = bag(p);
         b.sections = b.sections || [];
         id = nextId('sec', b.sections);
-        var used = allParts(p), parts = [];
-        (t.parts || []).forEach(function (src) {
-          var copy = JSON.parse(JSON.stringify(src));
-          copy.id = nextId('part', used);
-          used.push(copy);
-          parts.push(copy);
-        });
-        b.sections.push({ id: id, title: t.title || '', parts: parts });
+        // Fresh ids for every part, however deep in Repeat parts, and fresh blanks: a copy shares nothing.
+        var used = allParts(p);
+        function copyParts(list) {
+          return (list || []).map(function (src) {
+            var copy = JSON.parse(JSON.stringify(src));
+            copy.id = nextId('part', used);
+            used.push(copy);
+            if (copy.kind === 'repeat') copy.parts = copyParts(src.parts);
+            return copy;
+          });
+        }
+        var parts = copyParts(t.parts);
+        var fresh = {}, taken = Object.keys(fillIdsUsed(b)).concat(Object.keys(b.fills || {}));
+        parts = JSON.parse(JSON.stringify(parts).replace(/\{\{fill:([A-Za-z0-9_-]+)/g, function (m0, old) {
+          if (!fresh[old]) { fresh[old] = nextId('fill', taken); taken.push(fresh[old]); }
+          return '{{fill:' + fresh[old];
+        }));
+        var made = { id: id, title: t.title || '', parts: parts };
+        if (t.repeat) made.repeat = JSON.parse(JSON.stringify(t.repeat));
+        b.sections.push(made);
         if (Array.isArray(b.order) && b.order.length && b.order.indexOf(id) === -1) b.order.push(id);
       });
       return { ok: true, id: id, issues: [] };
@@ -2763,6 +3168,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           // SPC-1: how far down the page each section starts is an arrangement decision
           // like the page break beside it, so it travels with the template too.
           space: JSON.parse(JSON.stringify(b.space || {})),
+          // DS-6: which register tables the document holds (none listed: all of them).
+          registers: Array.isArray(b.registers) ? b.registers.slice() : undefined,
           sections: JSON.parse(JSON.stringify(b.sections || [])),
           format: JSON.parse(JSON.stringify(App.docFormat.resolve(p)))
         });
@@ -2798,6 +3205,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
         'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) { b[k] = JSON.parse(JSON.stringify(t[k] || {})); });
       b.sections = JSON.parse(JSON.stringify(t.sections || []));
+      if (Array.isArray(t.registers)) b.registers = t.registers.slice(); else delete b.registers;
       if (!b.order.length) delete b.order;
       if (!b.sections.length) delete b.sections;
       ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
@@ -2843,7 +3251,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       setTableNoCaption: setTableNoCaption,
       // OPT-2: what the report is made of, stored with the report rather than the session.
       setReportInclude: setReportInclude, INCLUDE_MAPS: INCLUDE_MAPS,
-      addSection: addSection, updateSection: updateSection, removeSection: removeSection,
+      addSection: addSection, setSectionRepeat: setSectionRepeat, setPartRepeat: setPartRepeat, normRepeat: normRepeat, findPart: findPart, enclosingRepeats: enclosingRepeats,
+      nextFillId: nextFillId, setFill: setFill, pruneFills: pruneFills, addRegister: addRegister, removeRegister: removeRegister, updateSection: updateSection, removeSection: removeSection,
       addPart: addPart, updatePart: updatePart, removePart: removePart, movePart: movePart, setParaLevel: setParaLevel,
       setPartImage: setPartImage, setPartImageField: setPartImageField, addStandardImage: addStandardImage, renameStandardImage: renameStandardImage, removeStandardImage: removeStandardImage, standardImageUses: standardImageUses,
       setCell: setCell, addRow: addRow, removeRow: removeRow,
@@ -2958,7 +3367,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       parts.forEach(function (p, i) {
         var l = loc + '.parts[' + i + ']';
         if (!p || typeof p !== 'object') { issues.push(issue('error', 'A part must be an object.', l)); ok = false; return; }
-        if (['para', 'table', 'rule', 'pagebreak', 'space', 'image'].indexOf(p.kind) === -1) {
+        if (['para', 'table', 'rule', 'pagebreak', 'space', 'image', 'repeat'].indexOf(p.kind) === -1) {
           issues.push(issue('error', 'Unknown part kind "' + p.kind + '".', l)); ok = false; return;
         }
         if (p.kind === 'para' && p.text !== undefined && typeof p.text !== 'string') {
@@ -2967,6 +3376,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         if (p.kind === 'image' && p.images !== undefined && !Array.isArray(p.images)) {
           issues.push(issue('error', 'An image part\'s images must be an array.', l)); ok = false;
         }
+        if (p.kind === 'table' || p.kind === 'repeat') {
+          var pr = App.docStore.normRepeat(p.repeat);
+          if (pr.error) { issues.push(issue('error', pr.error, l + '.repeat')); ok = false; }
+        }
+        // DS-4: a Repeat part's own parts, checked the same way.
+        if (p.kind === 'repeat' && !validParts(p.parts || [], l, issues)) ok = false;
         if (p.kind === 'table') {
           if (!Array.isArray(p.header) || !p.header.length) { issues.push(issue('error', 'A table needs a header row.', l)); ok = false; }
           if (p.rows !== undefined && !Array.isArray(p.rows)) { issues.push(issue('error', 'A table\'s rows must be an array.', l)); ok = false; }
@@ -2986,7 +3401,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       }
       if (kindKey === 'sections') {
         if (!validParts(raw.parts, loc, issues)) return null;
-        return { id: String(raw.id || ''), name: String(raw.name), title: String(raw.title || ''), parts: raw.parts || [] };
+        var rp = App.docStore.normRepeat(raw.repeat);
+        if (rp.error) { issues.push(issue('error', rp.error, loc + '.repeat')); return null; }
+        var sec = { id: String(raw.id || ''), name: String(raw.name), title: String(raw.title || ''), parts: raw.parts || [] };
+        if (rp.repeat) sec.repeat = rp.repeat;
+        return sec;
       }
       // reports
       if (raw.order !== undefined && !Array.isArray(raw.order)) { issues.push(issue('error', 'order must be an array.', loc)); return null; }
@@ -2995,6 +3414,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       (raw.sections || []).forEach(function (s, i) {
         if (!s || typeof s !== 'object') { issues.push(issue('error', 'A section must be an object.', loc + '.sections[' + i + ']')); sectionsOk = false; return; }
         if (!validParts(s.parts, loc + '.sections[' + i + ']', issues)) sectionsOk = false;
+        var rr = App.docStore.normRepeat(s.repeat);
+        if (rr.error) { issues.push(issue('error', rr.error, loc + '.sections[' + i + '].repeat')); sectionsOk = false; }
       });
       if (!sectionsOk) return null;
       var out = {
@@ -3003,6 +3424,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         levels: (raw.levels && typeof raw.levels === 'object') ? raw.levels : {},
         sections: raw.sections || []
       };
+      // DS-6: the register tables a report template holds.
+      if (Array.isArray(raw.registers)) out.registers = raw.registers.filter(function (x) { return typeof x === 'string'; });
       if (raw.format) {
         var fv = App.docFormat.validate(Object.assign({ id: 'standard', name: raw.name }, raw.format), loc + '.format');
         if (fv.ok) out.format = fv.profile; else fv.issues.forEach(function (i) { issues.push(i); });
@@ -3229,6 +3652,20 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           }
           continue;
         }
+        if (!close && MD.FIELD_TAG.test(tag)) {
+          // DS-1: a field is a chip naming the field, not a value: the box is a template.
+          var fl = opts.fieldLabel ? opts.fieldLabel(tag) : undefined;
+          out += '<span class="' + CHIP + ' rd-field' + (fl === null ? ' rd-broken' : '') + '" contenteditable="false" data-rd-tok="' + esc(tag) + '"' +
+            ' title="' + esc(fl === null ? 'This field is not available here' : 'Filled in from the registers') + '">' +
+            esc(fl || MD.markerName(tag, {})) + '</span>';
+          continue;
+        }
+        if (!close && MD.FILL_TAG.test(tag)) {
+          var fi = FILL_PARSE(tag);
+          out += '<span class="' + CHIP + ' rd-fill" contenteditable="false" data-rd-tok="' + esc(tag) + '"' +
+            ' title="Written by hand for each entry: see Fill in">\u270e ' + esc((fi && fi.label) || 'To fill in') + '</span>';
+          continue;
+        }
         // An unknown or unmatched token is literal text, exactly as App.md reads it.
         out += lit(m[0]);
       }
@@ -3441,7 +3878,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (tag === 'br') return { text: v.slice(0, s) + '\n' + v.slice(e), caret: s + 1 };
       var isRef = MD.REF_TAG.test(tag);
       var open = '{{' + tag + '}}', close;
-      if (isRef) close = sel ? '{{/ref}}' : '';
+      // DS-1: a field or a fill is a marker: it lands at the caret, in place of any selection.
+      if (MD.FIELD_TAG.test(tag) || MD.FILL_TAG.test(tag)) close = '';
+      else if (isRef) close = sel ? '{{/ref}}' : '';
       else close = '{{/' + tag + '}}';
       // With a closing token the selection is kept BETWEEN the two; without one the
       // token is a marker and simply lands at the caret, leaving the text either side.
@@ -3593,6 +4032,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       colourOpen: null,      // the colour field whose palette is open (its Style path)
       renaming: null,        // the section whose heading is being edited in the list
       secCat: null,          // the open category of the Sections pane
+      fieldFor: null,        // DS-1: the box whose Field menu is open
+      chipEdit: null,        // DS-1: the field chip whose options are open: { owner, key, at, tag }
+      cat: null,             // DS-2: the catalogue bound to the subject, until the next change
+      fills: null,           // DS-5: the document's blanks (App.docGen.fillsIn), until the next change
+      addMenu: false,        // DS-6: the + Add section menu is open
       imgMenu: null,         // 'partId:box' whose choose-menu is open
       imgPick: false,        // that menu showing Standard Images
       secWhole: false,       // whether the section preview shows the whole document
@@ -3607,6 +4051,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     var _ctx = null;
     var _dragId = null;      // section being dragged
     var _dragPart = null;    // part being dragged inside a section
+    var _dragField = null;   // DS-1: a field being dragged from the Field menu
 
     /* OPT-2: the report options, exactly as the Generate button will see them — the
      * project's four include-maps plus this run's filename, tags and classification.
@@ -3630,6 +4075,192 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     /** What the host calls the thing a document is about (`host.subject.noun`), for the UI's wording. */
     function noun() { var sj = H() && H().subject; return (sj && sj.noun) || 'subject'; }
     function bag(project) { return (project && project.report) || {}; }
+    /* ------------------------------------------------------------------
+     * DS-1/DS-2: register fields and repeats, as the designer shows them.
+     * ------------------------------------------------------------------ */
+    /** The host's catalogue, unbound: what menus and chips name. Null without one. */
+    function catalogue() { return App.docHost.catalogue(null); }
+    /** The catalogue bound to the chosen subject (for counts), kept until the next change. */
+    function boundCatalogue(project) {
+      if (_rd.cat !== undefined && _rd.cat !== null) return _rd.cat;
+      var id = selectedSubjectId(project);
+      _rd.cat = id ? App.docHost.catalogue({ subjectId: id, numbering: App.docFormat.resolve(project).document }) : null;
+      return _rd.cat;
+    }
+    function collLabel(c, coll, plural) {
+      var d = c && c.collections[coll];
+      return d ? (plural ? (d.plural || d.label) : d.label) : coll;
+    }
+    /** `Hazard › Title`, or null for a field the catalogue does not have. */
+    function fieldLabel(tag) {
+      var c = catalogue();
+      var p = DATA.parseFieldTag(tag);
+      var def = c && p ? DATA.fieldDef(c, p.coll, p.field) : null;
+      return def ? collLabel(c, p.coll) + ' \u203a ' + def.label : null;
+    }
+    /**
+     * Where a section sits among the repeats: the collections whose entry is in scope above it
+     * (`outer`, the root first), what it repeats for itself (`own`), and the sections that
+     * repeat with it (`group`). Read from the outline, as the document builder groups them.
+     */
+    var _scopes = {};
+    function scopeOf(project, secId) {
+      if (_scopes[secId]) return _scopes[secId];
+      return (_scopes[secId] = scopeOfNow(project, secId));
+    }
+    function scopeOfNow(project, secId) {
+      var c = catalogue();
+      var root = c ? c.root : 'platform';
+      var view = outlineNow(project);
+      var byId = {};
+      view.blocks.forEach(function (b) { byId[b.id] = b; });
+      var rs = view.resolved, stack = [];
+      var eachOf = function (b) { return b && b.kind === 'custom' && b.repeat && b.repeat.each ? b.repeat.each : null; };
+      for (var i = 0; i < rs.length; i++) {
+        var lv = rs[i].level;
+        while (stack.length && !(lv !== App.doc.TITLE_LEVEL && lv > stack[stack.length - 1].level)) stack.pop();
+        var each = eachOf(byId[rs[i].id]);
+        if (rs[i].id === secId) {
+          var group = [];
+          if (each) for (var j = i + 1; j < rs.length && rs[j].level !== App.doc.TITLE_LEVEL && rs[j].level > lv; j++) group.push(rs[j]);
+          return { outer: [root].concat(stack.map(function (x) { return x.each; })), own: each, group: group };
+        }
+        if (each) stack.push({ level: lv, each: each });
+      }
+      return { outer: [root], own: eachOf(byId[secId]), group: [] };
+    }
+    /** The collections a box in this section can read: single entries, and lists. */
+    function reachIn(project, secId, partId) {
+      var c = catalogue();
+      if (!c) return { single: [], lists: [] };
+      var sc = scopeOf(project, secId);
+      // DS-4: inside Repeat parts, what they repeat for is in scope too.
+      var inner = partId ? App.docStore.enclosingRepeats(project, secId, partId) : [];
+      return DATA.available(sc.outer.concat(sc.own ? [sc.own] : [], inner), c);
+    }
+    /** A chip's label in this section: null (a broken chip) when the field cannot be read here. */
+    function fieldLabelIn(project, secId, partId) {
+      var reach = null;
+      return function (tag) {
+        var l = fieldLabel(tag);
+        if (!l || !secId) return l;
+        reach = reach || reachIn(project, secId, partId);
+        var p = DATA.parseFieldTag(tag);
+        return reach.single.indexOf(p.coll) !== -1 || reach.lists.indexOf(p.coll) !== -1 ? l : null;
+      };
+    }
+    /** DS-5: the document's blanks for the chosen subject, kept until the next change. */
+    function fillsNow(project) {
+      if (_rd.fills) return _rd.fills;
+      try {
+        _rd.fills = App.docGen.fillsIn(H(), Object.assign({}, opts(), { subjectId: selectedSubjectId(project) }));
+      } catch (e) { _rd.fills = { items: [], leftovers: {}, live: {} }; }
+      return _rd.fills;
+    }
+    /** How many of a section's blanks are still empty. */
+    function toFillIn(project, secId) {
+      return fillsNow(project).items.filter(function (i) { return i.sectionId === secId && !i.value.trim(); }).length;
+    }
+    /** Whether an own section holds a blank anywhere in its parts. */
+    function holdsFill(block) { return /\{\{fill:/.test(JSON.stringify(block.parts || [])); }
+    /**
+     * DS-5: the Fill in category — a box per blank per entry, under the entry's name, and what
+     * is kept for entries no longer in the document.
+     */
+    function fillPane(project, block) {
+      var f = fillsNow(project);
+      var mine = f.items.filter(function (i) { return i.sectionId === block.id; });
+      var ids = {};
+      mine.forEach(function (i) { ids[i.id] = true; });
+      var leftIds = Object.keys(f.leftovers).filter(function (id) { return ids[id]; });
+      var left = leftIds.reduce(function (a, id) { return a + f.leftovers[id]; }, 0);
+      var out = mine.length ? '' : '<p class="rd-state">' + (selectedSubjectId(project) ? 'No entries print these blanks.' : 'Choose a ' + esc(noun()) + ' to fill in its entries.') + '</p>';
+      out += mine.map(function (i) {
+        var host = 'data-rd-fill-bar="' + esc(i.id + '|' + i.key) + '"';
+        return '<div class="rd-fieldset rd-fillitem"><strong>' + esc(i.label || 'To fill in') + '</strong>' +
+          (i.where ? ' <span class="rd-state">' + esc(i.where) + '</span>' : '') +
+          '<div class="rd-part-head"><span class="rd-tbs">' + toolbar(host) + '</span></div>' +
+          richBox(project, 'data-rd-fill="' + esc(i.id) + '" data-rd-fill-key="' + esc(i.key) + '" aria-label="' + esc((i.label || 'To fill in') + (i.where ? ' for ' + i.where : '')) + '"',
+            i.value, '', 'Write it here. Left empty, the document shows [To fill in: ' + (i.label || 'text') + '].') + '</div>';
+      }).join('');
+      if (left) {
+        out += '<p class="rd-state">' + left + ' answer' + (left === 1 ? ' is' : 's are') + ' kept for entries no longer in the document.' +
+          ' <button type="button" data-rd-fill-prune="' + esc(leftIds.join(' ')) + '">Remove ' + (left === 1 ? 'it' : 'them') + '</button></p>';
+      }
+      return out;
+    }
+
+    /** What a heading or a list row shows for text that may hold fields. */
+    function shownText(t) { return App.md.plain(t, { fieldLabel: fieldLabel }); }
+    /** The Field button, beside Link, wherever a box can take one. */
+    function fieldButton(id) {
+      return catalogue() ? '<button type="button" class="rd-tb" data-rd-field-open="' + esc(id) + '" title="Insert a field from the registers">{ } Field</button>' : '';
+    }
+    /**
+     * DS-1: the options of the field chip being edited (clicked in its box): for a list, its
+     * sort, filter and style; for any field, what it prints when there is nothing.
+     */
+    function chipPanel(project, secId, id, partId) {
+      var ce = _rd.chipEdit, c = catalogue();
+      if (!ce || ce.owner !== id || !c) return '';
+      var p = DATA.parseFieldTag(ce.tag);
+      var def = p ? DATA.fieldDef(c, p.coll, p.field) : null;
+      if (!def) return '';
+      var reach = reachIn(project, secId, partId);
+      var childList = reach.single.indexOf(p.coll) === -1 && reach.lists.indexOf(p.coll) !== -1;
+      var o = p.opts || {}, w = o.where || {}, so = o.sort || {};
+      var fields = c.collections[p.coll].fields;
+      var fopts = function (cur, none) {
+        return '<option value="">' + esc(none) + '</option>' + fields.map(function (f) {
+          return '<option value="' + esc(f.id) + '"' + (f.id === cur ? ' selected' : '') + '>' + esc(f.label) + '</option>';
+        }).join('');
+      };
+      var out = '<div class="rd-chipedit"><div class="rd-refmenu-h">' + esc(fieldLabel(ce.tag)) + (childList ? ' <em>— every ' + esc(collLabel(c, p.coll).toLowerCase()) + '\'s, as a list</em>' : '') + '</div><div class="rd-grid">';
+      if (childList) {
+        out += '<label class="rd-lab rd-lab-s">Sort by<select data-rd-chip-sfield aria-label="Sort by">' + fopts(so.field, 'Register order') + '</select></label>' +
+          (so.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select data-rd-chip-sdir aria-label="Sort direction"><option value="asc"' + (so.dir === 'desc' ? '' : ' selected') + '>Ascending</option>' +
+            '<option value="desc"' + (so.dir === 'desc' ? ' selected' : '') + '>Descending</option></select></label>' : '') +
+          '<label class="rd-lab rd-lab-s">Only where<select data-rd-chip-wfield aria-label="Filter field">' + fopts(w.field, 'Every one') + '</select></label>' +
+          (w.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select data-rd-chip-wop aria-label="Filter test">' + DATA.OPS.map(function (op) {
+              return '<option value="' + op + '"' + (op === (w.op || 'is') ? ' selected' : '') + '>' + esc(DATA.OP_LABELS[op]) + '</option>';
+            }).join('') + '</select></label>' +
+            (w.op === 'empty' || w.op === 'set' ? '' : '<label class="rd-lab rd-lab-s">&nbsp;<input data-rd-chip-wval value="' + esc(w.value || '') + '" aria-label="Filter value"></label>') : '');
+      }
+      if (childList || def.type === 'list') {
+        var styles = [['lines', 'One per line'], ['num', 'Numbered'], ['bullet', 'Bulleted'], ['comma', 'Separated by commas']];
+        out += '<label class="rd-lab rd-lab-s">Show as<select data-rd-chip-list aria-label="Show the list as">' + styles.map(function (st) {
+          return '<option value="' + st[0] + '"' + ((o.list || 'lines') === st[0] ? ' selected' : '') + '>' + st[1] + '</option>';
+        }).join('') + '</select></label>';
+      }
+      out += '<label class="rd-lab rd-lab-s">When there is nothing<input data-rd-chip-empty value="' + esc(o.empty === undefined ? '' : o.empty) + '" placeholder="' + esc(DATA.EMPTY_TEXT) + '" aria-label="What prints when there is nothing"></label>' +
+        '</div><button type="button" data-rd-chip-done>Done</button></div>';
+      return out;
+    }
+
+    /** The Field menu: the fields of what is in scope, then the lists below it. Click or drag. */
+    function fieldMenu(project, secId, id, partId) {
+      var panel = chipPanel(project, secId, id, partId);
+      if (_rd.fieldFor !== id) return panel;
+      var c = catalogue();
+      if (!c) return '';
+      var reach = reachIn(project, secId, partId);
+      function group(coll, list) {
+        var def = c.collections[coll];
+        return '<div class="rd-fieldgroup"><div class="rd-fieldgroup-h">' + esc(collLabel(c, coll, list)) + (list ? ' <em>list</em>' : '') + '</div>' +
+          '<div class="rd-fieldpicks">' + def.fields.map(function (f) {
+            return '<button type="button" class="rd-fieldpick" data-rd-field-pick="' + esc('f:' + coll + '.' + f.id) + '" draggable="true"' +
+              ' title="' + esc(list ? 'Every ' + collLabel(c, coll).toLowerCase() + '\'s ' + f.label.toLowerCase() + ', as a list' : f.label) + '">' + esc(f.label) + '</button>';
+          }).join('') + '</div></div>';
+      }
+      // DS-5: a blank written by hand per entry — in text, never in a heading.
+      var blank = String(id).indexOf('head:') === 0 ? '' :
+        '<div class="rd-fieldgroup"><button type="button" class="rd-fieldpick rd-fillnew" data-rd-fill-new>\u270e To fill in&hellip;</button>' +
+        ' <span class="rd-state">a blank you write by hand for each entry, under Fill in</span></div>';
+      return panel + '<div class="rd-fieldmenu"><div class="rd-refmenu-h">Insert a field <span class="rd-state">click, or drag it into the text</span></div>' +
+        reach.single.map(function (k) { return group(k, false); }).join('') +
+        reach.lists.map(function (k) { return group(k, true); }).join('') + blank + '</div>';
+    }
+
     function customSection(project, id) {
       return (bag(project).sections || []).filter(function (s) { return s.id === id; })[0] || null;
     }
@@ -3699,7 +4330,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return App.docStore.setBlockHeading(id, v === String(block.defaultTitle || '').trim() ? '' : v);
     }
 
-    /** The Sections list's width in pixels: dragged by its grip, remembered in this browser. */
+    /** The Sections (and Styles) list's width in pixels: dragged by its grip, remembered in this browser. */
     var LIST_WIDTH = { dflt: 420, min: 260, max: 900 };
     var LIST_KEY = 'docgen.rd.listWidth';
     function listWidth() {
@@ -3712,7 +4343,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var byId = {};
       view.resolved.forEach(function (r) { if (!r.parentId) byId[r.id] = r; });
 
+      var cat0 = catalogue();
       var rows = view.blocks.map(function (b, i) {
+        // DS-1: a heading with fields in it reads by their names.
+        b = Object.assign({}, b, { label: shownText(b.label) });
         var off = !b.included;
         var r = byId[b.id];
         var num = (off || !r) ? '—' : (r.number || '·');
@@ -3727,7 +4361,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var warn = (r && r.skipped)
           ? '<span class="rd-warn" title="There is no heading one level above this one. It has been pulled up to ' + levelName(r.level) + '.">↰ ' + levelName(r.level) + '</span>'
           : '';
-        var kind = b.kind === 'custom' ? ''
+        var todo = b.kind === 'custom' && holdsFill(b) ? toFillIn(project, b.id) : 0;
+        var kind = b.kind === 'custom'
+          ? (b.repeat && b.repeat.each ? '<span class="rd-kind rd-repeats" title="Printed once for each entry, with the sections under it">\u21bb per ' + esc(collLabel(cat0, b.repeat.each)) + '</span>' : '') +
+            (todo ? '<span class="rd-kind rd-tofill" title="Blanks written by hand, still empty: see Fill in">' + todo + ' to fill in</span>' : '')
           : '<span class="rd-kind">' + esc(b.kind === 'meta' ? 'Meta' : b.kind === 'toc' ? 'Table of Contents' : 'Auto-populated') + '</span>';
         var sel = _rd.selected === b.id ? ' sel' : '';
 
@@ -3745,20 +4382,45 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           '<span class="ord-move">' +
             '<button type="button" data-rd-up="' + esc(b.id) + '"' + (i === 0 ? ' disabled' : '') + ' title="Move earlier" aria-label="Move ' + esc(b.label) + ' earlier">▲</button>' +
             '<button type="button" data-rd-down="' + esc(b.id) + '"' + (i === view.blocks.length - 1 ? ' disabled' : '') + ' title="Move later" aria-label="Move ' + esc(b.label) + ' later">▼</button>' +
+            // DS-6: a register table can be taken out of the document; + Add section puts it back.
+            (isRegister(b) ? '<button type="button" class="danger" data-rd-del-register="' + esc(b.id) + '" title="Take this register table out of the document" aria-label="Remove ' + esc(b.label) + '">✕</button>' : '') +
           '</span></li>';
       }).join('');
 
-      var tpls = (bag(project).sectionTemplates || []);
-      var tplPicker = tpls.length
-        ? '<select data-rd-use-template aria-label="Add a section from a template">' +
-            '<option value="">From template&hellip;</option>' +
-            tpls.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.name) + '</option>'; }).join('') +
-          '</select>'
-        : '';
-
       return '<div class="rpt-pane rpt-pane-main" style="flex-basis:' + listWidth() + 'px"><h4>Sections</h4>' +
-        '<div class="rd-addbar"><button type="button" class="primary" data-rd-add-section>+ Add section</button>' + tplPicker + '</div>' +
+        '<div class="rd-addbar rd-addwrap"><button type="button" class="primary" data-rd-add-menu aria-expanded="' + (_rd.addMenu ? 'true' : 'false') + '">+ Add section</button>' +
+          (_rd.addMenu ? addMenu(project, view) : '') + '</div>' +
         '<div id="rd-order-host"><ol class="ord-list">' + rows + '</ol></div></div>';
+    }
+
+    /** DS-6: a block that is one of the host's register tables. */
+    function isRegister(b) { return b.kind !== 'custom' && b.kind !== 'toc' && b.kind !== 'meta'; }
+
+    /**
+     * DS-6: what + Add section offers — a blank section, a section repeated per entry of one of
+     * the top-level registers, a register table not yet in the document, or a section template.
+     */
+    function addMenu(project, view) {
+      var c = catalogue();
+      var inDoc = {};
+      view.blocks.forEach(function (b) { inDoc[b.id] = true; });
+      var regs = App.docHost.sections(null).filter(function (pv) { return !inDoc[pv.id]; });
+      var tpls = bag(project).sectionTemplates || [];
+      var group = function (title, items) {
+        return items ? '<div class="rd-addgroup"><div class="rd-fieldgroup-h">' + title + '</div>' + items + '</div>' : '';
+      };
+      return '<div class="rd-addmenu" role="menu">' +
+        '<button type="button" role="menuitem" data-rd-add-section>Blank section</button>' +
+        (c ? group('Repeating section <span class="rd-state">one for each entry</span>', (c.collections[c.root].children || []).map(function (k) {
+          return '<button type="button" role="menuitem" data-rd-add-repeat="' + esc(k) + '">' + esc(collLabel(c, k)) + '</button>';
+        }).join('')) : '') +
+        group('Register table', regs.map(function (pv) {
+          return '<button type="button" role="menuitem" data-rd-add-register="' + esc(pv.id) + '">' + esc(pv.label) + '</button>';
+        }).join('')) +
+        group('From template', tpls.map(function (t) {
+          return '<button type="button" role="menuitem" data-rd-use-template-id="' + esc(t.id) + '">' + esc(t.name) + '</button>';
+        }).join('')) +
+        '</div>';
     }
 
     // ======================================================================
@@ -3814,11 +4476,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * @param {string} attrs   the data attributes identifying what this box writes to
      * @param {string} tokens  the stored token text
      */
-    function richBox(project, attrs, tokens, cls, placeholder) {
+    function richBox(project, attrs, tokens, cls, placeholder, secId, partId) {
       return '<div class="rd-rich ' + (cls || '') + '" contenteditable="true" role="textbox"' +
         ' aria-multiline="true" spellcheck="true" data-rd-rich data-rd-live ' + attrs +
         (placeholder ? ' data-rd-ph="' + esc(placeholder) + '"' : '') + '>' +
-        App.ui.richText.toHtml(tokens || '', { resolveRef: refResolver(project) }) + '</div>';
+        App.ui.richText.toHtml(tokens || '', { resolveRef: refResolver(project), fieldLabel: fieldLabelIn(project, secId, partId) }) + '</div>';
     }
 
     /* RTX-1: the four formatting buttons, wherever prose is written. `host` is the data
@@ -3921,13 +4583,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         '<div class="rd-part-head"><span class="rd-part-kind">Paragraph</span>' +
           '<span class="rd-tbs">' + toolbar(host) +
             '<button type="button" class="rd-tb" data-rd-ref-open="' + esc(part.id) + '" title="Insert a cross-reference that survives renaming and reordering">🔗 Link</button>' +
+            fieldButton(part.id) +
           '</span>' +
           cb('data-rd-part-flag="centre" ' + host, 'Centre', part.centre === true) +
           paraLevelSelect(project, sec, part) +
           partControls(sec, part, i, n) + '</div>' +
-        refMenu(project, sec, part) +
+        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id, part.id) +
         richBox(project, 'data-rd-text="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"',
-          part.text, '', 'Write the paragraph. Enter is a line break; a blank line starts a new paragraph.') +
+          part.text, '', 'Write the paragraph. Enter is a line break; a blank line starts a new paragraph.', sec.id, part.id) +
         hostileHint(part.text || '') + '</div>';
     }
 
@@ -4054,7 +4717,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         // RTX-2: a heading is prose like any other cell, so it takes the same box.
         return '<th>' + richBox(project,
             'data-rd-cell="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-row="-1" data-rd-col="' + c + '"' +
-            ' aria-label="Column ' + (c + 1) + ' heading"', h, 'rd-cellbox') +
+            ' aria-label="Column ' + (c + 1) + ' heading"', h, 'rd-cellbox', '', sec.id, part.id) +
           '<span class="rd-colbar">' +
             '<select data-rd-align="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-col="' + c + '" aria-label="Column ' + (c + 1) + ' alignment" title="Column alignment">' +
               ['l', 'c', 'r'].map(function (a) { return '<option value="' + a + '"' + ((align[c] || 'l') === a ? ' selected' : '') + '>' + (a === 'l' ? '⇤' : a === 'c' ? '↔' : '⇥') + '</option>'; }).join('') +
@@ -4067,10 +4730,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
        * that do nothing is worse than no column at all. */
       var trs = rows.map(function (r, ri) {
         var tall = App.docStore.rowTall(part, ri);
-        return '<tr>' + head.map(function (_, c) {
+        return '<tr' + (part.repeat && part.repeat.each ? ' class="rd-rowtpl" title="Printed once per entry"' : '') + '>' + head.map(function (_, c) {
           return '<td>' + richBox(project,
             'data-rd-cell="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-row="' + ri + '" data-rd-col="' + c + '"' +
-            ' aria-label="Row ' + (ri + 1) + ' column ' + (c + 1) + '"', r[c], 'rd-cellbox') + '</td>';
+            ' aria-label="Row ' + (ri + 1) + ' column ' + (c + 1) + '"', r[c], 'rd-cellbox', '', sec.id, part.id) + '</td>';
         }).join('') + '<td class="rd-rowdel">' +
           (rowMm
             ? '<input type="checkbox" class="rd-tallbox" data-rd-tallrow="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) +
@@ -4091,6 +4754,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
            * needs a reference usually ends up. */
           '<span class="rd-tbs">' + toolbar(host) +
             '<button type="button" class="rd-tb" data-rd-ref-open="' + esc(part.id) + '" title="Insert a cross-reference into the cell you were writing in">🔗 Link</button>' +
+            fieldButton(part.id) +
           '</span>' +
           cb('data-rd-part-flag="centre" ' + host, 'Centre', part.centre === true) +
           // TBS-1: this table opts in; the Formatting pane decides what opting in looks like.
@@ -4099,10 +4763,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           // a layout, does not want "Table 7:" underneath it.
           cb('data-rd-part-flag="noCaption" data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"', 'No caption', part.noCaption === true) +
           partControls(sec, part, i, n) + '</div>' +
-        refMenu(project, sec, part) +
+        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id, part.id) + rowsRepeatHtml(project, sec, part) +
         (part.noCaption === true
           ? '<p class="rd-state">No caption: this table is not numbered.</p>'
-          : '<input class="rd-cap" value="' + esc(part.caption || '') + '" data-rd-caption="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" placeholder="Table caption — left blank, the section’s heading is used" aria-label="Table caption">') +
+          // DS-1: one line of text and fields, like a heading.
+          : richBox(project, 'data-rd-caption-rich="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" aria-label="Table caption" aria-multiline="false"', part.caption || '',
+              'rd-cap rd-oneline', 'Table caption — left blank, the section’s heading is used', sec.id, part.id)) +
         '<div class="rd-tablewrap"><div class="rd-tablescale" style="width:' + px + 'px">' +
           '<table class="rd-table rd-table-fixed" style="width:' + tablePx + 'px">' + group +
           '<thead><tr>' + ths + '<th class="rd-rowdel' + (rowMm ? ' rd-rowdel-wide' : '') + '"' +
@@ -4318,9 +4984,40 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var included = view.resolved.filter(function (r) { return r.included !== false; });
       var at = included.map(function (r) { return r.id; }).indexOf(block.id);
       var mine = at === -1 ? null : p.anchors[included[at].anchor];
-      if (!mine) return '<p class="rd-state">' + (at === -1 ? 'This section is not in the document.' : 'This section is not on the page.') + '</p>';
+      var here = at === -1 ? null : included[at].anchor, note = '';
       var end = null;
-      for (var i = at + 1; i < included.length && !end; i++) end = p.anchors[included[i].anchor] || null;
+      if (at !== -1 && block.kind === 'custom' && block.repeat && block.repeat.each) {
+        /* DS-2: a repeating section is shown by its FIRST copy, up to the next heading at its
+         * level or above; the whole document shows every copy. */
+        var pre = App.md.anchor('sec-' + block.id) + '-';
+        var heads = (p.document.blocks || []).filter(function (x) { return x.kind === 'heading' && x.anchor; });
+        var copies = heads.filter(function (x) { return x.anchor.indexOf(pre) === 0; });
+        if (!copies.length) {
+          var bc0 = boundCatalogue(project);
+          return '<p class="rd-state">' + (bc0 && bc0.data ? 'No copies of this section: there are no entries to repeat it for.'
+            : 'Choose a ' + esc(noun()) + ' to see the copies of this section.') + '</p>';
+        }
+        var first = copies[0], k0 = heads.indexOf(first);
+        var level0 = copies.filter(function (x) { return x.level <= first.level; }).length;
+        mine = p.anchors[first.anchor]; here = first.anchor;
+        for (var h2 = k0 + 1; h2 < heads.length && !end; h2++) if (heads[h2].level <= first.level) end = p.anchors[heads[h2].anchor] || null;
+        var cc = catalogue();
+        note = '1 of ' + level0 + ' ' + esc((level0 === 1 ? collLabel(cc, block.repeat.each) : collLabel(cc, block.repeat.each, true)).toLowerCase()) + '. ';
+      } else {
+        if (!mine && at !== -1) {
+          // A section repeated with a group has only copies on the page: show its first.
+          var pre2 = App.md.anchor('sec-' + block.id) + '-';
+          var hs = (p.document.blocks || []).filter(function (x) { return x.kind === 'heading' && x.anchor; });
+          var fc = hs.filter(function (x) { return x.anchor.indexOf(pre2) === 0; })[0];
+          if (fc) {
+            mine = p.anchors[fc.anchor]; here = fc.anchor;
+            for (var h3 = hs.indexOf(fc) + 1; h3 < hs.length && !end; h3++) if (hs[h3].level <= fc.level) end = p.anchors[hs[h3].anchor] || null;
+          }
+        } else {
+          for (var i = at + 1; i < included.length && !end; i++) end = p.anchors[included[i].anchor] || null;
+        }
+      }
+      if (!mine) return '<p class="rd-state">' + (at === -1 ? 'This section is not in the document.' : 'This section is not on the page.') + '</p>';
       var m = p.style.page.margins, MMPT = 72 / 25.4;
       var bands = [];
       var lastPage = end ? end.page : p.pages.length - 1;
@@ -4338,11 +5035,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var on = (o[0] === 'whole') === whole;
         return '<button type="button" class="' + (on ? 'on' : '') + '" data-rd-prev-scope="' + o[0] + '" aria-pressed="' + on + '">' + o[1] + '</button>';
       }).join('') + '</span>';
-      return '<div class="rd-secprev-head">' + scope + '<span class="rd-state">' + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
+      return '<div class="rd-secprev-head">' + scope + '<span class="rd-state">' + note + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
         ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
         // The whole document, opened at this section; or just this section, cut from it.
         '<div class="rd-secprev rd-preview-pages">' + (whole
-          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: included[at].anchor, imageUrl: imageUrl })
+          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: here, imageUrl: imageUrl })
           : pagesHtml(bands, { scale: k, imageUrl: imageUrl })) + '</div>';
     }
 
@@ -4485,21 +5182,117 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         '<div class="rd-part-head"><span class="rd-tbs">' + toolbar('data-rd-block="' + esc(block.id) + '"') +
           '<button type="button" class="rd-tb" data-rd-ref-open="' + esc('intro:' + block.id) + '"' +
             ' title="Insert a cross-reference that survives renaming and reordering">\ud83d\udd17 Link</button>' +
+          fieldButton('intro:' + block.id) +
         '</span></div>' +
         (refOpen ? refMenuFor(project, block.id, 'data-rd-ref-block="' + esc(block.id) + '"') : '') +
+        fieldMenu(project, block.id, 'intro:' + block.id) +
         richBox(project, 'data-rd-intro="' + esc(block.id) + '"' +
-          ' aria-label="Introduction for ' + esc(block.label) + '"', block.intro, '',
-          'Optional. A blank line starts a new paragraph.') +
+          ' aria-label="Introduction for ' + esc(shownText(block.label)) + '"', block.intro, '',
+          'Optional. A blank line starts a new paragraph.', block.id) +
         hostileHint(block.intro || '') +
         '<span title="The introduction takes the section\'s first number, such as 5.1">' + cb('data-rd-intro-num="' + esc(block.id) + '"', 'Number it', block.introNumbered === true) + '</span>' +
         '</div>';
     }
 
+    /**
+     * DS-2/DS-3: the filter (one condition) and the sort of a repeat, as controls named
+     * `<prefix>wfield|wop|wval|sfield|sdir` carrying `key` (and `extra` attributes).
+     */
+    function filterSortHtml(c, each, r, prefix, key, extra) {
+      var fields = (c.collections[each] || { fields: [] }).fields;
+      var w = (r && r.where) || {}, so = (r && r.sort) || {};
+      var at = function (name) { return prefix + name + '="' + esc(key) + '"' + (extra || ''); };
+      var fieldOpts = function (cur, none) {
+        return '<option value="">' + esc(none) + '</option>' + fields.map(function (f) {
+          return '<option value="' + esc(f.id) + '"' + (f.id === cur ? ' selected' : '') + '>' + esc(f.label) + '</option>';
+        }).join('');
+      };
+      var noValue = w.op === 'empty' || w.op === 'set';
+      var lost = w.field && !fields.some(function (f) { return f.id === w.field; });
+      var collName = c.collections[each] ? c.collections[each].label : each;
+      return '<div class="rd-grid">' +
+        '<label class="rd-lab rd-lab-s">Only where<select ' + at('wfield') + ' aria-label="Filter field">' + fieldOpts(w.field, 'Every one') +
+          (lost ? '<option value="' + esc(w.field) + '" selected>' + esc(w.field) + ' (not a ' + esc(collName) + ' field)</option>' : '') + '</select></label>' +
+        (w.field
+          ? '<label class="rd-lab rd-lab-s">&nbsp;<select ' + at('wop') + ' aria-label="Filter test">' + DATA.OPS.map(function (o) {
+              return '<option value="' + o + '"' + (o === (w.op || 'is') ? ' selected' : '') + '>' + esc(DATA.OP_LABELS[o]) + '</option>';
+            }).join('') + '</select></label>' +
+            (noValue ? '' : '<label class="rd-lab rd-lab-s">&nbsp;<input ' + at('wval') + ' value="' + esc(w.value || '') + '" aria-label="Filter value"></label>')
+          : '') +
+        '<label class="rd-lab rd-lab-s">Sort by<select ' + at('sfield') + ' aria-label="Sort by">' + fieldOpts(so.field, 'Register order') + '</select></label>' +
+        (so.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select ' + at('sdir') + ' aria-label="Sort direction">' +
+          '<option value="asc"' + (so.dir === 'desc' ? '' : ' selected') + '>Ascending</option><option value="desc"' + (so.dir === 'desc' ? ' selected' : '') + '>Descending</option></select></label>' : '') +
+        '</div>' +
+        (lost ? '<p class="rpt-omit">The filter is on a field ' + esc(c.collections[each] ? (c.collections[each].plural || collName) : each) + ' do not have: nothing is filtered.</p>' : '');
+    }
+
+    /** DS-3: a table's Rows control: as written, or each row once per item of a list in reach. */
+    function rowsRepeatHtml(project, sec, part) {
+      var c = catalogue();
+      if (!c) return '';
+      var lists = reachIn(project, sec.id, part.id).lists;
+      var r = part.repeat || null, each = r ? r.each : '';
+      var extra = ' data-rd-sec="' + esc(sec.id) + '"';
+      var opts2 = '<option value=""' + (each ? '' : ' selected') + '>As written</option>' +
+        lists.map(function (k) { return '<option value="' + esc(k) + '"' + (k === each ? ' selected' : '') + '>' + esc(collLabel(c, k)) + '</option>'; }).join('') +
+        (each && lists.indexOf(each) === -1 ? '<option value="' + esc(each) + '" selected>' + esc(collLabel(c, each)) + ' (not available here)</option>' : '');
+      return '<div class="rd-rows-repeat"><label class="rd-lab rd-lab-s">Rows<select data-rd-rows-each="' + esc(part.id) + '"' + extra + ' aria-label="Rows">' + opts2 + '</select></label>' +
+        (each
+          ? '<span class="rd-state">\u21bb Each row below prints once per ' + esc(collLabel(c, each).toLowerCase()) + '.</span>' + filterSortHtml(c, each, r, 'data-rd-rows-', part.id, extra)
+          : '') + '</div>';
+    }
+
+    /**
+     * DS-2: the Repeat category — what this section repeats for (the lists reachable where it
+     * sits), the one filter, the sort, and what the choice means on the chosen subject.
+     */
+    function repeatPane(project, block) {
+      var c = catalogue();
+      var sec = customSection(project, block.id);
+      if (!c || !sec) return '';
+      var sc = scopeOf(project, block.id);
+      var lists = DATA.available(sc.outer, c).lists;
+      var r = sec.repeat || null, each = r ? r.each : '';
+      var here = !each || lists.indexOf(each) !== -1;
+      var id = esc(block.id);
+      var opts2 = '<option value=""' + (each ? '' : ' selected') + '>Don\'t repeat</option>' +
+        lists.map(function (k) { return '<option value="' + esc(k) + '"' + (k === each ? ' selected' : '') + '>' + esc(collLabel(c, k)) + '</option>'; }).join('') +
+        (here ? '' : '<option value="' + esc(each) + '" selected>' + esc(collLabel(c, each)) + ' (not available here)</option>');
+      var out = '<div class="rd-fieldset"><strong>Repeat this section</strong>' +
+        '<label class="rd-lab">For each<select data-rd-repeat-each="' + id + '" aria-label="Repeat for each">' + opts2 + '</select></label>';
+      if (!each) {
+        return out + '<p class="rd-state">Choose a register to print this section once for each of its entries, with the sections under it. ' +
+          'Fields in it then read that entry.</p></div>';
+      }
+      if (!here) {
+        return out + '<p class="rpt-omit">' + esc(collLabel(c, each, true)) + ' cannot be repeated here: there is no ' + esc(collLabel(c, each).toLowerCase()) +
+          ' list where this section sits. It prints once, and its ' + esc(collLabel(c, each).toLowerCase()) + ' fields print as [unknown field].</p></div>';
+      }
+      out += filterSortHtml(c, each, r, 'data-rd-repeat-', block.id, '');
+      // What it means: the sections that repeat with it, and how many copies the subject gives.
+      if (sc.group.length) out += '<p class="rd-state">Repeats with: ' + sc.group.map(function (g) { return esc(shownText(g.label)); }).join(', ') + '.</p>';
+      if (sc.outer.length > 1) {
+        out += '<p class="rd-state">Once for each ' + esc(collLabel(c, each).toLowerCase()) + ' of each ' + esc(collLabel(c, sc.outer[sc.outer.length - 1]).toLowerCase()) + '.</p>';
+      } else {
+        var bc = boundCatalogue(project);
+        if (bc && bc.data) {
+          var kids = DATA.childrenIn(DATA.rootScope(bc.data, bc.root), each, bc) || [];
+          var n = DATA.select(kids, r.where, r.sort).length;
+          var subj = (latest().filter(function (x) { return x.id === selectedSubjectId(project); })[0] || {}).label || '';
+          out += n
+            ? '<p class="rd-state">' + n + ' ' + esc((n === 1 ? collLabel(c, each) : collLabel(c, each, true)).toLowerCase()) + ' on ' + esc(subj) + '.</p>'
+            : '<p class="rpt-omit">No ' + esc(collLabel(c, each, true).toLowerCase()) + ' on ' + esc(subj) + (r.where ? ' pass the filter' : '') + ': nothing prints.</p>';
+        }
+      }
+      return out + '</div>';
+    }
+
     /** The categories of a section's settings, by kind. */
-    var SEC_CATEGORIES = { heading: 'Heading', placement: 'Placement', introduction: 'Introduction', table: 'Table', rows: 'Rows', content: 'Content' };
+    var SEC_CATEGORIES = { fill: 'Fill in', heading: 'Heading', repeat: 'Repeat', placement: 'Placement', introduction: 'Introduction', table: 'Table', rows: 'Rows', content: 'Content' };
     function categoriesFor(block) {
       var ids = block.kind === 'toc' ? ['heading', 'placement']
-        : block.kind === 'custom' ? ['heading', 'placement', 'content']
+        // DS-2: an own section can repeat per register entry, where the host has registers.
+        : block.kind === 'custom' ? (catalogue() ? ['heading', 'repeat', 'placement', 'content'] : ['heading', 'placement', 'content']).concat(holdsFill(block) ? ['fill'] : [])
         : ['heading', 'introduction', 'placement'].concat(
             ((App.docGen.sectionColumns(H(), block, opts()) || { all: [] }).all.length ? ['table'] : []),
             block.kind === 'meta' ? ['rows'] : []);
@@ -4528,16 +5321,67 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return out;
     }
 
+    /** The editors of a list of parts — a section's, or a Repeat part's own. */
+    function partsHtml(project, sec, parts) {
+      return parts.map(function (p, i) {
+        if (p.kind === 'para') return paraEditor(project, sec, p, i, parts.length);
+        if (p.kind === 'table') return tableEditor(project, sec, p, i, parts.length);
+        if (p.kind === 'rule') return simplePart(sec, p, i, parts.length, 'Horizontal line', 'A rule across the page.');
+        if (p.kind === 'space') return spaceEditor(sec, p, i, parts.length);
+        if (p.kind === 'image') return imageEditor(project, sec, p, i, parts.length);
+        if (p.kind === 'repeat') return repeatPartEditor(project, sec, p, i, parts.length);
+        return simplePart(sec, p, i, parts.length, 'Page break', 'Forces what follows onto a new page.');
+      }).join('');
+    }
+    /** The add buttons, into a section or (with `parentId`) into a Repeat part. */
+    function addPartButtons(sec, parentId) {
+      var at = ' data-rd-sec="' + esc(sec.id) + '"' + (parentId ? ' data-rd-parent="' + esc(parentId) + '"' : '');
+      return '<button type="button" data-rd-addpart="para"' + at + '>+ Paragraph</button>' +
+        '<button type="button" data-rd-addpart="table"' + at + '>+ Table</button>' +
+        '<button type="button" data-rd-addpart="image"' + at + '>+ Image</button>' +
+        '<button type="button" data-rd-addpart="rule"' + at + '>+ Line</button>' +
+        '<button type="button" data-rd-addpart="space"' + at + ' title="A measured gap down the page">+ Space</button>' +
+        '<button type="button" data-rd-addpart="pagebreak"' + at + '>+ Page break</button>' +
+        (catalogue() ? '<button type="button" data-rd-addpart="repeat"' + at + ' title="Parts printed once for each entry of a register list">+ Repeat</button>' : '');
+    }
+    /**
+     * DS-4: a Repeat part — the parts inside it printed once per entry of a list in reach,
+     * filtered and sorted, each reading that entry's fields.
+     */
+    function repeatPartEditor(project, sec, part, i, n) {
+      var c = catalogue();
+      var lists = c ? reachIn(project, sec.id, part.id).lists : [];
+      var r = part.repeat || {}, each = r.each || '';
+      var extra = ' data-rd-sec="' + esc(sec.id) + '"';
+      var opts2 = '<option value=""' + (each ? '' : ' selected') + '>Choose&hellip;</option>' +
+        lists.map(function (k) { return '<option value="' + esc(k) + '"' + (k === each ? ' selected' : '') + '>' + esc(collLabel(c, k)) + '</option>'; }).join('') +
+        (each && lists.indexOf(each) === -1 ? '<option value="' + esc(each) + '" selected>' + esc(collLabel(c, each)) + ' (not available here)</option>' : '');
+      var inner = partsHtml(project, sec, part.parts || []);
+      return '<div class="rd-part rd-repeatpart" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
+        '<div class="rd-part-head"><span class="rd-part-kind">\u21bb Repeat</span>' +
+          '<label class="rd-lab rd-lab-s rd-inline">For each<select data-rd-rpart-each="' + esc(part.id) + '"' + extra + ' aria-label="Repeat for each">' + opts2 + '</select></label>' +
+          partControls(sec, part, i, n) + '</div>' +
+        (c && each ? filterSortHtml(c, each, part.repeat, 'data-rd-rpart-', part.id, extra) : '<p class="rd-state">Choose what to repeat for; the parts below print once for each.</p>') +
+        '<div class="rd-parts rd-nested" data-rd-partdrop="' + esc(part.id) + '">' + (inner || '<p class="rd-state">Nothing inside yet. Drag a part here, or add one below.</p>') + '</div>' +
+        '<div class="rd-addbar">' + addPartButtons(sec, part.id) + '</div></div>';
+    }
+
     /** The fields of one category of a section. */
     function categoryFields(project, view, block, resolved, cat) {
       var sec = block.kind === 'custom' ? customSection(project, block.id) : null;
       if (cat === 'heading') {
+        // DS-1: an own section's heading is a one-line box, so a field can sit in it.
         return (sec
-          ? '<label class="rd-lab">Heading<input class="rd-title" value="' + esc(sec.title || '') + '" data-rd-live data-rd-sec-title="' + esc(sec.id) + '"' +
-              ' placeholder="None: the section is body text" aria-label="Section heading"></label>'
+          ? '<div class="rd-fieldset"><strong>Heading</strong>' +
+              (catalogue() ? '<div class="rd-part-head"><span class="rd-tbs">' + fieldButton('head:' + sec.id) + '</span></div>' : '') +
+              fieldMenu(project, sec.id, 'head:' + sec.id) +
+              richBox(project, 'data-rd-sec-heading-rich="' + esc(sec.id) + '" aria-label="Section heading" aria-multiline="false"', sec.title || '', 'rd-title rd-oneline',
+                'None: the section is body text', sec.id) + '</div>'
           : nameField(block, block.defaultTitle));
       }
       if (cat === 'placement') return centreToggle(project, block, resolved);
+      if (cat === 'repeat') return repeatPane(project, block);
+      if (cat === 'fill') return fillPane(project, block);
       if (cat === 'introduction') return introField(project, block);
       if (cat === 'rows') return metaPane(project);
       if (cat === 'table') {
@@ -4546,23 +5390,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           (cols && cols.all.length ? widthStrip(project, block.id, cols.all, block.widths) : '');
       }
       if (cat === 'content' && sec) {
-        var parts = sec.parts || [];
-        var body = parts.map(function (p, i) {
-          if (p.kind === 'para') return paraEditor(project, sec, p, i, parts.length);
-          if (p.kind === 'table') return tableEditor(project, sec, p, i, parts.length);
-          if (p.kind === 'rule') return simplePart(sec, p, i, parts.length, 'Horizontal line', 'A rule across the page.');
-          if (p.kind === 'space') return spaceEditor(sec, p, i, parts.length);
-          if (p.kind === 'image') return imageEditor(project, sec, p, i, parts.length);
-          return simplePart(sec, p, i, parts.length, 'Page break', 'Forces what follows onto a new page.');
-        }).join('');
-        return '<div class="rd-sec-edit"><div class="rd-parts">' + (body || '<p class="rd-state">Nothing in this section yet.</p>') + '</div>' +
-          '<div class="rd-addbar">' +
-            '<button type="button" data-rd-addpart="para" data-rd-sec="' + esc(sec.id) + '">+ Paragraph</button>' +
-            '<button type="button" data-rd-addpart="table" data-rd-sec="' + esc(sec.id) + '">+ Table</button>' +
-            '<button type="button" data-rd-addpart="image" data-rd-sec="' + esc(sec.id) + '">+ Image</button>' +
-            '<button type="button" data-rd-addpart="rule" data-rd-sec="' + esc(sec.id) + '">+ Line</button>' +
-            '<button type="button" data-rd-addpart="space" data-rd-sec="' + esc(sec.id) + '" title="A measured gap down the page">+ Space</button>' +
-            '<button type="button" data-rd-addpart="pagebreak" data-rd-sec="' + esc(sec.id) + '">+ Page break</button>' +
+        var body = partsHtml(project, sec, sec.parts || []);
+        return '<div class="rd-sec-edit"><div class="rd-parts">' + (body || '<p class="rd-state">Nothing in this section yet.</p>') +
+            (body ? '<div class="rd-dropend" data-rd-partdrop="" title="Drop here to move a part to the end of the section"></div>' : '') + '</div>' +
+          '<div class="rd-addbar">' + addPartButtons(sec, null) +
             '<span class="spacer"></span>' +
             '<button type="button" data-rd-save-template="' + esc(sec.id) + '" title="Save this section\'s shape for reuse in any project">Save as template&hellip;</button>' +
             '<button type="button" class="danger" data-rd-del-section="' + esc(sec.id) + '">Delete section</button>' +
@@ -4589,7 +5420,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           (c.id === cat.id ? ' aria-current="true"' : '') + '>' + esc(c.label) + '</button>';
       }).join('') + '</nav>';
       return '<div class="rd-secgrid">' + list +
-        '<div class="rd-sec-fields" data-rd-sec-fields><h5>' + esc(block.label) + ' \u2014 ' + esc(cat.label) + '</h5>' +
+        '<div class="rd-sec-fields" data-rd-sec-fields><h5>' + esc(shownText(block.label)) + ' \u2014 ' + esc(cat.label) + '</h5>' +
+          // DS-6: a whole-register table under a repeating section is not filtered to the copy.
+          (isRegister(block) && catalogue() && scopeOf(project, block.id).outer.length > 1
+            ? '<p class="rpt-omit">This register table is inside a repeating section: it prints, unchanged, with each copy.</p>' : '') +
           categoryFields(project, view, block, resolved, cat.id) + '</div>' +
         '<div class="rd-sec-prev" data-rd-sec-prev>' + sectionPreview(project, block) + '</div></div>';
     }
@@ -4810,6 +5644,42 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return '';
     }
 
+    /**
+     * The Styles tab's left column: every Style, the one being edited picked out and the
+     * one in use marked, with what can be done to the picked one under them.
+     *
+     * It stands where the Sections list stands on the Sections tab, at the same width
+     * (one grip, one remembered width), so switching between the two tabs leaves the
+     * categories, fields and pages where they were rather than jumping left.
+     */
+    function renderStyleList(project) {
+      var all = App.docFormat.list(project);
+      var active = App.docFormat.resolve(project);
+      var editId = (all.filter(function (x) { return x.id === _rd.fmtId; })[0] || active).id;
+      var editing = all.filter(function (x) { return x.id === editId; })[0] || active;
+      var rows = all.map(function (x) {
+        return '<li class="ord-step rd-srow' + (x.id === editId ? ' sel' : '') + '">' +
+          '<span class="ord-body">' +
+            '<button type="button" class="rd-open" data-rd-fmt-pick="' + esc(x.id) + '"' +
+              (x.id === editId ? ' aria-current="true"' : '') + ' title="Edit this Style">' + esc(x.name) + '</button>' +
+            ((x.id === active.id || x.builtin)
+              ? '<span class="rd-meta">' +
+                  (x.id === active.id ? '<span class="rd-kind rd-inuse">In use</span>' : '') +
+                  (x.builtin ? '<span class="rd-kind">Comes with the tool</span>' : '') + '</span>'
+              : '') +
+          '</span></li>';
+      }).join('');
+      var inUse = editing.id === active.id;
+      return '<div class="rpt-pane rpt-pane-main" style="flex-basis:' + listWidth() + 'px"><h4>Styles</h4>' +
+        '<div class="rd-addbar">' +
+          '<button type="button"' + (inUse ? ' disabled' : ' class="primary"') + ' data-rd-fmt-use' +
+            ' title="Lay this document out in ' + esc(editing.name) + '">' + (inUse ? 'In use' : 'Use this Style') + '</button>' +
+          '<button type="button" data-rd-fmt-new title="Make a copy of ' + esc(editing.name) + ' to change">Duplicate</button>' +
+          '<button type="button" class="danger" data-rd-fmt-del' + (editing.builtin ? ' disabled' : '') + '>Delete</button>' +
+        '</div>' +
+        '<div id="rd-style-host"><ol class="ord-list">' + rows + '</ol></div></div>';
+    }
+
     function paneStyles(project) {
       var all = App.docFormat.list(project);
       var active = App.docFormat.resolve(project);
@@ -4818,19 +5688,6 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var builtin = !!f.builtin;
       var section = _rd.styleSection || 'document';
 
-      var head = '<div class="rd-fmt-head">' +
-        '<label class="rd-lab">Style in use' +
-          '<select data-rd-fmt-active aria-label="Style in use">' +
-            all.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === active.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
-          '</select></label>' +
-        '<label class="rd-lab">Editing' +
-          '<select data-rd-fmt-edit aria-label="Style being edited">' +
-            all.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === f.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
-          '</select></label>' +
-        '<span class="spacer"></span>' +
-        '<button type="button" data-rd-fmt-new>Duplicate</button>' +
-        '<button type="button" class="danger" data-rd-fmt-del' + (builtin ? ' disabled' : '') + '>Delete</button>' +
-        '</div>';
       var locked = builtin
         ? '<div class="rd-locked">The <strong>Standard</strong> style comes with the tool and cannot be changed. <strong>Duplicate</strong> it and change the copy.</div>'
         : '';
@@ -4844,7 +5701,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           (s.id === 'document' ? '<hr class="rd-style-divider">' : '');
       }).join('') + '</nav>';
       var label = (STYLE_SECTIONS.filter(function (s) { return s.id === section; })[0] || {}).label || '';
-      var fields = '<div class="rd-style-fields"><h5>' + esc(label) + '</h5>' + held +
+      var fields = '<div class="rd-style-fields"><h5>' + esc(label) + '</h5>' + locked + held +
         '<fieldset class="rd-fmt-body"' + (builtin ? ' disabled' : '') + '>' + styleSectionFields(project, f, section) + '</fieldset></div>';
       // The pages are drawn in the Style being EDITED, so a change is seen before it is put in use.
       var laid = laidOut(project, f);
@@ -4853,7 +5710,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         (laid.error
           ? '<p class="rd-err">' + esc(laid.error) + '</p>'
           : '<div class="rd-preview-pages rd-style-pages">' + pagesHtml(laid.pages, { scale: zoomOf('styles'), imageUrl: imageUrl }) + '</div>') + '</div>';
-      return head + locked + '<div class="rd-styles">' + list + fields + pages + '</div>';
+      return '<div class="rd-styles">' + list + fields + pages + '</div>';
     }
 
     /**
@@ -4988,6 +5845,18 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * slot, in a column heading and in a paragraph all arrive in the same string in the
      * end, and nothing short of the end sees all three.
      */
+    /** DS-5: on Generate, the blanks still empty and the sections they are in. */
+    function fillsNote(project) {
+      var empty = fillsNow(project).items.filter(function (i) { return !i.value.trim(); });
+      if (!empty.length) return '';
+      var secs = [];
+      empty.forEach(function (i) { if (secs.indexOf(i.sectionId) === -1) secs.push(i.sectionId); });
+      var names = secs.map(function (id) { var s0 = customSection(project, id); return esc(shownText((s0 && s0.title) || id)); });
+      return '<div class="rd-fieldset"><strong title="Blanks written by hand for each entry, under each section\'s Fill in">Blanks</strong>' +
+        '<p class="rpt-omit"><strong>' + empty.length + '</strong> blank' + (empty.length === 1 ? '' : 's') + ' still to fill in, in ' + names.join(', ') + '.' +
+        ' They print as [To fill in: …] until they are.</p></div>';
+    }
+
     function paneGenerate(project, view) {
       var selId = selectedSubjectId(project);
       if (!selId) return '<p class="rd-state">No ' + esc(noun()) + ' selected.</p>';
@@ -5023,6 +5892,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
               ' still to fill in: ' + unfilled.map(function (t) { return '<code>/[' + esc(t) + ']</code>'; }).join(' ') + '</p>'
             : (tags.length ? '<p class="rpt-omit muted">Every placeholder has a value.</p>' : '')) +
         '</div>' +
+        fillsNote(project) +
         (replaced.length
           ? '<div class="rd-fieldset rd-replaced"><strong title="The PDF\'s standard fonts write these another way (≥ as >=, ✓ as Yes) or as ?. The HTML shows them as they are.">Characters the PDF cannot show</strong>' +
               '<p>' + replaced.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(' ') + '</p></div>'
@@ -5095,9 +5965,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           '<button type="button" class="modal-close" data-rd-close aria-label="Close">×</button></div>' +
         '<div class="modal-body"><div class="rpt-body rd-layout">' +
           // The section list belongs to the Sections tab; the other tabs have the width.
-          (_rd.pane === 'section'
-            ? renderSectionList(project, view) +
-              '<div class="rd-split" data-rd-split role="separator" aria-orientation="vertical" aria-label="Drag to widen or narrow the Sections list" title="Drag to resize"></div>'
+          // The Styles tab has its list in the same place, so the panes beside it do not move.
+          (_rd.pane === 'section' || _rd.pane === 'styles'
+            ? (_rd.pane === 'section' ? renderSectionList(project, view) : renderStyleList(project)) +
+              '<div class="rd-split" data-rd-split role="separator" aria-orientation="vertical" aria-label="Drag to widen or narrow the list" title="Drag to resize"></div>'
             : '') +
           '<div class="rd-right"><div class="rd-tabs">' + tabs + '</div>' +
             '<div class="rpt-pane rd-pane">' + paneBody + '</div></div>' +
@@ -5127,6 +5998,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     /** @returns {string} the workspace, or '' when closed. */
     function render(project) {
       if (!_rd.open || !project || !H()) return '';
+      _scopes = {};   // DS-1: worked out once per section per drawing (each costs an outline)
       return '<div class="modal-overlay overlay-full" id="rd-modal-host" data-rd-modal>' + inner(project) + '</div>';
     }
 
@@ -5200,7 +6072,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
     function quietly(fn) { if (_ctx && _ctx.quietEdit) _ctx.quietEdit(fn); else fn(); }
     /** Any project write invalidates the cached preview — it is a render of the project. */
-    function dirty() { _rd.preview = null; _rd.refs = null; }
+    function dirty() { _rd.preview = null; _rd.refs = null; _rd.cat = null; _rd.fills = null; _scopes = {}; }
 
     /** RPT-3: persist a reorder — move one block id by a step, or before another. */
     function moveSection(project, id, delta, beforeId) {
@@ -5304,12 +6176,21 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!el || !el.getAttribute) return '';
       if (el.hasAttribute('data-rd-text')) return '[data-rd-text="' + el.getAttribute('data-rd-text') + '"]';
       if (el.hasAttribute('data-rd-intro')) return '[data-rd-intro="' + el.getAttribute('data-rd-intro') + '"]';
+      if (el.hasAttribute('data-rd-sec-heading-rich')) return '[data-rd-sec-heading-rich="' + el.getAttribute('data-rd-sec-heading-rich') + '"]';
+      if (el.hasAttribute('data-rd-fill')) return '[data-rd-fill="' + el.getAttribute('data-rd-fill') + '"][data-rd-fill-key="' + el.getAttribute('data-rd-fill-key') + '"]';
+      if (el.hasAttribute('data-rd-caption-rich')) return '[data-rd-caption-rich="' + el.getAttribute('data-rd-caption-rich') + '"]';
       if (el.hasAttribute('data-rd-cell')) {
         return '[data-rd-cell="' + el.getAttribute('data-rd-cell') + '"]' +
           '[data-rd-row="' + el.getAttribute('data-rd-row') + '"]' +
           '[data-rd-col="' + el.getAttribute('data-rd-col') + '"]';
       }
       return '';
+    }
+
+    /** DS-1: a heading or a caption: one line of plain text and fields — no breaks, emphasis or links. */
+    function oneLine(t) {
+      return String(t == null ? '' : t).replace(/\{\{\/?(b|i|c|br)\}\}/g, '').replace(/\{\{\/ref\}\}/g, '')
+        .replace(/\{\{(?:ref|refn|reft):[^}]*\}\}/g, '').replace(/\s*\n\s*/g, ' ');
     }
 
     /** Where writing in this box is saved. One place, so every surface commits alike. */
@@ -5322,6 +6203,19 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (el.hasAttribute('data-rd-intro')) {
         var block = el.getAttribute('data-rd-intro');
         return function (next) { return App.docStore.setBlockIntro(block, next); };
+      }
+      if (el.hasAttribute('data-rd-caption-rich')) {
+        var cap = el.getAttribute('data-rd-caption-rich');
+        return function (next) { return App.docStore.updatePart(sec, cap, { caption: oneLine(next) }); };
+      }
+      if (el.hasAttribute('data-rd-fill')) {
+        var fid = el.getAttribute('data-rd-fill'), fkey = el.getAttribute('data-rd-fill-key');
+        return function (next) { return App.docStore.setFill(fid, fkey, next); };
+      }
+      if (el.hasAttribute('data-rd-sec-heading-rich')) {
+        // DS-1: a heading is one line of plain text and fields: no breaks, no emphasis.
+        var hid = el.getAttribute('data-rd-sec-heading-rich');
+        return function (next) { return App.docStore.updateSection(hid, { title: oneLine(next) }); };
       }
       if (el.hasAttribute('data-rd-cell')) {
         var tbl = el.getAttribute('data-rd-cell');
@@ -5401,9 +6295,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
 
     /** The document's reference resolver, for re-rendering a box after an edit. */
-    function boxHtml(tokens) {
+    function boxHtml(tokens, el) {
       var p = App.docHost.get().getState();
-      return RT.toHtml(tokens, { resolveRef: p && H() ? refResolver(p) : null });
+      _scopes = {};   // drawn outside a full drawing: never trust scopes from the last one
+      // DS-1: chips named in the box's own scope, as a full drawing names them.
+      var at = function (k) { return el && el.getAttribute ? el.getAttribute(k) : null; };
+      var secId = at('data-rd-sec') || at('data-rd-sec-heading-rich') || at('data-rd-intro');
+      var partId = at('data-rd-text') || at('data-rd-cell') || at('data-rd-caption-rich');
+      return RT.toHtml(tokens, { resolveRef: p && H() ? refResolver(p) : null, fieldLabel: p && H() ? fieldLabelIn(p, secId, partId) : null });
     }
 
     /** Remember where the caret is, in tokens, so a repaint cannot take it away. */
@@ -5454,7 +6353,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var t = RT.toggleFormat(text, s, e, tag);
         quietly(function () { logIssues(boxSaver(el)(t.text)); });
         dirty();
-        el.innerHTML = boxHtml(t.text);
+        el.innerHTML = boxHtml(t.text, el);
         _sel = { key: boxKey(el), start: t.start, end: t.end };
         RT.placeSelection(el, t.start, t.end, window);
         showFormats();
@@ -5466,7 +6365,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       dirty();
       // Re-rendered in place rather than by a repaint: a repaint would rebuild the whole
       // workspace and throw the caret away, which is the thing this is trying to keep.
-      el.innerHTML = boxHtml(res.text);
+      el.innerHTML = boxHtml(res.text, el);
       // The caret is remembered as well as placed, so a button pressed straight after —
       // Link, most often — acts where the last one left off rather than at the start.
       _sel = { key: boxKey(el), start: res.caret, end: res.caret };
@@ -5910,19 +6809,40 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         _dragId = null;
       });
       // ---- custom sections ------------------------------------------------
+      dom.on(ctx.root, 'click', '[data-rd-add-menu]', function () { _rd.addMenu = !_rd.addMenu; repaint(); });
       dom.on(ctx.root, 'click', '[data-rd-add-section]', function () {
         var res = logIssues(App.docStore.addSection(''));
-        if (res.id) { _rd.selected = res.id; _rd.pane = 'section'; }
+        if (res.id) { _rd.selected = res.id; _rd.pane = 'section'; _rd.secCat = 'heading'; }
+        _rd.addMenu = false;
         dirty(); repaint();
       });
-      dom.on(ctx.root, 'change', '[data-rd-use-template]', function (e, el) {
-        if (!el.value) return;
-        var res = logIssues(App.docStore.useSectionTemplate(el.value));
-        if (res.id) { _rd.selected = res.id; _rd.pane = 'section'; }
+      // DS-6: a section repeated per entry, its heading the entry's ID to start with.
+      dom.on(ctx.root, 'click', '[data-rd-add-repeat]', function (e, el) {
+        var each = el.getAttribute('data-rd-add-repeat');
+        var res = logIssues(App.docStore.addSection('{{f:' + each + '.id}}'));
+        if (res.id) {
+          logIssues(App.docStore.setSectionRepeat(res.id, { each: each }));
+          _rd.selected = res.id; _rd.pane = 'section'; _rd.secCat = 'repeat';
+        }
+        _rd.addMenu = false;
         dirty(); repaint();
       });
-      dom.on(ctx.root, 'change', '[data-rd-sec-title]', function (e, el) {
-        quietly(function () { logIssues(App.docStore.updateSection(el.getAttribute('data-rd-sec-title'), { title: el.value })); });
+      dom.on(ctx.root, 'click', '[data-rd-add-register]', function (e, el) {
+        var id = el.getAttribute('data-rd-add-register');
+        logIssues(App.docStore.addRegister(id));
+        _rd.selected = id; _rd.pane = 'section'; _rd.addMenu = false;
+        dirty(); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-del-register]', function (e, el) {
+        var id = el.getAttribute('data-rd-del-register');
+        logIssues(App.docStore.removeRegister(id));
+        if (_rd.selected === id) _rd.selected = null;
+        dirty(); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-use-template-id]', function (e, el) {
+        var res = logIssues(App.docStore.useSectionTemplate(el.getAttribute('data-rd-use-template-id')));
+        if (res.id) { _rd.selected = res.id; _rd.pane = 'section'; }
+        _rd.addMenu = false;
         dirty(); repaint();
       });
       dom.on(ctx.root, 'click', '[data-rd-del-section]', function (e, el) {
@@ -5942,7 +6862,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
       // ---- parts ------------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-addpart]', function (e, el) {
-        logIssues(App.docStore.addPart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-addpart')));
+        logIssues(App.docStore.addPart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-addpart'), null, el.getAttribute('data-rd-parent') || null));
         dirty(); repaint();
       });
       dom.on(ctx.root, 'click', '[data-rd-part-del]', function (e, el) {
@@ -5968,6 +6888,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
       // drag to reorder parts within the open section
       dom.on(ctx.root, 'dragstart', '[data-rd-partrow]', function (e, el) {
+        // A field dragged out of the Field menu is not the part being moved.
+        if (e.target && e.target.closest && e.target.closest('[data-rd-field-pick]')) return;
         _dragPart = el.getAttribute('data-rd-partrow');
         if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', _dragPart); } catch (err) {} }
         el.classList.add('dragging');
@@ -5980,7 +6902,30 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         el.classList.add('drop-target');
       });
       dom.on(ctx.root, 'dragleave', '[data-rd-partrow]', function (e, el) { el.classList.remove('drop-target'); });
+      // DS-4: dropped on a Repeat part's own list (or the section's end): to the end of it.
+      dom.on(ctx.root, 'dragover', '[data-rd-partdrop]', function (e, el) {
+        if (!_dragPart || dropInside(e, el)) return;
+        e.preventDefault();
+        el.classList.add('drop-target');
+      });
+      dom.on(ctx.root, 'dragleave', '[data-rd-partdrop]', function (e, el) { el.classList.remove('drop-target'); });
+      dom.on(ctx.root, 'drop', '[data-rd-partdrop]', function (e, el) {
+        el.classList.remove('drop-target');
+        if (!_dragPart || dropInside(e, el)) return;
+        e.preventDefault();
+        App.docStore.movePart(_rd.selected, _dragPart, 0, null, el.getAttribute('data-rd-partdrop'));
+        _dragPart = null;
+        dirty(); repaint();
+      });
+      /** Whether a drop landed on a part INSIDE this zone (that part's own handler places it). */
+      function dropInside(e, zone) {
+        var row = e.target && e.target.closest ? e.target.closest('[data-rd-partrow]') : null;
+        return !!row && zone.contains(row);
+      }
       dom.on(ctx.root, 'drop', '[data-rd-partrow]', function (e, el) {
+        // A drop on a Repeat part's own list belongs to that list, not before the Repeat part.
+        var zone = e.target && e.target.closest ? e.target.closest('[data-rd-partdrop]') : null;
+        if (zone && el.contains(zone) && !dropInside(e, zone)) return;
         e.preventDefault();
         el.classList.remove('drop-target');
         var target = el.getAttribute('data-rd-partrow');
@@ -6082,6 +7027,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     function wireText(h) {
       var dom = h.dom, ctx = h.ctx;
+      var P = h.P;
 
       // The toolbar follows the cursor: bold, italic and code light up where they apply.
       document.addEventListener('selectionchange', showFormats);
@@ -6147,6 +7093,153 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         // link the words that were highlighted when the button was pressed.
         repaint();
       });
+      // DS-1: the Field menu, opened and picked like the reference menu; or a field dragged in.
+      dom.on(ctx.root, 'mousedown', '[data-rd-field-open], [data-rd-field-pick], [data-rd-fill-new]', function (e, el) {
+        e.preventDefault();
+        var live = liveBox(el);
+        if (live) noteSelection(live);
+      });
+      dom.on(ctx.root, 'click', '[data-rd-field-open]', function (e, el) {
+        var id = el.getAttribute('data-rd-field-open');
+        _rd.fieldFor = _rd.fieldFor === id ? null : id;
+        _rd.refFor = null;
+        repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-field-pick]', function (e, el) {
+        wrapSelection(el, el.getAttribute('data-rd-field-pick'));
+        _rd.fieldFor = null;
+        repaint();
+      });
+      // DS-5: a new blank, named, put where the caret was.
+      dom.on(ctx.root, 'click', '[data-rd-fill-new]', function (e, el) {
+        var label = window.prompt('What is this blank for? (It is shown under Fill in, and as "[To fill in: …]" until written.)', 'Rationale');
+        if (label === null || !String(label).trim()) return;
+        wrapSelection(el, DATA.fillTag(App.docStore.nextFillId(), String(label).trim()));
+        _rd.fieldFor = null;
+        repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-fill-prune]', function (e, el) {
+        // Only this section's blanks: the button counted those, and nothing else is touched.
+        logIssues(App.docStore.pruneFills(fillsNow(P()).live, el.getAttribute('data-rd-fill-prune').split(' ').filter(Boolean)));
+        dirty(); repaint();
+      });
+      dom.on(ctx.root, 'dragstart', '[data-rd-field-pick]', function (e, el) {
+        _dragField = el.getAttribute('data-rd-field-pick');
+        if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'copy'; try { e.dataTransfer.setData('text/x-rd-token', _dragField); } catch (err) {} }
+        e.stopPropagation();
+      });
+      dom.on(ctx.root, 'dragend', '[data-rd-field-pick]', function () { _dragField = null; });
+      dom.on(ctx.root, 'dragover', '[data-rd-rich]', function (e) { if (_dragField) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } });
+      dom.on(ctx.root, 'drop', '[data-rd-rich]', function (e, el) {
+        if (!_dragField) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var tag = _dragField;
+        _dragField = null;
+        // The caret goes where the field was let go, then it is inserted there.
+        var r = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY)
+          : (document.caretPositionFromPoint ? (function (pos) { if (!pos) return null; var rr = document.createRange(); rr.setStart(pos.offsetNode, pos.offset); return rr; })(document.caretPositionFromPoint(e.clientX, e.clientY)) : null);
+        el.focus();
+        if (r && el.contains(r.startContainer)) { var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+        _sel = null;
+        insertToken(el, tag);
+        _rd.fieldFor = null;
+      });
+      // DS-1: a field chip clicked in its box opens its options under the box.
+      dom.on(ctx.root, 'click', '[data-rd-rich] .rd-field', function (e, chip) {
+        var box = chip.closest('[data-rd-rich]');
+        var group = box && box.closest('.rd-part, .rd-fieldset');
+        var opener = group && group.querySelector('[data-rd-field-open]');
+        if (!opener) return;
+        var at = RT.offsetOf(box, chip.parentNode, Array.prototype.indexOf.call(chip.parentNode.childNodes, chip));
+        quietly(function () { logIssues(boxSaver(box)(RT.fromNode(box))); });
+        _rd.chipEdit = { owner: opener.getAttribute('data-rd-field-open'), key: boxKey(box), at: at, tag: chip.getAttribute('data-rd-tok') };
+        _rd.fieldFor = null;
+        dirty(); repaint();
+      });
+      /** Rewrite the chip being edited with changed options, in its box, and save the box. */
+      function chipApply(change) {
+        var ce = _rd.chipEdit;
+        var box = ce && document.querySelector(ce.key);
+        var p = ce && DATA.parseFieldTag(ce.tag);
+        if (!box || !p) return;
+        var o = Object.assign({}, p.opts);
+        change(o);
+        var tag = DATA.fieldTag(p.coll, p.field, o);
+        var next = DATA.replaceMarker(RT.fromNode(box), ce.at, ce.tag, tag);
+        quietly(function () { logIssues(boxSaver(box)(next)); });
+        ce.tag = tag;
+        dirty(); repaint();
+      }
+      dom.on(ctx.root, 'change', '[data-rd-chip-sfield]', function (e, el) { chipApply(function (o) { o.sort = el.value ? { field: el.value, dir: (o.sort && o.sort.dir) || 'asc' } : undefined; }); });
+      dom.on(ctx.root, 'change', '[data-rd-chip-sdir]', function (e, el) { chipApply(function (o) { o.sort = Object.assign({}, o.sort, { dir: el.value }); }); });
+      dom.on(ctx.root, 'change', '[data-rd-chip-wfield]', function (e, el) {
+        chipApply(function (o) { o.where = el.value ? { field: el.value, op: (o.where && o.where.op) || 'is', value: (o.where && o.where.value) || '' } : undefined; });
+      });
+      dom.on(ctx.root, 'change', '[data-rd-chip-wop]', function (e, el) { chipApply(function (o) { o.where = Object.assign({}, o.where, { op: el.value }); }); });
+      dom.on(ctx.root, 'change', '[data-rd-chip-wval]', function (e, el) { chipApply(function (o) { o.where = Object.assign({}, o.where, { value: el.value }); }); });
+      dom.on(ctx.root, 'change', '[data-rd-chip-list]', function (e, el) { chipApply(function (o) { o.list = el.value; }); });
+      dom.on(ctx.root, 'change', '[data-rd-chip-empty]', function (e, el) { chipApply(function (o) { o.empty = el.value.trim() ? el.value : undefined; }); });
+      dom.on(ctx.root, 'click', '[data-rd-chip-done]', function () { _rd.chipEdit = null; repaint(); });
+      // A heading is one line: Enter finishes it.
+      dom.on(ctx.root, 'keydown', '[data-rd-sec-heading-rich], [data-rd-caption-rich]', function (e, el) {
+        if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+      });
+      // DS-2: the Repeat category.
+      function repeatOf(id) { var s0 = customSection(P(), id); return (s0 && s0.repeat) || null; }
+      function setRepeat(id, next) {
+        quietly(function () { logIssues(App.docStore.setSectionRepeat(id, next)); });
+        dirty(); repaint();
+      }
+      // DS-3: a table's Rows control, the same filter and sort as a section's repeat.
+      function partNow(secId, partId) { return App.docStore.findPart(P(), secId, partId); }
+      function setRows(el, change) {
+        var secId = el.getAttribute('data-rd-sec');
+        var names = ['each', 'wfield', 'wop', 'wval', 'sfield', 'sdir'];
+        var pre = names.some(function (n) { return el.hasAttribute('data-rd-rpart-' + n); }) ? 'data-rd-rpart-' : 'data-rd-rows-';
+        var name = names.filter(function (n) { return el.hasAttribute(pre + n); })[0];
+        var partId = el.getAttribute(pre + name);
+        var t = partNow(secId, partId);
+        if (!t) return;
+        var next = change(Object.assign({}, t.repeat || {}));
+        quietly(function () { logIssues(App.docStore.setPartRepeat(secId, partId, next)); });
+        dirty(); repaint();
+      }
+      // DS-4: a Repeat part's controls are the same, under `data-rd-rpart-`.
+      dom.on(ctx.root, 'change', '[data-rd-rows-each], [data-rd-rpart-each]', function (e, el) { setRows(el, function (cur) { return el.value ? (cur.each === el.value ? cur : { each: el.value }) : null; }); });
+      dom.on(ctx.root, 'change', '[data-rd-rows-wfield], [data-rd-rpart-wfield]', function (e, el) {
+        setRows(el, function (cur) { var w = cur.where || {}; cur.where = el.value ? { field: el.value, op: w.op || 'is', value: w.value || '' } : null; return cur; });
+      });
+      dom.on(ctx.root, 'change', '[data-rd-rows-wop], [data-rd-rpart-wop]', function (e, el) { setRows(el, function (cur) { cur.where = Object.assign({}, cur.where, { op: el.value }); return cur; }); });
+      dom.on(ctx.root, 'change', '[data-rd-rows-wval], [data-rd-rpart-wval]', function (e, el) { setRows(el, function (cur) { cur.where = Object.assign({}, cur.where, { value: el.value }); return cur; }); });
+      dom.on(ctx.root, 'change', '[data-rd-rows-sfield], [data-rd-rpart-sfield]', function (e, el) {
+        setRows(el, function (cur) { cur.sort = el.value ? { field: el.value, dir: (cur.sort && cur.sort.dir) || 'asc' } : null; return cur; });
+      });
+      dom.on(ctx.root, 'change', '[data-rd-rows-sdir], [data-rd-rpart-sdir]', function (e, el) { setRows(el, function (cur) { cur.sort = Object.assign({}, cur.sort, { dir: el.value }); return cur; }); });
+      dom.on(ctx.root, 'change', '[data-rd-repeat-each]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-each'), cur = repeatOf(id), v = el.value;
+        setRepeat(id, v ? (cur && cur.each === v ? cur : { each: v }) : null);
+      });
+      dom.on(ctx.root, 'change', '[data-rd-repeat-wfield]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-wfield'), cur = repeatOf(id) || {}, w = cur.where || {};
+        setRepeat(id, Object.assign({}, cur, { where: el.value ? { field: el.value, op: w.op || 'is', value: w.value || '' } : null }));
+      });
+      dom.on(ctx.root, 'change', '[data-rd-repeat-wop]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-wop'), cur = repeatOf(id) || {};
+        setRepeat(id, Object.assign({}, cur, { where: Object.assign({}, cur.where, { op: el.value }) }));
+      });
+      dom.on(ctx.root, 'change', '[data-rd-repeat-wval]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-wval'), cur = repeatOf(id) || {};
+        setRepeat(id, Object.assign({}, cur, { where: Object.assign({}, cur.where, { value: el.value }) }));
+      });
+      dom.on(ctx.root, 'change', '[data-rd-repeat-sfield]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-sfield'), cur = repeatOf(id) || {};
+        setRepeat(id, Object.assign({}, cur, { sort: el.value ? { field: el.value, dir: (cur.sort && cur.sort.dir) || 'asc' } : null }));
+      });
+      dom.on(ctx.root, 'change', '[data-rd-repeat-sdir]', function (e, el) {
+        var id = el.getAttribute('data-rd-repeat-sdir'), cur = repeatOf(id) || {};
+        setRepeat(id, Object.assign({}, cur, { sort: Object.assign({}, cur.sort, { dir: el.value }) }));
+      });
       dom.on(ctx.root, 'click', '[data-rd-ref-pick]', function (e, el) {
         // REF-1: the reading (`ref` / `refn` / `reft`) rides on the button, so the same
         // menu serves a paragraph, a table cell and a section introduction.
@@ -6207,7 +7300,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var next = cur.slice(0, at.start) + text + cur.slice(at.end);
         quietly(function () { logIssues(boxSaver(el)(next)); });
         dirty();
-        el.innerHTML = boxHtml(next);
+        el.innerHTML = boxHtml(next, el);
         RT.placeCaret(el, at.start + text.length, window);
       });
     }
@@ -6230,10 +7323,6 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // focusout handler above — and, like the others, without a repaint: the box
       // already shows what was typed, and a repaint mid-table would move focus out of
       // the row being filled in.
-      dom.on(ctx.root, 'change', '[data-rd-caption]', function (e, el) {
-        quietly(function () { App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-caption'), { caption: el.value }); });
-        dirty(); repaint();
-      });
       dom.on(ctx.root, 'change', '[data-rd-align]', function (e, el) {
         quietly(function () { App.docStore.setAlign(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-align'), Number(el.getAttribute('data-rd-col')), el.value); });
         dirty();
@@ -6389,15 +7478,22 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var P = h.P;
 
       // ---- formatting -------------------------------------------------------
-      dom.on(ctx.root, 'change', '[data-rd-fmt-active]', function (e, el) {
-        quietly(function () { logIssues(App.docStore.setFormatId(el.value)); });
-        _rd.fmtId = el.value; dirty(); repaint();
+      /** The Style being edited: the one picked in the list, or the one in use. */
+      function editingId(project) {
+        var all = App.docFormat.list(project);
+        return (all.filter(function (x) { return x.id === _rd.fmtId; })[0] || App.docFormat.resolve(project)).id;
+      }
+      dom.on(ctx.root, 'click', '[data-rd-fmt-pick]', function (e, el) { _rd.fmtId = el.getAttribute('data-rd-fmt-pick'); _rd.held = null; repaint(); });
+      dom.on(ctx.root, 'click', '[data-rd-fmt-use]', function () {
+        var project = P(); if (!project) return;
+        var id = editingId(project);
+        quietly(function () { logIssues(App.docStore.setFormatId(id)); });
+        _rd.fmtId = id; dirty(); repaint();
       });
-      dom.on(ctx.root, 'change', '[data-rd-fmt-edit]', function (e, el) { _rd.fmtId = el.value; _rd.held = null; repaint(); });
       dom.on(ctx.root, 'click', '[data-rd-style-section]', function (e, el) { _rd.styleSection = el.getAttribute('data-rd-style-section'); _rd.held = null; repaint(); });
       dom.on(ctx.root, 'click', '[data-rd-fmt-new]', function () {
         var project = P(); if (!project) return;
-        var from = App.docFormat.list(project).filter(function (x) { return x.id === (_rd.fmtId || App.docFormat.resolve(project).id); })[0];
+        var from = App.docFormat.list(project).filter(function (x) { return x.id === editingId(project); })[0];
         var name = window.prompt('Name for the new Style:', (from ? from.name : 'Standard') + ' copy');
         if (name == null || !name.trim()) return;
         var res = logIssues(App.docStore.addFormat(name, from));
@@ -6405,9 +7501,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         dirty(); repaint();
       });
       dom.on(ctx.root, 'click', '[data-rd-fmt-del]', function () {
-        if (!_rd.fmtId || _rd.fmtId === 'standard') return;
+        var project = P(); if (!project) return;
+        var id = editingId(project);
+        if (id === 'standard') return;
         if (!window.confirm('Delete this Style? Any document using it falls back to Standard.')) return;
-        logIssues(App.docStore.removeFormat(_rd.fmtId));
+        logIssues(App.docStore.removeFormat(id));
         _rd.fmtId = null; dirty(); repaint();
       });
       function fmtPatch(key, value) {
@@ -6546,7 +7644,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
       laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _stepped: stepped, _renameSection: renameSection, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
-      PANES: PANES, _rd: _rd, _imageAssets: _imageAssets, _keepScroll: keepScroll, _SCROLLERS: SCROLLERS, _strayFileDrop: strayFileDrop, _setParaLevel: function (s1, p1, v) { return App.docStore.setParaLevel(s1, p1, v); }
+      PANES: PANES, _rd: _rd, _boxHtml: boxHtml, _imageAssets: _imageAssets, _keepScroll: keepScroll, _SCROLLERS: SCROLLERS, _strayFileDrop: strayFileDrop, _setParaLevel: function (s1, p1, v) { return App.docStore.setParaLevel(s1, p1, v); }
     };
   })(App);
 

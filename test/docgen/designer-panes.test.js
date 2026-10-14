@@ -7,7 +7,8 @@ const RD = App.ui.views.reportDesign;
 
 /** A host with one subject and one section, and a design holding one editable Style. */
 function host(design = {}) {
-  const state = { report: { formats: [{ ...normaliseStyle({ id: 'mine', name: 'Mine' }).style }], formatId: 'mine', ...design } };
+  // The host's two register tables are in the design (they are opt-in from schema 8).
+  const state = { report: { formats: [{ ...normaliseStyle({ id: 'mine', name: 'Mine' }).style }], formatId: 'mine', registers: ['things', 'others'], ...design } };
   return {
     getState: () => state,
     commit: (m) => m(state),
@@ -48,8 +49,40 @@ test('the Styles pane lists its sections and the live pages beside them', () => 
     assert.match(html, new RegExp(`data-rd-style-section="${s}"`), s);
   }
   assert.match(html, /data-rd-style-preview[\s\S]*class="dp-page"/);
-  assert.match(html, /data-rd-fmt-active/);
+  assert.match(html, /data-rd-fmt-use/);
   assert.match(html, /data-rd-fmt-new/);
+  assert.doesNotMatch(html, /data-rd-fmt-active|data-rd-fmt-edit/, 'the Style drop-downs gave way to the list');
+});
+
+test('the Styles tab has a Styles list where the Sections list stands, at the same width', () => {
+  const h = host();
+  App.docHost.set(h); RD.open(); RD._rd.listWidth = 333;
+  RD._rd.pane = 'styles';
+  const html = RD.render(h.getState());
+  RD._rd.pane = 'section';
+  const sections = RD.render(h.getState());
+  RD.close(); RD._rd.listWidth = null;
+  assert.match(html, /class="rpt-pane rpt-pane-main" style="flex-basis:333px"><h4>Styles<\/h4>/);
+  assert.match(sections, /class="rpt-pane rpt-pane-main" style="flex-basis:333px"><h4>Sections<\/h4>/);
+  assert.match(html, /id="rd-style-host"[\s\S]*data-rd-split/);
+  // The Style in use is picked for editing to begin with, and marked; Standard is marked as built in.
+  assert.match(html, /<li class="ord-step rd-srow sel"><span class="ord-body"><button type="button" class="rd-open" data-rd-fmt-pick="mine" aria-current="true"[^>]*>Mine<\/button><span class="rd-meta"><span class="rd-kind rd-inuse">In use</);
+  assert.match(html, /data-rd-fmt-pick="standard"[^>]*>Standard<\/button><span class="rd-meta"><span class="rd-kind">Comes with the tool</);
+  // The one in use cannot be put in use again.
+  assert.match(html, /<button type="button" disabled data-rd-fmt-use/);
+  assert.match(html, /class="danger" data-rd-fmt-del>/);
+});
+
+test('picking Standard in the Styles list edits it: it can be put in use, not deleted', () => {
+  const h = host();
+  App.docHost.set(h); RD.open(); RD._rd.pane = 'styles'; RD._rd.fmtId = 'standard';
+  const html = RD.render(h.getState());
+  RD.close(); RD._rd.pane = 'section'; RD._rd.fmtId = null;
+  assert.match(html, /class="ord-step rd-srow sel"><span class="ord-body"><button type="button" class="rd-open" data-rd-fmt-pick="standard" aria-current="true"/);
+  assert.match(html, /<button type="button" class="primary" data-rd-fmt-use[^>]*>Use this Style</);
+  assert.match(html, /data-rd-fmt-del disabled/);
+  // The locked notice sits with the fields, so the grid starts level with the Sections one.
+  assert.match(html, /<div class="rd-style-fields"><h5>[^<]*<\/h5><div class="rd-locked">/);
 });
 
 test('every field on every Styles section names a real path in the Style', () => {
@@ -238,7 +271,7 @@ test('each category holds its existing controls', () => {
   const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
   const at = (id, cat) => sectionAt(h, id, cat).slice(sectionAt(h, id, cat).indexOf('data-rd-sec-fields'));
   assert.match(at('things', 'heading'), /data-rd-sec-heading="things"/);
-  assert.match(at('mine', 'heading'), /data-rd-sec-title="mine"/);
+  assert.match(at('mine', 'heading'), /data-rd-sec-heading-rich="mine"/);
   assert.match(at('things', 'placement'), /data-rd-centre-part="heading" data-rd-block="things"[\s\S]*data-rd-pagebreak="things"[\s\S]*data-rd-notoc="things"[\s\S]*data-rd-space-block="things"/);
   assert.match(at('things', 'introduction'), /data-rd-intro="things"[\s\S]*data-rd-intro-num="things"/);
   assert.match(at('things', 'table'), /data-rd-tbl-field="title"[\s\S]*data-rd-tbl-col=/);
@@ -325,7 +358,7 @@ test('the Sections preview follows typing: a debounced input saves the box and r
 test('the boxes that drive the live preview are marked', () => {
   const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [{ id: 'p1', kind: 'para', text: 'x' }] }] });
   assert.match(sectionAt(h, 'things', 'heading'), /data-rd-sec-heading="things"[^>]*data-rd-live|data-rd-live[^>]*data-rd-sec-heading="things"/);
-  assert.match(sectionAt(h, 'mine', 'heading'), /data-rd-live[^>]*data-rd-sec-title|data-rd-sec-title[^>]*data-rd-live/);
+  assert.match(sectionAt(h, 'mine', 'heading'), /data-rd-live[^>]*data-rd-sec-heading-rich|data-rd-sec-heading-rich[^>]*data-rd-live/);
   assert.match(sectionAt(h, 'things', 'introduction'), /data-rd-intro="things"[^>]*data-rd-live|data-rd-live[^>]*data-rd-intro="things"/);
   assert.match(sectionAt(h, 'things', 'table'), /data-rd-tbl-field="title"[^>]*data-rd-live|data-rd-live[^>]*data-rd-tbl-field="title"/);
   assert.match(sectionAt(h, 'mine', 'content'), /data-rd-text="p1"[^>]*data-rd-live|data-rd-live[^>]*data-rd-text="p1"/);
@@ -522,11 +555,12 @@ test('the palette is the same everywhere: preset rows of greys, colours and thei
   for (const row of RD.PALETTE) for (const [hex, name] of row) { assert.match(hex, /^#[0-9a-f]{6}$/); assert.ok(name); }
 });
 
-test('the section list is shown on the Sections tab only', () => {
+test('the section list is shown on the Sections tab only; the Styles tab has its own list there', () => {
   assert.match(paneOf(host(), 'section'), /id="rd-order-host"[\s\S]*data-rd-split/);
-  for (const pane of ['styles', 'templates', 'preview', 'generate']) {
+  assert.doesNotMatch(paneOf(host(), 'styles'), /id="rd-order-host"/);
+  for (const pane of ['templates', 'preview', 'generate']) {
     const html = paneOf(host(), pane);
-    assert.doesNotMatch(html, /id="rd-order-host"|data-rd-split/, pane);
+    assert.doesNotMatch(html, /id="rd-order-host"|id="rd-style-host"|data-rd-split/, pane);
   }
 });
 

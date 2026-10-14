@@ -41,8 +41,8 @@ test('a snapshot holds the platform, and each of its hazards with everything a r
     { reportId: 'HAZ-001', title: 'Fire', causalFactors: ['Hot works'], consequences: ['Burns'], initial: { consequence: 1, likelihood: 'C' }, residual: { consequence: 2, likelihood: 'C' } },
   );
   assert.deepEqual(r.controls, [
-    { number: 'C-001', title: 'Sprinklers', description: '', implementedBy: '', kind: 'preventative', tier: '', state: 'implemented', reason: '', recommendation: '', justification: '' },
-    { number: 'C-002', title: 'Fire drills', description: '', implementedBy: '', kind: 'mitigating', tier: '', state: 'rejected', reason: 'No crew', recommendation: '', justification: '' },
+    { id: 'c1', number: 'C-001', title: 'Sprinklers', description: '', implementedBy: '', kind: 'preventative', tier: '', state: 'implemented', reason: '', recommendation: '', justification: '' },
+    { id: 'c2', number: 'C-002', title: 'Fire drills', description: '', implementedBy: '', kind: 'mitigating', tier: '', state: 'rejected', reason: 'No crew', recommendation: '', justification: '' },
   ]);
 });
 
@@ -95,9 +95,11 @@ test('a snapshot lists the references supporting the platform, each once, with w
   d = assignHazardNumbers(d);
   const s = buildSnapshot(d, 'p1', opts);
   assert.deepEqual(s.references, [
-    { number: 'REF-001', title: 'Safety case', docNumber: 'SC-1', revision: 'B', supports: 'Platform, HAZ-001, HAZ-001 causal factor' },
-    { number: 'REF-002', title: 'Sprinkler spec', docNumber: '', revision: '', supports: 'Sprinklers' },
+    { id: 'r1', number: 'REF-001', title: 'Safety case', docNumber: 'SC-1', revision: 'B', supports: 'Platform, HAZ-001, HAZ-001 causal factor' },
+    { id: 'r2', number: 'REF-002', title: 'Sprinkler spec', docNumber: '', revision: '', supports: 'Sprinklers' },
   ]);
+  // Each hazard names the references supporting it or its parts (a control on it counts).
+  assert.deepEqual(s.rows[0].references.sort(), ['r1', 'r2']);
   assert.deepEqual(buildSnapshot(assessed(), 'p1', opts).references, []);
 });
 
@@ -135,7 +137,8 @@ test('a snapshot carries the hazard\'s lifecycle phases and its safety reports o
   d = assignHazardNumbers(createSafetyReport(d, act, { hazardId: 'h1', platformId: 'p2', summary: 'Elsewhere' }));
   const row = buildSnapshot(d, 'p1', opts).rows[0];
   assert.deepEqual(row.phases, ['Operation']);
-  assert.deepEqual(row.safetyReports, [{ number: 'HAZ-001-A-1', date: '2026-03-04', type: 'Near miss', summary: 'Rotor <strike>', description: '', location: 'Hangar', parties: 'Crew' }]);
+  assert.equal(typeof row.safetyReports[0].id, 'string');
+  assert.deepEqual(row.safetyReports.map(({ id: _id, ...x }) => x), [{ number: 'HAZ-001-A-1', date: '2026-03-04', type: 'Near miss', summary: 'Rotor <strike>', description: '', location: 'Hangar', parties: 'Crew' }]);
 });
 
 test('a snapshot carries capability like the other receptors', () => {

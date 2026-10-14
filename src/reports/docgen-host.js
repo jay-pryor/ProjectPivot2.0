@@ -1,6 +1,8 @@
 import { App } from '../../DocGen/doc-designer.js';
 import { CLASSIFICATIONS } from './classifications.js';
 import { buildSnapshot } from './snapshot.js';
+import { catalogueFor, STATUS_WORD, byItem, byControl, hazardsOf, perHazard } from './catalogue.js';
+import { STARTERS } from './starters.js';
 import { live } from '../core/data.js';
 import { formatRating } from '../core/matrix.js';
 import { RECEPTORS, RECEPTOR_WORD, stageKey } from '../core/receptors.js';
@@ -81,37 +83,6 @@ export function renumbered(s, numbering) {
 }
 
 /**
- * Rows that are one thing on several hazards (a control, a safety report), gathered into one
- * row per thing: its own fields from the first, and every hazard's entry kept in `entries`.
- * @param {any[]} list @param {(x: any) => string} keyOf
- */
-function byItem(list, keyOf) {
-  /** @type {Map<string, any>} */
-  const out = new Map();
-  for (const x of list) {
-    const k = keyOf(x);
-    if (!out.has(k)) out.set(k, { ...x, key: k, entries: [] });
-    out.get(k).entries.push(x);
-  }
-  return [...out.values()];
-}
-/** @param {any[]} list */
-const byControl = (list) => byItem(list, (c) => c.number ?? c.title).sort((a, b) => String(a.key).localeCompare(String(b.key), undefined, { numeric: true }));
-/** The hazards a gathered row is on, as a list that wraps in its column. @param {any} r */
-const hazardsOf = (r) => [...new Set(r.entries.map((/** @type {any} */ e) => e.reportId))].join(', ');
-/**
- * A value recorded per hazard: once when every hazard has the same, else one line per hazard
- * that has one.
- * @param {any} r @param {(entry: any) => any} get
- */
-function perHazard(r, get) {
-  const vals = r.entries.map((/** @type {any} */ e) => ({ h: e.reportId, v: String(get(e) ?? '') }));
-  if (new Set(vals.map((/** @type {any} */ x) => x.v)).size <= 1) return vals[0]?.v ?? '';
-  // A hazard with nothing recorded is left out of the list.
-  return vals.filter((/** @type {any} */ x) => x.v).map((/** @type {any} */ x) => `${x.h}: ${x.v}`).join('\n');
-}
-
-/**
  * The report's tables, declared for DocGen. Unbound (no snapshot) they have no rows, which is
  * all the designer needs to draw a section it is not generating.
  * @param {Snapshot | null} s
@@ -119,7 +90,6 @@ function perHazard(r, get) {
 function sectionsFor(s) {
   /** @param {(s: Snapshot) => any[]} f */
   const rows = (f) => () => (s ? f(s) : []);
-  const STATUS_WORD = { recommended: 'Recommended', planned: 'Planned', implemented: 'Implemented', rejected: 'Rejected', confirmed: 'Implemented', excluded: 'Rejected', awaiting: 'Recommended' };
   const hazardKey = { id: '_key', label: 'Hazard', w: 3, get: (/** @type {any} */ r) => r.reportId };
   return [
     {
@@ -246,7 +216,11 @@ export function imagesInUse(data) {
   const used = new Set();
   /** @param {any[] | undefined} parts */
   const visit = (parts) => {
-    for (const p of parts ?? []) if (p?.kind === 'image') for (const im of p.images ?? []) if (im && im.source !== 'standard' && im.file) used.add(im.file);
+    for (const p of parts ?? []) {
+      if (p?.kind === 'image') for (const im of p.images ?? []) if (im && im.source !== 'standard' && im.file) used.add(im.file);
+      // A Repeat part's own parts, however deep.
+      if (p?.kind === 'repeat') visit(p.parts);
+    }
   };
   const d = data.reportDesign ?? {};
   for (const s of d.sections ?? []) visit(s.parts);
@@ -299,6 +273,9 @@ export function createDocHost(ctx) {
     /** @param {{ subjectId?: string, numbering?: any } | null} run */
     // `run.numbering` is the Style's Document settings: numbered from 1 for the document when asked.
     sections: (run) => sectionsFor(run && run.subjectId ? renumbered(snapshotFor(run.subjectId), run.numbering) : null),
+    /** @param {{ subjectId?: string, numbering?: any } | null} run */
+    // The same snapshot as the tables, by field: what the designer's chips and repeats read.
+    catalogue: (run) => catalogueFor(run && run.subjectId ? renumbered(snapshotFor(run.subjectId), run.numbering) : null),
     // Report images, kept in the data folder: files/report-images/ and files/standard-images/.
     images: {
       /** @param {'report'|'standard'} source @param {File | { name: string, size: number, arrayBuffer: () => Promise<ArrayBuffer> }} file */
@@ -358,7 +335,8 @@ export function createDocHost(ctx) {
    */
   const newDesign = (from) => {
     const shared = structuredClone(ctx.getData().reportDesign ?? {});
-    const t = from ? (shared.reportTemplates ?? []).find((/** @type {any} */ x) => x.id === from) : null;
+    // A starter PIVOT ships, or one of the user's report templates.
+    const t = from ? (STARTERS[/** @type {keyof typeof STARTERS} */ (from)] ? structuredClone(STARTERS[/** @type {keyof typeof STARTERS} */ (from)]) : (shared.reportTemplates ?? []).find((/** @type {any} */ x) => x.id === from)) : null;
     const applied = t ? App.docStore.applyReportTemplate(shared, t, true) : shared;
     return { design: t ? arrangementOf(applied) : {}, library: libraryOf(applied) };
   };

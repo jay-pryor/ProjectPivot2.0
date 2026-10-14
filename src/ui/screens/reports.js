@@ -5,6 +5,7 @@ import { all } from '../../core/data.js';
 import { hasUnsavedRecords } from '../../storage/mirror.js';
 import { profileName, when } from '../names.js';
 import { stageOf } from '../../core/ops/reports.js';
+import { STARTERS } from '../../reports/starters.js';
 
 /** @param {any} state @param {import('../../core/data.js').Data} data */
 export function reportsView(state, data) {
@@ -14,7 +15,7 @@ export function reportsView(state, data) {
   // A new report: its name and what it starts from, then straight into the designer.
   const start = html`<section class="panel report-new" aria-labelledby="report-new-h"><h2 id="report-new-h">New report</h2><form data-action="startReport" class="report-start">
       <label class="report-start-name">Report name <input name="title" required placeholder="e.g. Harbour Patrol Boat safety case" aria-label="Report name"></label>
-      <label>Start from <select name="from" aria-label="Start from"><option value="">Default Report Template</option>${templates.map((t) => html`<option value="${t.id}">${t.name}</option>`)}</select></label>
+      <label>Start from <select name="from" aria-label="Start from"><option value="">Default Report Template</option>${Object.values(STARTERS).map((t) => html`<option value="${t.id}">${t.name}</option>`)}${templates.map((t) => html`<option value="${t.id}">${t.name}</option>`)}</select></label>
       <button type="submit" class="primary">Open in Report Designer</button></form></section>`;
   return html`<div class="head"><h1>Reports</h1></div>
     ${start}

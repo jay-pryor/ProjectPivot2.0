@@ -13,15 +13,16 @@ import { scheduleOf } from '../core/schedule.js';
  * @typedef {{ platformId: string, platformName: string, ownerName: string, producedAt: string, producedBy: string,
  *   title: string, classification: string, rows: SnapshotRow[],
  *   review: { state: string, due: string | null, months: number | null, lastReviewed: string | null },
- *   references: { number: string, title: string, docNumber: string, revision: string, supports: string }[] }} Snapshot
+ *   references: { id: string, number: string, title: string, docNumber: string, revision: string, supports: string }[] }} Snapshot
  * @typedef {{ hazardId: string, number: number | null, reportId: string, title: string, description: string,
- *   causalFactors: string[], consequences: string[], controls: { number: string, title: string, description: string, implementedBy: string, kind: string, tier: string, state: string, reason: string, recommendation: string, justification: string }[],
+ *   causalFactors: string[], consequences: string[], controls: { id: string, number: string, title: string, description: string, implementedBy: string, kind: string, tier: string, state: string, reason: string, recommendation: string, justification: string }[],
  *   phases: string[],
- *   safetyReports: { number: string, date: string | null, type: string, summary: string, description: string, location: string, parties: string }[],
+ *   safetyReports: { id: string, number: string, date: string | null, type: string, summary: string, description: string, location: string, parties: string }[],
  *   initial: any, residual: any,
  *   ratings: Record<string, any>,
  *   assessments: { stage: string, receptor: string, likelihood: string | null, likelihoodWhy: string, consequence: number | null, consequenceWhy: string, level: string }[],
- *   sfarp: { justification: string, conclusion: string, conditions: string } }} SnapshotRow
+ *   sfarp: { justification: string, conclusion: string, conditions: string },
+ *   references: string[] }} SnapshotRow
  */
 
 /**
@@ -45,13 +46,13 @@ export function buildSnapshot(data, platformId, o) {
       causalFactors: causalFactorsOn(data, r.hazard.id, platformId).map((x) => x.text),
       consequences: d.consequences.map((x) => x.text),
       controls: r.controls.map((c) => ({
-        number: controlLabel(c.control), title: c.control.title, description: c.control.description ?? '', implementedBy: implementedByText(implementedByOf(data, c.control.id, platformId)),
+        id: c.control.id, number: controlLabel(c.control), title: c.control.title, description: c.control.description ?? '', implementedBy: implementedByText(implementedByOf(data, c.control.id, platformId)),
         kind: c.kind, tier: c.control.tier ?? '', state: c.state, reason: c.state === 'rejected' ? c.ruling?.reason ?? '' : '',
         recommendation: c.link?.recommendation ?? '', justification: c.link?.justification ?? '',
       })),
       phases: phasesOf(data, r.hazard.id).map((x) => x.phase.name),
       safetyReports: safetyReportsOn(data, r.hazard.id, platformId).map((s) => ({
-        number: safetyReportId(data, s).id, date: s.date, type: s.type, summary: s.summary, description: s.description, location: s.location, parties: s.parties,
+        id: s.id, number: safetyReportId(data, s).id, date: s.date, type: s.type, summary: s.summary, description: s.description, location: s.location, parties: s.parties,
       })),
       initial: r.rating.initial,
       residual: r.rating.residual,
@@ -65,14 +66,19 @@ export function buildSnapshot(data, platformId, o) {
         };
       })),
       sfarp: sfarpOf(data, r.hazard.id, platformId),
+      /** @type {string[]} the references supporting this hazard or its parts, filled in below */
+      references: [],
     };
   });
   /** @type {Map<string, { ref: any, supports: string[] }>} */
   const found = new Map();
-  /** @param {string} kind @param {string} id @param {string} label */
-  const add = (kind, id, label) => {
+  /** @type {Map<string, Set<string>>} hazard id → the references supporting it or its parts */
+  const byHazard = new Map();
+  /** @param {string} kind @param {string} id @param {string} label @param {string} [hazardId] */
+  const add = (kind, id, label, hazardId) => {
     for (const { reference } of referencesFor(data, kind, id)) {
       if (reference.status !== 'live') continue;
+      if (hazardId) { if (!byHazard.has(hazardId)) byHazard.set(hazardId, new Set()); byHazard.get(hazardId)?.add(reference.id); }
       const e = found.get(reference.id) ?? { ref: reference, supports: [] };
       if (!e.supports.includes(label)) e.supports.push(label);
       found.set(reference.id, e);
@@ -80,19 +86,21 @@ export function buildSnapshot(data, platformId, o) {
   };
   add('platform', platformId, 'Platform');
   for (const r of platformHazards(data, platformId)) {
-    add('hazard', r.hazard.id, r.reportId);
+    const h = r.hazard.id;
+    add('hazard', h, r.reportId, h);
     const d = /** @type {NonNullable<ReturnType<typeof hazardDetail>>} */ (hazardDetail(data, r.hazard.id));
-    for (const cf of causalFactorsOn(data, r.hazard.id, platformId)) add('causalFactor', cf.id, `${r.reportId} causal factor`);
-    for (const cq of d.consequences) add('consequence', cq.id, `${r.reportId} consequence`);
-    for (const { link } of phasesOf(data, r.hazard.id)) add('hazardPhase', link.id, `${r.reportId} lifecycle phase`);
+    for (const cf of causalFactorsOn(data, r.hazard.id, platformId)) add('causalFactor', cf.id, `${r.reportId} causal factor`, h);
+    for (const cq of d.consequences) add('consequence', cq.id, `${r.reportId} consequence`, h);
+    for (const { link } of phasesOf(data, r.hazard.id)) add('hazardPhase', link.id, `${r.reportId} lifecycle phase`, h);
     for (const [kind, word] of [['failureMode', 'element failure mode'], ['systemElement', 'system/element'], ['affectedGroup', 'affected group']]) {
-      for (const x of platformListOn(data, /** @type {'failureMode'} */ (kind), r.hazard.id, platformId)) add(kind, x.id, `${r.reportId} ${word}`);
+      for (const x of platformListOn(data, /** @type {'failureMode'} */ (kind), r.hazard.id, platformId)) add(kind, x.id, `${r.reportId} ${word}`, h);
     }
-    for (const c of r.controls) add('control', c.control.id, c.control.title);
+    for (const c of r.controls) add('control', c.control.id, c.control.title, h);
   }
   const references = [...found.values()]
-    .map(({ ref, supports }) => ({ number: referenceLabel(ref), title: ref.title, docNumber: ref.docNumber ?? '', revision: ref.revision ?? '', supports: supports.join(', ') }))
+    .map(({ ref, supports }) => ({ id: ref.id, number: referenceLabel(ref), title: ref.title, docNumber: ref.docNumber ?? '', revision: ref.revision ?? '', supports: supports.join(', ') }))
     .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }) || a.title.localeCompare(b.title));
+  for (const row of rows) row.references = [...(byHazard.get(row.hazardId) ?? [])];
   const s = scheduleOf(data, platformId, aestDate(o.at));
   return structuredClone({
     platformId, platformName: platform.name, ownerName: o.profileName(platform.ownerId),
