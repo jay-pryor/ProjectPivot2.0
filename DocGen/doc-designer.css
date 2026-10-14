@@ -398,3 +398,7 @@
   .docgen .rd-repeatpart { border-left: 3px solid var(--c-accent);}
   .docgen .rd-repeatpart .rd-inline { display: inline-flex; gap: 6px; align-items: center; margin-left: 8px;}
   .docgen .rd-parts.rd-nested { margin: 6px 0 0 6px; padding-left: 8px; border-left: 1px dashed var(--c-border);}
+  /* DS-5: blanks written by hand. */
+  .docgen .rd-tofill { background: var(--c-warn-bg);}
+  .docgen .rd-fillnew { margin-top: 2px; border-style: dashed;}
+  .docgen .rd-fillitem > .rd-state { margin-left: 6px;}
