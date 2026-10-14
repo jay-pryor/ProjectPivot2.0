@@ -219,6 +219,15 @@ export function instanceKey(scope) {
 // A field or fill token, wherever it is written: the same two shapes App.md reads.
 const MARKER = /\{\{(f:[A-Za-z0-9._-]+(?:\?[A-Za-z0-9._~%&=:-]*)?|fill:[A-Za-z0-9_-]+(?:\?[A-Za-z0-9._~%&=:-]*)?)\}\}/g;
 
+/*
+ * Register text is never markup and never a placeholder. Field values are PROTECTED on their
+ * way into a document — the openings of a `/[Tag]` and of a `{{token}}` swapped for private-use
+ * characters nothing else reads — and the builder puts them back once tags are filled in and
+ * captions read, so a hazard titled "Fire /[Date] {{b}}" prints exactly that.
+ */
+export function protect(s) { return String(s == null ? '' : s).replace(/\/\[/g, '\uE000').replace(/\{\{/g, '\uE001'); }
+export function unprotect(s) { return String(s == null ? '' : s).replace(/\uE000/g, '/[').replace(/\uE001/g, '{{'); }
+
 /** A field's label, for where a field shows by name. */
 export function fieldLabelOf(catalogue, parsed) {
   const def = parsed && fieldDef(catalogue, parsed.coll, parsed.field);
@@ -238,7 +247,7 @@ export function plainFields(s, scope, catalogue) {
     if (r.kind === 'unbound') return '‹' + fieldLabelOf(catalogue, p) + '›';
     const o = Object.assign({}, p.opts);
     if (r.kind === 'list' && !o.list) o.list = 'comma';
-    return fieldText(r, o).replace(/\s*\n\s*/g, ' ');
+    return protect(fieldText(r, o).replace(/\s*\n\s*/g, ' '));
   });
 }
 
@@ -297,6 +306,8 @@ export function expandRepeats(blocks, catalogue, levels) {
         return;
       }
       const q = Object.assign({}, p, { id: suffix ? p.id + suffix : p.id });
+      // A copy knows the part it was made from, and the entries it was made for.
+      if (suffix) { q.tplId = p.id; q.sfx = suffix; }
       if (inner) q.scope = scope;
       if (typeof p.caption === 'string') q.caption = caption(p.caption, scope);
       if (Array.isArray(p.images)) q.images = p.images.map((im) => (im && typeof im.caption === 'string' ? Object.assign({}, im, { caption: caption(im.caption, scope) }) : im));

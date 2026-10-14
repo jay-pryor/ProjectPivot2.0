@@ -1532,23 +1532,22 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var baseRef = App.doc.refResolver(resolved, tableList, figureList);
       /* DS-2: a reference to a repeating section (or a part of one) reaches its FIRST copy;
        * from inside a copy, one to a section or part of the same group reaches that copy's own. */
-      var firstCopy = {};
+      var firstCopy = {}, copyOf = {};
+      function firstOf(tid, id) { if (!firstCopy[tid]) { firstCopy[tid] = id; copyOf[id] = tid; } }
       resolved.forEach(function (b) {
-        if (!b.suffix) return;
-        if (!firstCopy[b.templateId]) firstCopy[b.templateId] = b.id;
-        (b.parts || []).forEach(function (p) {
-          var tid = String(p.id).slice(0, String(p.id).length - b.suffix.length);
-          if (!firstCopy[tid]) firstCopy[tid] = p.id;
-        });
+        if (b.suffix) firstOf(b.templateId, b.id);
+        (b.parts || []).forEach(function (p) { if (p.sfx) firstOf(p.tplId, p.id); });
       });
       function resolveRef(id) { return baseRef(id) || (firstCopy[id] ? baseRef(firstCopy[id]) : null); }
-      function refIn(b) {
-        if (!b.suffix) return resolveRef;
+      /** References read from inside a copy (`sfx`): the same copy's first, then outward, then the first copy. */
+      function refAt(sfx) {
+        if (!sfx) return resolveRef;
         return function (id) {
-          for (var sfx = b.suffix; sfx; sfx = sfx.replace(/~[^~]*$/, '')) { var r = baseRef(id + sfx); if (r) return r; }
+          for (var x = sfx; x; x = x.replace(/~[^~]*$/, '')) { var r = baseRef(id + x); if (r) return r; }
           return resolveRef(id);
         };
       }
+      function refIn(b) { return refAt(b.suffix); }
       /* DS-1: what a field reads as in a block: its scope's value, printed per its options;
        * "[unknown field]" in bold where it cannot be read. Its text is never markup. */
       var rootSc = catalogue ? DATA.rootScope(catalogue.data, catalogue.root) : [];
@@ -1572,7 +1571,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           if (res.kind === 'unknown') return [{ text: '[unknown field]', bold: true }];
           if (res.kind === 'unbound') return [{ text: '\u2039' + DATA.fieldLabelOf(catalogue, parsed) + '\u203a' }];
           var out2 = [];
-          DATA.fieldText(res, parsed.opts).split('\n').forEach(function (line, i) {
+          DATA.protect(DATA.fieldText(res, parsed.opts)).split('\n').forEach(function (line, i) {
             if (i) out2.push({ br: true });
             if (line) out2.push({ text: line });
           });
@@ -1641,10 +1640,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         });
         if (b.content === 'toc') { out.push({ kind: 'toc' }); return; }
         if (b.kind === 'custom') {
-          var blockField = cur.field;
+          var blockField = cur.field, blockRef = cur.ref;
           (b.parts || []).forEach(function (p) {
-            // DS-4: a part printed by a Repeat part reads its fields in its own scope.
+            // DS-4: a part printed by a Repeat part reads its fields, and its references, in its own copy.
             cur.field = p.scope ? fieldsAt(p.scope) : blockField;
+            cur.ref = p.sfx && p.sfx !== b.suffix ? refAt(p.sfx) : blockRef;
             var centre = !!(p.centre || centres(b, 'content'));
             if (p.kind === 'rule') out.push({ kind: 'rule' });
             else if (p.kind === 'pagebreak') out.push({ kind: 'pageBreak' });
@@ -1705,11 +1705,22 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
       var all = JSON.stringify(out) + JSON.stringify(tagged.headerFooter);
       var docTitle = tag(String(meta.title || ''));
+      // DS-1: register text was kept from tags and markup (DATA.protect); now it reads as written.
+      out = JSON.parse(DATA.unprotect(JSON.stringify(out)));
+      var unRef = function (r) { return r ? JSON.parse(DATA.unprotect(JSON.stringify(r))) : r; };
+      /* DS-2: a link target in a copy is offered once, by what it was made from — a link to it
+       * reaches the first copy, or from inside a copy that copy's own. */
+      var targets = [];
+      App.doc.refTargets(resolved, tableList, figureList).forEach(function (t) {
+        if (t.id.indexOf('~') === -1) { targets.push(unRef(t)); return; }
+        if (!copyOf[t.id]) return;
+        targets.push(unRef(Object.assign({}, t, { id: copyOf[t.id], label: t.label + ' (each copy)' })));
+      });
       return {
         document: { title: docTitle, meta: { title: docTitle, platform: meta.platform || '', date: meta.date || '', marking: meta.classification || '' }, blocks: out },
         style: tagged, tags: findTags(all),
         // What a reference can point at, and how each reads — for the designer's link menu and editors.
-        refs: { resolve: resolveRef, targets: App.doc.refTargets(resolved, tableList, figureList) }
+        refs: { resolve: function (id) { return unRef(resolveRef(id)); }, targets: targets }
       };
     }
 
@@ -1787,9 +1798,15 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           rowScopes.forEach(function (rs) { (p.rows || []).forEach(function (r) { (r || []).forEach(function (c) { scan(c, rs, sid); }); }); });
         });
       });
+      // A blank in a section left out for now keeps its answers: they are not leftovers.
+      var heldBack = {};
+      hostBlocks(host, o).filter(function (b) { return !b.included && b.kind === 'custom'; }).forEach(function (b) {
+        var m2, txt = JSON.stringify(b.parts || []), re = /\{\{fill:([A-Za-z0-9_-]+)/g;
+        while ((m2 = re.exec(txt)) !== null) heldBack[m2[1]] = true;
+      });
       var leftovers = {};
       if (cat && cat.data) {
-        Object.keys(fills).forEach(function (id) {
+        Object.keys(fills).filter(function (id) { return !heldBack[id]; }).forEach(function (id) {
           var n = Object.keys(fills[id] || {}).filter(function (k) { return !(live[id] && live[id][k]); }).length;
           if (n) leftovers[id] = n;
         });
@@ -2314,12 +2331,15 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
       return ok();
     }
-    /** Drop what is written for entries no longer in the document: `live` is { id: { key: true } }. */
-    function pruneFills(live) {
+    /**
+     * Drop what is written for entries no longer in the document: `live` is { id: { key: true } },
+     * and only the blanks named in `ids` are touched (all of them when it is not given).
+     */
+    function pruneFills(live, ids) {
       if (!P()) return errNoProject();
       App.docHost.get().commit(function (p) {
         var b = bag(p);
-        Object.keys(b.fills || {}).forEach(function (id) {
+        Object.keys(b.fills || {}).filter(function (id) { return !ids || ids.indexOf(id) !== -1; }).forEach(function (id) {
           Object.keys(b.fills[id]).forEach(function (k) { if (!(live && live[id] && live[id][k])) delete b.fills[id][k]; });
           if (!Object.keys(b.fills[id]).length) delete b.fills[id];
         });
@@ -3073,13 +3093,23 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var b = bag(p);
         b.sections = b.sections || [];
         id = nextId('sec', b.sections);
-        var used = allParts(p), parts = [];
-        (t.parts || []).forEach(function (src) {
-          var copy = JSON.parse(JSON.stringify(src));
-          copy.id = nextId('part', used);
-          used.push(copy);
-          parts.push(copy);
-        });
+        // Fresh ids for every part, however deep in Repeat parts, and fresh blanks: a copy shares nothing.
+        var used = allParts(p);
+        function copyParts(list) {
+          return (list || []).map(function (src) {
+            var copy = JSON.parse(JSON.stringify(src));
+            copy.id = nextId('part', used);
+            used.push(copy);
+            if (copy.kind === 'repeat') copy.parts = copyParts(src.parts);
+            return copy;
+          });
+        }
+        var parts = copyParts(t.parts);
+        var fresh = {}, taken = Object.keys(fillIdsUsed(b)).concat(Object.keys(b.fills || {}));
+        parts = JSON.parse(JSON.stringify(parts).replace(/\{\{fill:([A-Za-z0-9_-]+)/g, function (m0, old) {
+          if (!fresh[old]) { fresh[old] = nextId('fill', taken); taken.push(fresh[old]); }
+          return '{{fill:' + fresh[old];
+        }));
         var made = { id: id, title: t.title || '', parts: parts };
         if (t.repeat) made.repeat = JSON.parse(JSON.stringify(t.repeat));
         b.sections.push(made);
@@ -4059,7 +4089,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * (`outer`, the root first), what it repeats for itself (`own`), and the sections that
      * repeat with it (`group`). Read from the outline, as the document builder groups them.
      */
+    var _scopes = {};
     function scopeOf(project, secId) {
+      if (_scopes[secId]) return _scopes[secId];
+      return (_scopes[secId] = scopeOfNow(project, secId));
+    }
+    function scopeOfNow(project, secId) {
       var c = catalogue();
       var root = c ? c.root : 'platform';
       var view = outlineNow(project);
@@ -4123,7 +4158,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var mine = f.items.filter(function (i) { return i.sectionId === block.id; });
       var ids = {};
       mine.forEach(function (i) { ids[i.id] = true; });
-      var left = Object.keys(f.leftovers).filter(function (id) { return ids[id]; }).reduce(function (a, id) { return a + f.leftovers[id]; }, 0);
+      var leftIds = Object.keys(f.leftovers).filter(function (id) { return ids[id]; });
+      var left = leftIds.reduce(function (a, id) { return a + f.leftovers[id]; }, 0);
       var out = mine.length ? '' : '<p class="rd-state">' + (selectedSubjectId(project) ? 'No entries print these blanks.' : 'Choose a ' + esc(noun()) + ' to fill in its entries.') + '</p>';
       out += mine.map(function (i) {
         var host = 'data-rd-fill-bar="' + esc(i.id + '|' + i.key) + '"';
@@ -4135,7 +4171,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       }).join('');
       if (left) {
         out += '<p class="rd-state">' + left + ' answer' + (left === 1 ? ' is' : 's are') + ' kept for entries no longer in the document.' +
-          ' <button type="button" data-rd-fill-prune>Remove ' + (left === 1 ? 'it' : 'them') + '</button></p>';
+          ' <button type="button" data-rd-fill-prune="' + esc(leftIds.join(' ')) + '">Remove ' + (left === 1 ? 'it' : 'them') + '</button></p>';
       }
       return out;
     }
@@ -4948,7 +4984,18 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var cc = catalogue();
         note = '1 of ' + level0 + ' ' + esc((level0 === 1 ? collLabel(cc, block.repeat.each) : collLabel(cc, block.repeat.each, true)).toLowerCase()) + '. ';
       } else {
-        for (var i = at + 1; i < included.length && !end; i++) end = p.anchors[included[i].anchor] || null;
+        if (!mine && at !== -1) {
+          // A section repeated with a group has only copies on the page: show its first.
+          var pre2 = App.md.anchor('sec-' + block.id) + '-';
+          var hs = (p.document.blocks || []).filter(function (x) { return x.kind === 'heading' && x.anchor; });
+          var fc = hs.filter(function (x) { return x.anchor.indexOf(pre2) === 0; })[0];
+          if (fc) {
+            mine = p.anchors[fc.anchor]; here = fc.anchor;
+            for (var h3 = hs.indexOf(fc) + 1; h3 < hs.length && !end; h3++) if (hs[h3].level <= fc.level) end = p.anchors[hs[h3].anchor] || null;
+          }
+        } else {
+          for (var i = at + 1; i < included.length && !end; i++) end = p.anchors[included[i].anchor] || null;
+        }
       }
       if (!mine) return '<p class="rd-state">' + (at === -1 ? 'This section is not in the document.' : 'This section is not on the page.') + '</p>';
       var m = p.style.page.margins, MMPT = 72 / 25.4;
@@ -5923,6 +5970,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     /** @returns {string} the workspace, or '' when closed. */
     function render(project) {
       if (!_rd.open || !project || !H()) return '';
+      _scopes = {};   // DS-1: worked out once per section per drawing (each costs an outline)
       return '<div class="modal-overlay overlay-full" id="rd-modal-host" data-rd-modal>' + inner(project) + '</div>';
     }
 
@@ -5996,7 +6044,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
     function quietly(fn) { if (_ctx && _ctx.quietEdit) _ctx.quietEdit(fn); else fn(); }
     /** Any project write invalidates the cached preview — it is a render of the project. */
-    function dirty() { _rd.preview = null; _rd.refs = null; _rd.cat = null; _rd.fills = null; }
+    function dirty() { _rd.preview = null; _rd.refs = null; _rd.cat = null; _rd.fills = null; _scopes = {}; }
 
     /** RPT-3: persist a reorder — move one block id by a step, or before another. */
     function moveSection(project, id, delta, beforeId) {
@@ -7009,8 +7057,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         _rd.fieldFor = null;
         repaint();
       });
-      dom.on(ctx.root, 'click', '[data-rd-fill-prune]', function () {
-        logIssues(App.docStore.pruneFills(fillsNow(P()).live));
+      dom.on(ctx.root, 'click', '[data-rd-fill-prune]', function (e, el) {
+        // Only this section's blanks: the button counted those, and nothing else is touched.
+        logIssues(App.docStore.pruneFills(fillsNow(P()).live, el.getAttribute('data-rd-fill-prune').split(' ').filter(Boolean)));
         dirty(); repaint();
       });
       dom.on(ctx.root, 'dragstart', '[data-rd-field-pick]', function (e, el) {
