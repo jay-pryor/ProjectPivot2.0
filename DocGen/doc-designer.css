@@ -410,3 +410,7 @@
   .docgen .rd-addmenu button:hover { background: var(--c-surface-alt);}
   .docgen .rd-addgroup { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--c-border);}
   .docgen .rd-addgroup .rd-fieldgroup-h { padding: 0 8px;}
+  /* DS-4: where a dragged part can land at the end of a list. */
+  .docgen .rd-dropend { min-height: 14px; border-radius: 4px;}
+  .docgen .rd-dropend.drop-target, .docgen .rd-parts.rd-nested.drop-target { outline: 2px dashed var(--c-accent); outline-offset: 2px;}
+  .docgen .rd-rich.rd-cap { margin-top: 6px;}

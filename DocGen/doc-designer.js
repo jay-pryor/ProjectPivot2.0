@@ -2646,13 +2646,27 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * Reorder parts within a section: by one step, or before a named part (drag).
      * @param {number} delta  -1 / +1, ignored when beforeId is given
      */
-    function movePart(sectionId, partId, delta, beforeId) {
+    function movePart(sectionId, partId, delta, beforeId, intoId) {
       if (!P()) return errNoProject();
       var s0 = findSection(P(), sectionId);
       if (!s0) return err('Unknown section.', sectionId);
       App.docHost.get().commit(function (p) {
         var src = locate(p, sectionId, partId);
         if (!src) return;
+        // DS-4: to the END of a Repeat part (`intoId`), or of the section ('').
+        if (intoId !== undefined && intoId !== null) {
+          var list;
+          if (intoId === '') list = findSection(p, sectionId).parts;
+          else {
+            var box = locate(p, sectionId, intoId);
+            if (!box || box.part.kind !== 'repeat' || intoId === partId) return;
+            for (var anc = box.parent; anc; anc = (locate(p, sectionId, anc.id) || {}).parent) if (anc.id === partId) return;
+            list = box.part.parts = box.part.parts || [];
+          }
+          src.list.splice(src.index, 1);
+          list.push(src.part);
+          return;
+        }
         // DS-4: a drag may land in another list (into or out of a Repeat part) — never inside itself.
         if (beforeId != null) {
           var dst = locate(p, sectionId, beforeId);
@@ -4752,7 +4766,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id, part.id) + rowsRepeatHtml(project, sec, part) +
         (part.noCaption === true
           ? '<p class="rd-state">No caption: this table is not numbered.</p>'
-          : '<input class="rd-cap" value="' + esc(part.caption || '') + '" data-rd-caption="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" placeholder="Table caption — left blank, the section’s heading is used" aria-label="Table caption">') +
+          // DS-1: one line of text and fields, like a heading.
+          : richBox(project, 'data-rd-caption-rich="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" aria-label="Table caption" aria-multiline="false"', part.caption || '',
+              'rd-cap rd-oneline', 'Table caption — left blank, the section’s heading is used', sec.id, part.id)) +
         '<div class="rd-tablewrap"><div class="rd-tablescale" style="width:' + px + 'px">' +
           '<table class="rd-table rd-table-fixed" style="width:' + tablePx + 'px">' + group +
           '<thead><tr>' + ths + '<th class="rd-rowdel' + (rowMm ? ' rd-rowdel-wide' : '') + '"' +
@@ -4976,7 +4992,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var pre = App.md.anchor('sec-' + block.id) + '-';
         var heads = (p.document.blocks || []).filter(function (x) { return x.kind === 'heading' && x.anchor; });
         var copies = heads.filter(function (x) { return x.anchor.indexOf(pre) === 0; });
-        if (!copies.length) return '<p class="rd-state">No copies of this section: there are no entries to repeat it for.</p>';
+        if (!copies.length) {
+          var bc0 = boundCatalogue(project);
+          return '<p class="rd-state">' + (bc0 && bc0.data ? 'No copies of this section: there are no entries to repeat it for.'
+            : 'Choose a ' + esc(noun()) + ' to see the copies of this section.') + '</p>';
+        }
         var first = copies[0], k0 = heads.indexOf(first);
         var level0 = copies.filter(function (x) { return x.level <= first.level; }).length;
         mine = p.anchors[first.anchor]; here = first.anchor;
@@ -5188,8 +5208,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         }).join('');
       };
       var noValue = w.op === 'empty' || w.op === 'set';
+      var lost = w.field && !fields.some(function (f) { return f.id === w.field; });
+      var collName = c.collections[each] ? c.collections[each].label : each;
       return '<div class="rd-grid">' +
-        '<label class="rd-lab rd-lab-s">Only where<select ' + at('wfield') + ' aria-label="Filter field">' + fieldOpts(w.field, 'Every one') + '</select></label>' +
+        '<label class="rd-lab rd-lab-s">Only where<select ' + at('wfield') + ' aria-label="Filter field">' + fieldOpts(w.field, 'Every one') +
+          (lost ? '<option value="' + esc(w.field) + '" selected>' + esc(w.field) + ' (not a ' + esc(collName) + ' field)</option>' : '') + '</select></label>' +
         (w.field
           ? '<label class="rd-lab rd-lab-s">&nbsp;<select ' + at('wop') + ' aria-label="Filter test">' + DATA.OPS.map(function (o) {
               return '<option value="' + o + '"' + (o === (w.op || 'is') ? ' selected' : '') + '>' + esc(DATA.OP_LABELS[o]) + '</option>';
@@ -5199,7 +5222,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         '<label class="rd-lab rd-lab-s">Sort by<select ' + at('sfield') + ' aria-label="Sort by">' + fieldOpts(so.field, 'Register order') + '</select></label>' +
         (so.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select ' + at('sdir') + ' aria-label="Sort direction">' +
           '<option value="asc"' + (so.dir === 'desc' ? '' : ' selected') + '>Ascending</option><option value="desc"' + (so.dir === 'desc' ? ' selected' : '') + '>Descending</option></select></label>' : '') +
-        '</div>';
+        '</div>' +
+        (lost ? '<p class="rpt-omit">The filter is on a field ' + esc(c.collections[each] ? (c.collections[each].plural || collName) : each) + ' do not have: nothing is filtered.</p>' : '');
     }
 
     /** DS-3: a table's Rows control: as written, or each row once per item of a list in reach. */
@@ -5338,7 +5362,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           '<label class="rd-lab rd-lab-s rd-inline">For each<select data-rd-rpart-each="' + esc(part.id) + '"' + extra + ' aria-label="Repeat for each">' + opts2 + '</select></label>' +
           partControls(sec, part, i, n) + '</div>' +
         (c && each ? filterSortHtml(c, each, part.repeat, 'data-rd-rpart-', part.id, extra) : '<p class="rd-state">Choose what to repeat for; the parts below print once for each.</p>') +
-        '<div class="rd-parts rd-nested">' + (inner || '<p class="rd-state">Nothing inside yet.</p>') + '</div>' +
+        '<div class="rd-parts rd-nested" data-rd-partdrop="' + esc(part.id) + '">' + (inner || '<p class="rd-state">Nothing inside yet. Drag a part here, or add one below.</p>') + '</div>' +
         '<div class="rd-addbar">' + addPartButtons(sec, part.id) + '</div></div>';
     }
 
@@ -5367,7 +5391,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       }
       if (cat === 'content' && sec) {
         var body = partsHtml(project, sec, sec.parts || []);
-        return '<div class="rd-sec-edit"><div class="rd-parts">' + (body || '<p class="rd-state">Nothing in this section yet.</p>') + '</div>' +
+        return '<div class="rd-sec-edit"><div class="rd-parts">' + (body || '<p class="rd-state">Nothing in this section yet.</p>') +
+            (body ? '<div class="rd-dropend" data-rd-partdrop="" title="Drop here to move a part to the end of the section"></div>' : '') + '</div>' +
           '<div class="rd-addbar">' + addPartButtons(sec, null) +
             '<span class="spacer"></span>' +
             '<button type="button" data-rd-save-template="' + esc(sec.id) + '" title="Save this section\'s shape for reuse in any project">Save as template&hellip;</button>' +
@@ -5396,6 +5421,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       }).join('') + '</nav>';
       return '<div class="rd-secgrid">' + list +
         '<div class="rd-sec-fields" data-rd-sec-fields><h5>' + esc(shownText(block.label)) + ' \u2014 ' + esc(cat.label) + '</h5>' +
+          // DS-6: a whole-register table under a repeating section is not filtered to the copy.
+          (isRegister(block) && catalogue() && scopeOf(project, block.id).outer.length > 1
+            ? '<p class="rpt-omit">This register table is inside a repeating section: it prints, unchanged, with each copy.</p>' : '') +
           categoryFields(project, view, block, resolved, cat.id) + '</div>' +
         '<div class="rd-sec-prev" data-rd-sec-prev>' + sectionPreview(project, block) + '</div></div>';
     }
@@ -6150,12 +6178,19 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (el.hasAttribute('data-rd-intro')) return '[data-rd-intro="' + el.getAttribute('data-rd-intro') + '"]';
       if (el.hasAttribute('data-rd-sec-heading-rich')) return '[data-rd-sec-heading-rich="' + el.getAttribute('data-rd-sec-heading-rich') + '"]';
       if (el.hasAttribute('data-rd-fill')) return '[data-rd-fill="' + el.getAttribute('data-rd-fill') + '"][data-rd-fill-key="' + el.getAttribute('data-rd-fill-key') + '"]';
+      if (el.hasAttribute('data-rd-caption-rich')) return '[data-rd-caption-rich="' + el.getAttribute('data-rd-caption-rich') + '"]';
       if (el.hasAttribute('data-rd-cell')) {
         return '[data-rd-cell="' + el.getAttribute('data-rd-cell') + '"]' +
           '[data-rd-row="' + el.getAttribute('data-rd-row') + '"]' +
           '[data-rd-col="' + el.getAttribute('data-rd-col') + '"]';
       }
       return '';
+    }
+
+    /** DS-1: a heading or a caption: one line of plain text and fields — no breaks, emphasis or links. */
+    function oneLine(t) {
+      return String(t == null ? '' : t).replace(/\{\{\/?(b|i|c|br)\}\}/g, '').replace(/\{\{\/ref\}\}/g, '')
+        .replace(/\{\{(?:ref|refn|reft):[^}]*\}\}/g, '').replace(/\s*\n\s*/g, ' ');
     }
 
     /** Where writing in this box is saved. One place, so every surface commits alike. */
@@ -6169,6 +6204,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var block = el.getAttribute('data-rd-intro');
         return function (next) { return App.docStore.setBlockIntro(block, next); };
       }
+      if (el.hasAttribute('data-rd-caption-rich')) {
+        var cap = el.getAttribute('data-rd-caption-rich');
+        return function (next) { return App.docStore.updatePart(sec, cap, { caption: oneLine(next) }); };
+      }
       if (el.hasAttribute('data-rd-fill')) {
         var fid = el.getAttribute('data-rd-fill'), fkey = el.getAttribute('data-rd-fill-key');
         return function (next) { return App.docStore.setFill(fid, fkey, next); };
@@ -6176,9 +6215,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (el.hasAttribute('data-rd-sec-heading-rich')) {
         // DS-1: a heading is one line of plain text and fields: no breaks, no emphasis.
         var hid = el.getAttribute('data-rd-sec-heading-rich');
-        return function (next) {
-          return App.docStore.updateSection(hid, { title: String(next).replace(/\{\{\/?(b|i|c)\}\}/g, '').replace(/\s*\n\s*/g, ' ') });
-        };
+        return function (next) { return App.docStore.updateSection(hid, { title: oneLine(next) }); };
       }
       if (el.hasAttribute('data-rd-cell')) {
         var tbl = el.getAttribute('data-rd-cell');
@@ -6258,9 +6295,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
 
     /** The document's reference resolver, for re-rendering a box after an edit. */
-    function boxHtml(tokens) {
+    function boxHtml(tokens, el) {
       var p = App.docHost.get().getState();
-      return RT.toHtml(tokens, { resolveRef: p && H() ? refResolver(p) : null });
+      _scopes = {};   // drawn outside a full drawing: never trust scopes from the last one
+      // DS-1: chips named in the box's own scope, as a full drawing names them.
+      var at = function (k) { return el && el.getAttribute ? el.getAttribute(k) : null; };
+      var secId = at('data-rd-sec') || at('data-rd-sec-heading-rich') || at('data-rd-intro');
+      var partId = at('data-rd-text') || at('data-rd-cell') || at('data-rd-caption-rich');
+      return RT.toHtml(tokens, { resolveRef: p && H() ? refResolver(p) : null, fieldLabel: p && H() ? fieldLabelIn(p, secId, partId) : null });
     }
 
     /** Remember where the caret is, in tokens, so a repaint cannot take it away. */
@@ -6311,7 +6353,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var t = RT.toggleFormat(text, s, e, tag);
         quietly(function () { logIssues(boxSaver(el)(t.text)); });
         dirty();
-        el.innerHTML = boxHtml(t.text);
+        el.innerHTML = boxHtml(t.text, el);
         _sel = { key: boxKey(el), start: t.start, end: t.end };
         RT.placeSelection(el, t.start, t.end, window);
         showFormats();
@@ -6323,7 +6365,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       dirty();
       // Re-rendered in place rather than by a repaint: a repaint would rebuild the whole
       // workspace and throw the caret away, which is the thing this is trying to keep.
-      el.innerHTML = boxHtml(res.text);
+      el.innerHTML = boxHtml(res.text, el);
       // The caret is remembered as well as placed, so a button pressed straight after —
       // Link, most often — acts where the last one left off rather than at the start.
       _sel = { key: boxKey(el), start: res.caret, end: res.caret };
@@ -6803,10 +6845,6 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         _rd.addMenu = false;
         dirty(); repaint();
       });
-      dom.on(ctx.root, 'change', '[data-rd-sec-title]', function (e, el) {
-        quietly(function () { logIssues(App.docStore.updateSection(el.getAttribute('data-rd-sec-title'), { title: el.value })); });
-        dirty(); repaint();
-      });
       dom.on(ctx.root, 'click', '[data-rd-del-section]', function (e, el) {
         var id = el.getAttribute('data-rd-del-section');
         if (!window.confirm('Delete this section and everything in it? Any cross-reference to it will read "[missing reference]".')) return;
@@ -6864,7 +6902,30 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         el.classList.add('drop-target');
       });
       dom.on(ctx.root, 'dragleave', '[data-rd-partrow]', function (e, el) { el.classList.remove('drop-target'); });
+      // DS-4: dropped on a Repeat part's own list (or the section's end): to the end of it.
+      dom.on(ctx.root, 'dragover', '[data-rd-partdrop]', function (e, el) {
+        if (!_dragPart || dropInside(e, el)) return;
+        e.preventDefault();
+        el.classList.add('drop-target');
+      });
+      dom.on(ctx.root, 'dragleave', '[data-rd-partdrop]', function (e, el) { el.classList.remove('drop-target'); });
+      dom.on(ctx.root, 'drop', '[data-rd-partdrop]', function (e, el) {
+        el.classList.remove('drop-target');
+        if (!_dragPart || dropInside(e, el)) return;
+        e.preventDefault();
+        App.docStore.movePart(_rd.selected, _dragPart, 0, null, el.getAttribute('data-rd-partdrop'));
+        _dragPart = null;
+        dirty(); repaint();
+      });
+      /** Whether a drop landed on a part INSIDE this zone (that part's own handler places it). */
+      function dropInside(e, zone) {
+        var row = e.target && e.target.closest ? e.target.closest('[data-rd-partrow]') : null;
+        return !!row && zone.contains(row);
+      }
       dom.on(ctx.root, 'drop', '[data-rd-partrow]', function (e, el) {
+        // A drop on a Repeat part's own list belongs to that list, not before the Repeat part.
+        var zone = e.target && e.target.closest ? e.target.closest('[data-rd-partdrop]') : null;
+        if (zone && el.contains(zone) && !dropInside(e, zone)) return;
         e.preventDefault();
         el.classList.remove('drop-target');
         var target = el.getAttribute('data-rd-partrow');
@@ -7121,7 +7182,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       dom.on(ctx.root, 'change', '[data-rd-chip-empty]', function (e, el) { chipApply(function (o) { o.empty = el.value.trim() ? el.value : undefined; }); });
       dom.on(ctx.root, 'click', '[data-rd-chip-done]', function () { _rd.chipEdit = null; repaint(); });
       // A heading is one line: Enter finishes it.
-      dom.on(ctx.root, 'keydown', '[data-rd-sec-heading-rich]', function (e, el) {
+      dom.on(ctx.root, 'keydown', '[data-rd-sec-heading-rich], [data-rd-caption-rich]', function (e, el) {
         if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
       });
       // DS-2: the Repeat category.
@@ -7239,7 +7300,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var next = cur.slice(0, at.start) + text + cur.slice(at.end);
         quietly(function () { logIssues(boxSaver(el)(next)); });
         dirty();
-        el.innerHTML = boxHtml(next);
+        el.innerHTML = boxHtml(next, el);
         RT.placeCaret(el, at.start + text.length, window);
       });
     }
@@ -7262,10 +7323,6 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // focusout handler above — and, like the others, without a repaint: the box
       // already shows what was typed, and a repaint mid-table would move focus out of
       // the row being filled in.
-      dom.on(ctx.root, 'change', '[data-rd-caption]', function (e, el) {
-        quietly(function () { App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-caption'), { caption: el.value }); });
-        dirty(); repaint();
-      });
       dom.on(ctx.root, 'change', '[data-rd-align]', function (e, el) {
         quietly(function () { App.docStore.setAlign(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-align'), Number(el.getAttribute('data-rd-col')), el.value); });
         dirty();
@@ -7587,7 +7644,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       select: function (id) { _rd.selected = id; _rd.pane = 'section'; },
       pane: function (id) { if (id) { _rd.pane = id; _rd.preview = null; } return _rd.pane; },
       laidOut: laidOut, LIST_WIDTH: LIST_WIDTH, PALETTE: PALETTE, SEC_CATEGORIES: SEC_CATEGORIES, _gate: _gate, _repaint: repaint, _stepped: stepped, _renameSection: renameSection, _formatsAt: formatsAt, _holds: holds, _releaseOn: RELEASE_ON,
-      PANES: PANES, _rd: _rd, _imageAssets: _imageAssets, _keepScroll: keepScroll, _SCROLLERS: SCROLLERS, _strayFileDrop: strayFileDrop, _setParaLevel: function (s1, p1, v) { return App.docStore.setParaLevel(s1, p1, v); }
+      PANES: PANES, _rd: _rd, _boxHtml: boxHtml, _imageAssets: _imageAssets, _keepScroll: keepScroll, _SCROLLERS: SCROLLERS, _strayFileDrop: strayFileDrop, _setParaLevel: function (s1, p1, v) { return App.docStore.setParaLevel(s1, p1, v); }
     };
   })(App);
 
