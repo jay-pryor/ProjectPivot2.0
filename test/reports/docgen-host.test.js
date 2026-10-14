@@ -459,3 +459,13 @@ test('the shared design is only the library: it shows nothing else and keeps not
   assert.equal(box.data.reportDesign.order, undefined, 'a commit through it keeps only the library');
   assert.equal(box.data.reportDesign.formats.length, 2);
 });
+
+test('the host declares the register catalogue, bound to the chosen platform', async () => {
+  const { createDocHost } = await import('../../src/reports/docgen-host.js');
+  const { seed } = await import('../helpers.js');
+  const { assignHazardNumbers } = await import('../../src/core/ops/hazards.js');
+  const data = assignHazardNumbers(seed());
+  const { host } = createDocHost({ getData: () => data, setDesign: () => {}, clock: { now: () => '2026-10-14T10:00:00+10:00' }, profileName: (id) => id });
+  assert.equal(host.catalogue(null).data, null);
+  assert.deepEqual(host.catalogue({ subjectId: 'p1' }).data.children.hazard.map((h) => h.key), ['h1']);
+});

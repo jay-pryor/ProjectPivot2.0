@@ -866,7 +866,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // build() and linkTerms() are a host's own business — the designer builds the
       // document itself (App.docGen.documentFor) — but a host that declares one must
       // declare a function.
-      ['build', 'linkTerms'].forEach(function (k) {
+      // DS-1: the register data a document can show, by field and by repeat. Optional.
+      ['build', 'linkTerms', 'catalogue'].forEach(function (k) {
         if (host[k] !== undefined && typeof host[k] !== 'function') errs.push('host.' + k + ' must be a function');
       });
       if (host.filter) {
@@ -914,6 +915,16 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      */
     function log(issue) {
       if (_host && typeof _host.log === 'function') _host.log(issue);
+    }
+
+    /**
+     * DS-1: the host's data catalogue for one run — `{ root, collections, data }`, `data`
+     * null when unbound — or null when the host declares none.
+     */
+    function catalogue(run) {
+      var h = _host;
+      if (!h || typeof h.catalogue !== 'function') return null;
+      return h.catalogue(run || null) || null;
     }
 
     /* -------------------------------------------------------------------------
@@ -1008,7 +1019,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return (sj.meta(subjectId) || []).filter(function (r) { return chosen[r.id] !== false; });
     }
 
-    App.docHost = { set: set, get: get, validate: validate, sections: sections, log: log,
+    App.docHost = { set: set, get: get, validate: validate, sections: sections, log: log, catalogue: catalogue,
                     context: subjectContext, chosenMeta: chosenMeta };
     App.docSession = { get: sessionGet, set: sessionSet, run: sessionRun, options: sessionOptions,
                        selectedSubjectId: selectedSubjectId, KEYS: SESSION_KEYS };
