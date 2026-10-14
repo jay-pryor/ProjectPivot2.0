@@ -118,3 +118,10 @@ test('collections available in a scope: the in-scope ones and their children', (
   assert.deepEqual(D.available(['platform', 'hazard'], cat), { single: ['platform', 'hazard'], lists: ['report'] });
   assert.deepEqual(D.available(['platform'], cat), { single: ['platform'], lists: ['hazard'] });
 });
+
+test('replaceMarker swaps the token at an offset, or the first like it', () => {
+  const t = 'a {{f:x.y}} b {{f:x.y}}';
+  assert.equal(D.replaceMarker(t, 14, 'f:x.y', 'f:x.y?list=num'), 'a {{f:x.y}} b {{f:x.y?list=num}}');
+  assert.equal(D.replaceMarker(t, 0, 'f:x.y', 'f:x.z'), 'a {{f:x.z}} b {{f:x.y}}', 'a stale offset falls back to the first');
+  assert.equal(D.replaceMarker(t, 0, 'f:none', 'f:x.z'), t);
+});

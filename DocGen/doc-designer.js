@@ -3741,6 +3741,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       renaming: null,        // the section whose heading is being edited in the list
       secCat: null,          // the open category of the Sections pane
       fieldFor: null,        // DS-1: the box whose Field menu is open
+      chipEdit: null,        // DS-1: the field chip whose options are open: { owner, key, at, tag }
       cat: null,             // DS-2: the catalogue bound to the subject, until the next change
       imgMenu: null,         // 'partId:box' whose choose-menu is open
       imgPick: false,        // that menu showing Standard Images
@@ -3853,9 +3854,51 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function fieldButton(id) {
       return catalogue() ? '<button type="button" class="rd-tb" data-rd-field-open="' + esc(id) + '" title="Insert a field from the registers">{ } Field</button>' : '';
     }
+    /**
+     * DS-1: the options of the field chip being edited (clicked in its box): for a list, its
+     * sort, filter and style; for any field, what it prints when there is nothing.
+     */
+    function chipPanel(project, secId, id) {
+      var ce = _rd.chipEdit, c = catalogue();
+      if (!ce || ce.owner !== id || !c) return '';
+      var p = DATA.parseFieldTag(ce.tag);
+      var def = p ? DATA.fieldDef(c, p.coll, p.field) : null;
+      if (!def) return '';
+      var reach = reachIn(project, secId);
+      var childList = reach.single.indexOf(p.coll) === -1 && reach.lists.indexOf(p.coll) !== -1;
+      var o = p.opts || {}, w = o.where || {}, so = o.sort || {};
+      var fields = c.collections[p.coll].fields;
+      var fopts = function (cur, none) {
+        return '<option value="">' + esc(none) + '</option>' + fields.map(function (f) {
+          return '<option value="' + esc(f.id) + '"' + (f.id === cur ? ' selected' : '') + '>' + esc(f.label) + '</option>';
+        }).join('');
+      };
+      var out = '<div class="rd-chipedit"><div class="rd-refmenu-h">' + esc(fieldLabel(ce.tag)) + (childList ? ' <em>— every ' + esc(collLabel(c, p.coll).toLowerCase()) + '\'s, as a list</em>' : '') + '</div><div class="rd-grid">';
+      if (childList) {
+        out += '<label class="rd-lab rd-lab-s">Sort by<select data-rd-chip-sfield aria-label="Sort by">' + fopts(so.field, 'Register order') + '</select></label>' +
+          (so.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select data-rd-chip-sdir aria-label="Sort direction"><option value="asc"' + (so.dir === 'desc' ? '' : ' selected') + '>Ascending</option>' +
+            '<option value="desc"' + (so.dir === 'desc' ? ' selected' : '') + '>Descending</option></select></label>' : '') +
+          '<label class="rd-lab rd-lab-s">Only where<select data-rd-chip-wfield aria-label="Filter field">' + fopts(w.field, 'Every one') + '</select></label>' +
+          (w.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select data-rd-chip-wop aria-label="Filter test">' + DATA.OPS.map(function (op) {
+              return '<option value="' + op + '"' + (op === (w.op || 'is') ? ' selected' : '') + '>' + esc(DATA.OP_LABELS[op]) + '</option>';
+            }).join('') + '</select></label>' +
+            (w.op === 'empty' || w.op === 'set' ? '' : '<label class="rd-lab rd-lab-s">&nbsp;<input data-rd-chip-wval value="' + esc(w.value || '') + '" aria-label="Filter value"></label>') : '');
+      }
+      if (childList || def.type === 'list') {
+        var styles = [['lines', 'One per line'], ['num', 'Numbered'], ['bullet', 'Bulleted'], ['comma', 'Separated by commas']];
+        out += '<label class="rd-lab rd-lab-s">Show as<select data-rd-chip-list aria-label="Show the list as">' + styles.map(function (st) {
+          return '<option value="' + st[0] + '"' + ((o.list || 'lines') === st[0] ? ' selected' : '') + '>' + st[1] + '</option>';
+        }).join('') + '</select></label>';
+      }
+      out += '<label class="rd-lab rd-lab-s">When there is nothing<input data-rd-chip-empty value="' + esc(o.empty === undefined ? '' : o.empty) + '" placeholder="' + esc(DATA.EMPTY_TEXT) + '" aria-label="What prints when there is nothing"></label>' +
+        '</div><button type="button" data-rd-chip-done>Done</button></div>';
+      return out;
+    }
+
     /** The Field menu: the fields of what is in scope, then the lists below it. Click or drag. */
     function fieldMenu(project, secId, id) {
-      if (_rd.fieldFor !== id) return '';
+      var panel = chipPanel(project, secId, id);
+      if (_rd.fieldFor !== id) return panel;
       var c = catalogue();
       if (!c) return '';
       var reach = reachIn(project, secId);
@@ -3867,7 +3910,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
               ' title="' + esc(list ? 'Every ' + collLabel(c, coll).toLowerCase() + '\'s ' + f.label.toLowerCase() + ', as a list' : f.label) + '">' + esc(f.label) + '</button>';
           }).join('') + '</div></div>';
       }
-      return '<div class="rd-fieldmenu"><div class="rd-refmenu-h">Insert a field <span class="rd-state">click, or drag it into the text</span></div>' +
+      return panel + '<div class="rd-fieldmenu"><div class="rd-refmenu-h">Insert a field <span class="rd-state">click, or drag it into the text</span></div>' +
         reach.single.map(function (k) { return group(k, false); }).join('') +
         reach.lists.map(function (k) { return group(k, true); }).join('') + '</div>';
     }
@@ -6557,6 +6600,42 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         insertToken(el, tag);
         _rd.fieldFor = null;
       });
+      // DS-1: a field chip clicked in its box opens its options under the box.
+      dom.on(ctx.root, 'click', '[data-rd-rich] .rd-field', function (e, chip) {
+        var box = chip.closest('[data-rd-rich]');
+        var group = box && box.closest('.rd-part, .rd-fieldset');
+        var opener = group && group.querySelector('[data-rd-field-open]');
+        if (!opener) return;
+        var at = RT.offsetOf(box, chip.parentNode, Array.prototype.indexOf.call(chip.parentNode.childNodes, chip));
+        quietly(function () { logIssues(boxSaver(box)(RT.fromNode(box))); });
+        _rd.chipEdit = { owner: opener.getAttribute('data-rd-field-open'), key: boxKey(box), at: at, tag: chip.getAttribute('data-rd-tok') };
+        _rd.fieldFor = null;
+        dirty(); repaint();
+      });
+      /** Rewrite the chip being edited with changed options, in its box, and save the box. */
+      function chipApply(change) {
+        var ce = _rd.chipEdit;
+        var box = ce && document.querySelector(ce.key);
+        var p = ce && DATA.parseFieldTag(ce.tag);
+        if (!box || !p) return;
+        var o = Object.assign({}, p.opts);
+        change(o);
+        var tag = DATA.fieldTag(p.coll, p.field, o);
+        var next = DATA.replaceMarker(RT.fromNode(box), ce.at, ce.tag, tag);
+        quietly(function () { logIssues(boxSaver(box)(next)); });
+        ce.tag = tag;
+        dirty(); repaint();
+      }
+      dom.on(ctx.root, 'change', '[data-rd-chip-sfield]', function (e, el) { chipApply(function (o) { o.sort = el.value ? { field: el.value, dir: (o.sort && o.sort.dir) || 'asc' } : undefined; }); });
+      dom.on(ctx.root, 'change', '[data-rd-chip-sdir]', function (e, el) { chipApply(function (o) { o.sort = Object.assign({}, o.sort, { dir: el.value }); }); });
+      dom.on(ctx.root, 'change', '[data-rd-chip-wfield]', function (e, el) {
+        chipApply(function (o) { o.where = el.value ? { field: el.value, op: (o.where && o.where.op) || 'is', value: (o.where && o.where.value) || '' } : undefined; });
+      });
+      dom.on(ctx.root, 'change', '[data-rd-chip-wop]', function (e, el) { chipApply(function (o) { o.where = Object.assign({}, o.where, { op: el.value }); }); });
+      dom.on(ctx.root, 'change', '[data-rd-chip-wval]', function (e, el) { chipApply(function (o) { o.where = Object.assign({}, o.where, { value: el.value }); }); });
+      dom.on(ctx.root, 'change', '[data-rd-chip-list]', function (e, el) { chipApply(function (o) { o.list = el.value; }); });
+      dom.on(ctx.root, 'change', '[data-rd-chip-empty]', function (e, el) { chipApply(function (o) { o.empty = el.value.trim() ? el.value : undefined; }); });
+      dom.on(ctx.root, 'click', '[data-rd-chip-done]', function () { _rd.chipEdit = null; repaint(); });
       // A heading is one line: Enter finishes it.
       dom.on(ctx.root, 'keydown', '[data-rd-sec-heading-rich]', function (e, el) {
         if (e.key === 'Enter') { e.preventDefault(); el.blur(); }

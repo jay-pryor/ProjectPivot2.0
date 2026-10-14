@@ -34,10 +34,10 @@ function render(h, set = {}) {
   App.docHost.set(h);
   RD.open();
   RD.pane('section');
-  Object.assign(RD._rd, { selected: null, secCat: null, fieldFor: null }, set);
+  Object.assign(RD._rd, { selected: null, secCat: null, fieldFor: null, chipEdit: null }, set);
   const html = RD.render(h.getState());
   RD.close();
-  Object.assign(RD._rd, { selected: null, secCat: null, fieldFor: null });
+  Object.assign(RD._rd, { selected: null, secCat: null, fieldFor: null, chipEdit: null });
   return html;
 }
 
@@ -113,4 +113,23 @@ test('the section preview of a repeating section shows its first copy and says h
   const html = render(host(SECTIONS(), { levels: LEVELS, pageBreak: { sec1: false, sec2: false, sec3: false } }), { selected: 'sec1', secCat: 'heading' });
   assert.match(html, /1 of 2 hazards/);
   assert.match(html, /HAZ-001/);
+});
+
+test('a field chip being edited shows its options: sort, filter, list style and empty wording for a list', () => {
+  const secs = SECTIONS();
+  secs[1].parts.push({ id: 'part4', kind: 'para', text: 'Controls: {{f:control.id?sort=status:desc}}' });
+  const html = render(host(secs, { levels: LEVELS }), { selected: 'sec2', secCat: 'content', chipEdit: { owner: 'part4', key: '[data-rd-text="part4"]', at: 10, tag: 'f:control.id?sort=status:desc' } });
+  assert.match(html, /class="rd-chipedit"/);
+  assert.match(html, /<select data-rd-chip-sfield[^>]*>[\s\S]*?<option value="status" selected>/);
+  assert.match(html, /<select data-rd-chip-sdir[^>]*>[\s\S]*?<option value="desc" selected>/);
+  assert.match(html, /data-rd-chip-wfield/);
+  assert.match(html, /<select data-rd-chip-list/);
+  assert.match(html, /data-rd-chip-empty[^>]*placeholder="Nil"/);
+});
+
+test('a single-value chip offers only its empty wording', () => {
+  const html = render(host(SECTIONS(), { levels: LEVELS }), { selected: 'sec1', secCat: 'content', chipEdit: { owner: 'part1', key: '[data-rd-text="part1"]', at: 8, tag: 'f:hazard.title' } });
+  assert.match(html, /class="rd-chipedit"/);
+  assert.match(html, /data-rd-chip-empty/);
+  assert.doesNotMatch(html, /data-rd-chip-list|data-rd-chip-sfield/);
 });

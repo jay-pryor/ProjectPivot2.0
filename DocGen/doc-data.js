@@ -310,3 +310,15 @@ export function expandRepeats(blocks, catalogue, levels) {
   walk(blocks || [], root, '');
   return out;
 }
+
+/**
+ * Text with one marker token replaced: the one at `at` when it is still there, else the first
+ * with the same tag (the text moved under it), else nothing changes.
+ */
+export function replaceMarker(text, at, oldTag, newTag) {
+  const t = String(text == null ? '' : text);
+  const was = '{{' + oldTag + '}}', now = '{{' + newTag + '}}';
+  if (t.substr(at, was.length) === was) return t.slice(0, at) + now + t.slice(at + was.length);
+  const k = t.indexOf(was);
+  return k === -1 ? t : t.slice(0, k) + now + t.slice(k + was.length);
+}

@@ -385,3 +385,8 @@
   .docgen .modal-head h3 { display: inline-block; vertical-align: middle;}
   .docgen .rd-stage { margin-left: 8px; vertical-align: middle;}
   .docgen .rd-save-slot + .modal-close { margin-left: 8px;}
+  /* DS-1: a field chip's options, under its box. */
+  .docgen .rd-chipedit { border: 1px solid var(--c-accent); border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; background: var(--c-surface);}
+  .docgen .rd-chipedit em { font-weight: 400;}
+  .docgen .rd-chipedit button[data-rd-chip-done] { margin-top: 4px;}
+  .docgen .rd-rich .rd-field { cursor: pointer;}
