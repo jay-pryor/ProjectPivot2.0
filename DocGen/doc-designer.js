@@ -3699,7 +3699,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return App.docStore.setBlockHeading(id, v === String(block.defaultTitle || '').trim() ? '' : v);
     }
 
-    /** The Sections list's width in pixels: dragged by its grip, remembered in this browser. */
+    /** The Sections (and Styles) list's width in pixels: dragged by its grip, remembered in this browser. */
     var LIST_WIDTH = { dflt: 420, min: 260, max: 900 };
     var LIST_KEY = 'docgen.rd.listWidth';
     function listWidth() {
@@ -4810,6 +4810,42 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return '';
     }
 
+    /**
+     * The Styles tab's left column: every Style, the one being edited picked out and the
+     * one in use marked, with what can be done to the picked one under them.
+     *
+     * It stands where the Sections list stands on the Sections tab, at the same width
+     * (one grip, one remembered width), so switching between the two tabs leaves the
+     * categories, fields and pages where they were rather than jumping left.
+     */
+    function renderStyleList(project) {
+      var all = App.docFormat.list(project);
+      var active = App.docFormat.resolve(project);
+      var editId = (all.filter(function (x) { return x.id === _rd.fmtId; })[0] || active).id;
+      var editing = all.filter(function (x) { return x.id === editId; })[0] || active;
+      var rows = all.map(function (x) {
+        return '<li class="ord-step rd-srow' + (x.id === editId ? ' sel' : '') + '">' +
+          '<span class="ord-body">' +
+            '<button type="button" class="rd-open" data-rd-fmt-pick="' + esc(x.id) + '"' +
+              (x.id === editId ? ' aria-current="true"' : '') + ' title="Edit this Style">' + esc(x.name) + '</button>' +
+            ((x.id === active.id || x.builtin)
+              ? '<span class="rd-meta">' +
+                  (x.id === active.id ? '<span class="rd-kind rd-inuse">In use</span>' : '') +
+                  (x.builtin ? '<span class="rd-kind">Comes with the tool</span>' : '') + '</span>'
+              : '') +
+          '</span></li>';
+      }).join('');
+      var inUse = editing.id === active.id;
+      return '<div class="rpt-pane rpt-pane-main" style="flex-basis:' + listWidth() + 'px"><h4>Styles</h4>' +
+        '<div class="rd-addbar">' +
+          '<button type="button"' + (inUse ? ' disabled' : ' class="primary"') + ' data-rd-fmt-use' +
+            ' title="Lay this document out in ' + esc(editing.name) + '">' + (inUse ? 'In use' : 'Use this Style') + '</button>' +
+          '<button type="button" data-rd-fmt-new title="Make a copy of ' + esc(editing.name) + ' to change">Duplicate</button>' +
+          '<button type="button" class="danger" data-rd-fmt-del' + (editing.builtin ? ' disabled' : '') + '>Delete</button>' +
+        '</div>' +
+        '<div id="rd-style-host"><ol class="ord-list">' + rows + '</ol></div></div>';
+    }
+
     function paneStyles(project) {
       var all = App.docFormat.list(project);
       var active = App.docFormat.resolve(project);
@@ -4818,19 +4854,6 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var builtin = !!f.builtin;
       var section = _rd.styleSection || 'document';
 
-      var head = '<div class="rd-fmt-head">' +
-        '<label class="rd-lab">Style in use' +
-          '<select data-rd-fmt-active aria-label="Style in use">' +
-            all.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === active.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
-          '</select></label>' +
-        '<label class="rd-lab">Editing' +
-          '<select data-rd-fmt-edit aria-label="Style being edited">' +
-            all.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === f.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
-          '</select></label>' +
-        '<span class="spacer"></span>' +
-        '<button type="button" data-rd-fmt-new>Duplicate</button>' +
-        '<button type="button" class="danger" data-rd-fmt-del' + (builtin ? ' disabled' : '') + '>Delete</button>' +
-        '</div>';
       var locked = builtin
         ? '<div class="rd-locked">The <strong>Standard</strong> style comes with the tool and cannot be changed. <strong>Duplicate</strong> it and change the copy.</div>'
         : '';
@@ -4844,7 +4867,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           (s.id === 'document' ? '<hr class="rd-style-divider">' : '');
       }).join('') + '</nav>';
       var label = (STYLE_SECTIONS.filter(function (s) { return s.id === section; })[0] || {}).label || '';
-      var fields = '<div class="rd-style-fields"><h5>' + esc(label) + '</h5>' + held +
+      var fields = '<div class="rd-style-fields"><h5>' + esc(label) + '</h5>' + locked + held +
         '<fieldset class="rd-fmt-body"' + (builtin ? ' disabled' : '') + '>' + styleSectionFields(project, f, section) + '</fieldset></div>';
       // The pages are drawn in the Style being EDITED, so a change is seen before it is put in use.
       var laid = laidOut(project, f);
@@ -4853,7 +4876,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         (laid.error
           ? '<p class="rd-err">' + esc(laid.error) + '</p>'
           : '<div class="rd-preview-pages rd-style-pages">' + pagesHtml(laid.pages, { scale: zoomOf('styles'), imageUrl: imageUrl }) + '</div>') + '</div>';
-      return head + locked + '<div class="rd-styles">' + list + fields + pages + '</div>';
+      return '<div class="rd-styles">' + list + fields + pages + '</div>';
     }
 
     /**
@@ -5095,9 +5118,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           '<button type="button" class="modal-close" data-rd-close aria-label="Close">×</button></div>' +
         '<div class="modal-body"><div class="rpt-body rd-layout">' +
           // The section list belongs to the Sections tab; the other tabs have the width.
-          (_rd.pane === 'section'
-            ? renderSectionList(project, view) +
-              '<div class="rd-split" data-rd-split role="separator" aria-orientation="vertical" aria-label="Drag to widen or narrow the Sections list" title="Drag to resize"></div>'
+          // The Styles tab has its list in the same place, so the panes beside it do not move.
+          (_rd.pane === 'section' || _rd.pane === 'styles'
+            ? (_rd.pane === 'section' ? renderSectionList(project, view) : renderStyleList(project)) +
+              '<div class="rd-split" data-rd-split role="separator" aria-orientation="vertical" aria-label="Drag to widen or narrow the list" title="Drag to resize"></div>'
             : '') +
           '<div class="rd-right"><div class="rd-tabs">' + tabs + '</div>' +
             '<div class="rpt-pane rd-pane">' + paneBody + '</div></div>' +
@@ -6389,15 +6413,22 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var P = h.P;
 
       // ---- formatting -------------------------------------------------------
-      dom.on(ctx.root, 'change', '[data-rd-fmt-active]', function (e, el) {
-        quietly(function () { logIssues(App.docStore.setFormatId(el.value)); });
-        _rd.fmtId = el.value; dirty(); repaint();
+      /** The Style being edited: the one picked in the list, or the one in use. */
+      function editingId(project) {
+        var all = App.docFormat.list(project);
+        return (all.filter(function (x) { return x.id === _rd.fmtId; })[0] || App.docFormat.resolve(project)).id;
+      }
+      dom.on(ctx.root, 'click', '[data-rd-fmt-pick]', function (e, el) { _rd.fmtId = el.getAttribute('data-rd-fmt-pick'); _rd.held = null; repaint(); });
+      dom.on(ctx.root, 'click', '[data-rd-fmt-use]', function () {
+        var project = P(); if (!project) return;
+        var id = editingId(project);
+        quietly(function () { logIssues(App.docStore.setFormatId(id)); });
+        _rd.fmtId = id; dirty(); repaint();
       });
-      dom.on(ctx.root, 'change', '[data-rd-fmt-edit]', function (e, el) { _rd.fmtId = el.value; _rd.held = null; repaint(); });
       dom.on(ctx.root, 'click', '[data-rd-style-section]', function (e, el) { _rd.styleSection = el.getAttribute('data-rd-style-section'); _rd.held = null; repaint(); });
       dom.on(ctx.root, 'click', '[data-rd-fmt-new]', function () {
         var project = P(); if (!project) return;
-        var from = App.docFormat.list(project).filter(function (x) { return x.id === (_rd.fmtId || App.docFormat.resolve(project).id); })[0];
+        var from = App.docFormat.list(project).filter(function (x) { return x.id === editingId(project); })[0];
         var name = window.prompt('Name for the new Style:', (from ? from.name : 'Standard') + ' copy');
         if (name == null || !name.trim()) return;
         var res = logIssues(App.docStore.addFormat(name, from));
@@ -6405,9 +6436,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         dirty(); repaint();
       });
       dom.on(ctx.root, 'click', '[data-rd-fmt-del]', function () {
-        if (!_rd.fmtId || _rd.fmtId === 'standard') return;
+        var project = P(); if (!project) return;
+        var id = editingId(project);
+        if (id === 'standard') return;
         if (!window.confirm('Delete this Style? Any document using it falls back to Standard.')) return;
-        logIssues(App.docStore.removeFormat(_rd.fmtId));
+        logIssues(App.docStore.removeFormat(id));
         _rd.fmtId = null; dirty(); repaint();
       });
       function fmtPatch(key, value) {

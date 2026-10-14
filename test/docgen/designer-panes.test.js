@@ -48,8 +48,40 @@ test('the Styles pane lists its sections and the live pages beside them', () => 
     assert.match(html, new RegExp(`data-rd-style-section="${s}"`), s);
   }
   assert.match(html, /data-rd-style-preview[\s\S]*class="dp-page"/);
-  assert.match(html, /data-rd-fmt-active/);
+  assert.match(html, /data-rd-fmt-use/);
   assert.match(html, /data-rd-fmt-new/);
+  assert.doesNotMatch(html, /data-rd-fmt-active|data-rd-fmt-edit/, 'the Style drop-downs gave way to the list');
+});
+
+test('the Styles tab has a Styles list where the Sections list stands, at the same width', () => {
+  const h = host();
+  App.docHost.set(h); RD.open(); RD._rd.listWidth = 333;
+  RD._rd.pane = 'styles';
+  const html = RD.render(h.getState());
+  RD._rd.pane = 'section';
+  const sections = RD.render(h.getState());
+  RD.close(); RD._rd.listWidth = null;
+  assert.match(html, /class="rpt-pane rpt-pane-main" style="flex-basis:333px"><h4>Styles<\/h4>/);
+  assert.match(sections, /class="rpt-pane rpt-pane-main" style="flex-basis:333px"><h4>Sections<\/h4>/);
+  assert.match(html, /id="rd-style-host"[\s\S]*data-rd-split/);
+  // The Style in use is picked for editing to begin with, and marked; Standard is marked as built in.
+  assert.match(html, /<li class="ord-step rd-srow sel"><span class="ord-body"><button type="button" class="rd-open" data-rd-fmt-pick="mine" aria-current="true"[^>]*>Mine<\/button><span class="rd-meta"><span class="rd-kind rd-inuse">In use</);
+  assert.match(html, /data-rd-fmt-pick="standard"[^>]*>Standard<\/button><span class="rd-meta"><span class="rd-kind">Comes with the tool</);
+  // The one in use cannot be put in use again.
+  assert.match(html, /<button type="button" disabled data-rd-fmt-use/);
+  assert.match(html, /class="danger" data-rd-fmt-del>/);
+});
+
+test('picking Standard in the Styles list edits it: it can be put in use, not deleted', () => {
+  const h = host();
+  App.docHost.set(h); RD.open(); RD._rd.pane = 'styles'; RD._rd.fmtId = 'standard';
+  const html = RD.render(h.getState());
+  RD.close(); RD._rd.pane = 'section'; RD._rd.fmtId = null;
+  assert.match(html, /class="ord-step rd-srow sel"><span class="ord-body"><button type="button" class="rd-open" data-rd-fmt-pick="standard" aria-current="true"/);
+  assert.match(html, /<button type="button" class="primary" data-rd-fmt-use[^>]*>Use this Style</);
+  assert.match(html, /data-rd-fmt-del disabled/);
+  // The locked notice sits with the fields, so the grid starts level with the Sections one.
+  assert.match(html, /<div class="rd-style-fields"><h5>[^<]*<\/h5><div class="rd-locked">/);
 });
 
 test('every field on every Styles section names a real path in the Style', () => {
@@ -522,11 +554,12 @@ test('the palette is the same everywhere: preset rows of greys, colours and thei
   for (const row of RD.PALETTE) for (const [hex, name] of row) { assert.match(hex, /^#[0-9a-f]{6}$/); assert.ok(name); }
 });
 
-test('the section list is shown on the Sections tab only', () => {
+test('the section list is shown on the Sections tab only; the Styles tab has its own list there', () => {
   assert.match(paneOf(host(), 'section'), /id="rd-order-host"[\s\S]*data-rd-split/);
-  for (const pane of ['styles', 'templates', 'preview', 'generate']) {
+  assert.doesNotMatch(paneOf(host(), 'styles'), /id="rd-order-host"/);
+  for (const pane of ['templates', 'preview', 'generate']) {
     const html = paneOf(host(), pane);
-    assert.doesNotMatch(html, /id="rd-order-host"|data-rd-split/, pane);
+    assert.doesNotMatch(html, /id="rd-order-host"|id="rd-style-host"|data-rd-split/, pane);
   }
 });
 
