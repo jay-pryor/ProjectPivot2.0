@@ -26,6 +26,7 @@ function hostWith(design = {}) {
         { id: 'c4', title: 'Cover', parts: [] },
       ],
       order: ['c4', 'toc', 'meta', 'staff', 'teams', 'c1', 'c2', 'c3'],
+      registers: ['staff', 'teams'],
       levels: { c4: 0, staff: 1, teams: 2, c1: 1, c2: 1, c3: 3 },
       intros: { staff: 'About the staff.', teams: 'Unnumbered intro, see {{refn:c2}}.' },
       introNumbered: { staff: true },

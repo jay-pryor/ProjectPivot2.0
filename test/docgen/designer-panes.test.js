@@ -7,7 +7,8 @@ const RD = App.ui.views.reportDesign;
 
 /** A host with one subject and one section, and a design holding one editable Style. */
 function host(design = {}) {
-  const state = { report: { formats: [{ ...normaliseStyle({ id: 'mine', name: 'Mine' }).style }], formatId: 'mine', ...design } };
+  // The host's two register tables are in the design (they are opt-in from schema 8).
+  const state = { report: { formats: [{ ...normaliseStyle({ id: 'mine', name: 'Mine' }).style }], formatId: 'mine', registers: ['things', 'others'], ...design } };
   return {
     getState: () => state,
     commit: (m) => m(state),

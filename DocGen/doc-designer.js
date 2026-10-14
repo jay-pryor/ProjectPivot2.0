@@ -1279,7 +1279,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
        * used to iterate the platform's datasets and then push `control` and
        * `guidelines` by hand, which is what made three of CH's concepts structural
        * facts about the document module. */
-      sectionsOf(host, runOf(opts)).forEach(function (pv) { d.push(providerBlock(pv, opts)); });
+      /* DS-6: the register tables the design holds, in the order the host declares them. A
+       * design that has never chosen (no `registers`) holds them all, as every design did before
+       * they could be chosen; a list, even an empty one, holds exactly those. */
+      var held = Array.isArray(bag.registers) ? bag.registers : null;
+      sectionsOf(host, runOf(opts)).forEach(function (pv) { if (!held || held.indexOf(pv.id) !== -1) d.push(providerBlock(pv, opts)); });
 
       // DOC-4: hand-authored sections join the SAME list, which is what lets them be
       // interleaved with the generated ones rather than bolted on at the end.
@@ -2380,22 +2384,54 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return ok();
     }
 
+    /**
+     * Everything keyed by a block's id goes with the block, or a deleted section would leave a
+     * name and an introduction behind for an id nothing can reach.
+     */
+    function dropBlock(b, id) {
+      ['levels', 'centred', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
+        'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) {
+        if (!b[k]) return;
+        delete b[k][id];
+        if (!Object.keys(b[k]).length) delete b[k];
+      });
+      if (Array.isArray(b.order)) b.order = b.order.filter(function (x) { return x !== id; });
+      if (Array.isArray(b.order) && !b.order.length) delete b.order;
+    }
+
+    /** DS-6: put one of the host's register tables in the document, at the end. */
+    function addRegister(id) {
+      if (!P()) return errNoProject();
+      if (!App.docHost.sections(null).some(function (pv) { return pv.id === id; })) return err('Unknown register table.', id);
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        if (!Array.isArray(b.registers)) return;          // holds them all already
+        if (b.registers.indexOf(id) === -1) b.registers.push(id);
+        if (Array.isArray(b.order) && b.order.length && b.order.indexOf(id) === -1) b.order.push(id);
+      });
+      return ok();
+    }
+    /** DS-6: take a register table out of the document, with its settings. */
+    function removeRegister(id) {
+      if (!P()) return errNoProject();
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        // A design that held them all now holds the rest; an empty list is kept: it means none.
+        var all = App.docHost.sections(null).map(function (pv) { return pv.id; });
+        b.registers = (Array.isArray(b.registers) ? b.registers : all).filter(function (x) { return x !== id; });
+        dropBlock(b, id);
+        if (!Object.keys(b).length) delete p.report;
+      });
+      return ok();
+    }
+
     function removeSection(id) {
       if (!P()) return errNoProject();
       App.docHost.get().commit(function (p) {
         var b = bag(p);
         b.sections = (b.sections || []).filter(function (s) { return s.id !== id; });
         if (!b.sections.length) delete b.sections;
-        // Everything keyed by block id goes with the block, or a deleted section would
-        // leave a name and an introduction behind for an id nothing can reach.
-        ['levels', 'centred', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
-          'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) {
-          if (!b[k]) return;
-          delete b[k][id];
-          if (!Object.keys(b[k]).length) delete b[k];
-        });
-        if (Array.isArray(b.order)) b.order = b.order.filter(function (x) { return x !== id; });
-        if (Array.isArray(b.order) && !b.order.length) delete b.order;
+        dropBlock(b, id);
         // DS-5: what was written into blanks no section holds any more goes with them.
         if (b.fills) {
           var used = fillIdsUsed(b);
@@ -3088,6 +3124,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           // SPC-1: how far down the page each section starts is an arrangement decision
           // like the page break beside it, so it travels with the template too.
           space: JSON.parse(JSON.stringify(b.space || {})),
+          // DS-6: which register tables the document holds (none listed: all of them).
+          registers: Array.isArray(b.registers) ? b.registers.slice() : undefined,
           sections: JSON.parse(JSON.stringify(b.sections || [])),
           format: JSON.parse(JSON.stringify(App.docFormat.resolve(p)))
         });
@@ -3123,6 +3161,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
         'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) { b[k] = JSON.parse(JSON.stringify(t[k] || {})); });
       b.sections = JSON.parse(JSON.stringify(t.sections || []));
+      if (Array.isArray(t.registers)) b.registers = t.registers.slice(); else delete b.registers;
       if (!b.order.length) delete b.order;
       if (!b.sections.length) delete b.sections;
       ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
@@ -3169,7 +3208,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // OPT-2: what the report is made of, stored with the report rather than the session.
       setReportInclude: setReportInclude, INCLUDE_MAPS: INCLUDE_MAPS,
       addSection: addSection, setSectionRepeat: setSectionRepeat, setPartRepeat: setPartRepeat, normRepeat: normRepeat, findPart: findPart, enclosingRepeats: enclosingRepeats,
-      nextFillId: nextFillId, setFill: setFill, pruneFills: pruneFills, updateSection: updateSection, removeSection: removeSection,
+      nextFillId: nextFillId, setFill: setFill, pruneFills: pruneFills, addRegister: addRegister, removeRegister: removeRegister, updateSection: updateSection, removeSection: removeSection,
       addPart: addPart, updatePart: updatePart, removePart: removePart, movePart: movePart, setParaLevel: setParaLevel,
       setPartImage: setPartImage, setPartImageField: setPartImageField, addStandardImage: addStandardImage, renameStandardImage: renameStandardImage, removeStandardImage: removeStandardImage, standardImageUses: standardImageUses,
       setCell: setCell, addRow: addRow, removeRow: removeRow,
@@ -3341,6 +3380,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         levels: (raw.levels && typeof raw.levels === 'object') ? raw.levels : {},
         sections: raw.sections || []
       };
+      // DS-6: the register tables a report template holds.
+      if (Array.isArray(raw.registers)) out.registers = raw.registers.filter(function (x) { return typeof x === 'string'; });
       if (raw.format) {
         var fv = App.docFormat.validate(Object.assign({ id: 'standard', name: raw.name }, raw.format), loc + '.format');
         if (fv.ok) out.format = fv.profile; else fv.issues.forEach(function (i) { issues.push(i); });
