@@ -1626,7 +1626,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         });
         if (b.content === 'toc') { out.push({ kind: 'toc' }); return; }
         if (b.kind === 'custom') {
+          var blockField = cur.field;
           (b.parts || []).forEach(function (p) {
+            // DS-4: a part printed by a Repeat part reads its fields in its own scope.
+            cur.field = p.scope ? fieldsAt(p.scope) : blockField;
             var centre = !!(p.centre || centres(b, 'content'));
             if (p.kind === 'rule') out.push({ kind: 'rule' });
             else if (p.kind === 'pagebreak') out.push({ kind: 'pageBreak' });
@@ -1646,7 +1649,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
               var cellsOf = function (r) { return p.header.map(function (_, k) { return runs1(r && r[k] != null ? r[k] : ''); }); };
               var rowsOut = [], tallOut = [];
               var rpt = p.repeat && p.repeat.each ? p.repeat : null;
-              var scope0 = b.scope || rootSc;
+              var scope0 = p.scope || b.scope || rootSc;
               var items = rpt && scope0.length ? DATA.childrenIn(scope0, rpt.each, catalogue) : null;
               if (items) {
                 /* DS-3: each row is a template, printed once per item in the item's scope;
@@ -1784,9 +1787,28 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      *  a part id must be unique document-wide or a table reference could aim at two. */
     function allParts(p) {
       var out = [];
-      ((p.report && p.report.sections) || []).forEach(function (s) { out = out.concat(s.parts || []); });
-      ((p.report && p.report.sectionTemplates) || []).forEach(function (t) { out = out.concat(t.parts || []); });
+      // DS-4: a Repeat part's own parts count too, however deep.
+      function walk(list) { (list || []).forEach(function (x) { out.push(x); if (x && x.kind === 'repeat') walk(x.parts); }); }
+      ((p.report && p.report.sections) || []).forEach(function (s) { walk(s.parts); });
+      ((p.report && p.report.sectionTemplates) || []).forEach(function (t) { walk(t.parts); });
       return out;
+    }
+
+    /**
+     * DS-4: where a part is in a section, however deep in Repeat parts: the part, the list
+     * holding it, its index there, and the Repeat part around it (or null). Null when absent.
+     */
+    function locate(p, sectionId, partId) {
+      var s = findSection(p, sectionId);
+      function walk(list, parent) {
+        for (var i = 0; i < (list || []).length; i++) {
+          var x = list[i];
+          if (x && x.id === partId) return { part: x, list: list, index: i, parent: parent };
+          if (x && x.kind === 'repeat') { var r = walk(x.parts, x); if (r) return r; }
+        }
+        return null;
+      }
+      return s ? walk(s.parts || (s.parts = []), null) : null;
     }
 
     function findSection(p, id) {
@@ -2270,6 +2292,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         return { id: id, kind: 'table', caption: '', centre: false, align: ['l', 'l'], header: ['Column 1', 'Column 2'], rows: [['', '']] };
       }
       if (kind === 'rule') return { id: id, kind: 'rule' };
+      if (kind === 'repeat') return { id: id, kind: 'repeat', repeat: { each: '' }, parts: [] };
       if (kind === 'pagebreak') return { id: id, kind: 'pagebreak' };
       // SPC-1: 10mm is about four blank lines at 11pt — visibly a gap, and small enough
       // that a part added by accident does not throw the page out.
@@ -2300,29 +2323,32 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * @param {string} sectionId @param {'para'|'table'|'rule'|'pagebreak'|'space'|'image'} kind
      * @param {number} [at]  insert position; appended when omitted
      */
-    function addPart(sectionId, kind, at) {
+    function addPart(sectionId, kind, at, parentId) {
       if (!P()) return errNoProject();
       if (!findSection(P(), sectionId)) return err('Unknown section.', sectionId);
-      if (['para', 'table', 'rule', 'pagebreak', 'space', 'image'].indexOf(kind) === -1) return err('Unknown part type "' + kind + '".');
+      if (PART_KINDS.indexOf(kind) === -1) return err('Unknown part type "' + kind + '".');
+      // DS-4: into a Repeat part, when one is named.
+      if (parentId) { var host0 = locate(P(), sectionId, parentId); if (!host0 || host0.part.kind !== 'repeat') return err('Unknown Repeat part.', parentId); }
       var id = null;
       App.docHost.get().commit(function (p) {
-        var s = findSection(p, sectionId);
-        s.parts = s.parts || [];
+        var list = parentId ? (locate(p, sectionId, parentId).part.parts = locate(p, sectionId, parentId).part.parts || []) : (findSection(p, sectionId).parts = findSection(p, sectionId).parts || []);
         id = nextId('part', allParts(p));
         var part = blankPart(kind, id);
-        if (at === undefined || at === null || at < 0 || at > s.parts.length) s.parts.push(part);
-        else s.parts.splice(at, 0, part);
+        if (at === undefined || at === null || at < 0 || at > list.length) list.push(part);
+        else list.splice(at, 0, part);
       });
       return { ok: true, id: id, issues: [] };
     }
+    /** The kinds of part a section holds. DS-4: `repeat` holds parts of its own. */
+    var PART_KINDS = ['para', 'table', 'rule', 'pagebreak', 'space', 'image', 'repeat'];
 
     function updatePart(sectionId, partId, fields) {
       if (!P()) return errNoProject();
       var s0 = findSection(P(), sectionId);
       if (!s0) return err('Unknown section.', sectionId);
-      if (!(s0.parts || []).some(function (x) { return x.id === partId; })) return err('Unknown part.', partId);
+      if (!locate(P(), sectionId, partId)) return err('Unknown part.', partId);
       App.docHost.get().commit(function (p) {
-        var part = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0];
+        var part = locate(p, sectionId, partId).part;
         Object.keys(fields || {}).forEach(function (k) {
           if (k === 'id' || k === 'kind') return;             // identity is not editable
           // SPC-1: the two measurements are sanitised HERE rather than at the point of
@@ -2343,10 +2369,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function setParaLevel(sectionId, partId, level) {
       if (!P()) return errNoProject();
       var s0 = findSection(P(), sectionId);
-      if (!s0 || !(s0.parts || []).some(function (x) { return x.id === partId && x.kind === 'para'; })) return err('Unknown paragraph.', partId);
+      var at0 = s0 && locate(P(), sectionId, partId);
+      if (!at0 || at0.part.kind !== 'para') return err('Unknown paragraph.', partId);
       var n = Math.round(Number(level));
       App.docHost.get().commit(function (p) {
-        var part = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0];
+        var part = locate(p, sectionId, partId).part;
         if (isFinite(n) && n >= 1 && n <= 4) part.numberLevel = n; else delete part.numberLevel;
       });
       return ok();
@@ -2355,8 +2382,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (!findSection(P(), sectionId)) return err('Unknown section.', sectionId);
       App.docHost.get().commit(function (p) {
-        var s = findSection(p, sectionId);
-        s.parts = (s.parts || []).filter(function (x) { return x.id !== partId; });
+        var at = locate(p, sectionId, partId);
+        if (at) at.list.splice(at.index, 1);
       });
       return ok();
     }
@@ -2365,9 +2392,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function setPartImage(sectionId, partId, index, img) {
       if (!P()) return errNoProject();
       var s0 = findSection(P(), sectionId);
-      if (!s0 || !(s0.parts || []).some(function (x) { return x.id === partId && x.kind === 'image'; })) return err('Unknown image part.', partId);
+      var im0 = s0 && locate(P(), sectionId, partId);
+      if (!im0 || im0.part.kind !== 'image') return err('Unknown image part.', partId);
       App.docHost.get().commit(function (p) {
-        var part = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0];
+        var part = locate(p, sectionId, partId).part;
         part.images = part.images || [];
         while (part.images.length <= index) part.images.push(null);
         part.images[index] = img ? { source: img.source === 'standard' ? 'standard' : 'report', file: String(img.file), name: String(img.name || img.file) } : null;
@@ -2380,10 +2408,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (['width', 'noBorder', 'caption'].indexOf(field) === -1) return err('Unknown image setting "' + field + '".');
       var s0 = findSection(P(), sectionId);
-      var p0 = s0 && (s0.parts || []).filter(function (x) { return x.id === partId; })[0];
+      var l0 = s0 && locate(P(), sectionId, partId), p0 = l0 && l0.part;
       if (!p0 || !(p0.images || [])[index]) return err('There is no image there.', partId);
       App.docHost.get().commit(function (p) {
-        var im = findSection(p, sectionId).parts.filter(function (x) { return x.id === partId; })[0].images[index];
+        var im = locate(p, sectionId, partId).part.images[index];
         if (field === 'width') {
           var n = Math.round(Number(value));
           if (!isFinite(n) || n >= 100) delete im.width; else im.width = Math.max(5, n);
@@ -2445,18 +2473,23 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var s0 = findSection(P(), sectionId);
       if (!s0) return err('Unknown section.', sectionId);
       App.docHost.get().commit(function (p) {
-        var s = findSection(p, sectionId), parts = s.parts || [];
-        var from = parts.map(function (x) { return x.id; }).indexOf(partId);
-        if (from === -1) return;
-        var moved = parts.splice(from, 1)[0], to;
+        var src = locate(p, sectionId, partId);
+        if (!src) return;
+        // DS-4: a drag may land in another list (into or out of a Repeat part) — never inside itself.
         if (beforeId != null) {
-          var at = parts.map(function (x) { return x.id; }).indexOf(beforeId);
-          to = at === -1 ? parts.length : at;
-        } else {
-          to = from + delta;
-          if (to < 0) to = 0;
-          if (to > parts.length) to = parts.length;
+          var dst = locate(p, sectionId, beforeId);
+          if (!dst || beforeId === partId) return;
+          for (var up = dst.parent; up; up = (locate(p, sectionId, up.id) || {}).parent) if (up.id === partId) return;
+          src.list.splice(src.index, 1);
+          dst = locate(p, sectionId, beforeId);
+          dst.list.splice(dst.index, 0, src.part);
+          return;
         }
+        var parts = src.list, from = src.index;
+        var moved = parts.splice(from, 1)[0];
+        var to = from + delta;
+        if (to < 0) to = 0;
+        if (to > parts.length) to = parts.length;
         parts.splice(to, 0, moved);
       });
       return ok();
@@ -2466,11 +2499,19 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     /** Read a part out of the live project (helper for the table ops below). */
     function part(p, sectionId, partId) {
-      var s = findSection(p, sectionId);
-      return s ? (s.parts || []).filter(function (x) { return x.id === partId; })[0] : null;
+      var at = locate(p, sectionId, partId);
+      return at ? at.part : null;
     }
     /** A part of a section, for a view that only reads it. */
     function findPart(p, sectionId, partId) { return part(p, sectionId, partId) || null; }
+    /** DS-4: what the Repeat parts around a part repeat for, outermost first. */
+    function enclosingRepeats(p, sectionId, partId) {
+      var out = [];
+      for (var at = locate(p, sectionId, partId); at && at.parent; at = locate(p, sectionId, at.parent.id)) {
+        if (at.parent.repeat && at.parent.repeat.each) out.unshift(at.parent.repeat.each);
+      }
+      return out;
+    }
 
     /** Set one cell. `row === -1` addresses the header. */
     function setCell(sectionId, partId, row, col, value) {
@@ -3005,7 +3046,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       setTableNoCaption: setTableNoCaption,
       // OPT-2: what the report is made of, stored with the report rather than the session.
       setReportInclude: setReportInclude, INCLUDE_MAPS: INCLUDE_MAPS,
-      addSection: addSection, setSectionRepeat: setSectionRepeat, setPartRepeat: setPartRepeat, normRepeat: normRepeat, findPart: findPart, updateSection: updateSection, removeSection: removeSection,
+      addSection: addSection, setSectionRepeat: setSectionRepeat, setPartRepeat: setPartRepeat, normRepeat: normRepeat, findPart: findPart, enclosingRepeats: enclosingRepeats, updateSection: updateSection, removeSection: removeSection,
       addPart: addPart, updatePart: updatePart, removePart: removePart, movePart: movePart, setParaLevel: setParaLevel,
       setPartImage: setPartImage, setPartImageField: setPartImageField, addStandardImage: addStandardImage, renameStandardImage: renameStandardImage, removeStandardImage: removeStandardImage, standardImageUses: standardImageUses,
       setCell: setCell, addRow: addRow, removeRow: removeRow,
@@ -3120,7 +3161,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       parts.forEach(function (p, i) {
         var l = loc + '.parts[' + i + ']';
         if (!p || typeof p !== 'object') { issues.push(issue('error', 'A part must be an object.', l)); ok = false; return; }
-        if (['para', 'table', 'rule', 'pagebreak', 'space', 'image'].indexOf(p.kind) === -1) {
+        if (['para', 'table', 'rule', 'pagebreak', 'space', 'image', 'repeat'].indexOf(p.kind) === -1) {
           issues.push(issue('error', 'Unknown part kind "' + p.kind + '".', l)); ok = false; return;
         }
         if (p.kind === 'para' && p.text !== undefined && typeof p.text !== 'string') {
@@ -3133,6 +3174,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           var pr = App.docStore.normRepeat(p.repeat);
           if (pr.error) { issues.push(issue('error', pr.error, l + '.repeat')); ok = false; }
         }
+        // DS-4: a Repeat part's own parts, checked the same way.
+        if (p.kind === 'repeat' && !validParts(p.parts || [], l, issues)) ok = false;
         if (p.kind === 'table') {
           if (!Array.isArray(p.header) || !p.header.length) { issues.push(issue('error', 'A table needs a header row.', l)); ok = false; }
           if (p.rows !== undefined && !Array.isArray(p.rows)) { issues.push(issue('error', 'A table\'s rows must be an array.', l)); ok = false; }
@@ -3872,19 +3915,21 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return { outer: [root], own: eachOf(byId[secId]), group: [] };
     }
     /** The collections a box in this section can read: single entries, and lists. */
-    function reachIn(project, secId) {
+    function reachIn(project, secId, partId) {
       var c = catalogue();
       if (!c) return { single: [], lists: [] };
       var sc = scopeOf(project, secId);
-      return DATA.available(sc.outer.concat(sc.own ? [sc.own] : []), c);
+      // DS-4: inside Repeat parts, what they repeat for is in scope too.
+      var inner = partId ? App.docStore.enclosingRepeats(project, secId, partId) : [];
+      return DATA.available(sc.outer.concat(sc.own ? [sc.own] : [], inner), c);
     }
     /** A chip's label in this section: null (a broken chip) when the field cannot be read here. */
-    function fieldLabelIn(project, secId) {
+    function fieldLabelIn(project, secId, partId) {
       var reach = null;
       return function (tag) {
         var l = fieldLabel(tag);
         if (!l || !secId) return l;
-        reach = reach || reachIn(project, secId);
+        reach = reach || reachIn(project, secId, partId);
         var p = DATA.parseFieldTag(tag);
         return reach.single.indexOf(p.coll) !== -1 || reach.lists.indexOf(p.coll) !== -1 ? l : null;
       };
@@ -3899,13 +3944,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * DS-1: the options of the field chip being edited (clicked in its box): for a list, its
      * sort, filter and style; for any field, what it prints when there is nothing.
      */
-    function chipPanel(project, secId, id) {
+    function chipPanel(project, secId, id, partId) {
       var ce = _rd.chipEdit, c = catalogue();
       if (!ce || ce.owner !== id || !c) return '';
       var p = DATA.parseFieldTag(ce.tag);
       var def = p ? DATA.fieldDef(c, p.coll, p.field) : null;
       if (!def) return '';
-      var reach = reachIn(project, secId);
+      var reach = reachIn(project, secId, partId);
       var childList = reach.single.indexOf(p.coll) === -1 && reach.lists.indexOf(p.coll) !== -1;
       var o = p.opts || {}, w = o.where || {}, so = o.sort || {};
       var fields = c.collections[p.coll].fields;
@@ -3937,12 +3982,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
 
     /** The Field menu: the fields of what is in scope, then the lists below it. Click or drag. */
-    function fieldMenu(project, secId, id) {
-      var panel = chipPanel(project, secId, id);
+    function fieldMenu(project, secId, id, partId) {
+      var panel = chipPanel(project, secId, id, partId);
       if (_rd.fieldFor !== id) return panel;
       var c = catalogue();
       if (!c) return '';
-      var reach = reachIn(project, secId);
+      var reach = reachIn(project, secId, partId);
       function group(coll, list) {
         var def = c.collections[coll];
         return '<div class="rd-fieldgroup"><div class="rd-fieldgroup-h">' + esc(collLabel(c, coll, list)) + (list ? ' <em>list</em>' : '') + '</div>' +
@@ -4144,11 +4189,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * @param {string} attrs   the data attributes identifying what this box writes to
      * @param {string} tokens  the stored token text
      */
-    function richBox(project, attrs, tokens, cls, placeholder, secId) {
+    function richBox(project, attrs, tokens, cls, placeholder, secId, partId) {
       return '<div class="rd-rich ' + (cls || '') + '" contenteditable="true" role="textbox"' +
         ' aria-multiline="true" spellcheck="true" data-rd-rich data-rd-live ' + attrs +
         (placeholder ? ' data-rd-ph="' + esc(placeholder) + '"' : '') + '>' +
-        App.ui.richText.toHtml(tokens || '', { resolveRef: refResolver(project), fieldLabel: fieldLabelIn(project, secId) }) + '</div>';
+        App.ui.richText.toHtml(tokens || '', { resolveRef: refResolver(project), fieldLabel: fieldLabelIn(project, secId, partId) }) + '</div>';
     }
 
     /* RTX-1: the four formatting buttons, wherever prose is written. `host` is the data
@@ -4256,9 +4301,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           cb('data-rd-part-flag="centre" ' + host, 'Centre', part.centre === true) +
           paraLevelSelect(project, sec, part) +
           partControls(sec, part, i, n) + '</div>' +
-        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id) +
+        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id, part.id) +
         richBox(project, 'data-rd-text="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"',
-          part.text, '', 'Write the paragraph. Enter is a line break; a blank line starts a new paragraph.', sec.id) +
+          part.text, '', 'Write the paragraph. Enter is a line break; a blank line starts a new paragraph.', sec.id, part.id) +
         hostileHint(part.text || '') + '</div>';
     }
 
@@ -4385,7 +4430,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         // RTX-2: a heading is prose like any other cell, so it takes the same box.
         return '<th>' + richBox(project,
             'data-rd-cell="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-row="-1" data-rd-col="' + c + '"' +
-            ' aria-label="Column ' + (c + 1) + ' heading"', h, 'rd-cellbox', '', sec.id) +
+            ' aria-label="Column ' + (c + 1) + ' heading"', h, 'rd-cellbox', '', sec.id, part.id) +
           '<span class="rd-colbar">' +
             '<select data-rd-align="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-col="' + c + '" aria-label="Column ' + (c + 1) + ' alignment" title="Column alignment">' +
               ['l', 'c', 'r'].map(function (a) { return '<option value="' + a + '"' + ((align[c] || 'l') === a ? ' selected' : '') + '>' + (a === 'l' ? '⇤' : a === 'c' ? '↔' : '⇥') + '</option>'; }).join('') +
@@ -4401,7 +4446,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         return '<tr' + (part.repeat && part.repeat.each ? ' class="rd-rowtpl" title="Printed once per entry"' : '') + '>' + head.map(function (_, c) {
           return '<td>' + richBox(project,
             'data-rd-cell="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-row="' + ri + '" data-rd-col="' + c + '"' +
-            ' aria-label="Row ' + (ri + 1) + ' column ' + (c + 1) + '"', r[c], 'rd-cellbox', '', sec.id) + '</td>';
+            ' aria-label="Row ' + (ri + 1) + ' column ' + (c + 1) + '"', r[c], 'rd-cellbox', '', sec.id, part.id) + '</td>';
         }).join('') + '<td class="rd-rowdel">' +
           (rowMm
             ? '<input type="checkbox" class="rd-tallbox" data-rd-tallrow="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) +
@@ -4431,7 +4476,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           // a layout, does not want "Table 7:" underneath it.
           cb('data-rd-part-flag="noCaption" data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"', 'No caption', part.noCaption === true) +
           partControls(sec, part, i, n) + '</div>' +
-        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id) + rowsRepeatHtml(project, sec, part) +
+        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id, part.id) + rowsRepeatHtml(project, sec, part) +
         (part.noCaption === true
           ? '<p class="rd-state">No caption: this table is not numbered.</p>'
           : '<input class="rd-cap" value="' + esc(part.caption || '') + '" data-rd-caption="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" placeholder="Table caption — left blank, the section’s heading is used" aria-label="Table caption">') +
@@ -4877,7 +4922,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function rowsRepeatHtml(project, sec, part) {
       var c = catalogue();
       if (!c) return '';
-      var lists = reachIn(project, sec.id).lists;
+      var lists = reachIn(project, sec.id, part.id).lists;
       var r = part.repeat || null, each = r ? r.each : '';
       var extra = ' data-rd-sec="' + esc(sec.id) + '"';
       var opts2 = '<option value=""' + (each ? '' : ' selected') + '>As written</option>' +
@@ -4968,6 +5013,51 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return out;
     }
 
+    /** The editors of a list of parts — a section's, or a Repeat part's own. */
+    function partsHtml(project, sec, parts) {
+      return parts.map(function (p, i) {
+        if (p.kind === 'para') return paraEditor(project, sec, p, i, parts.length);
+        if (p.kind === 'table') return tableEditor(project, sec, p, i, parts.length);
+        if (p.kind === 'rule') return simplePart(sec, p, i, parts.length, 'Horizontal line', 'A rule across the page.');
+        if (p.kind === 'space') return spaceEditor(sec, p, i, parts.length);
+        if (p.kind === 'image') return imageEditor(project, sec, p, i, parts.length);
+        if (p.kind === 'repeat') return repeatPartEditor(project, sec, p, i, parts.length);
+        return simplePart(sec, p, i, parts.length, 'Page break', 'Forces what follows onto a new page.');
+      }).join('');
+    }
+    /** The add buttons, into a section or (with `parentId`) into a Repeat part. */
+    function addPartButtons(sec, parentId) {
+      var at = ' data-rd-sec="' + esc(sec.id) + '"' + (parentId ? ' data-rd-parent="' + esc(parentId) + '"' : '');
+      return '<button type="button" data-rd-addpart="para"' + at + '>+ Paragraph</button>' +
+        '<button type="button" data-rd-addpart="table"' + at + '>+ Table</button>' +
+        '<button type="button" data-rd-addpart="image"' + at + '>+ Image</button>' +
+        '<button type="button" data-rd-addpart="rule"' + at + '>+ Line</button>' +
+        '<button type="button" data-rd-addpart="space"' + at + ' title="A measured gap down the page">+ Space</button>' +
+        '<button type="button" data-rd-addpart="pagebreak"' + at + '>+ Page break</button>' +
+        (catalogue() ? '<button type="button" data-rd-addpart="repeat"' + at + ' title="Parts printed once for each entry of a register list">+ Repeat</button>' : '');
+    }
+    /**
+     * DS-4: a Repeat part — the parts inside it printed once per entry of a list in reach,
+     * filtered and sorted, each reading that entry's fields.
+     */
+    function repeatPartEditor(project, sec, part, i, n) {
+      var c = catalogue();
+      var lists = c ? reachIn(project, sec.id, part.id).lists : [];
+      var r = part.repeat || {}, each = r.each || '';
+      var extra = ' data-rd-sec="' + esc(sec.id) + '"';
+      var opts2 = '<option value=""' + (each ? '' : ' selected') + '>Choose&hellip;</option>' +
+        lists.map(function (k) { return '<option value="' + esc(k) + '"' + (k === each ? ' selected' : '') + '>' + esc(collLabel(c, k)) + '</option>'; }).join('') +
+        (each && lists.indexOf(each) === -1 ? '<option value="' + esc(each) + '" selected>' + esc(collLabel(c, each)) + ' (not available here)</option>' : '');
+      var inner = partsHtml(project, sec, part.parts || []);
+      return '<div class="rd-part rd-repeatpart" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
+        '<div class="rd-part-head"><span class="rd-part-kind">\u21bb Repeat</span>' +
+          '<label class="rd-lab rd-lab-s rd-inline">For each<select data-rd-rpart-each="' + esc(part.id) + '"' + extra + ' aria-label="Repeat for each">' + opts2 + '</select></label>' +
+          partControls(sec, part, i, n) + '</div>' +
+        (c && each ? filterSortHtml(c, each, part.repeat, 'data-rd-rpart-', part.id, extra) : '<p class="rd-state">Choose what to repeat for; the parts below print once for each.</p>') +
+        '<div class="rd-parts rd-nested">' + (inner || '<p class="rd-state">Nothing inside yet.</p>') + '</div>' +
+        '<div class="rd-addbar">' + addPartButtons(sec, part.id) + '</div></div>';
+    }
+
     /** The fields of one category of a section. */
     function categoryFields(project, view, block, resolved, cat) {
       var sec = block.kind === 'custom' ? customSection(project, block.id) : null;
@@ -4991,23 +5081,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           (cols && cols.all.length ? widthStrip(project, block.id, cols.all, block.widths) : '');
       }
       if (cat === 'content' && sec) {
-        var parts = sec.parts || [];
-        var body = parts.map(function (p, i) {
-          if (p.kind === 'para') return paraEditor(project, sec, p, i, parts.length);
-          if (p.kind === 'table') return tableEditor(project, sec, p, i, parts.length);
-          if (p.kind === 'rule') return simplePart(sec, p, i, parts.length, 'Horizontal line', 'A rule across the page.');
-          if (p.kind === 'space') return spaceEditor(sec, p, i, parts.length);
-          if (p.kind === 'image') return imageEditor(project, sec, p, i, parts.length);
-          return simplePart(sec, p, i, parts.length, 'Page break', 'Forces what follows onto a new page.');
-        }).join('');
+        var body = partsHtml(project, sec, sec.parts || []);
         return '<div class="rd-sec-edit"><div class="rd-parts">' + (body || '<p class="rd-state">Nothing in this section yet.</p>') + '</div>' +
-          '<div class="rd-addbar">' +
-            '<button type="button" data-rd-addpart="para" data-rd-sec="' + esc(sec.id) + '">+ Paragraph</button>' +
-            '<button type="button" data-rd-addpart="table" data-rd-sec="' + esc(sec.id) + '">+ Table</button>' +
-            '<button type="button" data-rd-addpart="image" data-rd-sec="' + esc(sec.id) + '">+ Image</button>' +
-            '<button type="button" data-rd-addpart="rule" data-rd-sec="' + esc(sec.id) + '">+ Line</button>' +
-            '<button type="button" data-rd-addpart="space" data-rd-sec="' + esc(sec.id) + '" title="A measured gap down the page">+ Space</button>' +
-            '<button type="button" data-rd-addpart="pagebreak" data-rd-sec="' + esc(sec.id) + '">+ Page break</button>' +
+          '<div class="rd-addbar">' + addPartButtons(sec, null) +
             '<span class="spacer"></span>' +
             '<button type="button" data-rd-save-template="' + esc(sec.id) + '" title="Save this section\'s shape for reuse in any project">Save as template&hellip;</button>' +
             '<button type="button" class="danger" data-rd-del-section="' + esc(sec.id) + '">Delete section</button>' +
@@ -6419,7 +6495,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
       // ---- parts ------------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-addpart]', function (e, el) {
-        logIssues(App.docStore.addPart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-addpart')));
+        logIssues(App.docStore.addPart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-addpart'), null, el.getAttribute('data-rd-parent') || null));
         dirty(); repaint();
       });
       dom.on(ctx.root, 'click', '[data-rd-part-del]', function (e, el) {
@@ -6716,24 +6792,27 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       function partNow(secId, partId) { return App.docStore.findPart(P(), secId, partId); }
       function setRows(el, change) {
         var secId = el.getAttribute('data-rd-sec');
-        var name = ['each', 'wfield', 'wop', 'wval', 'sfield', 'sdir'].filter(function (n) { return el.hasAttribute('data-rd-rows-' + n); })[0];
-        var partId = el.getAttribute('data-rd-rows-' + name);
+        var names = ['each', 'wfield', 'wop', 'wval', 'sfield', 'sdir'];
+        var pre = names.some(function (n) { return el.hasAttribute('data-rd-rpart-' + n); }) ? 'data-rd-rpart-' : 'data-rd-rows-';
+        var name = names.filter(function (n) { return el.hasAttribute(pre + n); })[0];
+        var partId = el.getAttribute(pre + name);
         var t = partNow(secId, partId);
         if (!t) return;
         var next = change(Object.assign({}, t.repeat || {}));
         quietly(function () { logIssues(App.docStore.setPartRepeat(secId, partId, next)); });
         dirty(); repaint();
       }
-      dom.on(ctx.root, 'change', '[data-rd-rows-each]', function (e, el) { setRows(el, function (cur) { return el.value ? (cur.each === el.value ? cur : { each: el.value }) : null; }); });
-      dom.on(ctx.root, 'change', '[data-rd-rows-wfield]', function (e, el) {
+      // DS-4: a Repeat part's controls are the same, under `data-rd-rpart-`.
+      dom.on(ctx.root, 'change', '[data-rd-rows-each], [data-rd-rpart-each]', function (e, el) { setRows(el, function (cur) { return el.value ? (cur.each === el.value ? cur : { each: el.value }) : null; }); });
+      dom.on(ctx.root, 'change', '[data-rd-rows-wfield], [data-rd-rpart-wfield]', function (e, el) {
         setRows(el, function (cur) { var w = cur.where || {}; cur.where = el.value ? { field: el.value, op: w.op || 'is', value: w.value || '' } : null; return cur; });
       });
-      dom.on(ctx.root, 'change', '[data-rd-rows-wop]', function (e, el) { setRows(el, function (cur) { cur.where = Object.assign({}, cur.where, { op: el.value }); return cur; }); });
-      dom.on(ctx.root, 'change', '[data-rd-rows-wval]', function (e, el) { setRows(el, function (cur) { cur.where = Object.assign({}, cur.where, { value: el.value }); return cur; }); });
-      dom.on(ctx.root, 'change', '[data-rd-rows-sfield]', function (e, el) {
+      dom.on(ctx.root, 'change', '[data-rd-rows-wop], [data-rd-rpart-wop]', function (e, el) { setRows(el, function (cur) { cur.where = Object.assign({}, cur.where, { op: el.value }); return cur; }); });
+      dom.on(ctx.root, 'change', '[data-rd-rows-wval], [data-rd-rpart-wval]', function (e, el) { setRows(el, function (cur) { cur.where = Object.assign({}, cur.where, { value: el.value }); return cur; }); });
+      dom.on(ctx.root, 'change', '[data-rd-rows-sfield], [data-rd-rpart-sfield]', function (e, el) {
         setRows(el, function (cur) { cur.sort = el.value ? { field: el.value, dir: (cur.sort && cur.sort.dir) || 'asc' } : null; return cur; });
       });
-      dom.on(ctx.root, 'change', '[data-rd-rows-sdir]', function (e, el) { setRows(el, function (cur) { cur.sort = Object.assign({}, cur.sort, { dir: el.value }); return cur; }); });
+      dom.on(ctx.root, 'change', '[data-rd-rows-sdir], [data-rd-rpart-sdir]', function (e, el) { setRows(el, function (cur) { cur.sort = Object.assign({}, cur.sort, { dir: el.value }); return cur; }); });
       dom.on(ctx.root, 'change', '[data-rd-repeat-each]', function (e, el) {
         var id = el.getAttribute('data-rd-repeat-each'), cur = repeatOf(id), v = el.value;
         setRepeat(id, v ? (cur && cur.each === v ? cur : { each: v }) : null);

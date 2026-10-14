@@ -394,3 +394,7 @@
   .docgen .rd-rows-repeat { margin: 4px 0 6px;}
   .docgen .rd-rows-repeat > .rd-lab { display: inline-flex; gap: 6px; align-items: center;}
   .docgen .rd-rowtpl td:first-child { box-shadow: inset 3px 0 0 var(--c-accent);}
+  /* DS-4: a Repeat part, its own parts framed inside it. */
+  .docgen .rd-repeatpart { border-left: 3px solid var(--c-accent);}
+  .docgen .rd-repeatpart .rd-inline { display: inline-flex; gap: 6px; align-items: center; margin-left: 8px;}
+  .docgen .rd-parts.rd-nested { margin: 6px 0 0 6px; padding-left: 8px; border-left: 1px dashed var(--c-border);}

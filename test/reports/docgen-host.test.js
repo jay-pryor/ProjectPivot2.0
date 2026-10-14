@@ -469,3 +469,9 @@ test('the host declares the register catalogue, bound to the chosen platform', a
   assert.equal(host.catalogue(null).data, null);
   assert.deepEqual(host.catalogue({ subjectId: 'p1' }).data.children.hazard.map((h) => h.key), ['h1']);
 });
+
+test('an image inside a Repeat part is in use', () => {
+  const data = { reportDesign: { sections: [{ id: 's', parts: [{ id: 'r', kind: 'repeat', repeat: { each: 'hazard' }, parts: [
+    { id: 'i', kind: 'image', images: [{ source: 'report', file: 'deep.png' }] }] }] }] }, records: { report: {} } };
+  assert.deepEqual([...imagesInUse(data)], ['deep.png']);
+});

@@ -275,15 +275,34 @@ export function expandRepeats(blocks, catalogue, levels) {
     if (typeof b.label === 'string') c.label = plainFields(b.label, scope, cat);
     if (suffix) { c.id = b.id + suffix; c.templateId = b.id; c.suffix = suffix; }
     if (pin) c.level = lv(b);
-    if (Array.isArray(b.parts)) {
-      c.parts = b.parts.map((p) => {
-        const q = Object.assign({}, p, { id: suffix ? p.id + suffix : p.id });
-        if (typeof p.caption === 'string') q.caption = caption(p.caption, scope);
-        if (Array.isArray(p.images)) q.images = p.images.map((im) => (im && typeof im.caption === 'string' ? Object.assign({}, im, { caption: caption(im.caption, scope) }) : im));
-        return q;
-      });
-    }
+    if (Array.isArray(b.parts)) c.parts = expandParts(b.parts, scope, suffix, false);
     out.push(c);
+  }
+
+  /**
+   * DS-4: a block's parts with each Repeat part replaced by its parts once per item; a part
+   * printed inside one carries the scope it reads its fields in (`scope`).
+   */
+  function expandParts(parts, scope, suffix, inner) {
+    const res = [];
+    parts.forEach((p) => {
+      if (p && p.kind === 'repeat') {
+        const each = p.repeat && p.repeat.each;
+        if (!each || !scope.length) return;               // nothing to repeat for, or unbound
+        const kids = childrenIn(scope, each, cat);
+        if (kids === null) { expandParts(p.parts || [], scope, suffix, inner).forEach((q) => res.push(q)); return; }
+        select(kids, p.repeat.where, p.repeat.sort).forEach((e) => {
+          expandParts(p.parts || [], scope.concat([{ coll: each, entry: e }]), suffix + '~' + e.key, true).forEach((q) => res.push(q));
+        });
+        return;
+      }
+      const q = Object.assign({}, p, { id: suffix ? p.id + suffix : p.id });
+      if (inner) q.scope = scope;
+      if (typeof p.caption === 'string') q.caption = caption(p.caption, scope);
+      if (Array.isArray(p.images)) q.images = p.images.map((im) => (im && typeof im.caption === 'string' ? Object.assign({}, im, { caption: caption(im.caption, scope) }) : im));
+      res.push(q);
+    });
+    return res;
   }
 
   function walk(list, scope, suffix) {

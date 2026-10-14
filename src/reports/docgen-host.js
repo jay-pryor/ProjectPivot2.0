@@ -215,7 +215,11 @@ export function imagesInUse(data) {
   const used = new Set();
   /** @param {any[] | undefined} parts */
   const visit = (parts) => {
-    for (const p of parts ?? []) if (p?.kind === 'image') for (const im of p.images ?? []) if (im && im.source !== 'standard' && im.file) used.add(im.file);
+    for (const p of parts ?? []) {
+      if (p?.kind === 'image') for (const im of p.images ?? []) if (im && im.source !== 'standard' && im.file) used.add(im.file);
+      // A Repeat part's own parts, however deep.
+      if (p?.kind === 'repeat') visit(p.parts);
+    }
   };
   const d = data.reportDesign ?? {};
   for (const s of d.sections ?? []) visit(s.parts);
