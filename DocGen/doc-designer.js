@@ -1545,8 +1545,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       /* DS-1: what a field reads as in a block: its scope's value, printed per its options;
        * "[unknown field]" in bold where it cannot be read. Its text is never markup. */
       var rootSc = catalogue ? DATA.rootScope(catalogue.data, catalogue.root) : [];
-      function fieldsIn(b) {
-        var scope = b.scope || rootSc;
+      function fieldsIn(b) { return fieldsAt(b.scope || rootSc); }
+      function fieldsAt(scope) {
         return function (tag) {
           if (App.md.FILL_TAG.test(tag)) {
             var fl = DATA.parseFillTag(tag);
@@ -1641,9 +1641,29 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
               var cols = (p.header || []).map(function (h, k) {
                 return { width: (p.widths && p.widths.length === p.header.length) ? p.widths[k] : undefined, align: (p.align || [])[k] || 'l' };
               });
+              var tpl = p.rows || [];
+              var tall = (p.tallRows && p.tallRows.length === tpl.length) ? p.tallRows : null;
+              var cellsOf = function (r) { return p.header.map(function (_, k) { return runs1(r && r[k] != null ? r[k] : ''); }); };
+              var rowsOut = [], tallOut = [];
+              var rpt = p.repeat && p.repeat.each ? p.repeat : null;
+              var scope0 = b.scope || rootSc;
+              var items = rpt && scope0.length ? DATA.childrenIn(scope0, rpt.each, catalogue) : null;
+              if (items) {
+                /* DS-3: each row is a template, printed once per item in the item's scope;
+                 * none at all is one row saying so. */
+                var keep = cur.field;
+                DATA.select(items, rpt.where, rpt.sort).forEach(function (e) {
+                  cur.field = fieldsAt(scope0.concat([{ coll: rpt.each, entry: e }]));
+                  tpl.forEach(function (r, ri) { rowsOut.push(cellsOf(r)); tallOut.push(tall ? tall[ri] : false); });
+                });
+                cur.field = keep;
+                if (!rowsOut.length) { rowsOut.push(p.header.map(function (_, k) { return [{ text: k ? '' : DATA.EMPTY_TEXT }]; })); tallOut.push(false); }
+              } else {
+                rowsOut = tpl.map(cellsOf); tallOut = tall ? tall.slice() : [];
+              }
               out.push({ kind: 'table', anchor: App.md.anchor('tbl-' + p.id), caption: caption(byId[p.id]), columns: cols, centre: centre,
-                header: p.header.map(runs1), rows: (p.rows || []).map(function (r) { return p.header.map(function (_, k) { return runs1(r && r[k] != null ? r[k] : ''); }); }),
-                rowHeight: Number(p.rowHeight) || 0, tallRows: (p.tallRows && p.tallRows.length === (p.rows || []).length) ? p.tallRows : null });
+                header: p.header.map(runs1), rows: rowsOut,
+                rowHeight: Number(p.rowHeight) || 0, tallRows: tall ? tallOut : null });
             } else if (p.kind === 'image') { var fb = figureBlock(p); if (fb) out.push(fb); }
           });
           return;
@@ -2166,6 +2186,21 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return { repeat: out, error: null };
     }
 
+    /** DS-3: a table's rows repeated per register entry (each row a template); null stops it. */
+    function setPartRepeat(sectionId, partId, repeat) {
+      if (!P()) return errNoProject();
+      var t0 = part(P(), sectionId, partId);
+      if (!t0) return err('Unknown part.', partId);
+      if (t0.kind !== 'table' && t0.kind !== 'repeat') return err('Only a table or a Repeat part repeats.', partId);
+      var n = normRepeat(repeat);
+      if (n.error) return err(n.error, partId);
+      App.docHost.get().commit(function (p) {
+        var t = part(p, sectionId, partId);
+        if (n.repeat) t.repeat = n.repeat; else if (t.kind === 'repeat') t.repeat = { each: '' }; else delete t.repeat;
+      });
+      return ok();
+    }
+
     /** DS-2: repeat a section (and the sections under it) per register entry; null stops it. */
     function setSectionRepeat(id, repeat) {
       if (!P()) return errNoProject();
@@ -2434,6 +2469,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var s = findSection(p, sectionId);
       return s ? (s.parts || []).filter(function (x) { return x.id === partId; })[0] : null;
     }
+    /** A part of a section, for a view that only reads it. */
+    function findPart(p, sectionId, partId) { return part(p, sectionId, partId) || null; }
 
     /** Set one cell. `row === -1` addresses the header. */
     function setCell(sectionId, partId, row, col, value) {
@@ -2968,7 +3005,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       setTableNoCaption: setTableNoCaption,
       // OPT-2: what the report is made of, stored with the report rather than the session.
       setReportInclude: setReportInclude, INCLUDE_MAPS: INCLUDE_MAPS,
-      addSection: addSection, setSectionRepeat: setSectionRepeat, normRepeat: normRepeat, updateSection: updateSection, removeSection: removeSection,
+      addSection: addSection, setSectionRepeat: setSectionRepeat, setPartRepeat: setPartRepeat, normRepeat: normRepeat, findPart: findPart, updateSection: updateSection, removeSection: removeSection,
       addPart: addPart, updatePart: updatePart, removePart: removePart, movePart: movePart, setParaLevel: setParaLevel,
       setPartImage: setPartImage, setPartImageField: setPartImageField, addStandardImage: addStandardImage, renameStandardImage: renameStandardImage, removeStandardImage: removeStandardImage, standardImageUses: standardImageUses,
       setCell: setCell, addRow: addRow, removeRow: removeRow,
@@ -3091,6 +3128,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         }
         if (p.kind === 'image' && p.images !== undefined && !Array.isArray(p.images)) {
           issues.push(issue('error', 'An image part\'s images must be an array.', l)); ok = false;
+        }
+        if (p.kind === 'table' || p.kind === 'repeat') {
+          var pr = App.docStore.normRepeat(p.repeat);
+          if (pr.error) { issues.push(issue('error', pr.error, l + '.repeat')); ok = false; }
         }
         if (p.kind === 'table') {
           if (!Array.isArray(p.header) || !p.header.length) { issues.push(issue('error', 'A table needs a header row.', l)); ok = false; }
@@ -4357,7 +4398,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
        * that do nothing is worse than no column at all. */
       var trs = rows.map(function (r, ri) {
         var tall = App.docStore.rowTall(part, ri);
-        return '<tr>' + head.map(function (_, c) {
+        return '<tr' + (part.repeat && part.repeat.each ? ' class="rd-rowtpl" title="Printed once per entry"' : '') + '>' + head.map(function (_, c) {
           return '<td>' + richBox(project,
             'data-rd-cell="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-row="' + ri + '" data-rd-col="' + c + '"' +
             ' aria-label="Row ' + (ri + 1) + ' column ' + (c + 1) + '"', r[c], 'rd-cellbox', '', sec.id) + '</td>';
@@ -4390,7 +4431,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           // a layout, does not want "Table 7:" underneath it.
           cb('data-rd-part-flag="noCaption" data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"', 'No caption', part.noCaption === true) +
           partControls(sec, part, i, n) + '</div>' +
-        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id) +
+        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id) + rowsRepeatHtml(project, sec, part) +
         (part.noCaption === true
           ? '<p class="rd-state">No caption: this table is not numbered.</p>'
           : '<input class="rd-cap" value="' + esc(part.caption || '') + '" data-rd-caption="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" placeholder="Table caption — left blank, the section’s heading is used" aria-label="Table caption">') +
@@ -4805,6 +4846,50 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
 
     /**
+     * DS-2/DS-3: the filter (one condition) and the sort of a repeat, as controls named
+     * `<prefix>wfield|wop|wval|sfield|sdir` carrying `key` (and `extra` attributes).
+     */
+    function filterSortHtml(c, each, r, prefix, key, extra) {
+      var fields = (c.collections[each] || { fields: [] }).fields;
+      var w = (r && r.where) || {}, so = (r && r.sort) || {};
+      var at = function (name) { return prefix + name + '="' + esc(key) + '"' + (extra || ''); };
+      var fieldOpts = function (cur, none) {
+        return '<option value="">' + esc(none) + '</option>' + fields.map(function (f) {
+          return '<option value="' + esc(f.id) + '"' + (f.id === cur ? ' selected' : '') + '>' + esc(f.label) + '</option>';
+        }).join('');
+      };
+      var noValue = w.op === 'empty' || w.op === 'set';
+      return '<div class="rd-grid">' +
+        '<label class="rd-lab rd-lab-s">Only where<select ' + at('wfield') + ' aria-label="Filter field">' + fieldOpts(w.field, 'Every one') + '</select></label>' +
+        (w.field
+          ? '<label class="rd-lab rd-lab-s">&nbsp;<select ' + at('wop') + ' aria-label="Filter test">' + DATA.OPS.map(function (o) {
+              return '<option value="' + o + '"' + (o === (w.op || 'is') ? ' selected' : '') + '>' + esc(DATA.OP_LABELS[o]) + '</option>';
+            }).join('') + '</select></label>' +
+            (noValue ? '' : '<label class="rd-lab rd-lab-s">&nbsp;<input ' + at('wval') + ' value="' + esc(w.value || '') + '" aria-label="Filter value"></label>')
+          : '') +
+        '<label class="rd-lab rd-lab-s">Sort by<select ' + at('sfield') + ' aria-label="Sort by">' + fieldOpts(so.field, 'Register order') + '</select></label>' +
+        (so.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select ' + at('sdir') + ' aria-label="Sort direction">' +
+          '<option value="asc"' + (so.dir === 'desc' ? '' : ' selected') + '>Ascending</option><option value="desc"' + (so.dir === 'desc' ? ' selected' : '') + '>Descending</option></select></label>' : '') +
+        '</div>';
+    }
+
+    /** DS-3: a table's Rows control: as written, or each row once per item of a list in reach. */
+    function rowsRepeatHtml(project, sec, part) {
+      var c = catalogue();
+      if (!c) return '';
+      var lists = reachIn(project, sec.id).lists;
+      var r = part.repeat || null, each = r ? r.each : '';
+      var extra = ' data-rd-sec="' + esc(sec.id) + '"';
+      var opts2 = '<option value=""' + (each ? '' : ' selected') + '>As written</option>' +
+        lists.map(function (k) { return '<option value="' + esc(k) + '"' + (k === each ? ' selected' : '') + '>' + esc(collLabel(c, k)) + '</option>'; }).join('') +
+        (each && lists.indexOf(each) === -1 ? '<option value="' + esc(each) + '" selected>' + esc(collLabel(c, each)) + ' (not available here)</option>' : '');
+      return '<div class="rd-rows-repeat"><label class="rd-lab rd-lab-s">Rows<select data-rd-rows-each="' + esc(part.id) + '"' + extra + ' aria-label="Rows">' + opts2 + '</select></label>' +
+        (each
+          ? '<span class="rd-state">\u21bb Each row below prints once per ' + esc(collLabel(c, each).toLowerCase()) + '.</span>' + filterSortHtml(c, each, r, 'data-rd-rows-', part.id, extra)
+          : '') + '</div>';
+    }
+
+    /**
      * DS-2: the Repeat category — what this section repeats for (the lists reachable where it
      * sits), the one filter, the sort, and what the choice means on the chosen subject.
      */
@@ -4830,26 +4915,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         return out + '<p class="rpt-omit">' + esc(collLabel(c, each, true)) + ' cannot be repeated here: there is no ' + esc(collLabel(c, each).toLowerCase()) +
           ' list where this section sits. It prints once, and its ' + esc(collLabel(c, each).toLowerCase()) + ' fields print as [unknown field].</p></div>';
       }
-      var fields = (c.collections[each] || { fields: [] }).fields;
-      var w = (r && r.where) || {}, so = (r && r.sort) || {};
-      var fieldOpts = function (cur, none) {
-        return '<option value="">' + esc(none) + '</option>' + fields.map(function (f) {
-          return '<option value="' + esc(f.id) + '"' + (f.id === cur ? ' selected' : '') + '>' + esc(f.label) + '</option>';
-        }).join('');
-      };
-      var noValue = w.op === 'empty' || w.op === 'set';
-      out += '<div class="rd-grid">' +
-        '<label class="rd-lab rd-lab-s">Only where<select data-rd-repeat-wfield="' + id + '" aria-label="Filter field">' + fieldOpts(w.field, 'Every one') + '</select></label>' +
-        (w.field
-          ? '<label class="rd-lab rd-lab-s">&nbsp;<select data-rd-repeat-wop="' + id + '" aria-label="Filter test">' + DATA.OPS.map(function (o) {
-              return '<option value="' + o + '"' + (o === (w.op || 'is') ? ' selected' : '') + '>' + esc(DATA.OP_LABELS[o]) + '</option>';
-            }).join('') + '</select></label>' +
-            (noValue ? '' : '<label class="rd-lab rd-lab-s">&nbsp;<input data-rd-repeat-wval="' + id + '" value="' + esc(w.value || '') + '" aria-label="Filter value"></label>')
-          : '') +
-        '<label class="rd-lab rd-lab-s">Sort by<select data-rd-repeat-sfield="' + id + '" aria-label="Sort by">' + fieldOpts(so.field, 'Register order') + '</select></label>' +
-        (so.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select data-rd-repeat-sdir="' + id + '" aria-label="Sort direction">' +
-          '<option value="asc"' + (so.dir === 'desc' ? '' : ' selected') + '>Ascending</option><option value="desc"' + (so.dir === 'desc' ? ' selected' : '') + '>Descending</option></select></label>' : '') +
-        '</div>';
+      out += filterSortHtml(c, each, r, 'data-rd-repeat-', block.id, '');
       // What it means: the sections that repeat with it, and how many copies the subject gives.
       if (sc.group.length) out += '<p class="rd-state">Repeats with: ' + sc.group.map(function (g) { return esc(shownText(g.label)); }).join(', ') + '.</p>';
       if (sc.outer.length > 1) {
@@ -6646,6 +6712,28 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         quietly(function () { logIssues(App.docStore.setSectionRepeat(id, next)); });
         dirty(); repaint();
       }
+      // DS-3: a table's Rows control, the same filter and sort as a section's repeat.
+      function partNow(secId, partId) { return App.docStore.findPart(P(), secId, partId); }
+      function setRows(el, change) {
+        var secId = el.getAttribute('data-rd-sec');
+        var name = ['each', 'wfield', 'wop', 'wval', 'sfield', 'sdir'].filter(function (n) { return el.hasAttribute('data-rd-rows-' + n); })[0];
+        var partId = el.getAttribute('data-rd-rows-' + name);
+        var t = partNow(secId, partId);
+        if (!t) return;
+        var next = change(Object.assign({}, t.repeat || {}));
+        quietly(function () { logIssues(App.docStore.setPartRepeat(secId, partId, next)); });
+        dirty(); repaint();
+      }
+      dom.on(ctx.root, 'change', '[data-rd-rows-each]', function (e, el) { setRows(el, function (cur) { return el.value ? (cur.each === el.value ? cur : { each: el.value }) : null; }); });
+      dom.on(ctx.root, 'change', '[data-rd-rows-wfield]', function (e, el) {
+        setRows(el, function (cur) { var w = cur.where || {}; cur.where = el.value ? { field: el.value, op: w.op || 'is', value: w.value || '' } : null; return cur; });
+      });
+      dom.on(ctx.root, 'change', '[data-rd-rows-wop]', function (e, el) { setRows(el, function (cur) { cur.where = Object.assign({}, cur.where, { op: el.value }); return cur; }); });
+      dom.on(ctx.root, 'change', '[data-rd-rows-wval]', function (e, el) { setRows(el, function (cur) { cur.where = Object.assign({}, cur.where, { value: el.value }); return cur; }); });
+      dom.on(ctx.root, 'change', '[data-rd-rows-sfield]', function (e, el) {
+        setRows(el, function (cur) { cur.sort = el.value ? { field: el.value, dir: (cur.sort && cur.sort.dir) || 'asc' } : null; return cur; });
+      });
+      dom.on(ctx.root, 'change', '[data-rd-rows-sdir]', function (e, el) { setRows(el, function (cur) { cur.sort = Object.assign({}, cur.sort, { dir: el.value }); return cur; }); });
       dom.on(ctx.root, 'change', '[data-rd-repeat-each]', function (e, el) {
         var id = el.getAttribute('data-rd-repeat-each'), cur = repeatOf(id), v = el.value;
         setRepeat(id, v ? (cur && cur.each === v ? cur : { each: v }) : null);

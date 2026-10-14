@@ -390,3 +390,7 @@
   .docgen .rd-chipedit em { font-weight: 400;}
   .docgen .rd-chipedit button[data-rd-chip-done] { margin-top: 4px;}
   .docgen .rd-rich .rd-field { cursor: pointer;}
+  /* DS-3: a table whose rows repeat per entry. */
+  .docgen .rd-rows-repeat { margin: 4px 0 6px;}
+  .docgen .rd-rows-repeat > .rd-lab { display: inline-flex; gap: 6px; align-items: center;}
+  .docgen .rd-rowtpl td:first-child { box-shadow: inset 3px 0 0 var(--c-accent);}
