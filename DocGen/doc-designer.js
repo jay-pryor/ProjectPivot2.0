@@ -3992,6 +3992,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       chipEdit: null,        // DS-1: the field chip whose options are open: { owner, key, at, tag }
       cat: null,             // DS-2: the catalogue bound to the subject, until the next change
       fills: null,           // DS-5: the document's blanks (App.docGen.fillsIn), until the next change
+      addMenu: false,        // DS-6: the + Add section menu is open
       imgMenu: null,         // 'partId:box' whose choose-menu is open
       imgPick: false,        // that menu showing Standard Images
       secWhole: false,       // whether the section preview shows the whole document
@@ -4331,20 +4332,45 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           '<span class="ord-move">' +
             '<button type="button" data-rd-up="' + esc(b.id) + '"' + (i === 0 ? ' disabled' : '') + ' title="Move earlier" aria-label="Move ' + esc(b.label) + ' earlier">▲</button>' +
             '<button type="button" data-rd-down="' + esc(b.id) + '"' + (i === view.blocks.length - 1 ? ' disabled' : '') + ' title="Move later" aria-label="Move ' + esc(b.label) + ' later">▼</button>' +
+            // DS-6: a register table can be taken out of the document; + Add section puts it back.
+            (isRegister(b) ? '<button type="button" class="danger" data-rd-del-register="' + esc(b.id) + '" title="Take this register table out of the document" aria-label="Remove ' + esc(b.label) + '">✕</button>' : '') +
           '</span></li>';
       }).join('');
 
-      var tpls = (bag(project).sectionTemplates || []);
-      var tplPicker = tpls.length
-        ? '<select data-rd-use-template aria-label="Add a section from a template">' +
-            '<option value="">From template&hellip;</option>' +
-            tpls.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.name) + '</option>'; }).join('') +
-          '</select>'
-        : '';
-
       return '<div class="rpt-pane rpt-pane-main" style="flex-basis:' + listWidth() + 'px"><h4>Sections</h4>' +
-        '<div class="rd-addbar"><button type="button" class="primary" data-rd-add-section>+ Add section</button>' + tplPicker + '</div>' +
+        '<div class="rd-addbar rd-addwrap"><button type="button" class="primary" data-rd-add-menu aria-expanded="' + (_rd.addMenu ? 'true' : 'false') + '">+ Add section</button>' +
+          (_rd.addMenu ? addMenu(project, view) : '') + '</div>' +
         '<div id="rd-order-host"><ol class="ord-list">' + rows + '</ol></div></div>';
+    }
+
+    /** DS-6: a block that is one of the host's register tables. */
+    function isRegister(b) { return b.kind !== 'custom' && b.kind !== 'toc' && b.kind !== 'meta'; }
+
+    /**
+     * DS-6: what + Add section offers — a blank section, a section repeated per entry of one of
+     * the top-level registers, a register table not yet in the document, or a section template.
+     */
+    function addMenu(project, view) {
+      var c = catalogue();
+      var inDoc = {};
+      view.blocks.forEach(function (b) { inDoc[b.id] = true; });
+      var regs = App.docHost.sections(null).filter(function (pv) { return !inDoc[pv.id]; });
+      var tpls = bag(project).sectionTemplates || [];
+      var group = function (title, items) {
+        return items ? '<div class="rd-addgroup"><div class="rd-fieldgroup-h">' + title + '</div>' + items + '</div>' : '';
+      };
+      return '<div class="rd-addmenu" role="menu">' +
+        '<button type="button" role="menuitem" data-rd-add-section>Blank section</button>' +
+        (c ? group('Repeating section <span class="rd-state">one for each entry</span>', (c.collections[c.root].children || []).map(function (k) {
+          return '<button type="button" role="menuitem" data-rd-add-repeat="' + esc(k) + '">' + esc(collLabel(c, k)) + '</button>';
+        }).join('')) : '') +
+        group('Register table', regs.map(function (pv) {
+          return '<button type="button" role="menuitem" data-rd-add-register="' + esc(pv.id) + '">' + esc(pv.label) + '</button>';
+        }).join('')) +
+        group('From template', tpls.map(function (t) {
+          return '<button type="button" role="menuitem" data-rd-use-template-id="' + esc(t.id) + '">' + esc(t.name) + '</button>';
+        }).join('')) +
+        '</div>';
     }
 
     // ======================================================================
@@ -6693,15 +6719,40 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         _dragId = null;
       });
       // ---- custom sections ------------------------------------------------
+      dom.on(ctx.root, 'click', '[data-rd-add-menu]', function () { _rd.addMenu = !_rd.addMenu; repaint(); });
       dom.on(ctx.root, 'click', '[data-rd-add-section]', function () {
         var res = logIssues(App.docStore.addSection(''));
-        if (res.id) { _rd.selected = res.id; _rd.pane = 'section'; }
+        if (res.id) { _rd.selected = res.id; _rd.pane = 'section'; _rd.secCat = 'heading'; }
+        _rd.addMenu = false;
         dirty(); repaint();
       });
-      dom.on(ctx.root, 'change', '[data-rd-use-template]', function (e, el) {
-        if (!el.value) return;
-        var res = logIssues(App.docStore.useSectionTemplate(el.value));
+      // DS-6: a section repeated per entry, its heading the entry's ID to start with.
+      dom.on(ctx.root, 'click', '[data-rd-add-repeat]', function (e, el) {
+        var each = el.getAttribute('data-rd-add-repeat');
+        var res = logIssues(App.docStore.addSection('{{f:' + each + '.id}}'));
+        if (res.id) {
+          logIssues(App.docStore.setSectionRepeat(res.id, { each: each }));
+          _rd.selected = res.id; _rd.pane = 'section'; _rd.secCat = 'repeat';
+        }
+        _rd.addMenu = false;
+        dirty(); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-add-register]', function (e, el) {
+        var id = el.getAttribute('data-rd-add-register');
+        logIssues(App.docStore.addRegister(id));
+        _rd.selected = id; _rd.pane = 'section'; _rd.addMenu = false;
+        dirty(); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-del-register]', function (e, el) {
+        var id = el.getAttribute('data-rd-del-register');
+        logIssues(App.docStore.removeRegister(id));
+        if (_rd.selected === id) _rd.selected = null;
+        dirty(); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-use-template-id]', function (e, el) {
+        var res = logIssues(App.docStore.useSectionTemplate(el.getAttribute('data-rd-use-template-id')));
         if (res.id) { _rd.selected = res.id; _rd.pane = 'section'; }
+        _rd.addMenu = false;
         dirty(); repaint();
       });
       dom.on(ctx.root, 'change', '[data-rd-sec-title]', function (e, el) {

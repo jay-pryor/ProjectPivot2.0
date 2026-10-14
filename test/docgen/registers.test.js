@@ -44,3 +44,35 @@ test('a report template carries the register tables, and applying it brings them
   const all = App.docStore.applyReportTemplate({ registers: ['sfarp'] }, { ...t, registers: undefined }, true);
   assert.equal('registers' in all, false, 'a template that never chose holds them all');
 });
+
+const RD = App.ui.views.reportDesign;
+function draw(h, set = {}) {
+  RD.open(); RD.pane('section');
+  Object.assign(RD._rd, { addMenu: false }, set);
+  const html = RD.render(h.getState());
+  RD.close(); RD._rd.addMenu = false;
+  return html;
+}
+const withCatalogue = (h) => Object.assign(h, { catalogue: () => ({ root: 'platform', data: null, collections: {
+  platform: { label: 'Platform', fields: [], children: ['hazard'] }, hazard: { label: 'Hazard', plural: 'Hazards', fields: [{ id: 'id', label: 'ID', type: 'text' }], children: [] } } }) });
+
+test('+ Add section opens a menu: blank, repeating, a register table not in the document, or a template', () => {
+  const h = withCatalogue(host({ registers: ['hazards'], sectionTemplates: [{ id: 'tpl1', name: 'Sign-off', title: 'Sign-off', parts: [] }] }));
+  assert.match(draw(h), /<button type="button" class="primary" data-rd-add-menu aria-expanded="false">\+ Add section<\/button>/);
+  assert.doesNotMatch(draw(h), /data-rd-use-template[^-]/, 'the separate template select has gone');
+  const html = draw(h, { addMenu: true });
+  assert.match(html, /class="rd-addmenu"/);
+  assert.match(html, /data-rd-add-section[^>]*>Blank section/);
+  assert.match(html, /data-rd-add-repeat="hazard"[^>]*>Hazard/);
+  assert.match(html, /data-rd-add-register="sfarp"[^>]*>SFARP/);
+  assert.doesNotMatch(html, /data-rd-add-register="hazards"/, 'one already in is not offered');
+  assert.match(html, /data-rd-use-template-id="tpl1"[^>]*>Sign-off/);
+});
+
+test('a register table\'s row has a ✕ to take it out; your own sections and Contents do not', () => {
+  const h = host({ sections: [{ id: 'sec1', title: 'Mine', parts: [] }] });
+  const html = draw(h);
+  assert.match(html, /data-rd-del-register="hazards"/);
+  assert.match(html, /data-rd-del-register="sfarp"/);
+  assert.doesNotMatch(html, /data-rd-del-register="(toc|sec1)"/);
+});

@@ -402,3 +402,11 @@
   .docgen .rd-tofill { background: var(--c-warn-bg);}
   .docgen .rd-fillnew { margin-top: 2px; border-style: dashed;}
   .docgen .rd-fillitem > .rd-state { margin-left: 6px;}
+  /* DS-6: + Add section's menu. */
+  .docgen .rd-addwrap { position: relative;}
+  .docgen .rd-addmenu { position: absolute; z-index: 6; top: 100%; left: 0; min-width: 240px; max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
+    padding: 6px; border: 1px solid var(--c-accent); border-radius: 6px; background: var(--c-surface); box-shadow: 0 6px 20px rgba(0,0,0,0.25);}
+  .docgen .rd-addmenu button { font: inherit; font-size: 13px; text-align: left; padding: 4px 8px; border: 0; border-radius: 4px; background: none; color: var(--c-text); cursor: pointer;}
+  .docgen .rd-addmenu button:hover { background: var(--c-surface-alt);}
+  .docgen .rd-addgroup { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--c-border);}
+  .docgen .rd-addgroup .rd-fieldgroup-h { padding: 0 8px;}
