@@ -211,6 +211,18 @@ export function fieldText(res, opts) {
   }
 }
 
+/**
+ * A list field's entries as printed one per line (plain, numbered or bulleted), so the breaks
+ * BETWEEN entries can be told from line breaks inside one; null when it is not printed that way.
+ */
+export function fieldItems(res, opts) {
+  const o = opts || {};
+  if (!res || res.kind !== 'list' || o.list === 'comma') return null;
+  const items = res.items.filter((x) => String(x || '').trim());
+  if (!items.length) return null;
+  return items.map((x, i) => (o.list === 'num' ? (i + 1) + '. ' : o.list === 'bullet' ? '• ' : '') + x);
+}
+
 /** The key of the entries a scope holds below the root: `hazard:h1/control:c3`. */
 export function instanceKey(scope) {
   return (scope || []).slice(1).map((s) => s.coll + ':' + s.entry.key).join('/');

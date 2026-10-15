@@ -37,7 +37,7 @@ export const STANDARD = Object.freeze({
     marking: T(9, { bold: true, align: 'centre', spaceAfter: 0 }),
   },
   tables: {
-    borders: 'all', borderColour: '#999999', borderWidth: 0.5, fontSize: 9, padding: 1.5, lineGap: 0, align: 'left', captionPosition: 'below',
+    borders: 'all', borderColour: '#999999', borderWidth: 0.5, fontSize: 9, padding: 1.5, listGap: 0, align: 'left', captionPosition: 'below',
     header: { fill: '#d9e2f3', bold: true, italic: false, colour: '#000000', size: 9, repeat: true },
     banding: { on: false, fill: '#f2f2f2' },
     firstColumn: { on: false, fill: '#e7e6e6', bold: true },
@@ -133,7 +133,7 @@ export function normaliseStyle(raw) {
   const tables = {
     borders: pick(t.borders, td.borders, BORDERS, 'Table borders'), borderColour: colour(t.borderColour, td.borderColour, 'Table border colour'),
     borderWidth: num(t.borderWidth, td.borderWidth, 0, 4, 'Table border weight'), fontSize: num(t.fontSize, td.fontSize, 6, 24, 'Table text size'),
-    padding: num(t.padding, td.padding, 0, 10, 'Cell padding'), lineGap: num(t.lineGap, td.lineGap, 0, 24, 'Space between lines in a cell'),
+    padding: num(t.padding, td.padding, 0, 10, 'Cell padding'), listGap: num(t.listGap, td.listGap, 0, 24, 'Space between list entries in a cell'),
     align: pick(t.align, td.align, ['left', 'centre'], 'Table alignment'),
     captionPosition: pick(t.captionPosition, td.captionPosition, ['above', 'below'], 'Caption position'),
     header: {

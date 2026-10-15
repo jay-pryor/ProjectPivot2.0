@@ -294,7 +294,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           var got = opts.resolveField ? opts.resolveField(tag) : null;
           TOKEN.lastIndex = keepAt;
           (got || [{ text: '\u2039' + markerName(tag, opts) + '\u203a' }]).forEach(function (g) {
-            if (g.br) { out.push({ br: true }); return; }
+            if (g.br) { out.push(g.item ? { br: true, item: true } : { br: true }); return; }
             if (!g.text) return;
             var extra = {};
             Object.keys(g).forEach(function (k) { if (k !== 'text') extra[k] = g[k]; });
@@ -1571,9 +1571,15 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           if (res.kind === 'unknown') return [{ text: '[unknown field]', bold: true }];
           if (res.kind === 'unbound') return [{ text: '\u2039' + DATA.fieldLabelOf(catalogue, parsed) + '\u203a' }];
           var out2 = [];
-          DATA.protect(DATA.fieldText(res, parsed.opts)).split('\n').forEach(function (line, i) {
-            if (i) out2.push({ br: true });
-            if (line) out2.push({ text: line });
+          // A list's entries are broken with `item` breaks, which the Style can space apart;
+          // a line break inside an entry (or in a plain value) stays an ordinary break.
+          var items = DATA.fieldItems(res, parsed.opts) || [DATA.fieldText(res, parsed.opts)];
+          items.forEach(function (it, n) {
+            if (n) out2.push({ br: true, item: true });
+            DATA.protect(it).split('\n').forEach(function (line, i) {
+              if (i) out2.push({ br: true });
+              if (line) out2.push({ text: line });
+            });
           });
           return out2;
         };
@@ -5636,7 +5642,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             num('Border weight (pt)', 'tables.borderWidth', t.borderWidth, '', 0.25) +
             num('Text size (pt)', 'tables.fontSize', t.fontSize, '', 0.5) +
             num('Cell padding (mm)', 'tables.padding', t.padding, '', 0.5) +
-            num('Space between lines in a cell (pt)', 'tables.lineGap', t.lineGap, 'Added after each entry of a list, or each line break, in a cell — so a list in a cell does not run together', 1) +
+            num('Space between list entries in a cell (pt)', 'tables.listGap', t.listGap, 'Added between the entries of a list field in a cell, so the list does not run together', 1) +
             pick('Table position', 'tables.align', t.align, [{ value: 'left', label: 'Left' }, { value: 'centre', label: 'Centre' }]) +
             pick('Caption', 'tables.captionPosition', t.captionPosition, [{ value: 'below', label: 'Below the table' }, { value: 'above', label: 'Above the table' }]) +
           '</div>' +
