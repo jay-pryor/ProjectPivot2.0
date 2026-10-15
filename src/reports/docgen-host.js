@@ -238,7 +238,7 @@ export function imagesInUse(data) {
 
 /**
  * @param {{ getData: () => import('../core/data.js').Data, setDesign: (design: Record<string, any>) => void,
- *   clock: import('../core/time.js').Clock, profileName: (id: string) => string,
+ *   clock: import('../core/time.js').Clock, profileName: (id: string) => string, who?: () => string,
  *   setReportDesign?: (id: string, design: Record<string, any> | undefined, platformId?: string | null) => void,
  *   files?: { read: (path: string) => Promise<Uint8Array | null>, write: (path: string, blob: Blob) => Promise<void>, exists: (path: string) => Promise<boolean>, remove: (path: string) => Promise<void> } }} ctx
  */
@@ -261,6 +261,8 @@ export function createDocHost(ctx) {
       ctx.setDesign(libraryOf(state.report ?? {}));
     },
     clock: { nowIso: () => toIsoUtc(ctx.clock.now()) },
+    // Who is working: the name a comment is signed with.
+    who: () => (ctx.who ? ctx.who() : ''),
     classifications: [...CLASSIFICATIONS],
     subject: {
       noun: 'platform',
@@ -359,7 +361,13 @@ export function createDocHost(ctx) {
         const { document, style } = App.docGen.documentFor(h, o, {
           title, date: aestDate(at), platform: snapshot.platformName, classification: snapshot.classification, utc: toIsoUtc(at),
         });
-        return { report: { ...snapshot, document, style }, baseName: reportFileBase(snapshot) };
+        // The review layer goes with the report only when its HTML export is to show it (never the PDF).
+        const design = h.getState().report ?? {}, want = design.htmlReview ?? {};
+        const review = {
+          ...(want.markup && (design.markup ?? []).length ? { markup: structuredClone(design.markup) } : {}),
+          ...(want.comments && (design.comments ?? []).length ? { comments: structuredClone(design.comments) } : {}),
+        };
+        return { report: { ...snapshot, document, style, ...(Object.keys(review).length ? { review } : {}) }, baseName: reportFileBase(snapshot) };
       } finally {
         producing = null;
       }

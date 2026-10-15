@@ -101,7 +101,7 @@ test('the editor draws a Repeat part with its own parts and add bar, and its fie
   assert.match(html, /rd-chip rd-field" contenteditable="false" data-rd-tok="f:control\.id"/, 'a control field is in scope inside the Repeat part');
 });
 
-test('"+10" puts a 10mm Space straight after a part, in the same list — inside a Repeat part too', () => {
+test('"+SPACE" puts a 10mm Space straight after a part, in the same list — inside a Repeat part too', () => {
   const h = host([nested(), { id: 'pa9', kind: 'para', text: 'After' }]);
   const kinds = (list) => list.map((p) => p.kind + (p.kind === 'space' ? ':' + p.height : ''));
   assert.equal(App.docStore.addSpaceAfter('sec1', 'pa1').ok, true);
@@ -114,4 +114,15 @@ test('"+10" puts a 10mm Space straight after a part, in the same list — inside
   RD.open(); RD.select('sec1'); RD._rd.secCat = 'content';
   const html = RD.render(h.getState()); RD.close();
   assert.deepEqual([...html.matchAll(/data-rd-space-after="([^"]+)"/g)].map((m) => m[1]).sort(), ['pa1', 'pa9', 'rp1', 'tb1']);
+});
+
+test('every printed block says which section it prints for (a copy: the section copied), for the preview to go back to', () => {
+  const blocks = doc(host()).blocks.filter((b) => b.kind !== 'pageBreak');
+  assert.ok(blocks.length > 0);
+  assert.deepEqual([...new Set(blocks.map((b) => b.sec))], ['sec1']);
+  // And each category's heading carries the section's go-to.
+  const h = host();
+  RD.open(); RD.select('sec1'); RD._rd.secCat = 'heading';
+  const html = RD.render(h.getState()); RD.close();
+  assert.match(html, /<h5 class="rd-sec-title"><span>[^<]*<\/span><button[^>]*data-rd-sec-goto="sec1"/);
 });

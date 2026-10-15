@@ -165,10 +165,15 @@
   .docgen .rd-fmt-body[disabled] { opacity: 0.55;}
   .docgen .rd-parts { display: flex; flex-direction: column; gap: 10px; margin: 10px 0;}
   .docgen .rd-part { border: 1px solid var(--c-border); border-radius: 6px; padding: 8px; background: var(--c-surface-alt);}
-  /* "+10": a 10mm Space after the part, in its bottom-right corner, with room kept for it. */
-  .docgen .rd-part:has(> .rd-spaceafter) { position: relative; padding-bottom: 30px;}
-  .docgen .rd-spaceafter { position: absolute; right: 6px; bottom: 6px; width: 22px; height: 22px; padding: 0; font: inherit; font-size: 9px;
-    font-weight: 600; line-height: 1; border: 1px solid var(--c-border); border-radius: 3px; background: var(--c-surface); color: var(--c-text-muted); cursor: pointer;}
+  /* "+SPACE": in a row of buttons the part already has, at its right-hand end; the same
+     height as the buttons beside it, its words centred. */
+  .docgen .rd-spaceafter { display: inline-flex; align-items: center; justify-content: center; align-self: stretch; padding: 0 9px;
+    line-height: 1; cursor: pointer;}
+  .docgen .rd-tablebtns > .rd-spaceafter, .docgen .rd-addbar > .rd-spaceafter { margin-left: auto;}
+  .docgen .rd-tablebtns > .rd-rowh + .rd-spaceafter { margin-left: 0;}
+  .docgen .rd-part-move > .rd-spaceafter { margin-right: 6px;}
+  .docgen .rd-mmsteps { display: inline-flex; gap: 4px; margin-left: 8px;}
+  .docgen .rd-mmsteps button { min-width: 38px; padding: 2px 6px; font-variant-numeric: tabular-nums;}
   .docgen .rd-spaceafter:hover { border-color: var(--c-accent); color: var(--c-text);}
   .docgen .rd-part.dragging { opacity: 0.5;}
   .docgen .rd-part.drop-target { border-color: var(--c-accent); border-style: dashed;}
@@ -238,7 +243,8 @@
     margin-top: auto; padding: 16px 0 4px; background: inherit;}
   .docgen .rd-lock { vertical-align: -1px; margin-right: 5px;}
   .docgen .rd-make-btns { display: flex; gap: 12px;}
-  .docgen button.rd-make { font-size: 16px; font-weight: 700; padding: 12px 30px; border-radius: 8px; min-width: 160px; cursor: pointer;
+  .docgen button.rd-make { display: inline-flex; align-items: center; justify-content: center; text-align: center; line-height: 1.2;
+    font-size: 16px; font-weight: 700; padding: 12px 30px; border-radius: 8px; min-width: 160px; cursor: pointer;
     box-shadow: 0 2px 8px rgba(0, 0, 0, .25);}
   .docgen button.rd-make:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0, 0, 0, .3);}
   .docgen button.rd-make:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; filter: grayscale(.6);}
@@ -327,6 +333,10 @@
   .docgen .dp-image { position: absolute; display: block; object-fit: fill;}
   .docgen .dp-link { display: block;}
   .docgen .dp-link:hover { background: rgba(20, 65, 140, 0.12);}
+  .docgen .dp-link { cursor: pointer;}
+  /* Where a followed link lands: a band across the page that fades. */
+  .docgen .dp-anchor.dp-anchor-flash { left: 0; right: 0; height: 28px; margin-top: -4px; pointer-events: none; animation: dp-anchor-flash 1.4s ease-out;}
+  @keyframes dp-anchor-flash { 0%, 40% { background: rgba(224, 36, 36, .18); box-shadow: inset 4px 0 0 #e02424;} 100% { background: transparent; box-shadow: none;}}
   /* PDF-1: the Styles pane — sections, their fields, and the pages beside them. */
   .docgen .rd-styles { display: grid; grid-template-columns: 170px minmax(300px, 1fr) minmax(320px, 1fr); gap: 12px; align-items: start;}
   @container (max-width: 820px) { .docgen .rd-styles { grid-template-columns: 170px minmax(0, 1fr); } .docgen .rd-style-preview { grid-column: 1 / -1; } }
@@ -338,9 +348,13 @@
   .docgen .rd-held { font-size: 12px; border: 1px solid var(--c-border); border-left-width: 4px; background: var(--c-warn-bg); padding: 6px 10px; margin: 6px 0;}
   .docgen .rd-held ul { margin: 4px 0 0 18px; padding: 0;}
   /* The Styles preview, like the Sections one: its own scrolling column, the zoom pinned at its top. */
-  .docgen .rd-style-preview { position: sticky; top: 0; max-height: calc(100vh - 230px); overflow: auto; min-width: 0;}
-  .docgen .rd-style-preview .rd-secprev-head { position: sticky; top: 0; z-index: 2; background: var(--c-bg); padding: 2px 0 6px; margin: 0;}
-  .docgen .rd-style-pages { align-items: safe center; gap: 8px; border: 1px solid var(--c-border); padding: 8px 12px;}
+  /* It sits exactly where the Sections preview does, so switching tabs does not move the
+     pages: the same column, the same bar height, the same padding round the pages, and room
+     kept for a scrollbar in both, whether or not either needs one. */
+  .docgen .rd-style-preview { position: sticky; top: 0; max-height: calc(100vh - 230px); overflow: auto; min-width: 0; scrollbar-gutter: stable;}
+  .docgen .rd-style-preview .rd-secprev-head { position: sticky; top: 0; z-index: 2; background: var(--c-bg); padding: 6px 0; margin: 0; min-height: 40px; box-sizing: border-box;}
+  .docgen .rd-style-preview .rd-secprev-head > .rd-state { padding-left: 10px;}
+  .docgen .rd-style-pages { align-items: safe center; gap: 8px; border: 1px solid var(--c-border); padding: 12px;}
   .docgen .rd-replaced code { font-size: 15px; margin-right: 6px;}
   .docgen .rd-subject { font: inherit; font-size: 13px; padding: 2px 6px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text);}
   .docgen .rd-state { font-size: 12px; color: var(--c-text-muted); margin: 0 0 6px;}
@@ -355,7 +369,9 @@
   .docgen .rd-cat.on { border-color: var(--c-accent); background: var(--c-surface-alt); font-weight: 600;}
   .docgen .rd-sec-fields { min-width: 0;}
   .docgen .rd-sec-fields > h5 { margin: 0 0 8px;}
-  .docgen .rd-sec-prev { position: sticky; top: 0; max-height: calc(100vh - 230px); overflow: auto; min-width: 0;}
+  .docgen .rd-sec-fields > h5.rd-sec-title { display: flex; align-items: center; gap: 8px; min-height: 28px;}
+  .docgen .rd-sec-title > .rd-part-goto { margin-left: auto; flex: 0 0 auto;}
+  .docgen .rd-sec-prev { position: sticky; top: 0; max-height: calc(100vh - 230px); overflow: auto; min-width: 0; scrollbar-gutter: stable;}
   .docgen .rd-sec-prev .rd-secprev { max-height: none;}
   .docgen .rd-scope { display: inline-flex;}
   .docgen .rd-scope button { font: inherit; font-size: 12px; padding: 3px 10px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-muted); cursor: pointer;}
@@ -363,7 +379,7 @@
   .docgen .rd-scope button.on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-text); font-weight: 600;}
   .docgen .rd-secprev-head { flex-wrap: wrap;}
   /* The preview column scrolls; its switch and zoom stay at the top of it. */
-  .docgen .rd-sec-prev .rd-secprev-head { position: sticky; top: 0; z-index: 2; background: var(--c-bg); padding: 2px 0 6px; margin: 0;}
+  .docgen .rd-sec-prev .rd-secprev-head { position: sticky; top: 0; z-index: 2; background: var(--c-bg); padding: 6px 0; margin: 0; min-height: 40px; box-sizing: border-box;}
   /* Ticks in three even columns; a long name wraps under its own box. */
   .docgen .rd-ticks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 12px; margin-top: 4px;}
   .docgen .rd-ticks .gen-opt { display: flex; align-items: flex-start; margin: 0; white-space: normal; overflow-wrap: break-word; min-width: 0;}
@@ -497,10 +513,16 @@
   .docgen .dp-todo { position: absolute; background: #ffd23f; border-radius: 2px; box-shadow: 0 0 0 1px #f08c00;}
   .docgen .dp-todo-flag { position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 50%;
     background: #f08c00; color: #fff; font-family: Arial, sans-serif; font-weight: 700; line-height: 1;}
+  .docgen .dp-todo-flag[data-dp-fill] { cursor: pointer; z-index: 4;}
+  .docgen .dp-todo-flag[data-dp-fill]:hover { background: #e02424; transform: scale(1.15);}
   /* Where a part landed: invisible, until its ◎ is pressed and it flashes. */
   .docgen .dp-target { position: absolute; box-sizing: border-box; pointer-events: none; border-radius: 2px;}
   .docgen .dp-target.dp-target-flash { animation: dp-flash 1.4s ease-out;}
   @keyframes dp-flash { 0%, 40% { box-shadow: 0 0 0 3px #e02424, 0 0 12px 4px rgba(224, 36, 36, .45); background: rgba(224, 36, 36, .08);} 100% { box-shadow: 0 0 0 3px rgba(224, 36, 36, 0); background: transparent;}}
+  /* Changing view on a go-to: out, then in, rather than a snap. */
+  .docgen .rd-fade-out { opacity: 0; transform: translateY(4px); transition: opacity .17s ease-in, transform .17s ease-in;}
+  .docgen .rd-fade-in { animation: rd-fade-in .22s ease-out;}
+  @keyframes rd-fade-in { from { opacity: 0; transform: translateY(-4px);} to { opacity: 1; transform: none;}}
   .docgen .rd-part.rd-part-flash { animation: rd-part-flash 1.4s ease-out;}
   @keyframes rd-part-flash { 0%, 40% { box-shadow: 0 0 0 3px #e02424, 0 0 14px 4px rgba(224, 36, 36, .4);} 100% { box-shadow: 0 0 0 3px rgba(224, 36, 36, 0);}}
   .docgen .dp-mark { position: absolute; box-sizing: border-box; border: 2px solid #e02424; pointer-events: none; z-index: 3;}
@@ -519,3 +541,61 @@
   .docgen .rd-fieldset + .rd-look, .docgen .rd-sec-fields > .rd-look { margin: 10px 0; padding: 8px 10px; border: 1px solid var(--c-border); border-radius: 6px;}
   /* The title row: one merged cell across the top of the table. */
   .docgen .rd-tpart .rd-table tr.rd-titlerow th .rd-cellbox { text-align: center; font-weight: 600; background: color-mix(in srgb, var(--c-accent) 28%, var(--c-surface));}
+
+  /* ---- Back, Undo, Redo: in the heading, beside Save ---- */
+  .docgen .rd-hist { display: inline-flex; gap: 6px; margin-left: auto; margin-right: 12px;}
+  .docgen .rd-hist button { font: inherit; font-size: 13px; padding: 6px 12px; border: 1px solid var(--c-border); border-radius: 4px;
+    background: transparent; color: inherit; cursor: pointer; display: inline-flex; align-items: center;}
+  .docgen .rd-hist button:hover:not(:disabled) { border-color: var(--c-accent);}
+  .docgen .rd-hist button:disabled { opacity: .35; cursor: default;}
+
+  /* ---- Review tools in the Preview: Markup Options slides open to its left ---- */
+  .docgen .rd-review { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; margin-right: 14px;}
+  .docgen .rd-review + .rd-zoom { margin-left: 0;}
+  .docgen .rd-mk-menu { display: inline-flex; overflow: hidden; max-width: 0; opacity: 0;
+    transition: max-width .32s ease, opacity .25s ease;}
+  .docgen .rd-mk-menu.open { max-width: 520px; opacity: 1;}
+  .docgen .rd-mk-inner { display: inline-flex; gap: 4px; padding: 0 6px 0 2px; white-space: nowrap;}
+  .docgen .rd-mkt, .docgen .rd-mk-toggle, .docgen .rd-cmt-toggle { font: inherit; font-size: 12px; padding: 5px 10px; border: 1px solid var(--c-border);
+    border-radius: 4px; background: var(--c-surface); color: var(--c-text); cursor: pointer; white-space: nowrap;}
+  .docgen .rd-mkt.on, .docgen .rd-mk-toggle.on, .docgen .rd-cmt-toggle.on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-text); font-weight: 600;}
+  .docgen .rd-mkt:disabled { opacity: .4; cursor: default;}
+  .docgen .rd-preview-doc.rd-drawing .dp-page { cursor: crosshair; user-select: none;}
+  .docgen .rd-preview-doc.rd-drawing .dp-link, .docgen .rd-preview-doc.rd-commenting .dp-link { pointer-events: none;}
+  .docgen .rd-preview-doc.rd-commenting .dp-page { cursor: copy;}
+
+  /* ---- Markup: see-through red, over the page ---- */
+  .docgen .dp-mk { position: absolute; box-sizing: border-box; pointer-events: none; z-index: 2;}
+  .docgen .dp-mk-hl { background: rgba(224, 36, 36, .28); border-radius: 2px;}
+  .docgen .dp-mk-box { border: 2px solid rgba(224, 36, 36, .8); background: rgba(224, 36, 36, .04);}
+  .docgen .dp-mk-fade { animation: dp-mk-fade .6s ease-in forwards;}
+  @keyframes dp-mk-fade { to { opacity: 0;}}
+
+  /* ---- Comments: a symbol just off the page's right edge ---- */
+  .docgen .dp-sheet { position: relative; flex: 0 0 auto;}
+  .docgen .dp-sheet > .dp-page { margin: 0;}
+  .docgen .dp-sheet > button.dp-cmt { position: absolute; left: calc(100% + 6px); width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center; background: #e02424; color: #fff; cursor: pointer; z-index: 3;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .35);}
+  .docgen .dp-sheet > button.dp-cmt:hover:not(:disabled) { transform: scale(1.12); background: #e02424; border-color: transparent;}
+  .docgen .dp-sheet > button.dp-cmt.dp-cmt-pending { background: #f08c00;}
+  .docgen .dp-cmt-n { position: absolute; top: -6px; right: -6px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px;
+    background: #fff; color: #e02424; font: 700 9px/14px Arial, sans-serif; box-sizing: border-box;}
+  .docgen .rd-preview-pages { padding-right: 34px;}
+
+  /* ---- The comment box: outside the designer's own markup, beside its symbol ---- */
+  .docgen.rd-cmt-layer { position: fixed; left: 0; top: 0; width: 0; height: 0; overflow: visible; background: none; padding: 0; margin: 0;
+    pointer-events: none; z-index: 2000; display: none;}
+  .rd-cmt-layer .rd-cmt-pop { position: fixed; pointer-events: auto; width: 300px; max-width: calc(100vw - 16px); max-height: 60vh; overflow: auto;
+    background: var(--c-surface, #fff); color: var(--c-text, #222); border: 1px solid var(--c-border, #bbb); border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .35); padding: 10px 12px; font-size: 13px; box-sizing: border-box;}
+  .rd-cmt-layer .rd-cmt-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px;}
+  .rd-cmt-layer .rd-cmt-head > button { margin-left: auto; font: inherit; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer;}
+  .rd-cmt-layer .rd-cmt-post + .rd-cmt-post { border-top: 1px solid var(--c-border, #ddd); margin-top: 6px; padding-top: 6px;}
+  .rd-cmt-layer .rd-cmt-meta { font-size: 11px; color: var(--c-text-muted, #777); margin-bottom: 2px;}
+  .rd-cmt-layer .rd-cmt-text { white-space: pre-wrap; overflow-wrap: anywhere;}
+  .rd-cmt-layer .rd-cmt-input { display: block; width: 100%; box-sizing: border-box; margin-top: 8px; font: inherit; font-size: 13px; padding: 6px 8px;
+    border: 1px solid var(--c-border, #bbb); border-radius: 4px; background: var(--c-bg, #fff); color: inherit; resize: vertical;}
+  .rd-cmt-layer .rd-cmt-btns { display: flex; align-items: center; gap: 6px; margin-top: 6px;}
+  .rd-cmt-layer .rd-cmt-btns .rd-state { margin-right: auto; font-size: 11px;}
+  .rd-cmt-layer .rd-cmt-btns button { font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 4px; cursor: pointer;}

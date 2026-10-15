@@ -199,6 +199,7 @@ export function createController(env) {
     },
     clock: env.clock,
     profileName: nameOf,
+    who: () => (state.profileId ? nameOf(state.profileId) : ''),
     setReportDesign: (id, design, platformId) => {
       if (!state.session) return;
       const working = setOwnReportDesign(state.session.working, act(), { id, design, platformId });
@@ -1053,7 +1054,7 @@ export function createController(env) {
       // The PDF and HTML are drawn from the finished document when downloaded, with the images as they are in the folder now;
       // a report made before PDF has only its HTML.
       const content = ext === 'pdf' ? renderPdf(r.document, r.style, { date: r.producedAt, images }).bytes
-        : r.document ? renderHtml(r.document, r.style, { images }) : r.html;
+        : r.document ? renderHtml(r.document, r.style, { images, review: r.review }) : r.html;
       await store.writeExport(file, content);
       set({ message: { kind: 'info', text: `Saved ${file.name}.` } });
     },
