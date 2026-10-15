@@ -37,7 +37,7 @@ export function atomsOf(runs, ts, ctx) {
       if (!piece) continue;
       out.push({ text: piece, space: piece === ' ', font, size: ts.size, colour: r.colour ?? ts.colour,
         underline: ts.underline || !!r.underline, link, width: textWidth(font, ts.size, piece),
-        ...(r.todo ? { todo: true, ...(first ? { todoStart: true } : {}) } : {}) });
+        ...(r.todo ? { todo: true, ...(first ? { todoStart: true, ...(typeof r.todo === 'object' ? { todoRef: r.todo } : {}) } : {}) } : {}) });
       first = false;
     }
   }
@@ -112,7 +112,7 @@ export function lineItems(line, x, base, width, align, last) {
     if (a.todo && !(a.space && !todo)) {
       if (!todo) todos.push(todo = { kind: 'todo', x: cx, y: base - a.size * ASCENT, w: 0, h: a.size, start: false });
       if (!a.space) todo.w = cx + a.width - todo.x;
-      if (a.todoStart) todo.start = true;
+      if (a.todoStart) { todo.start = true; if (a.todoRef) todo.ref = a.todoRef; }
     } else if (!a.todo) todo = null;
     if (!a.space) {
       items.push({ kind: 'text', x: cx, y: base, font: a.font, size: a.size, colour: a.colour, text: a.text });
@@ -314,17 +314,17 @@ function flow(doc, style, pageOf, assets) {
     }
   };
 
-  /** @type {{ src: string[], page: number, x: number, y: number, w: number, h: number }[]} */
+  /** @type {{ src: string[], sec: string | null, bi: number, page: number, x: number, y: number, w: number, h: number }[]} */
   const regions = [];
   /**
-   * Where a block that says which designer parts it prints for (`src`) landed: a box per page
+   * Where a block that says which designer parts (`src`) or section (`sec`) it prints for landed: a box per page
    * around what it drew there. The designer outlines these on screen; nothing writes them out.
    * Items already on the first page are left out by identity, so a heading carried overleaf
    * with a table is not counted as the table's.
-   * @param {any} b @param {() => void} place
+   * @param {any} b @param {() => void} place @param {number} bi the block's index in the document
    */
-  const tracked = (b, place) => {
-    if (!Array.isArray(b.src)) { place(); return; }
+  const tracked = (b, place, bi) => {
+    if (!Array.isArray(b.src) && !b.sec) { place(); return; }
     const first = pages.length - 1, y0 = y;
     const before = new Set(page.items);
     place();
@@ -348,7 +348,7 @@ function flow(doc, style, pageOf, assets) {
       // Text is not measured here, so a box with text in it spans the text width.
       const wide = lo === Infinity || pages[pi].items.some((it) => !before.has(it) && it.kind === 'text' && (it.x < lo || it.x > hi));
       const x = wide ? left : lo, w = wide ? W : hi - lo;
-      regions.push({ src: b.src, page: pi, x, y: top, w, h: bot - top });
+      regions.push({ src: b.src || [], sec: b.sec || null, bi, page: pi, x, y: top, w, h: bot - top });
     }
   };
 
@@ -377,7 +377,7 @@ function flow(doc, style, pageOf, assets) {
       page.items.push({ kind: 'rule', x1: left, y1: y, x2: left + W, y2: y, width: 0.5, colour: '#999999' });
       y += 6;
     }
-  }));
+  }, i));
   return { pages, anchors, headings, replaced, regions };
 }
 

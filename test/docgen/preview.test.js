@@ -67,3 +67,15 @@ test('a band keeps the images that overlap it', () => {
   const band = cropPage(page, 60, 150);
   assert.deepEqual(band.items, [{ kind: 'image', x: 0, y: -10, w: 10, h: 40, src: 'a' }]);
 });
+
+test('a blank still to fill in is flagged on screen only, its badge naming the blank it leads to', async () => {
+  const { layout } = await import('../../DocGen/doc-layout.js');
+  const { normaliseStyle } = await import('../../DocGen/doc-style.js');
+  const s = normaliseStyle({ id: 'x', name: 'x' }).style;
+  const r = layout({ blocks: [{ kind: 'paragraph', style: 'body', runs: [{ text: 'See ' }, { text: '[To fill in: Why]', bold: true, todo: { fill: 'f1', key: 'h1' } }] }] }, s);
+  const todos = r.pages[0].items.filter((i) => i.kind === 'todo');
+  assert.equal(todos.length, 1);
+  assert.deepEqual(todos[0].ref, { fill: 'f1', key: 'h1' });
+  const html = pagesHtml(r.pages);
+  assert.match(html, /class="dp-todo-flag" data-dp-fill="f1" data-dp-fill-key="h1"/);
+});

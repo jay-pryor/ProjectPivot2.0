@@ -882,9 +882,39 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return errs;
     }
 
+    /* Undo and redo, for every change made in the designer: each commit is seen here, the
+     * design before it kept. A burst of commits (typing in a box) is one step. Kept per
+     * host — a different report has its own history — and only while the app is open. */
+    var _undo = [], _redo = [], _lastAt = 0, BURST_MS = 800;
+    function snap() { var st = _host.getState() || {}; return JSON.stringify(st.report || {}); }
+    /** The designer's one way to write: the host's commit, with the design before it kept. */
+    function commit(mutator) {
+      var before = snap();
+      var r = _host.commit(mutator);
+      var after = snap();
+      if (after !== before) {
+        var now = Date.now();
+        if (!(_undo.length && now - _lastAt < BURST_MS)) _undo.push(before);
+        if (_undo.length > 200) _undo.shift();
+        _lastAt = now;
+        _redo = [];
+      }
+      return r;
+    }
+    function restore(json) { _host.commit(function (p) { p.report = JSON.parse(json); if (!Object.keys(p.report).length) delete p.report; }); }
+    var history = {
+      canUndo: function () { return _undo.length > 0; },
+      canRedo: function () { return _redo.length > 0; },
+      undo: function () { if (!_undo.length) return false; var now = snap(); restore(_undo.pop()); _redo.push(now); _lastAt = 0; return true; },
+      redo: function () { if (!_redo.length) return false; var now = snap(); restore(_redo.pop()); _undo.push(now); _lastAt = 0; return true; },
+      /** A new step from here on, even inside a burst (a separate action, not more typing). */
+      cut: function () { _lastAt = 0; }
+    };
+
     function set(host) {
       var errs = validate(host);
       if (errs.length) throw new Error('invalid document host:\n  ' + errs.join('\n  '));
+      if (host !== _host) { _undo = []; _redo = []; _lastAt = 0; }
       _host = host;
       return _host;
     }
@@ -1032,7 +1062,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return (sj.meta(subjectId) || []).filter(function (r) { return chosen[r.id] !== false; });
     }
 
-    App.docHost = { set: set, get: get, validate: validate, sections: sections, log: log, catalogue: catalogue,
+    App.docHost = { set: set, get: get, commit: commit, history: history, validate: validate, sections: sections, log: log, catalogue: catalogue,
                     context: subjectContext, chosenMeta: chosenMeta };
     App.docSession = { get: sessionGet, set: sessionSet, run: sessionRun, options: sessionOptions,
                        selectedSubjectId: selectedSubjectId, KEYS: SESSION_KEYS };
@@ -1576,8 +1606,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             if (v.trim()) {
               return App.md.runs(v, { resolveRef: cur.ref }).reduce(function (a, ps, i) { return i ? a.concat([{ br: true }, { br: true }], ps) : ps; }, []);
             }
-            // `todo`: the preview flags it (the PDF prints it as it is).
-            return [{ text: '[To fill in: ' + ((fl && fl.label) || 'text') + ']', bold: true, todo: true }];
+            // `todo`: the preview flags it (the PDF prints it as it is), and its badge leads to
+            // this blank, for this entry, under its section's Fill in.
+            return [{ text: '[To fill in: ' + ((fl && fl.label) || 'text') + ']', bold: true,
+              todo: { fill: fl ? fl.id : '', key: DATA.instanceKey(scope) } }];
           }
           var parsed = DATA.parseFieldTag(tag);
           var res = catalogue ? DATA.resolveField(scope, parsed, catalogue) : { kind: 'unknown' };
@@ -1638,7 +1670,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       function centres(b, part) { return b.centre === true || !!(b.centre && b.centre[part]); }
       var out = [];
       var orientation = 'portrait';
-      resolved.forEach(function (b) {
+      var sectionBlocks = function (b) {
         cur = { ref: refIn(b), field: fieldsIn(b) };
         // LND-1: a section's own orientation; a change turns the page (and stands in for its page break).
         // A landscape Style is landscape already: the tick changes nothing there.
@@ -1722,6 +1754,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             columns: t.header.map(function (_, k) { return { width: t.widths ? t.widths[k] : undefined }; }),
             header: t.header.map(function (h) { return textRuns(h); }), rows: t.rows.map(function (r) { return r.map(function (c) { return c.code ? textRuns(c.text, { code: true }) : textRuns(c.text); }); }) });
         });
+      };
+      resolved.forEach(function (b) {
+        var from = out.length;
+        sectionBlocks(b);
+        // And which section each block prints for (a copy: the section it is a copy of), so
+        // the preview can take a double-click on any of it back to that section.
+        for (var k = from; k < out.length; k++) out[k].sec = b.templateId || b.id;
       });
       // Tags in hand-written runs, too (headings and generated cells were filled above).
       out.forEach(function (blk) {
@@ -1950,7 +1989,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function setReportOrder(order) {
       if (!P()) return errNoProject();
       var ids = (order || []).map(String);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         bag(p).order = ids;
         if (!ids.length) delete p.report.order;
         if (!Object.keys(p.report).length) delete p.report;
@@ -1972,7 +2011,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (lv !== null && [App.doc.TITLE_LEVEL, 1, 2, 3, 4, App.doc.BODY_LEVEL].indexOf(lv) === -1) {
         return err('Heading level must be 1-4, 5 for normal text, or 0 for an unnumbered title.');
       }
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.levels = b.levels || {};
         // Automatic is the ABSENT state rather than a stored null, so a section that
@@ -2000,7 +2039,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!blockId) return err('A section is required.');
       var parts = ['heading', 'intro', 'table', 'content'];
       if (parts.indexOf(part) === -1) return err('Unknown part "' + part + '".');
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.centred = b.centred || {};
         var now = App.docGen.centreParts(b.centred[blockId]);
@@ -2031,7 +2070,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (!blockId) return err('A section is required.');
       if (BLOCK_FLAGS.indexOf(bagKey) === -1) return err('Unknown section flag "' + bagKey + '".');
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b[bagKey] = b[bagKey] || {};
         if (!!on === !!FLAGS_ON[bagKey]) delete b[bagKey][blockId];
@@ -2057,7 +2096,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (!blockId) return err('A section is required.');
       var v = mmValue(mm);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.space = b.space || {};
         if (v > 0) b.space[blockId] = v; else delete b.space[blockId];
@@ -2093,7 +2132,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       var at0 = findSection(P(), sectionId) && locate(P(), sectionId, partId);
       if (!at0 || at0.part.kind !== 'table') return err('Unknown table.', partId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var part = locate(p, sectionId, partId).part;
         var next = key === null ? null : lookWith(part.look, key, value);
         if (next) part.look = next; else delete part.look;
@@ -2105,7 +2144,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function setBlockLook(blockId, key, value) {
       if (!P()) return errNoProject();
       if (!blockId) return err('A section is required.');
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.tableLooks = b.tableLooks || {};
         var next = key === null ? null : lookWith(b.tableLooks[blockId], key, value);
@@ -2127,13 +2166,89 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * with no decision in it, and a document issued from an unticked session went out
      * unmarked. Stored with the design; none is stored as absence.
      */
+    /* ---- Review: markup and comments, drawn over the previews -------------------
+     *
+     * Stored with the design (saved with the draft, like the placeholder answers) and
+     * never printed in a PDF. Each is placed on a PAGE, in points from its top-left, and
+     * carries `at` — the document block it was made on and where within it — so an HTML
+     * export, which has no pages, can still put it beside the right block.
+     */
+    function listOf(b, k) { return Array.isArray(b[k]) ? b[k] : (b[k] = []); }
+    function tidy(p, b) { ['markup', 'comments'].forEach(function (k) { if (Array.isArray(b[k]) && !b[k].length) delete b[k]; }); if (!Object.keys(b).length) delete p.report; }
+    /** A highlight or a box: `{ kind: 'hl'|'box', page, x, y, w, h, at? }`. */
+    function addMarkup(m) {
+      if (!P()) return errNoProject();
+      if (!m || (m.kind !== 'hl' && m.kind !== 'box')) return err('Markup is a highlight or a box.', 'markup');
+      var id = null;
+      App.docHost.commit(function (p) {
+        var b = bag(p), list = listOf(b, 'markup');
+        id = nextId('mk', list);
+        var keep = { id: id, kind: m.kind, page: m.page | 0, x: +m.x || 0, y: +m.y || 0, w: +m.w || 0, h: +m.h || 0 };
+        if (m.at) keep.at = m.at;
+        list.push(keep);
+      });
+      return { ok: true, id: id, issues: [] };
+    }
+    function clearMarkup() {
+      if (!P()) return errNoProject();
+      App.docHost.commit(function (p) { var b = bag(p); delete b.markup; tidy(p, b); });
+      return ok();
+    }
+    /** A new comment thread with its first post: `{ page, y, text, by, at? }`. */
+    function addComment(c) {
+      if (!P()) return errNoProject();
+      var text = String((c && c.text) || '').trim();
+      if (!text) return err('A comment needs some words.', 'comments');
+      var id = null;
+      App.docHost.commit(function (p) {
+        var b = bag(p), list = listOf(b, 'comments');
+        id = nextId('cm', list);
+        var keep = { id: id, page: c.page | 0, y: +c.y || 0, posts: [{ by: String(c.by || ''), at: App.docHost.get().clock.nowIso(), text: text }] };
+        if (c.at) keep.at = c.at;
+        list.push(keep);
+      });
+      return { ok: true, id: id, issues: [] };
+    }
+    function replyComment(id, text, by) {
+      if (!P()) return errNoProject();
+      var t = String(text || '').trim();
+      if (!t) return err('A reply needs some words.', 'comments');
+      if (!(bag(P()).comments || []).some(function (c) { return c.id === id; })) return err('Unknown comment.', id);
+      App.docHost.commit(function (p) {
+        var c = (bag(p).comments || []).filter(function (x) { return x.id === id; })[0];
+        c.posts.push({ by: String(by || ''), at: App.docHost.get().clock.nowIso(), text: t });
+      });
+      return ok();
+    }
+    function removeComment(id) {
+      if (!P()) return errNoProject();
+      App.docHost.commit(function (p) {
+        var b = bag(p);
+        b.comments = (b.comments || []).filter(function (c) { return c.id !== id; });
+        tidy(p, b);
+      });
+      return ok();
+    }
+    /** Whether an HTML export carries the markup and the comments: off unless asked. */
+    function setHtmlReview(key, on) {
+      if (!P()) return errNoProject();
+      if (key !== 'markup' && key !== 'comments') return err('Unknown HTML option.', key);
+      App.docHost.commit(function (p) {
+        var b = bag(p), h = b.htmlReview || {};
+        if (on) h[key] = true; else delete h[key];
+        if (Object.keys(h).length) b.htmlReview = h; else delete b.htmlReview;
+        if (!Object.keys(b).length) delete p.report;
+      });
+      return ok();
+    }
+
     /** A /[Tag] placeholder's answer, stored with the design; blank removes it. */
     function setTag(name, value) {
       if (!P()) return errNoProject();
       var k = String(name || '');
       if (!k) return err('A placeholder needs a name.', 'tags');
       var v = value == null ? '' : String(value);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         var t = (b.tags && typeof b.tags === 'object' && !Array.isArray(b.tags)) ? b.tags : {};
         if (v.trim()) t[k] = v; else delete t[k];
@@ -2149,7 +2264,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (text && allowed.indexOf(text) === -1) {
         return err('"' + text + '" is not one of the classification markings this application offers.', 'classification');
       }
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         if (text) b.classification = text; else delete b.classification;
         if (!Object.keys(b).length) delete p.report;
@@ -2185,7 +2300,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function setBlockIntroNumbered(blockId, on) {
       if (!P()) return errNoProject();
       if (!blockId) return err('A section is required.');
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.introNumbered = b.introNumbered || {};
         if (on) b.introNumbered[blockId] = true; else delete b.introNumbered[blockId];
@@ -2211,7 +2326,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (!blockId) return err('A section is required.');
       var v = String(value == null ? '' : value);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b[bagKey] = b[bagKey] || {};
         if (v.trim()) b[bagKey][blockId] = v; else delete b[bagKey][blockId];
@@ -2250,7 +2365,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!blockId || !tableKey) return err('A table is required.');
       if (field !== 'title' && field !== 'caption') return err('A table carries a "title" or a "caption".');
       var v = String(value == null ? '' : value);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.tables = b.tables || {};
         var byBlock = b.tables[blockId] = b.tables[blockId] || {};
@@ -2274,7 +2389,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function setTableNoCaption(blockId, tableKey, off) {
       if (!P()) return errNoProject();
       if (!blockId || !tableKey) return err('A table is required.');
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.tables = b.tables || {};
         var byBlock = b.tables[blockId] = b.tables[blockId] || {};
@@ -2291,7 +2406,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (!blockId || !tableKey || !colId) return err('A table column is required.');
       var v = String(label == null ? '' : label);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.tables = b.tables || {};
         var byBlock = b.tables[blockId] = b.tables[blockId] || {};
@@ -2336,7 +2451,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (INCLUDE_MAPS.indexOf(map) === -1) return err('Unknown report option map "' + map + '".');
       if (!key) return err('A report option needs something to apply to.');
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         var o = b.options = b.options || {};
         var m = o[map] = o[map] || {};
@@ -2364,7 +2479,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function setMetaField(fieldId, on) {
       if (!P()) return errNoProject();
       if (!fieldId) return err('A field is required.');
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.meta = b.meta || {};
         if (on) delete b.meta[fieldId]; else b.meta[fieldId] = false;
@@ -2414,7 +2529,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function setFill(id, key, tokens) {
       if (!P()) return errNoProject();
       if (!/^[A-Za-z0-9_-]+$/.test(String(id || ''))) return err('Unknown blank.', id);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         var v = String(tokens == null ? '' : tokens);
         if (v.trim()) { b.fills = b.fills || {}; (b.fills[id] = b.fills[id] || {})[String(key || '')] = v; }
@@ -2432,7 +2547,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      */
     function pruneFills(live, ids) {
       if (!P()) return errNoProject();
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         Object.keys(b.fills || {}).filter(function (id) { return !ids || ids.indexOf(id) !== -1; }).forEach(function (id) {
           Object.keys(b.fills[id]).forEach(function (k) { if (!(live && live[id] && live[id][k])) delete b.fills[id][k]; });
@@ -2451,7 +2566,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (t0.kind !== 'table' && t0.kind !== 'repeat') return err('Only a table or a Repeat part repeats.', partId);
       var n = normRepeat(repeat);
       if (n.error) return err(n.error, partId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var t = part(p, sectionId, partId);
         if (n.repeat) t.repeat = n.repeat; else if (t.kind === 'repeat') t.repeat = { each: '' }; else delete t.repeat;
       });
@@ -2464,7 +2579,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!findSection(P(), id)) return err('Unknown section.', id);
       var n = normRepeat(repeat);
       if (n.error) return err(n.error, id);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var s = findSection(p, id);
         if (n.repeat) s.repeat = n.repeat; else delete s.repeat;
       });
@@ -2475,7 +2590,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       opts = opts || {};
       var id = null;
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.sections = b.sections || [];
         id = nextId('sec', b.sections);
@@ -2492,7 +2607,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       var s0 = findSection(P(), id);
       if (!s0) return err('Unknown section.', id);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var s = findSection(p, id);
         if (fields.title !== undefined) s.title = String(fields.title == null ? '' : fields.title);
       });
@@ -2518,7 +2633,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function addRegister(id) {
       if (!P()) return errNoProject();
       if (!App.docHost.sections(null).some(function (pv) { return pv.id === id; })) return err('Unknown register table.', id);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         if (!Array.isArray(b.registers)) return;          // holds them all already
         if (b.registers.indexOf(id) === -1) b.registers.push(id);
@@ -2529,7 +2644,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     /** DS-6: take a register table out of the document, with its settings. */
     function removeRegister(id) {
       if (!P()) return errNoProject();
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         // A design that held them all now holds the rest; an empty list is kept: it means none.
         var all = App.docHost.sections(null).map(function (pv) { return pv.id; });
@@ -2542,7 +2657,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     function removeSection(id) {
       if (!P()) return errNoProject();
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.sections = (b.sections || []).filter(function (s) { return s.id !== id; });
         if (!b.sections.length) delete b.sections;
@@ -2603,7 +2718,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // DS-4: into a Repeat part, when one is named.
       if (parentId) { var host0 = locate(P(), sectionId, parentId); if (!host0 || host0.part.kind !== 'repeat') return err('Unknown Repeat part.', parentId); }
       var id = null;
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var list = parentId ? (locate(p, sectionId, parentId).part.parts = locate(p, sectionId, parentId).part.parts || []) : (findSection(p, sectionId).parts = findSection(p, sectionId).parts || []);
         id = nextId('part', allParts(p));
         var part = blankPart(kind, id);
@@ -2614,13 +2729,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
     /**
      * A Space part straight after a part, in the same list (inside a Repeat part, if that is
-     * where the part is): the "+10" in a part's corner. `mm` defaults to 10.
+     * where the part is): the "+SPACE" in a part's corner. `mm` defaults to 10.
      */
     function addSpaceAfter(sectionId, partId, mm) {
       if (!P()) return errNoProject();
       if (!locate(P(), sectionId, partId)) return err('Unknown part.', partId);
       var id = null;
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var at = locate(p, sectionId, partId);
         id = nextId('part', allParts(p));
         var gap = blankPart('space', id);
@@ -2637,7 +2752,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var s0 = findSection(P(), sectionId);
       if (!s0) return err('Unknown section.', sectionId);
       if (!locate(P(), sectionId, partId)) return err('Unknown part.', partId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var part = locate(p, sectionId, partId).part;
         Object.keys(fields || {}).forEach(function (k) {
           if (k === 'id' || k === 'kind') return;             // identity is not editable
@@ -2662,7 +2777,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var at0 = s0 && locate(P(), sectionId, partId);
       if (!at0 || at0.part.kind !== 'para') return err('Unknown paragraph.', partId);
       var n = Math.round(Number(level));
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var part = locate(p, sectionId, partId).part;
         if (isFinite(n) && n >= 1 && n <= 4) part.numberLevel = n; else delete part.numberLevel;
       });
@@ -2671,7 +2786,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function removePart(sectionId, partId) {
       if (!P()) return errNoProject();
       if (!findSection(P(), sectionId)) return err('Unknown section.', sectionId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var at = locate(p, sectionId, partId);
         if (at) at.list.splice(at.index, 1);
       });
@@ -2684,7 +2799,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var s0 = findSection(P(), sectionId);
       var im0 = s0 && locate(P(), sectionId, partId);
       if (!im0 || im0.part.kind !== 'image') return err('Unknown image part.', partId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var part = locate(p, sectionId, partId).part;
         part.images = part.images || [];
         while (part.images.length <= index) part.images.push(null);
@@ -2700,7 +2815,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var s0 = findSection(P(), sectionId);
       var l0 = s0 && locate(P(), sectionId, partId), p0 = l0 && l0.part;
       if (!p0 || !(p0.images || [])[index]) return err('There is no image there.', partId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var im = locate(p, sectionId, partId).part.images[index];
         if (field === 'width') {
           var n = Math.round(Number(value));
@@ -2720,7 +2835,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (!String(name || '').trim()) return err('A standard image needs a name.');
       var id = null;
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.standardImages = b.standardImages || [];
         id = nextId('img', b.standardImages);
@@ -2731,14 +2846,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function renameStandardImage(id, name) {
       if (!P()) return errNoProject();
       if (!String(name || '').trim()) return err('A standard image needs a name.');
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         (bag(p).standardImages || []).forEach(function (s) { if (s.id === id) s.name = String(name).trim(); });
       });
       return ok();
     }
     function removeStandardImage(id) {
       if (!P()) return errNoProject();
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.standardImages = (b.standardImages || []).filter(function (s) { return s.id !== id; });
       });
@@ -2762,7 +2877,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       var s0 = findSection(P(), sectionId);
       if (!s0) return err('Unknown section.', sectionId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var src = locate(p, sectionId, partId);
         if (!src) return;
         // DS-4: to the END of a Repeat part (`intoId`), or of the section ('').
@@ -2822,7 +2937,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       var t0 = part(P(), sectionId, partId);
       if (!t0 || t0.kind !== 'table') return err('Unknown table.', partId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var t = part(p, sectionId, partId);
         var v = String(value == null ? '' : value);
         if (row === -1) { t.header[col] = v; return; }
@@ -2837,7 +2952,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       var t0 = part(P(), sectionId, partId);
       if (!t0 || t0.kind !== 'table') return err('Unknown table.', partId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var t = part(p, sectionId, partId);
         var blank = t.header.map(function () { return ''; });
         var i = (at === undefined || at === null || at < 0 || at > t.rows.length) ? t.rows.length : at;
@@ -2852,7 +2967,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
     function removeRow(sectionId, partId, at) {
       if (!P()) return errNoProject();
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var t = part(p, sectionId, partId);
         if (t && t.rows && at >= 0 && at < t.rows.length) {
           t.rows.splice(at, 1);
@@ -2875,7 +2990,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var t0 = part(P(), sectionId, partId);
       if (!t0 || t0.kind !== 'table') return err('Unknown table.', partId);
       if (!(at >= 0 && at < (t0.rows || []).length)) return err('Unknown row.', String(at));
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var t = part(p, sectionId, partId);
         var list = (Array.isArray(t.tallRows) && t.tallRows.length === t.rows.length)
           ? t.tallRows.map(function (v) { return v !== false; })
@@ -2969,7 +3084,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       var t0 = part(P(), sectionId, partId);
       if (!t0 || t0.kind !== 'table') return err('Unknown table.', partId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var t = part(p, sectionId, partId);
         var n = t.header.length;
         t.header.push('Column ' + (n + 1));
@@ -2986,7 +3101,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
     function removeColumn(sectionId, partId, at) {
       if (!P()) return errNoProject();
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var t = part(p, sectionId, partId);
         // A table with no columns cannot render, so the last one is not removable.
         if (!t || !t.header || t.header.length <= 1 || at < 0 || at >= t.header.length) return;
@@ -3014,7 +3129,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!(col >= 0 && col < n)) return err('No such column.', partId);
       var f = Number(fraction);
       if (!isFinite(f)) return err('A column width must be a number.', partId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var t = part(p, sectionId, partId);
         var cur = (Array.isArray(t.widths) && t.widths.length === n) ? t.widths.slice() : evenWidths(n);
         t.widths = applyWidth(cur, col, f, exact === true);
@@ -3027,7 +3142,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       var t0 = part(P(), sectionId, partId);
       if (!t0 || t0.kind !== 'table') return err('Unknown table.', partId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var t = part(p, sectionId, partId);
         delete t.widths;
       });
@@ -3057,7 +3172,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!(col >= 0 && col < n)) return err('No such column.', blockId);
       var f = Number(fraction);
       if (!isFinite(f)) return err('A column width must be a number.', blockId);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.tableWidths = b.tableWidths || {};
         var stored = b.tableWidths[blockId];
@@ -3070,7 +3185,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     /** TW-2: hand a generated section's table back to automatic widths. */
     function clearBlockWidths(blockId) {
       if (!P()) return errNoProject();
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         if (!b.tableWidths) return;
         delete b.tableWidths[blockId];
@@ -3097,7 +3212,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function setAlign(sectionId, partId, col, value) {
       if (!P()) return errNoProject();
       if (['l', 'c', 'r'].indexOf(value) === -1) return err('Alignment must be l, c or r.');
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var t = part(p, sectionId, partId);
         if (t && t.align) t.align[col] = value;
       });
@@ -3113,7 +3228,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (!String(name || '').trim()) return err('A formatting profile needs a name.');
       var id = null;
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.formats = b.formats || [];
         id = freshStyleId();
@@ -3133,7 +3248,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (id === 'standard') return err('The Standard profile cannot be edited. Duplicate it first.');
       var found = ((P().report && P().report.formats) || []).some(function (f) { return f.id === id; });
       if (!found) return err('Unknown formatting profile.', id);
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var f = p.report.formats.filter(function (x) { return x.id === id; })[0];
         var merged = App.docFormat.normalise(Object.assign({}, f, patch || {}));
         delete merged.builtin;
@@ -3146,7 +3261,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function removeFormat(id) {
       if (!P()) return errNoProject();
       if (id === 'standard') return err('The Standard profile cannot be removed.');
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.formats = (b.formats || []).filter(function (f) { return f.id !== id; });
         if (!b.formats.length) delete b.formats;
@@ -3160,7 +3275,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     function setFormatId(id) {
       if (!P()) return errNoProject();
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         if (!id || id === 'standard') delete b.formatId; else b.formatId = String(id);
         if (!Object.keys(b).length) delete p.report;
@@ -3204,7 +3319,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!s) return err('Unknown section.', sectionId);
       if (!String(name || '').trim()) return err('A section template needs a name.');
       var id = null;
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.sectionTemplates = b.sectionTemplates || [];
         id = nextId('tpl', b.sectionTemplates);
@@ -3230,7 +3345,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     function removeSectionTemplate(id) {
       if (!P()) return errNoProject();
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.sectionTemplates = (b.sectionTemplates || []).filter(function (t) { return t.id !== id; });
         if (!b.sectionTemplates.length) delete b.sectionTemplates;
@@ -3245,7 +3360,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var t = ((P().report && P().report.sectionTemplates) || []).filter(function (x) { return x.id === templateId; })[0];
       if (!t) return err('Unknown section template.', templateId);
       var id = null;
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.sections = b.sections || [];
         id = nextId('sec', b.sections);
@@ -3288,7 +3403,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       if (!String(name || '').trim()) return err('A report template needs a name.');
       var id = null;
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.reportTemplates = b.reportTemplates || [];
         id = nextId('rpt', b.reportTemplates);
@@ -3327,7 +3442,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     function removeReportTemplate(id) {
       if (!P()) return errNoProject();
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         var b = bag(p);
         b.reportTemplates = (b.reportTemplates || []).filter(function (t) { return t.id !== id; });
         if (!b.reportTemplates.length) delete b.reportTemplates;
@@ -3374,7 +3489,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (!P()) return errNoProject();
       var t = ((P().report && P().report.reportTemplates) || []).filter(function (x) { return x.id === id; })[0];
       if (!t) return err('Unknown report template.', id);
-      App.docHost.get().commit(function (p) { p.report = applyReportTemplate(bag(p), t); });
+      App.docHost.commit(function (p) { p.report = applyReportTemplate(bag(p), t); });
       return ok();
     }
 
@@ -3391,6 +3506,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       DEFAULT_SPACE_MM: DEFAULT_SPACE_MM, MAX_SPACE_MM: MAX_SPACE_MM,
       // CLS-1: the classification banner, which is a document decision, not a per-run one.
       setClassification: setClassification, setTag: setTag,
+      addMarkup: addMarkup, clearMarkup: clearMarkup, addComment: addComment, replyComment: replyComment, removeComment: removeComment,
+      setHtmlReview: setHtmlReview,
       // NAM-1 / SEC-1 / TBS-1: a section's name, its introduction, its table styling.
       setBlockName: setBlockName, setBlockHeading: setBlockHeading, setBlockIntro: setBlockIntro,
       setBlockIntroNumbered: setBlockIntroNumbered,
@@ -3650,7 +3767,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var K = KINDS[pl.kindKey], bagName = K.bag;
       var added = 0, replaced = 0, kept = 0;
 
-      App.docHost.get().commit(function (p) {
+      App.docHost.commit(function (p) {
         p.report = p.report || {};
         var list = p.report[bagName] = (p.report[bagName] || []);
 
@@ -4650,6 +4767,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     function partControls(sec, part, i, n) {
       return '<span class="rd-part-move">' +
+        (part.kind === 'table' || part.kind === 'repeat' || part.kind === 'space' ? '' : spaceAfterBtn(sec, part)) +
         '<button type="button" class="rd-part-goto" data-rd-part-goto="' + esc(part.id) + '" title="Go to this block in the preview" aria-label="Go to this block in the preview">◎</button>' +
         '<button type="button" data-rd-part-up="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' + (i === 0 ? ' disabled' : '') + ' title="Move up">▲</button>' +
         '<button type="button" data-rd-part-down="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' + (i === n - 1 ? ' disabled' : '') + ' title="Move down">▼</button>' +
@@ -4896,6 +5014,52 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function titleAlignOf(part) { return part.titleAlign === 'l' || part.titleAlign === 'r' ? part.titleAlign : 'c'; }
     var TITLE_ALIGN_CSS = { l: 'left', c: 'center', r: 'right' };
 
+    /**
+     * The full Preview's review tools, just left of the zoom: Markup Options, which slides
+     * open to the left to show Fading, Highlighter, Box and Clear all; and Comment, a mode.
+     */
+    function reviewTools(project) {
+      var open = !!_rd.markupOpen, has = ((project.report || {}).markup || []).length > 0 || _fades.length > 0;
+      var tool = function (id, label, title) {
+        return '<button type="button" class="rd-mkt' + (_rd.tool === id ? ' on' : '') + '" data-rd-tool="' + id + '" aria-pressed="' + (_rd.tool === id) + '" title="' + title + '"' + (open ? '' : ' tabindex="-1"') + '>' + label + '</button>';
+      };
+      return '<span class="rd-review">' +
+        '<span class="rd-mk-menu' + (open ? ' open' : '') + '" aria-hidden="' + !open + '"><span class="rd-mk-inner">' +
+          '<button type="button" class="rd-mkt' + (_rd.fading ? ' on' : '') + '" data-rd-fading aria-pressed="' + !!_rd.fading + '" title="When on, what you draw fades away after 5 seconds and is not kept"' + (open ? '' : ' tabindex="-1"') + '>Fading: ' + (_rd.fading ? 'On' : 'Off') + '</button>' +
+          tool('hl', 'Highlighter', 'Drag across a line to highlight it') +
+          tool('box', 'Box', 'Drag from one corner to the other to draw a box') +
+          '<button type="button" class="rd-mkt danger" data-rd-mk-clear' + (has ? '' : ' disabled') + ' title="Remove all markup"' + (open ? '' : ' tabindex="-1"') + '>Clear all</button>' +
+        '</span></span>' +
+        '<button type="button" class="rd-mk-toggle' + (open ? ' on' : '') + '" data-rd-markup-open aria-expanded="' + open + '">Markup Options</button>' +
+        '<button type="button" class="rd-cmt-toggle' + (_rd.commenting ? ' on' : '') + '" data-rd-commenting aria-pressed="' + !!_rd.commenting + '" title="Click on the page to leave a comment">Comment</button>' +
+      '</span>';
+    }
+
+    /* The review layer every preview draws: the saved markup and comments, the markup
+     * still fading (drawn with Fading on, never saved), and a comment being written. */
+    var _fades = [];
+    function reviewLayer(project) {
+      var b = (project && project.report) || {};
+      var markup = (Array.isArray(b.markup) ? b.markup : []).concat(_fades);
+      var comments = (Array.isArray(b.comments) ? b.comments : []).map(function (c) { return { id: c.id, page: c.page, y: c.y, n: (c.posts || []).length }; });
+      if (_rd.cmtDraft) comments.push({ id: '_new', page: _rd.cmtDraft.page, y: _rd.cmtDraft.y, n: 1, pending: true });
+      return { markup: markup, comments: comments };
+    }
+    /** The review layer cut to bands of pages (`{ pg, top, bottom }` each), as the section preview shows them. */
+    function reviewInBands(rv, bands) {
+      var markup = [], comments = [];
+      bands.forEach(function (bd, i) {
+        rv.markup.forEach(function (m) {
+          var y0 = Math.max(m.y, bd.top), y1 = Math.min(m.y + m.h, bd.bottom);
+          if (m.page === bd.pg && y1 > y0) markup.push(Object.assign({}, m, { page: i, y: y0 - bd.top, h: y1 - y0 }));
+        });
+        rv.comments.forEach(function (c) {
+          if (c.page === bd.pg && c.y >= bd.top && c.y <= bd.bottom) comments.push(Object.assign({}, c, { page: i, y: c.y - bd.top }));
+        });
+      });
+      return { markup: markup, comments: comments };
+    }
+
     /** A part picked to be outlined in the section preview shows it here too. */
     function pickCls(part) { return _rd.picked[part.id] ? ' rd-picked' : ''; }
 
@@ -5025,6 +5189,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
                   ' placeholder="0" aria-label="Extra height for every row of this table, in millimetres"> mm' +
               '</label>'
             : '') +
+          spaceAfterBtn(sec, part) +
         '</div>' +
         (lay
           ? (rowMm ? rowHeightNote(part, rows.length, rowMm) : '') +
@@ -5073,8 +5238,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
               ' value="' + esc(String(mm || '')) + '" data-rd-space="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' +
               ' aria-label="Height of this space in millimetres"> mm' +
           '</label>' +
+          // Quick steps while trying a layout out. The gap itself is shown in the preview, not
+          // drawn here: a 150mm space would push everything after it off the screen.
+          '<span class="rd-mmsteps">' + [-10, 10].map(function (d) {
+            var off = d < 0 ? !mm : mm >= App.docStore.MAX_SPACE_MM;
+            return '<button type="button" data-rd-space-step="' + d + '" data-rd-space-for="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' +
+              (off ? ' disabled' : '') + ' title="' + (d < 0 ? '10mm less' : '10mm more') + '">' + (d < 0 ? '\u221210' : '+10') + '</button>';
+          }).join('') + '</span>' +
           partControls(sec, part, i, n) + '</div>' +
-        (mm ? '<div class="rd-mmshow" style="height:' + Math.round(mm * 96 / 25.4) + 'px"></div>' : '') +
         '</div>';
     }
 
@@ -5150,7 +5321,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     /** The zoom steps of the page previews, and where each starts. */
     var ZOOMS = [0.4, 0.5, 0.6, 0.8, 1, 1.25, 1.5, 2];
     var ZOOM_FROM = { section: 1, preview: 1, styles: 1 };
-    var ZOOM_KEY = { section: 'secZoom', preview: 'prevZoom', styles: 'styleZoom' };
+    // The Sections and Styles previews sit in the same place and share one zoom, so moving
+    // between the two tabs never moves the pages.
+    var ZOOM_KEY = { section: 'secZoom', preview: 'prevZoom', styles: 'secZoom' };
     function zoomOf(which) { return _rd[ZOOM_KEY[which]] || ZOOM_FROM[which]; }
     /**
      * IMG-3: the images the previews draw, read from the folder once and kept while the
@@ -5266,15 +5439,23 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var isPicked = function (r) { return r.src.some(function (id) { return _rd.picked[id]; }); };
       // Every part's place, too, cut to the bands: what a part's ◎ scrolls to.
       var bandRegions = [];
+      // And where each link target lands in the bands, so a link inside the section can be followed in place.
+      var bandAnchors = {};
+      var bandInfo = [];
       for (var pg = mine.page; pg <= lastPage; pg++) {
         var page = p.pages[pg];
         var top = pg === mine.page ? Math.max(0, mine.y - 2) : m.top * MMPT - 2;
         var bottom = end && pg === end.page ? end.y - 1 : page.size[1] - m.bottom * MMPT + 2;
         if (bottom - top > 1) {
           bands.push(cropPage(page, top, bottom));
+          bandInfo.push({ pg: pg, top: top, bottom: bottom });
+          Object.keys(p.anchors || {}).forEach(function (id) {
+            var a = p.anchors[id];
+            if (a.page === pg && a.y >= top - 3 && a.y <= bottom) bandAnchors[id] = { page: bands.length - 1, y: Math.max(0, a.y - top) };
+          });
           (p.regions || []).forEach(function (r) {
             var y0 = Math.max(r.y, top), y1 = Math.min(r.y + r.h, bottom);
-            if (r.page === pg && y1 > y0) bandRegions.push({ src: r.src, page: bands.length - 1, x: r.x, y: y0 - top, w: r.w, h: y1 - y0 });
+            if (r.page === pg && y1 > y0) bandRegions.push({ src: r.src, sec: r.sec, page: bands.length - 1, x: r.x, y: y0 - top, w: r.w, h: y1 - y0 });
           });
         }
       }
@@ -5290,8 +5471,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
         // The whole document, opened at this section; or just this section, cut from it.
         '<div class="rd-secprev rd-preview-pages">' + (whole
-          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: here, imageUrl: imageUrl, marks: (p.regions || []).filter(isPicked), targets: p.regions || [] })
-          : pagesHtml(bands, { scale: k, imageUrl: imageUrl, marks: bandRegions.filter(isPicked), targets: bandRegions })) + '</div>';
+          ? pagesHtml(p.pages, Object.assign({ scale: k, anchors: p.anchors, here: here, imageUrl: imageUrl, marks: (p.regions || []).filter(isPicked), targets: p.regions || [] }, reviewLayer(project)))
+          : pagesHtml(bands, Object.assign({ scale: k, anchors: bandAnchors, imageUrl: imageUrl, marks: bandRegions.filter(isPicked), targets: bandRegions }, reviewInBands(reviewLayer(project), bandInfo)))) + '</div>';
     }
 
     function metaPane(project) {
@@ -5576,12 +5757,17 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     /** The editors of a list of parts — a section's, or a Repeat part's own. */
     function partsHtml(project, sec, parts) {
       return parts.map(function (p, i) {
-        var html = partHtml(project, sec, parts, p, i);
-        // Every part but a Space has a "+10" in its bottom corner: a 10mm Space straight after it.
-        if (p.kind === 'space' || html.slice(-6) !== '</div>') return html;
-        return html.slice(0, -6) + '<button type="button" class="rd-spaceafter" data-rd-space-after="' + esc(p.id) + '" data-rd-sec="' + esc(sec.id) + '"' +
-          ' title="Insert a 10mm space after this" aria-label="Insert a 10mm space after this">+10</button></div>';
+        return partHtml(project, sec, parts, p, i);
       }).join('');
+    }
+    /**
+     * "+SPACE": a 10mm Space straight after a part. It sits in a row of buttons the part
+     * already has — a table's + Row, a Repeat's add buttons, or (the rest) beside ◎ ▲ ▼ —
+     * so it takes no room of its own. A Space has none.
+     */
+    function spaceAfterBtn(sec, part) {
+      return '<button type="button" class="rd-spaceafter" data-rd-space-after="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' +
+        ' title="Insert a 10mm space after this" aria-label="Insert a 10mm space after this">+SPACE</button>';
     }
     /** One part's editor. */
     function partHtml(project, sec, parts, p, i) {
@@ -5623,7 +5809,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           partControls(sec, part, i, n) + '</div>' +
         (c && each ? filterSortHtml(c, each, part.repeat, 'data-rd-rpart-', part.id, extra) : '<p class="rd-state">Choose what to repeat for; the parts below print once for each.</p>') +
         '<div class="rd-parts rd-nested" data-rd-partdrop="' + esc(part.id) + '">' + (inner || '<p class="rd-state">Nothing inside yet. Drag a part here, or add one below.</p>') + '</div>' +
-        '<div class="rd-addbar">' + addPartButtons(sec, part.id) + '</div></div>';
+        '<div class="rd-addbar">' + addPartButtons(sec, part.id) + spaceAfterBtn(sec, part) + '</div></div>';
     }
 
     /** The fields of one category of a section. */
@@ -5679,7 +5865,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           (c.id === cat.id ? ' aria-current="true"' : '') + '>' + esc(c.label) + '</button>';
       }).join('') + '</nav>';
       return '<div class="rd-secgrid">' + list +
-        '<div class="rd-sec-fields" data-rd-sec-fields><h5>' + esc(shownText(block.label)) + ' \u2014 ' + esc(cat.label) + '</h5>' +
+        '<div class="rd-sec-fields" data-rd-sec-fields><h5 class="rd-sec-title"><span>' + esc(shownText(block.label)) + ' \u2014 ' + esc(cat.label) + '</span>' +
+          // The same ◎ as a block's, for the whole section: always here, whichever category is open.
+          '<button type="button" class="rd-part-goto" data-rd-sec-goto="' + esc(block.id) + '" title="Go to this section in the preview"' +
+            ' aria-label="Go to this section in the preview">◎</button></h5>' +
           // DS-6: a whole-register table under a repeating section is not filtered to the copy.
           (isRegister(block) && catalogue() && scopeOf(project, block.id).outer.length > 1
             ? '<p class="rpt-omit">This register table is inside a repeating section: it prints, unchanged, with each copy.</p>' : '') +
@@ -5969,7 +6158,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         '<div class="rd-secprev-head">' + (laid.error ? '' : '<span class="rd-state">' + laid.pages.length + ' page' + (laid.pages.length === 1 ? '' : 's') + '</span>') + zoomBar('styles') + '</div>' +
         (laid.error
           ? '<p class="rd-err">' + esc(laid.error) + '</p>'
-          : '<div class="rd-preview-pages rd-style-pages">' + pagesHtml(laid.pages, { scale: zoomOf('styles'), imageUrl: imageUrl }) + '</div>') + '</div>';
+          : '<div class="rd-preview-pages rd-style-pages">' + pagesHtml(laid.pages, Object.assign({ scale: zoomOf('styles'), imageUrl: imageUrl }, reviewLayer(project))) + '</div>') + '</div>';
       return '<div class="rd-styles">' + list + fields + pages + '</div>';
     }
 
@@ -6175,6 +6364,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           ? '<div class="rd-fieldset rd-replaced"><strong title="These show as a grey box until the file is back in the folder">Images missing from the folder</strong>' +
               '<p>' + missingImgs.map(function (n) { return '<code>' + esc(n) + '</code>'; }).join(' ') + '</p></div>'
           : '') +
+        htmlReviewOptions(project) +
         makeBar(ready, laid.error, unfilled.length, fillsNow(project).items.filter(function (i) { return !i.value.trim(); }).length) + '</div>';
     }
 
@@ -6183,6 +6373,15 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * scrolls). Locked — and saying why — while a placeholder or a blank is still empty:
      * a report made then would print "/[Date]" or "[To fill in: …]".
      */
+    /** Whether the HTML carries the review layer. Off unless chosen; the PDF never does. */
+    function htmlReviewOptions(project) {
+      var b = project.report || {}, on = b.htmlReview || {};
+      var nm = (b.markup || []).length, nc = (b.comments || []).length;
+      return '<div class="rd-fieldset"><strong title="The PDF never includes them">Markup and comments in the HTML</strong><div class="rd-tset-row">' +
+        cb('data-rd-html-review="markup"', 'Include markup' + (nm ? ' (' + nm + ')' : ''), on.markup === true) +
+        cb('data-rd-html-review="comments"', 'Include comments' + (nc ? ' (' + nc + ')' : ''), on.comments === true) +
+        '</div></div>';
+    }
     var LOCK_SVG = '<svg class="rd-lock" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="3" y="7" width="10" height="8" rx="1.5" fill="currentColor"/>' +
       '<path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
     function makeBar(ready, error, tagsLeft, blanksLeft) {
@@ -6216,10 +6415,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return '<div class="rd-preview">' +
         '<div class="rd-addbar"><button type="button" data-rd-refresh-preview>↻ Refresh</button>' +
           '<span class="rd-state">' + p.pages.length + ' page' + (p.pages.length === 1 ? '' : 's') + '</span>' +
+          reviewTools(project) +
           zoomBar('preview') + '</div>' +
         '<div class="rd-preview-body">' +
           '<nav class="rd-preview-nav">' + (nav || '<span class="rd-state">No sections.</span>') + '</nav>' +
-          '<article class="rd-preview-doc rd-preview-pages" id="rd-preview-doc">' + pagesHtml(p.pages, { scale: zoomOf('preview'), anchors: p.anchors, imageUrl: imageUrl }) + '</article>' +
+          '<article class="rd-preview-doc rd-preview-pages' + (_rd.tool ? ' rd-drawing rd-tool-' + _rd.tool : '') + (_rd.commenting ? ' rd-commenting' : '') + '" id="rd-preview-doc">' +
+            pagesHtml(p.pages, Object.assign({ scale: zoomOf('preview'), anchors: p.anchors, imageUrl: imageUrl,
+            // Ctrl+click picks here too, so the outlines (and the parts behind them) come along.
+            marks: (p.regions || []).filter(function (r) { return r.src.some(function (id) { return _rd.picked[id]; }); }), targets: p.regions || [] }, reviewLayer(project))) + '</article>' +
         '</div></div>';
     }
 
@@ -6251,6 +6454,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         '<div class="modal-head"><div><h3>' + esc(hd ? hd.title : 'Report Design') + '</h3>' +
           (hd && hd.tag ? '<span class="tag rd-stage">' + esc(hd.tag) + '</span>' : '') +
           '<div class="modal-sub">' + (subj ? subjectPicker(selId) : 'No ' + esc(noun()) + ' selected.') + '</div></div>' +
+          '<span class="rd-hist">' +
+            '<button type="button" data-rd-back' + (_nav.length ? '' : ' disabled') + ' title="Back to where you were">\u2190 Back</button>' +
+            '<button type="button" data-rd-undo' + (App.docHost.history.canUndo() ? '' : ' disabled') + ' title="Undo (Ctrl+Z)">\u21b6 Undo</button>' +
+            '<button type="button" data-rd-redo' + (App.docHost.history.canRedo() ? '' : ' disabled') + ' title="Redo (Ctrl+Y)">\u21b7 Redo</button>' +
+          '</span>' +
           '<span class="rd-save-slot" data-rd-save-slot>' + save + '</span>' +
           '<button type="button" class="modal-close" data-rd-close aria-label="Close">×</button></div>' +
         '<div class="modal-body"><div class="rpt-body rd-layout">' +
@@ -6337,6 +6545,47 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       }
       requestAnimationFrame(step);
     }
+    /* Back: where the designer has been — which tab, section, category and preview view,
+     * and where each scrolling area was — so a trip from the Preview to an editor and back
+     * lands on the very spot it left. A place is kept before every move. */
+    var _nav = [];
+    function placeNow() {
+      var root = _ctx && _ctx.root;
+      return {
+        pane: _rd.pane, selected: _rd.selected, secCat: _rd.secCat, secWhole: !!_rd.secWhole,
+        scroll: SCROLLERS.map(function (sel) { var el = root && root.querySelector(sel); return el ? [el.scrollTop, el.scrollLeft] : null; })
+      };
+    }
+    function samePlace(a, b) {
+      return a && b && a.pane === b.pane && a.selected === b.selected && a.secCat === b.secCat && a.secWhole === b.secWhole &&
+        JSON.stringify(a.scroll) === JSON.stringify(b.scroll);
+    }
+    function remember() {
+      if (!_rd.open) return;
+      var here = placeNow();
+      if (samePlace(here, _nav[_nav.length - 1])) return;
+      _nav.push(here);
+      if (_nav.length > 50) _nav.shift();
+    }
+    /** Back to the last place: faded across when the view changes, then every scroll put back. */
+    function goBack() {
+      var to = _nav.pop();
+      if (!to || !_ctx) { repaint(); return; }
+      var root = _ctx.root;
+      var moved = to.pane !== _rd.pane || to.selected !== _rd.selected || to.secCat !== _rd.secCat || to.secWhole !== !!_rd.secWhole;
+      var going = moved ? [].slice.call(root.querySelectorAll(to.pane !== _rd.pane ? '.rd-layout' : '[data-rd-sec-fields], [data-rd-sec-prev]')) : [];
+      going.forEach(function (el) { el.classList.add('rd-fade-out'); });
+      setTimeout(function () {
+        _rd.pane = to.pane; _rd.selected = to.selected; _rd.secCat = to.secCat; _rd.secWhole = to.secWhole;
+        repaint();
+        SCROLLERS.forEach(function (sel, i) {
+          var el = to.scroll[i] && root.querySelector(sel);
+          if (el) { el.scrollTop = to.scroll[i][0]; el.scrollLeft = to.scroll[i][1]; }
+        });
+        if (moved) [].forEach.call(root.querySelectorAll(to.pane !== _rd.pane ? '.rd-layout' : '[data-rd-sec-fields], [data-rd-sec-prev]'), function (el) { flash(el, 'rd-fade-in'); });
+      }, going.length ? 170 : 0);
+    }
+
     /** Play a one-off animation class on an element, restarting it if it is already playing. */
     function flash(el, cls) {
       el.classList.remove(cls);
@@ -6368,6 +6617,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       keepScroll(host, function () { host.innerHTML = inner(project); });
       scrollToHere();
       showFormats();
+      placePop();
     }
     /* Leaving a text box saves it and redraws — on the press of whatever was clicked
      * next. Redrawn then, the button under the pointer is a new one by the release, and
@@ -6781,6 +7031,268 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       };
     }
 
+    // ======================================================================
+    // wiring: the review layer — markup and comments over the previews
+    //
+    // Drawing happens in the full Preview (its tools are there); what is drawn shows in
+    // every preview. A comment is written in the Preview too, and read — or answered, or
+    // removed — from its symbol in any of them. The boxes a comment opens in live outside
+    // the designer's own markup, so a redraw does not close them, and are placed beside
+    // the symbol: to its right, or to its left when the right would run off the screen.
+    // ======================================================================
+
+    var _pop = null;          // { mode: 'thread'|'draft', id }: the comment box showing
+    function whoAmI() { var h = H(); return h && typeof h.who === 'function' ? String(h.who() || '') : ''; }
+    function popLayer() {
+      var el = document.getElementById('rd-cmt-layer');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'rd-cmt-layer';
+        el.className = 'docgen rd-cmt-layer';
+        document.body.appendChild(el);
+      }
+      return el;
+    }
+    function hidePop() { _pop = null; var el = document.getElementById('rd-cmt-layer'); if (el) { el.innerHTML = ''; el.style.display = 'none'; } }
+    /** Put the comment box beside its symbol; hide it when the symbol is gone (scrolled off, redrawn away). */
+    function placePop() {
+      if (!_pop || !_ctx) return;
+      var layer = popLayer(), box = layer.firstElementChild;
+      var sym = _ctx.root.querySelector('.dp-cmt[data-cmt="' + cssId(_pop.id) + '"]');
+      if (!box || !sym) { if (_pop.mode !== 'draft') hidePop(); return; }
+      layer.style.display = 'block';                                  // measured shown, or it has no size
+      var r = sym.getBoundingClientRect(), w = box.offsetWidth, hgt = box.offsetHeight, gap = 8;
+      var left = r.right + gap;
+      if (left + w > window.innerWidth - gap) left = r.left - gap - w;   // no room on the right: the left
+      left = Math.max(gap, left);
+      var top = Math.min(Math.max(gap, r.top - 6), window.innerHeight - gap - hgt);
+      layer.style.display = 'block';
+      box.style.left = Math.round(left) + 'px';
+      box.style.top = Math.round(Math.max(gap, top)) + 'px';
+    }
+    function when(iso) {
+      var d = new Date(iso);
+      return isNaN(d) ? '' : d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+    function showThread(id) {
+      var c = (((H().getState() || {}).report || {}).comments || []).filter(function (x) { return x.id === id; })[0];
+      if (!c) { hidePop(); return; }
+      _pop = { mode: 'thread', id: id };
+      popLayer().innerHTML = '<div class="rd-cmt-pop" data-cmt-pop="' + esc(id) + '">' +
+        '<div class="rd-cmt-head"><strong>Comment' + (c.posts.length > 1 ? 's (' + c.posts.length + ')' : '') + '</strong>' +
+          '<button type="button" class="danger rd-cmt-remove" data-cmt-remove="' + esc(id) + '" title="Remove this comment and its replies">✕ Remove</button></div>' +
+        '<div class="rd-cmt-posts">' + c.posts.map(function (p) {
+          return '<div class="rd-cmt-post"><div class="rd-cmt-meta">' + esc(p.by || 'Someone') + (p.at ? ' · ' + esc(when(p.at)) : '') + '</div>' +
+            '<div class="rd-cmt-text">' + esc(p.text) + '</div></div>';
+        }).join('') + '</div>' +
+        '<textarea class="rd-cmt-input" data-cmt-reply="' + esc(id) + '" rows="2" placeholder="Reply…"></textarea>' +
+        '<div class="rd-cmt-btns"><span class="rd-state">Ctrl+Enter to post</span><button type="button" class="primary" data-cmt-send="' + esc(id) + '">Reply</button></div></div>';
+      placePop();
+    }
+    function showDraft() {
+      if (!_rd.cmtDraft) { hidePop(); return; }
+      _pop = { mode: 'draft', id: '_new' };
+      popLayer().innerHTML = '<div class="rd-cmt-pop" data-cmt-pop="_new">' +
+        '<div class="rd-cmt-head"><strong>New comment</strong></div>' +
+        '<textarea class="rd-cmt-input" data-cmt-new rows="3" placeholder="Write a comment…">' + esc(_rd.cmtDraft.text || '') + '</textarea>' +
+        '<div class="rd-cmt-btns"><span class="rd-state">Ctrl+Enter to post</span><button type="button" data-cmt-cancel>Cancel</button>' +
+          '<button type="button" class="primary" data-cmt-confirm>Confirm</button></div></div>';
+      placePop();
+      var ta = popLayer().querySelector('[data-cmt-new]');
+      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    }
+    function cancelDraft() { _rd.cmtDraft = null; hidePop(); repaint(); }
+    function confirmDraft() {
+      var d = _rd.cmtDraft;
+      if (!d || !String(d.text || '').trim()) return;
+      var res = logIssues(App.docStore.addComment({ page: d.page, y: d.y, text: d.text, by: whoAmI(), at: d.at }));
+      _rd.cmtDraft = null;
+      hidePop();
+      repaint();
+      if (res && res.id) { showThread(res.id); }
+    }
+    function sendReply(id) {
+      var ta = popLayer().querySelector('[data-cmt-reply]');
+      if (!ta || !ta.value.trim()) return;
+      logIssues(App.docStore.replyComment(id, ta.value, whoAmI()));
+      repaint();
+      showThread(id);
+    }
+
+    /** Where on the document a point of a full page lies: the block there and where within it, for an HTML export. */
+    function blockAt(page, x, y, w, h) {
+      var p = _rd.preview;
+      if (!p || !p.regions || !p.document) return null;
+      var cx = x + (w || 0) / 2, cy = y + (h || 0) / 2, best = null;
+      p.regions.forEach(function (r) {
+        if (r.page !== page || !r.sec || cx < r.x - 2 || cx > r.x + r.w + 2 || cy < r.y - 2 || cy > r.y + r.h + 2) return;
+        if (!best || r.w * r.h < best.w * best.h) best = r;
+      });
+      if (!best) return null;
+      var n = 0;
+      for (var i = 0; i < best.bi; i++) if (p.document.blocks[i] && p.document.blocks[i].sec === best.sec) n++;
+      var rw = best.w || 1, rh = best.h || 1;
+      return { sec: best.sec, n: n, fx: (x - best.x) / rw, fy: (y - best.y) / rh, fw: (w || 0) / rw, fh: (h || 0) / rh };
+    }
+
+    function wireReview(h) {
+      var dom = h.dom, ctx = h.ctx;
+      // Markup Options slides open to the left (and closed again) without a redraw, so it is seen to move.
+      dom.on(ctx.root, 'click', '[data-rd-markup-open]', function (e, el) {
+        _rd.markupOpen = !_rd.markupOpen;
+        if (!_rd.markupOpen && _rd.tool) { _rd.tool = null; repaint(); return; }
+        var menu = el.parentNode.querySelector('.rd-mk-menu');
+        if (menu) {
+          menu.classList.toggle('open', _rd.markupOpen);
+          menu.setAttribute('aria-hidden', String(!_rd.markupOpen));
+          [].forEach.call(menu.querySelectorAll('button'), function (b) { if (_rd.markupOpen) b.removeAttribute('tabindex'); else b.setAttribute('tabindex', '-1'); });
+        }
+        el.classList.toggle('on', _rd.markupOpen);
+        el.setAttribute('aria-expanded', String(_rd.markupOpen));
+      });
+      dom.on(ctx.root, 'click', '[data-rd-fading]', function () { _rd.fading = !_rd.fading; repaint(); });
+      dom.on(ctx.root, 'click', '[data-rd-tool]', function (e, el) {
+        var t = el.getAttribute('data-rd-tool');
+        _rd.tool = _rd.tool === t ? null : t;
+        if (_rd.tool) { _rd.commenting = false; if (_rd.cmtDraft) { _rd.cmtDraft = null; hidePop(); } }
+        repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-mk-clear]', function () {
+        _fades = [];
+        logIssues(App.docStore.clearMarkup());
+        repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-commenting]', function () {
+        _rd.commenting = !_rd.commenting;
+        if (_rd.commenting) _rd.tool = null;
+        else if (_rd.cmtDraft) { _rd.cmtDraft = null; hidePop(); }
+        repaint();
+      });
+
+      /* Drawing, in the full Preview: a highlight is one line high, at the line pressed on,
+       * as long as the drag; a box runs from where the press began to where it ends. */
+      ctx.root.addEventListener('mousedown', function (e) {
+        if (!_rd.tool || e.button !== 0 || e.ctrlKey || e.metaKey) return;
+        var pg = e.target.closest && e.target.closest('#rd-preview-doc .dp-page');
+        if (!pg) return;
+        e.preventDefault();
+        var k = zoomOf('preview'), rect = pg.getBoundingClientRect();
+        var page = Number(pg.getAttribute('data-page')) - 1;
+        var x0 = (e.clientX - rect.left) / k, y0 = (e.clientY - rect.top) / k;
+        var top = y0 - 7, tall = 14;
+        if (_rd.tool === 'hl') {
+          // The line pressed on: the text there sets the band's top and height.
+          [].some.call(pg.querySelectorAll('.dp-text'), function (t) {
+            var tr = t.getBoundingClientRect();
+            if (e.clientY < tr.top - 1 || e.clientY > tr.bottom + 1) return false;
+            top = (tr.top - rect.top) / k - 1; tall = tr.height / k + 2;
+            return true;
+          });
+        }
+        var live = document.createElement('div');
+        live.className = 'dp-mk dp-mk-' + _rd.tool;
+        pg.appendChild(live);
+        var box = { x: x0, y: top, w: 0, h: tall };
+        function draw(ev) {
+          var x1 = (ev.clientX - rect.left) / k, y1 = (ev.clientY - rect.top) / k;
+          if (_rd.tool === 'box') box = { x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) };
+          else box = { x: Math.min(x0, x1), y: top, w: Math.abs(x1 - x0), h: tall };
+          live.style.left = box.x * k + 'px'; live.style.top = box.y * k + 'px';
+          live.style.width = box.w * k + 'px'; live.style.height = box.h * k + 'px';
+        }
+        function done(ev) {
+          document.removeEventListener('mousemove', draw, true);
+          document.removeEventListener('mouseup', done, true);
+          draw(ev);
+          live.remove();
+          if (box.w < 3 || (_rd.tool === 'box' && box.h < 3)) return;   // a click, not a drag
+          var m = { kind: _rd.tool, page: page, x: box.x, y: box.y, w: box.w, h: box.h, at: blockAt(page, box.x, box.y, box.w, box.h) };
+          if (_rd.fading) {
+            // Not kept: it fades from the screen five seconds on, and is gone.
+            var id = 'fade' + Date.now();
+            _fades.push(Object.assign({ id: id, born: Date.now() }, m));
+            setTimeout(function () {
+              _fades = _fades.filter(function (f) { return f.id !== id; });
+              [].forEach.call(document.querySelectorAll('.dp-mk[data-mk="' + id + '"]'), function (x) { x.remove(); });
+            }, 5700);
+          } else logIssues(App.docStore.addMarkup(m));
+          repaint();
+        }
+        document.addEventListener('mousemove', draw, true);
+        document.addEventListener('mouseup', done, true);
+      }, true);
+
+      // Comment mode: a click on a page (not on a blank's !, nor on a comment) starts a comment there.
+      ctx.root.addEventListener('click', function (e) {
+        if (!_rd.commenting || e.button !== 0 || e.ctrlKey || e.metaKey) return;
+        var t = e.target;
+        if (!t.closest || t.closest('[data-dp-fill], .dp-cmt')) return;
+        var pg = t.closest('#rd-preview-doc .dp-page');
+        if (!pg) return;
+        e.preventDefault(); e.stopPropagation();
+        var k = zoomOf('preview'), rect = pg.getBoundingClientRect();
+        var page = Number(pg.getAttribute('data-page')) - 1, y = (e.clientY - rect.top) / k;
+        var x = (e.clientX - rect.left) / k;
+        _rd.cmtDraft = { page: page, y: y, text: '', at: (function () { var a = blockAt(page, x, y, 0, 0); return a && { sec: a.sec, n: a.n, fy: a.fy }; })() };
+        repaint();
+        showDraft();
+      }, true);
+
+      // A comment symbol, in any preview: hovering opens its thread beside it.
+      var hideTimer = null;
+      function keepOpen() { clearTimeout(hideTimer); }
+      function hideSoon() {
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(function () {
+          var layer = document.getElementById('rd-cmt-layer');
+          if (!_pop || _pop.mode === 'draft') return;
+          // Stays while it is being written in.
+          if (layer && (layer.contains(document.activeElement) || (layer.querySelector('[data-cmt-reply]') || {}).value)) return;
+          hidePop();
+        }, 300);
+      }
+      dom.on(ctx.root, 'mouseover', '.dp-cmt', function (e, el) {
+        keepOpen();
+        var id = el.getAttribute('data-cmt');
+        if (id === '_new') return;
+        if (_pop && _pop.mode === 'draft') return;
+        if (!_pop || _pop.id !== id) showThread(id);
+      });
+      dom.on(ctx.root, 'mouseout', '.dp-cmt', function () { hideSoon(); });
+      dom.on(ctx.root, 'click', '.dp-cmt', function (e, el) {
+        e.preventDefault(); e.stopPropagation();
+        var id = el.getAttribute('data-cmt');
+        if (id === '_new') { showDraft(); return; }
+        showThread(id);
+      });
+
+      var layer = popLayer();
+      layer.addEventListener('mouseover', keepOpen);
+      layer.addEventListener('mouseout', function (e) { if (!layer.contains(e.relatedTarget)) hideSoon(); });
+      layer.addEventListener('input', function (e) { if (e.target.matches('[data-cmt-new]') && _rd.cmtDraft) _rd.cmtDraft.text = e.target.value; });
+      layer.addEventListener('click', function (e) {
+        var b = e.target.closest && e.target.closest('button');
+        if (!b) return;
+        if (b.hasAttribute('data-cmt-confirm')) confirmDraft();
+        else if (b.hasAttribute('data-cmt-cancel')) cancelDraft();
+        else if (b.hasAttribute('data-cmt-send')) sendReply(b.getAttribute('data-cmt-send'));
+        else if (b.hasAttribute('data-cmt-remove')) { logIssues(App.docStore.removeComment(b.getAttribute('data-cmt-remove'))); hidePop(); repaint(); }
+      });
+      layer.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          if (e.target.matches('[data-cmt-new]')) confirmDraft();
+          else if (e.target.matches('[data-cmt-reply]')) sendReply(e.target.getAttribute('data-cmt-reply'));
+        } else if (e.key === 'Escape') {
+          e.stopPropagation();
+          if (_pop && _pop.mode === 'draft') cancelDraft(); else hidePop();
+        }
+      });
+      // The box follows its symbol as the preview scrolls or the window changes size.
+      window.addEventListener('scroll', function () { placePop(); }, true);
+      window.addEventListener('resize', function () { placePop(); });
+    }
+
     function wire(ctx) {
       _ctx = ctx;
       // doc-designer.css is scoped under .docgen, so the host page keeps its own styles.
@@ -6791,6 +7303,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       wireText(h);
       wireTables(h);
       wireFormatting(h);
+      wireReview(h);
     }
 
     // ======================================================================
@@ -6846,10 +7359,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       ['pointerup', 'pointercancel'].forEach(function (t) { document.addEventListener(t, redrag, true); });
       window.addEventListener('blur', redrag);
 
-      /* Picking parts to outline in the section preview: a click anywhere in a part that is
-       * not one of its controls or text boxes picks it, and again un-picks it; Escape
-       * un-picks them all. The outline is drawn on screen only. */
+      /* The same two gestures on a part's editor as on the part in the preview, so neither
+       * place has to be learnt separately. Ctrl+click anywhere in a part that is not one of
+       * its controls or text boxes picks it to be outlined in the preview (screen only), and
+       * again un-picks it; Escape un-picks them all. A double-click there is the part's ◎. */
       dom.on(ctx.root, 'click', '[data-rd-partrow]', function (e, el) {
+        if (!(e.ctrlKey || e.metaKey)) return;
         if (e.target.closest && e.target.closest(CONTROLS + ', [data-rd-colresize]')) return;
         var sel = window.getSelection && window.getSelection();
         if (sel && !sel.isCollapsed && el.contains(sel.anchorNode)) return;   // text was being selected
@@ -6857,20 +7372,25 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         if (_rd.picked[id]) delete _rd.picked[id]; else _rd.picked[id] = true;
         repaint();
       });
+      /* Escape steps back one thing at a time: a comment being written, then an open
+       * comment, then the picked blocks, then a drawing tool or comment mode. */
       document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Escape' || !_rd.open || !Object.keys(_rd.picked).length) return;
-        _rd.picked = {};
-        repaint();
+        if (e.key !== 'Escape' || !_rd.open) return;
+        if (_rd.cmtDraft) { _rd.cmtDraft = null; hidePop(); repaint(); return; }
+        if (_pop) { hidePop(); return; }
+        if (Object.keys(_rd.picked).length) { _rd.picked = {}; repaint(); return; }
+        if (_rd.tool || _rd.commenting) { _rd.tool = null; _rd.commenting = false; repaint(); }
       });
 
       dom.on(ctx.root, 'click', '[data-rd-open]', function () {
         _rd.open = true; dirty(); ctx.refreshMain();
       });
-      dom.on(ctx.root, 'click', '[data-rd-close]', function () { _rd.open = false; ctx.refreshMain(); });
+      dom.on(ctx.root, 'click', '[data-rd-close]', function () { _rd.open = false; hidePop(); ctx.refreshMain(); });
       dom.on(ctx.root, 'click', '[data-rd-modal]', function (e, el) {
-        if (e.target === el) { _rd.open = false; ctx.refreshMain(); }
+        if (e.target === el) { _rd.open = false; hidePop(); ctx.refreshMain(); }
       });
       dom.on(ctx.root, 'click', '[data-rd-pane]', function (e, el) {
+        remember();
         _rd.pane = el.getAttribute('data-rd-pane');
         if (_rd.pane === 'preview') dirty();
         repaint();
@@ -6888,6 +7408,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var id = el.getAttribute('data-rd-select'), now = Date.now();
         var twice = lastPick.id === id && now - lastPick.at < 450;
         lastPick = { id: twice ? null : id, at: now };
+        if (id !== _rd.selected) remember();
         _rd.selected = id;
         if (twice) _rd.renaming = id;
         repaint();
@@ -6924,8 +7445,24 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       dom.on(ctx.root, 'click', '[data-rd-cf-apply]', function () { applyConflict(); });
       // ---- preview ----------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-refresh-preview]', function () { dirty(); repaint(); });
-      dom.on(ctx.root, 'click', '[data-rd-sec-cat]', function (e, el) { _rd.secCat = el.getAttribute('data-rd-sec-cat'); repaint(); });
-      dom.on(ctx.root, 'click', '[data-rd-prev-scope]', function (e, el) { _rd.secWhole = el.getAttribute('data-rd-prev-scope') === 'whole'; repaint(); });
+      dom.on(ctx.root, 'click', '[data-rd-sec-cat]', function (e, el) { remember(); _rd.secCat = el.getAttribute('data-rd-sec-cat'); repaint(); });
+      dom.on(ctx.root, 'click', '[data-rd-prev-scope]', function (e, el) { remember(); _rd.secWhole = el.getAttribute('data-rd-prev-scope') === 'whole'; repaint(); });
+      // Back, Undo and Redo, in the heading; Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) outside a text box.
+      dom.on(ctx.root, 'click', '[data-rd-back]', function () { goBack(); });
+      dom.on(ctx.root, 'click', '[data-rd-undo]', function () { if (App.docHost.history.undo()) { dirty(); repaint(); } });
+      dom.on(ctx.root, 'click', '[data-rd-redo]', function () { if (App.docHost.history.redo()) { dirty(); repaint(); } });
+      document.addEventListener('keydown', function (e) {
+        if (!_rd.open || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+        var t = e.target;
+        if (t && t.closest && t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+        var k = String(e.key).toLowerCase();
+        var redo = k === 'y' || (k === 'z' && e.shiftKey);
+        if (k !== 'z' && k !== 'y') return;
+        e.preventDefault();
+        if (redo ? App.docHost.history.redo() : App.docHost.history.undo()) { dirty(); repaint(); }
+      });
+      // A click is a separate action: what it changes is its own undo step, not more typing.
+      ctx.root.addEventListener('click', function () { App.docHost.history.cut(); }, true);
       // The Sections list's grip: dragging resizes the list in place; the width is kept on release.
       dom.on(ctx.root, 'pointerdown', '[data-rd-split]', function (e, el) {
         var pane = el.previousElementSibling, layout = el.parentNode;
@@ -6965,20 +7502,40 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         _rd[ZOOM_KEY[which]] = ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, i))];
         repaint();
       });
+      /* A link in a preview — a contents line, a cross-reference — takes the preview it is in
+       * to where it points: glided there, and the spot flashed. In the section preview's
+       * "This section" view a target outside the section is not on screen, so the view
+       * opens out to the whole document first.
+       *
+       * PRV-4: measured, not accumulated — `offsetTop` is relative to the sheet, not the
+       * scrolling area, so two rectangles and the current scroll position are used. */
       dom.on(ctx.root, 'click', '[data-prv-jump]', function (e, el) {
         e.preventDefault();
-        var target = document.getElementById(el.getAttribute('data-prv-jump'));
-        var doc = document.getElementById('rd-preview-doc');
-        if (!target || !doc) return;
-        /* PRV-4: measured, not accumulated.
-         *
-         * `offsetTop` is relative to the nearest positioned ancestor, and in page view
-         * that is the SHEET rather than the scrolling article — so every link jumped to
-         * the target's offset within its own page, which for anything past page one is
-         * the wrong place entirely and for page one looked like nothing happening.
-         * Two rectangles and the current scroll position work in both views.
-         */
-        doc.scrollTop += target.getBoundingClientRect().top - doc.getBoundingClientRect().top;
+        if (e.ctrlKey || e.metaKey) return;               // Ctrl+click picks; it does not follow
+        if (_rd.tool || _rd.commenting) return;           // drawing or commenting: the page, not its links
+        var anchor = el.getAttribute('data-prv-jump');
+        remember();
+        var inSection = !!el.closest('[data-rd-sec-prev]');
+        var scrollerSel = inSection ? '[data-rd-sec-prev]' : '#rd-preview-doc';
+        var find = function () {
+          var box = ctx.root.querySelector(scrollerSel);
+          var t = box && [].filter.call(box.querySelectorAll('.dp-anchor, [id]'), function (x) { return x.id === anchor; })[0];
+          return t ? { box: box, target: t } : null;
+        };
+        var go = function (f) {
+          var head = f.box.querySelector('.rd-secprev-head');
+          var bar = head && getComputedStyle(head).position === 'sticky' ? head.offsetHeight : 0;
+          var dy = f.target.getBoundingClientRect().top - f.box.getBoundingClientRect().top - 24 - bar;
+          glide(f.box, null, dy, 0, function () { if (f.target.classList.contains('dp-anchor')) flash(f.target, 'dp-anchor-flash'); });
+        };
+        var f = find();
+        if (f) { go(f); return; }
+        if (inSection && !_rd.secWhole) {
+          _rd.secWhole = true;
+          repaint();
+          f = find();
+          if (f) go(f);
+        }
       });
     }
     // ======================================================================
@@ -7040,6 +7597,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
       // GEN-TAB: the placeholder values. Session state, like the relevance filter
       // beside them — a tag value is an answer for THIS run.
+      dom.on(ctx.root, 'change', '[data-rd-html-review]', function (e, el) {
+        quietly(function () { logIssues(App.docStore.setHtmlReview(el.getAttribute('data-rd-html-review'), el.checked)); });
+        repaint();
+      });
       // Saved with the design, so a draft keeps its answers (the app's Save writes them).
       dom.on(ctx.root, 'change', '[data-rd-tag]', function (e, el) {
         quietly(function () { logIssues(App.docStore.setTag(el.getAttribute('data-rd-tag'), el.value)); });
@@ -7088,6 +7649,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // mutator, and all three sanitise in docStore rather than here.
       dom.on(ctx.root, 'change', '[data-rd-space-block]', function (e, el) {
         quietly(function () { logIssues(App.docStore.setBlockSpace(el.getAttribute('data-rd-space-block'), el.value)); });
+        dirty(); repaint();
+      });
+      dom.on(ctx.root, 'click', '[data-rd-space-step]', function (e, el) {
+        var sec = el.getAttribute('data-rd-sec'), id = el.getAttribute('data-rd-space-for');
+        var p0 = App.docStore.findPart(H().getState(), sec, id);
+        var mm = App.docStore.mmValue(p0 && p0.height) || 0;
+        var next = Math.max(0, Math.min(App.docStore.MAX_SPACE_MM, mm + Number(el.getAttribute('data-rd-space-step'))));
+        quietly(function () { logIssues(App.docStore.updatePart(sec, id, { height: next })); });
         dirty(); repaint();
       });
       dom.on(ctx.root, 'change', '[data-rd-space]', function (e, el) {
@@ -7234,27 +7803,93 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       /* ◎: scroll the section preview, in whichever view it is showing, to where the part
        * lands — an animated scroll rather than a jump, so the direction and distance show —
        * then flash its place. */
-      dom.on(ctx.root, 'click', '[data-rd-part-goto]', function (e, el) { inPreview(el.getAttribute('data-rd-part-goto'), true); });
+      dom.on(ctx.root, 'click', '[data-rd-part-goto]', function (e, el) { remember(); inPreview(el.getAttribute('data-rd-part-goto'), true); });
+      dom.on(ctx.root, 'dblclick', '[data-rd-partrow]', function (e, el) {
+        if (e.target.closest && e.target.closest(CONTROLS + ', [data-rd-colresize]')) return;
+        if (window.getSelection) { try { window.getSelection().removeAllRanges(); } catch (err) { /* nothing selected */ } }
+        remember();
+        inPreview(el.getAttribute('data-rd-partrow'), true);
+      });
+      /**
+       * Change what the Sections view shows without a snap: what is going fades out, the
+       * change is made, what came fades in, and only then `then` (a glide) runs — so the eye
+       * sees the view change before it is taken somewhere in it. `outSel` is what fades.
+       */
+      function switchView(outSel, apply, then) {
+        remember();
+        var going = [].slice.call(ctx.root.querySelectorAll(outSel));
+        going.forEach(function (el) { el.classList.add('rd-fade-out'); });
+        setTimeout(function () {
+          apply();
+          repaint();
+          [].forEach.call(ctx.root.querySelectorAll(outSel), function (el) { flash(el, 'rd-fade-in'); });
+          setTimeout(then, 200);
+        }, going.length ? 170 : 0);
+      }
+      /** Glide the scrolling area around a row so the row is centred, then flash it. */
+      function glideToRow(row) {
+        var v = scrollerOf(row);
+        if (!v) { flash(row, 'rd-part-flash'); return; }
+        var vr = v.getBoundingClientRect(), rr = row.getBoundingClientRect();
+        glide(v, null, rr.top - vr.top - Math.max(16, (v.clientHeight - rr.height) / 2), 0, function () { flash(row, 'rd-part-flash'); });
+      }
       /* Go to blank (Generate): the blank's section, on its Fill in, with the blank's box
        * glided to and flashed — and the preview beside it taken to the block it sits in. */
       dom.on(ctx.root, 'click', '[data-rd-goto-blank]', function (e, el) {
-        var fid = el.getAttribute('data-rd-goto-blank'), key = el.getAttribute('data-rd-fill-key'), part = el.getAttribute('data-rd-part');
-        _rd.pane = 'section'; _rd.selected = el.getAttribute('data-rd-sec'); _rd.secCat = 'fill';
-        repaint();
-        var box = [].filter.call(ctx.root.querySelectorAll('[data-rd-fill]'), function (b) {
-          return b.getAttribute('data-rd-fill') === fid && b.getAttribute('data-rd-fill-key') === key;
-        })[0];
-        var item = box && box.closest('.rd-fillitem');
-        if (item) {
-          var v = scrollerOf(item);
-          var done = function () { flash(item, 'rd-part-flash'); };
-          if (v) {
-            var vr = v.getBoundingClientRect(), ir = item.getBoundingClientRect();
-            glide(v, null, ir.top - vr.top - Math.max(16, (v.clientHeight - ir.height) / 2), 0, done);
-          } else done();
-        }
-        if (part) inPreview(part, false);
+        goToBlank(el.getAttribute('data-rd-goto-blank'), el.getAttribute('data-rd-fill-key'), el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-part'));
       });
+      // The ! beside a blank in any preview: the same as its Go to blank.
+      dom.on(ctx.root, 'click', '[data-dp-fill]', function (e, el) {
+        e.preventDefault(); e.stopPropagation();
+        var fid = el.getAttribute('data-dp-fill'), key = el.getAttribute('data-dp-fill-key');
+        var item = fillsNow(H().getState()).items.filter(function (i) { return i.id === fid && i.key === key; })[0];
+        if (item) goToBlank(item.id, item.key, item.sectionId, item.partId);
+      });
+      /** A blank's section, on its Fill in, its box glided to and flashed, and its block shown in the preview. */
+      function goToBlank(fid, key, sec, part) {
+        // From another tab the whole view changes; within Sections, only what does.
+        var outSel = _rd.pane !== 'section' ? '.rd-layout'
+          : sec !== _rd.selected ? '[data-rd-sec-fields], [data-rd-sec-prev]' : '[data-rd-sec-fields]';
+        var already = _rd.pane === 'section' && sec === _rd.selected && _rd.secCat === 'fill';
+        switchView(already ? '.rd-none' : outSel, function () { _rd.pane = 'section'; _rd.selected = sec; _rd.secCat = 'fill'; }, function () {
+          var box = [].filter.call(ctx.root.querySelectorAll('[data-rd-fill]'), function (b) {
+            return b.getAttribute('data-rd-fill') === fid && b.getAttribute('data-rd-fill-key') === key;
+          })[0];
+          var item = box && box.closest('.rd-fillitem');
+          if (item) glideToRow(item);
+          if (part) inPreview(part, false);
+        });
+      }
+      dom.on(ctx.root, 'click', '[data-rd-sec-goto]', function (e, el) { remember(); sectionInPreview(el.getAttribute('data-rd-sec-goto')); });
+      /** Open a section in the Sections view (fading across, keeping the category where it has
+       *  it), bring its row in the list into view, and show it in the preview. */
+      function toSection(secId, fromPreview) {
+        if (!fromPreview && secId === _rd.selected) { remember(); sectionInPreview(secId); return; }
+        switchView(fromPreview ? '.rd-layout' : '[data-rd-sec-fields], [data-rd-sec-prev]', function () { _rd.pane = 'section'; _rd.selected = secId; }, function () {
+          var row = ctx.root.querySelector('[data-rd-block="' + cssId(secId) + '"]');
+          var v = row && scrollerOf(row);
+          if (v) {
+            var vr = v.getBoundingClientRect(), rr = row.getBoundingClientRect();
+            if (rr.top < vr.top || rr.bottom > vr.bottom) glide(v, null, rr.top - vr.top - Math.max(16, (v.clientHeight - rr.height) / 2), 0);
+          }
+          sectionInPreview(secId);
+        });
+      }
+      /** Glide the section preview to where a section starts, and flash all of it. */
+      function sectionInPreview(secId) {
+        var box = ctx.root.querySelector('[data-rd-sec-prev]');
+        var all = box ? [].filter.call(box.querySelectorAll('.dp-target'), function (t) { return t.getAttribute('data-dp-sec') === secId; }) : [];
+        if (!all.length) {
+          App.docHost.log({ severity: 'warning', message: box && box.querySelector('.dp-page')
+            ? 'This section prints nothing, so it is not on the page.' : 'Choose a ' + noun() + ' to see the preview.' });
+          return;
+        }
+        var first = all[0], tr = first.getBoundingClientRect(), br = box.getBoundingClientRect();
+        // Clear of the preview's bar when it stays put over the pages.
+        var head = box.querySelector('.rd-secprev-head');
+        var bar = head && getComputedStyle(head).position === 'sticky' ? head.offsetHeight : 0;
+        glide(box, null, tr.top - br.top - 24 - bar, 0, function () { all.forEach(function (t) { flash(t, 'dp-target-flash'); }); });
+      }
       /** Glide the section preview to where a part lands, and flash it; `say` explains when it cannot. */
       function inPreview(id, say) {
         var box = ctx.root.querySelector('[data-rd-sec-prev]');
@@ -7267,8 +7902,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           return;
         }
         var tr = target.getBoundingClientRect(), br = box.getBoundingClientRect();
-        // Centred in the view when it fits; its top a little below the view's top when it does not.
-        var dy = tr.top - br.top - Math.max(16, (box.clientHeight - tr.height) / 2);
+        // Centred in the view when it fits; its top a little below the preview's bar when it does not.
+        var head = box.querySelector('.rd-secprev-head');
+        var bar = head && getComputedStyle(head).position === 'sticky' ? head.offsetHeight : 0;
+        var dy = tr.top - br.top - Math.max(16 + bar, (box.clientHeight - tr.height) / 2);
         var wide = box.querySelector('.rd-secprev');
         var dx = 0;
         if (wide && wide.scrollWidth > wide.clientWidth) {
@@ -7280,8 +7917,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       /** The part of the section preview under a point: the smallest box there, and of the
        *  parts it prints for, the innermost (a part inside a Repeat part, not the Repeat). */
       function partAt(e) {
-        var box = ctx.root.querySelector('[data-rd-sec-prev]');
-        if (!box || !box.contains(e.target)) return null;
+        var box = e.target && e.target.closest && e.target.closest('[data-rd-sec-prev], #rd-preview-doc');
+        if (!box) return null;
         var best = null, area = Infinity;
         [].forEach.call(box.querySelectorAll('.dp-target'), function (t) {
           var r = t.getBoundingClientRect();
@@ -7289,13 +7926,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           if (r.width * r.height < area) { area = r.width * r.height; best = t; }
         });
         if (!best) return null;
-        var ids = (best.getAttribute('data-dp-part') || '').split(' ');
-        return ids[ids.length - 1] || null;
+        var ids = (best.getAttribute('data-dp-part') || '').split(' ').filter(Boolean);
+        return { part: ids[ids.length - 1] || null, sec: best.getAttribute('data-dp-sec') || null };
       }
       // Ctrl+click in the preview picks (or un-picks) the part there, as a click on its editor does.
       ctx.root.addEventListener('click', function (e) {
         if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return;
-        var id = partAt(e);
+        var at = partAt(e), id = at && at.part;
         if (!id) return;
         e.preventDefault(); e.stopPropagation();
         if (_rd.picked[id]) delete _rd.picked[id]; else _rd.picked[id] = true;
@@ -7303,24 +7940,26 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       }, true);
       /* A double-click in the preview opens the part's editor: its section's Content (the
        * whole document can show another section's parts), glided to and flashed. */
-      dom.on(ctx.root, 'dblclick', '[data-rd-sec-prev]', function (e) {
-        var id = partAt(e);
-        if (!id) return;
+      /* In the full Preview too: a review goes Preview → the editor → Back to the same spot. */
+      dom.on(ctx.root, 'dblclick', '[data-rd-sec-prev], #rd-preview-doc', function (e) {
+        if (_rd.tool || _rd.commenting) return;              // drawing or commenting, not navigating
+        var at = partAt(e);
+        if (!at) return;
         if (window.getSelection) { try { window.getSelection().removeAllRanges(); } catch (err) { /* nothing selected */ } }
-        var row = ctx.root.querySelector('[data-rd-partrow="' + cssId(id) + '"]');
-        if (!row) {
-          var state = H().getState();
-          var sec = ((state.report || {}).sections || []).filter(function (s) { return App.docStore.findPart(state, s.id, id); })[0];
-          if (!sec) return;
-          _rd.selected = sec.id; _rd.secCat = 'content';
-          repaint();
-          row = ctx.root.querySelector('[data-rd-partrow="' + cssId(id) + '"]');
-          if (!row) return;
-        }
-        var v = scrollerOf(row);
-        if (!v) { flash(row, 'rd-part-flash'); return; }
-        var vr = v.getBoundingClientRect(), rr = row.getBoundingClientRect();
-        glide(v, null, rr.top - vr.top - Math.max(16, (v.clientHeight - rr.height) / 2), 0, function () { flash(row, 'rd-part-flash'); });
+        var fromPreview = _rd.pane !== 'section';
+        // Not one of your own blocks (a contents list, a register table, a heading): its section.
+        if (!at.part) { if (at.sec) toSection(at.sec, fromPreview); return; }
+        var id = at.part;
+        var rowOf = function () { return ctx.root.querySelector('[data-rd-partrow="' + cssId(id) + '"]'); };
+        if (!fromPreview && rowOf()) { remember(); glideToRow(rowOf()); return; }
+        var state = H().getState();
+        var sec = ((state.report || {}).sections || []).filter(function (s) { return App.docStore.findPart(state, s.id, id); })[0];
+        if (!sec) return;
+        // From the Preview the whole view changes; otherwise only what does.
+        var outSel = fromPreview ? '.rd-layout' : sec.id !== _rd.selected ? '[data-rd-sec-fields], [data-rd-sec-prev]' : '[data-rd-sec-fields]';
+        switchView(outSel,
+          function () { _rd.pane = 'section'; _rd.selected = sec.id; _rd.secCat = 'content'; },
+          function () { var row = rowOf(); if (row) glideToRow(row); if (fromPreview) inPreview(id, false); });
       });
       dom.on(ctx.root, 'click', '[data-rd-space-after]', function (e, el) {
         logIssues(App.docStore.addSpaceAfter(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-space-after')));

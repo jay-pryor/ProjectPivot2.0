@@ -80,7 +80,8 @@ const plain = (/** @type {any[]} */ runs) => (runs ?? []).map((r) => (r.br ? ' '
  * The document as one standalone HTML page, styled from the Style: no page numbers
  * (it is a web page), references are links, the marking sits above and below.
  * @param {any} doc @param {any} style a normalised Style
- * @param {{ images?: Record<string, any> }} [opts] the document's images, prepared; one missing is a placeholder
+ * @param {{ images?: Record<string, any>, review?: { markup?: any[], comments?: any[] } }} [opts] the document's images, prepared;
+ *   one missing is a placeholder. `review`: markup and comments to draw over their blocks (only when the export asked for them).
  */
 export function renderHtml(doc, style, opts = {}) {
   const meta = doc.meta ?? {};
@@ -88,7 +89,7 @@ export function renderHtml(doc, style, opts = {}) {
   let wide = false, looks = 0;
   // The break between a list's entries in a body cell, spaced by the Style's gap as in the PDF.
   const cellBr = style.tables.listGap > 0 ? '<span class="cell-gap"></span>' : '<br>';
-  const body = (doc.blocks ?? []).map((b) => {
+  const blockHtml = (/** @type {any} */ b) => {
     const id = b.anchor ? ` id="${esc(b.anchor)}"` : '';
     const centre = b.centre ? ' centre' : '';
     if (b.kind === 'heading') {
@@ -145,9 +146,71 @@ export function renderHtml(doc, style, opts = {}) {
     if (b.kind === 'space') return `<div${id} style="height:${Number(b.mm) || 0}mm"></div>`;
     if (b.kind === 'rule') return '<hr>';
     return '';
-  }).join('\n') + (wide ? '\n</div>' : '');
+  };
+  const review = reviewByBlock(doc.blocks ?? [], opts.review);
+  const body = (doc.blocks ?? []).map((/** @type {any} */ b, /** @type {number} */ bi) => withReview(blockHtml(b), review[bi])).join('\n') + (wide ? '\n</div>' : '');
   const marking = meta.marking && style.marking.show ? `<div class="marking">${esc(meta.marking)}</div>` : '';
   return ['<!doctype html>', '<html lang="en">', '<head>', '<meta charset="utf-8">', '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<title>${esc(meta.title || doc.title || 'Report')}</title>`, '<style>', css(style), '</style>', '</head>', '<body>', marking,
+    `<title>${esc(meta.title || doc.title || 'Report')}</title>`, '<style>', css(style), review.length ? REVIEW_CSS : '', '</style>', '</head>', '<body>', marking,
     '<main>', body, '</main>', marking, '</body>', '</html>', ''].join('\n');
 }
+
+/* ---- Review: markup and comments, when the export asks for them --------------------------
+ *
+ * The HTML flows rather than being cut into pages, so what was drawn on a page is placed by
+ * the block it was drawn on (`at`: the section, which of that section's blocks, and where in
+ * it as fractions of its box) and drawn over that block. A comment shows as a symbol at the
+ * block's right; its thread opens on hover. */
+
+/**
+ * The review items for each block, by index; empty when there are none.
+ * @param {any[]} blocks @param {{ markup?: any[], comments?: any[] } | undefined} review
+ * @returns {{ markup: any[], comments: any[] }[]}
+ */
+function reviewByBlock(blocks, review) {
+  /** @type {{ markup: any[], comments: any[] }[]} */
+  const out = [];
+  if (!review || (!(review.markup ?? []).length && !(review.comments ?? []).length)) return out;
+  /** @type {Record<string, number>} */
+  const seen = {}, at = {};
+  blocks.forEach((b, i) => {
+    if (!b.sec) return;
+    const n = seen[b.sec] = (seen[b.sec] ?? -1) + 1;
+    at[`${b.sec}#${n}`] = i;
+  });
+  const put = (/** @type {any} */ x, /** @type {'markup' | 'comments'} */ k) => {
+    const i = x && x.at ? at[`${x.at.sec}#${x.at.n}`] : undefined;
+    if (i === undefined) return;
+    (out[i] = out[i] ?? { markup: [], comments: [] })[k].push(x);
+  };
+  (review.markup ?? []).forEach((m) => put(m, 'markup'));
+  (review.comments ?? []).forEach((c) => put(c, 'comments'));
+  return out;
+}
+
+const pct = (/** @type {number} */ f) => `${Math.round(Math.max(0, f) * 10000) / 100}%`;
+const BUBBLE = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2 2.5h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7l-3.5 3v-3H2a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z" fill="currentColor"/></svg>';
+
+/** A block, wrapped with its markup and comments when it has any. @param {string} html @param {{ markup: any[], comments: any[] } | undefined} r */
+function withReview(html, r) {
+  if (!r) return html;
+  const marks = r.markup.map((m) => `<div class="rv-mk rv-${m.kind === 'box' ? 'box' : 'hl'}" style="left:${pct(m.at.fx)};top:${pct(m.at.fy)};width:${pct(m.at.fw)};height:${pct(m.at.fh)}"></div>`).join('');
+  const notes = r.comments.map((c) => `<div class="rv-cmt" style="top:${pct(c.at.fy)}"><span class="rv-cmt-i" tabindex="0">${BUBBLE}</span><div class="rv-cmt-pop">` +
+    (c.posts ?? []).map((/** @type {any} */ p) => `<div class="rv-post"><div class="rv-meta">${esc(p.by || 'Someone')}${p.at ? ` · ${esc(String(p.at).slice(0, 16).replace('T', ' '))}` : ''}</div><div>${esc(p.text)}</div></div>`).join('') +
+    '</div></div>').join('');
+  return `<div class="rv-wrap">${html}${marks}${notes}</div>`;
+}
+
+const REVIEW_CSS = [
+  '.rv-wrap { position: relative; }',
+  '.rv-mk { position: absolute; pointer-events: none; box-sizing: border-box; }',
+  '.rv-hl { background: rgba(224, 36, 36, .25); }',
+  '.rv-box { border: 2px solid rgba(224, 36, 36, .75); }',
+  '.rv-cmt { position: absolute; right: -30px; }',
+  '.rv-cmt-i { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #e02424; color: #fff; cursor: pointer; }',
+  '.rv-cmt-pop { display: none; position: absolute; right: 28px; top: 0; width: 280px; background: #fff; color: #222; border: 1px solid #bbb; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.2); padding: 8px 10px; font-size: 13px; z-index: 5; }',
+  '.rv-cmt:hover .rv-cmt-pop, .rv-cmt-i:focus + .rv-cmt-pop { display: block; }',
+  '.rv-post + .rv-post { border-top: 1px solid #ddd; margin-top: 6px; padding-top: 6px; }',
+  '.rv-meta { font-size: 11px; color: #777; margin-bottom: 2px; }',
+  '@media print { .rv-cmt { display: none; } }',
+].join('\n');
