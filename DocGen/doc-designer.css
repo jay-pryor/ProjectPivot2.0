@@ -233,7 +233,7 @@
   .docgen .rd-colbar select { font-size: 11px; flex: 1 1 auto; background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 3px;}
   .docgen .rd-rowdel { width: 28px;}
   .docgen .rd-rowdel-wide, .docgen .rd-table-fixed col:last-child.rd-rowdel { width: 56px;}
-  .docgen .rd-rowdel .rd-tallbox { margin-right: 4px; vertical-align: middle; cursor: pointer;}
+  .docgen .rd-rowdel .rd-tallbox { width: auto; margin-right: 4px; vertical-align: middle; cursor: pointer;}
   .docgen .rd-tablebtns { display: flex; gap: 6px; margin-top: 6px; align-items: center; flex-wrap: wrap;}
   .docgen .rd-mmlab { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--c-text-muted);}
   .docgen .rd-mmlab .rd-mm { width: 68px; font: inherit; font-size: 12px; padding: 3px 5px; text-align: right;
@@ -414,3 +414,24 @@
   .docgen .rd-dropend { min-height: 14px; border-radius: 4px;}
   .docgen .rd-dropend.drop-target, .docgen .rd-parts.rd-nested.drop-target { outline: 2px dashed var(--c-accent); outline-offset: 2px;}
   .docgen .rd-rich.rd-cap { margin-top: 6px;}
+
+  /* The table part: its settings in one block, then the table drawn so its cells read as
+     cells — a firm outer edge, visible inner lines, a tinted header row — with the column,
+     row and width controls only while "Edit table layout" is on. */
+  .docgen .rd-tsettings { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; align-items: center;
+    padding: 8px 10px; margin: 0 0 10px; border-radius: 4px; background: var(--c-surface);}
+  .docgen .rd-tsettings > .rd-state { grid-column: 1 / -1; margin: 0;}
+  .docgen .rd-tset-lab { font-size: 12px; color: var(--c-text-muted);}
+  .docgen .rd-tsettings .rd-rich.rd-cap { margin: 0; min-height: 0;}
+  .docgen .rd-tset-row { grid-column: 1 / -1; display: flex; gap: 14px; flex-wrap: wrap; align-items: center;}
+  .docgen .rd-tsettings .rd-rows-repeat { grid-column: 1 / -1; margin: 0;}
+  .docgen .rd-tsettings .rd-rows-repeat > .rd-lab { flex-direction: row; font-size: 12px; color: var(--c-text-muted); padding: 0; margin: 0;}
+  .docgen .rd-tlayout { margin-left: auto; font: inherit; font-size: 12px; height: 24px; padding: 0 8px; border: 1px solid var(--c-border);
+    border-radius: 4px; background: var(--c-surface); color: var(--c-text); cursor: pointer;}
+  .docgen .rd-tlayout[aria-pressed="true"] { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-text);}
+  .docgen .rd-tpart .rd-table th, .docgen .rd-tpart .rd-table td { border-color: var(--c-text-muted);}
+  .docgen .rd-tpart .rd-table thead th:not(.rd-rowdel) { border-bottom-width: 2px;}
+  .docgen .rd-tpart .rd-table th .rd-cellbox { background: color-mix(in srgb, var(--c-accent) 18%, var(--c-surface)); font-weight: 600;}
+  .docgen .rd-tpart .rd-table td .rd-cellbox { background: var(--c-surface);}
+  .docgen .rd-tpart .rd-table .rd-rowdel { border: 0; background: transparent; padding-left: 4px; vertical-align: middle; white-space: nowrap;}
+  .docgen .rd-tpart.rd-tlayout-on .rd-colbar { background: var(--c-surface-alt);}

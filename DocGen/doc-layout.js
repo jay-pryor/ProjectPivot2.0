@@ -412,7 +412,10 @@ export function layoutTable(b, f) {
   const x0 = f.left + ((tb.align === 'centre' || b.centre) && total < f.W - EPS ? (f.W - total) / 2 : 0);
   const pageH = (f.style.page.margins ? (/** @type {any} */ (f.page).size[1] - (st.page.margins.top + st.page.margins.bottom) * MM) : 700);
 
-  /** @typedef {{ cells: { lines: any[], ts: any, align: string, fill?: string }[], h: number, kind: string, span?: boolean }} Row */
+  /** @typedef {{ cells: { lines: any[], ts: any, align: string, gap?: number, fill?: string }[], h: number, kind: string, span?: boolean }} Row */
+  /** A body cell's lines, with the Style's gap after each line a break ended (a list's entries), none after the last. */
+  const cellHeight = (/** @type {any[]} */ lines, /** @type {number} */ leading, /** @type {number} */ gap) =>
+    lines.length * leading + (gap ? lines.slice(0, -1).filter((l) => l.hard).length * gap : 0);
   /** A row laid out: each cell's lines, and the row's height (cut to the page if it must be). */
   const rowOf = (/** @type {any[][]} */ cells, /** @type {string} */ kind, /** @type {number} */ idx, limit = pageH) => {
     /** @type {Row} */
@@ -421,14 +424,16 @@ export function layoutTable(b, f) {
       const ts = kind === 'head' ? head : k === 0 ? firstCol : body;
       const align = /** @type {any} */ (ALIGN)[b.columns?.[k]?.align ?? 'l'] ?? 'left';
       const lines = breakLines(atomsOf(cells[k] ?? [], ts, f.ctx), Math.max(1, widths[k] - 2 * pad));
-      row.cells.push({ lines, ts, align, fill: kind === 'body' && k === 0 && tb.firstColumn.on ? tb.firstColumn.fill : undefined });
-      row.h = Math.max(row.h, lines.length * ts.leading);
+      const gap = kind === 'body' ? tb.lineGap : 0;
+      row.cells.push({ lines, ts, align, gap, fill: kind === 'body' && k === 0 && tb.firstColumn.on ? tb.firstColumn.fill : undefined });
+      row.h = Math.max(row.h, cellHeight(lines, ts.leading, gap));
     }
     const extra = kind === 'body' && b.rowHeight > 0 && (!b.tallRows || b.tallRows[idx]) ? b.rowHeight * MM : 0;
     row.h += 2 * pad + extra;
     if (row.h > limit) {
       for (const c of row.cells) {
-        const keep = Math.max(1, Math.floor((limit - 2 * pad) / c.ts.leading) - 1);
+        let keep = Math.max(1, Math.floor((limit - 2 * pad) / c.ts.leading) - 1);
+        while (keep > 1 && cellHeight(c.lines.slice(0, keep + 1), c.ts.leading, c.gap ?? 0) > limit - 2 * pad) keep--;
         if (c.lines.length > keep) {
           c.lines = c.lines.slice(0, keep);
           c.lines.push(breakLines(atomsOf([{ text: '[this cell continues beyond the page]', italic: true }], c.ts, f.ctx), Math.max(1, widths[0] * 4))[0]);
@@ -467,7 +472,7 @@ export function layoutTable(b, f) {
       let ly = top + pad;
       c.lines.forEach((ln, i) => {
         f.page.items.push(...lineItems(ln, x + pad, ly + (c.ts.leading - c.ts.size) / 2 + c.ts.size * ASCENT, w - 2 * pad, c.align, i === c.lines.length - 1));
-        ly += c.ts.leading;
+        ly += c.ts.leading + (ln.hard && i < c.lines.length - 1 ? c.gap ?? 0 : 0);
       });
       x += w;
     });

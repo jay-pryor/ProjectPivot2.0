@@ -3064,6 +3064,28 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * sections created from one template never share a table id — which would make a
      * cross-reference ambiguous.
      */
+    /** The block-keyed rules a section template carries for the section it was saved from. */
+    var SECTION_RULES = ['levels', 'centred', 'pageBreak', 'noToc', 'landscape', 'space'];
+
+    /**
+     * An imported template's rules, keeping only what the setters themselves could have
+     * stored; anything else is dropped rather than refusing the whole template.
+     */
+    function normSectionRules(raw) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+      var out = {};
+      if ([App.doc.TITLE_LEVEL, 1, 2, 3, 4, App.doc.BODY_LEVEL].indexOf(raw.levels) !== -1) out.levels = raw.levels;
+      if (raw.centred === true) out.centred = true;
+      else if (raw.centred && typeof raw.centred === 'object' && !Array.isArray(raw.centred)) {
+        var c = {};
+        ['heading', 'intro', 'table', 'content'].forEach(function (k) { if (typeof raw.centred[k] === 'boolean') c[k] = raw.centred[k]; });
+        if (Object.keys(c).length) out.centred = c;
+      }
+      ['pageBreak', 'noToc', 'landscape'].forEach(function (k) { if (typeof raw[k] === 'boolean') out[k] = raw[k]; });
+      if (typeof raw.space === 'number' && mmValue(raw.space) > 0) out.space = mmValue(raw.space);
+      return Object.keys(out).length ? out : null;
+    }
+
     function saveSectionTemplate(sectionId, name) {
       if (!P()) return errNoProject();
       var s = findSection(P(), sectionId);
@@ -3080,8 +3102,16 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           title: src.title || '',
           parts: JSON.parse(JSON.stringify(src.parts || []))
         });
+        var made = b.sectionTemplates[b.sectionTemplates.length - 1];
         // DS-2: what it repeats for is part of the section's design.
-        if (src.repeat) b.sectionTemplates[b.sectionTemplates.length - 1].repeat = JSON.parse(JSON.stringify(src.repeat));
+        if (src.repeat) made.repeat = JSON.parse(JSON.stringify(src.repeat));
+        // Its tier, centring, page and contents rules are kept by the section's id, not on
+        // the section, so they are gathered here or a reused section would come back plain.
+        var rules = {};
+        SECTION_RULES.forEach(function (k) {
+          if (b[k] && b[k][sectionId] !== undefined) rules[k] = JSON.parse(JSON.stringify(b[k][sectionId]));
+        });
+        if (Object.keys(rules).length) made.rules = rules;
       });
       return { ok: true, id: id, issues: [] };
     }
@@ -3127,6 +3157,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var made = { id: id, title: t.title || '', parts: parts };
         if (t.repeat) made.repeat = JSON.parse(JSON.stringify(t.repeat));
         b.sections.push(made);
+        Object.keys(t.rules || {}).forEach(function (k) {
+          if (SECTION_RULES.indexOf(k) === -1) return;
+          b[k] = b[k] || {};
+          b[k][id] = JSON.parse(JSON.stringify(t.rules[k]));
+        });
         if (Array.isArray(b.order) && b.order.length && b.order.indexOf(id) === -1) b.order.push(id);
       });
       return { ok: true, id: id, issues: [] };
@@ -3265,7 +3300,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       applyWidth: applyWidth, evenWidths: evenWidths, widthTotal: widthTotal, MIN_WIDTH: MIN_WIDTH,
       addFormat: addFormat, updateFormat: updateFormat, removeFormat: removeFormat, setFormatId: setFormatId,
       saveSectionTemplate: saveSectionTemplate, removeSectionTemplate: removeSectionTemplate,
-      useSectionTemplate: useSectionTemplate,
+      useSectionTemplate: useSectionTemplate, normSectionRules: normSectionRules,
       saveReportTemplate: saveReportTemplate, removeReportTemplate: removeReportTemplate,
       useReportTemplate: useReportTemplate
     };
@@ -3405,6 +3440,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         if (rp.error) { issues.push(issue('error', rp.error, loc + '.repeat')); return null; }
         var sec = { id: String(raw.id || ''), name: String(raw.name), title: String(raw.title || ''), parts: raw.parts || [] };
         if (rp.repeat) sec.repeat = rp.repeat;
+        var rules = App.docStore.normSectionRules(raw.rules);
+        if (rules) sec.rules = rules;
         return sec;
       }
       // reports
@@ -4045,6 +4082,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       prevZoom: null,        // the Preview pane's zoom, likewise
       conflict: null,        // { kindKey, plan, decisions } while an import is being resolved
       refFor: null,          // part id whose "insert reference" menu is open
+      tableLayout: {},       // part ids of the tables whose layout controls are showing
       preview: null,         // cached layout of the document, so switching panes is not a re-layout
       refs: null             // cached reference targets of the built document
     };
@@ -4700,6 +4738,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var widths = (part.widths && part.widths.length === head.length) ? part.widths : null;
       var auto = !widths;
       var px = textWidthPx(App.docFormat.resolve(project));
+      // The column, row and width controls are LAYOUT, and most of the time a table is
+      // being written in, not shaped — so they wait behind "Edit table layout" and the
+      // cells are left to read as a table.
+      var lay = !!(_rd.tableLayout && _rd.tableLayout[part.id]);
+      var ids = 'data-rd-sec="' + esc(sec.id) + '"';
       // TW-3: the table is drawn at its share of the page, inside a full-width box. So a
       // set totalling 60% shows a 60% table, and the drag — measured against the BOX,
       // not the table — still reads as a share of the page.
@@ -4709,22 +4752,24 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var rowMm = App.docStore.mmValue(part.rowHeight);
       var group = '<colgroup>' + head.map(function (_, c) {
         return '<col style="width:' + (widths ? (widths[c] / sum * 100) : (100 / head.length)) + '%">';
-      }).join('') + '<col style="width:' + (rowMm ? 58 : 34) + 'px"></colgroup>';
+      }).join('') + (lay ? '<col style="width:' + (rowMm ? 66 : 38) + 'px">' : '') + '</colgroup>';
 
       var target = partTarget(sec.id, part.id);
       var ths = head.map(function (h, c) {
         var pct = widths ? Math.round(widths[c] * 1000) / 10 : Math.round(1000 / head.length) / 10;
         // RTX-2: a heading is prose like any other cell, so it takes the same box.
         return '<th>' + richBox(project,
-            'data-rd-cell="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-row="-1" data-rd-col="' + c + '"' +
+            'data-rd-cell="' + esc(part.id) + '" ' + ids + ' data-rd-row="-1" data-rd-col="' + c + '"' +
             ' aria-label="Column ' + (c + 1) + ' heading"', h, 'rd-cellbox', '', sec.id, part.id) +
-          '<span class="rd-colbar">' +
-            '<select data-rd-align="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-col="' + c + '" aria-label="Column ' + (c + 1) + ' alignment" title="Column alignment">' +
-              ['l', 'c', 'r'].map(function (a) { return '<option value="' + a + '"' + ((align[c] || 'l') === a ? ' selected' : '') + '>' + (a === 'l' ? '⇤' : a === 'c' ? '↔' : '⇥') + '</option>'; }).join('') +
-            '</select>' +
-            pctChip(target, c, pct, auto) +
-            '<button type="button" class="danger" data-rd-delcol="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-col="' + c + '"' + (head.length <= 1 ? ' disabled' : '') + ' title="Delete this column">✕</button>' +
-          '</span>' + grip(target, c, c === head.length - 1) + '</th>';
+          (lay
+            ? '<span class="rd-colbar">' +
+                '<select data-rd-align="' + esc(part.id) + '" ' + ids + ' data-rd-col="' + c + '" aria-label="Column ' + (c + 1) + ' alignment" title="Column alignment">' +
+                  ['l', 'c', 'r'].map(function (a) { return '<option value="' + a + '"' + ((align[c] || 'l') === a ? ' selected' : '') + '>' + (a === 'l' ? '⇤' : a === 'c' ? '↔' : '⇥') + '</option>'; }).join('') +
+                '</select>' +
+                pctChip(target, c, pct, auto) +
+                '<button type="button" class="danger" data-rd-delcol="' + esc(part.id) + '" ' + ids + ' data-rd-col="' + c + '"' + (head.length <= 1 ? ' disabled' : '') + ' title="Delete this column">✕</button>' +
+              '</span>' + grip(target, c, c === head.length - 1)
+            : '') + '</th>';
       }).join('');
       /* SPC-1: the tick only appears once there is a height to apply — a column of ticks
        * that do nothing is worse than no column at all. */
@@ -4732,20 +4777,22 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var tall = App.docStore.rowTall(part, ri);
         return '<tr' + (part.repeat && part.repeat.each ? ' class="rd-rowtpl" title="Printed once per entry"' : '') + '>' + head.map(function (_, c) {
           return '<td>' + richBox(project,
-            'data-rd-cell="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-row="' + ri + '" data-rd-col="' + c + '"' +
+            'data-rd-cell="' + esc(part.id) + '" ' + ids + ' data-rd-row="' + ri + '" data-rd-col="' + c + '"' +
             ' aria-label="Row ' + (ri + 1) + ' column ' + (c + 1) + '"', r[c], 'rd-cellbox', '', sec.id, part.id) + '</td>';
-        }).join('') + '<td class="rd-rowdel">' +
-          (rowMm
-            ? '<input type="checkbox" class="rd-tallbox" data-rd-tallrow="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) +
-              '" data-rd-row="' + ri + '"' + (tall ? ' checked' : '') +
-              ' title="' + (tall ? 'This row is ' + esc(String(rowMm)) + 'mm taller — untick to leave it at its content'
-                                 : 'Tick to make this row ' + esc(String(rowMm)) + 'mm taller') + '"' +
-              ' aria-label="Extra height on row ' + (ri + 1) + '">'
-            : '') +
-          '<button type="button" class="danger" data-rd-delrow="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" data-rd-row="' + ri + '" title="Delete this row">✕</button></td></tr>';
+        }).join('') + (lay
+          ? '<td class="rd-rowdel">' +
+            (rowMm
+              ? '<input type="checkbox" class="rd-tallbox" data-rd-tallrow="' + esc(part.id) + '" ' + ids +
+                ' data-rd-row="' + ri + '"' + (tall ? ' checked' : '') +
+                ' title="' + (tall ? 'This row is ' + esc(String(rowMm)) + 'mm taller — untick to leave it at its content'
+                                   : 'Tick to make this row ' + esc(String(rowMm)) + 'mm taller') + '"' +
+                ' aria-label="Extra height on row ' + (ri + 1) + '">'
+              : '') +
+            '<button type="button" class="danger" data-rd-delrow="' + esc(part.id) + '" ' + ids + ' data-rd-row="' + ri + '" title="Delete this row">✕</button></td>'
+          : '') + '</tr>';
       }).join('');
-      var host = 'data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"';
-      return '<div class="rd-part" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
+      var host = 'data-rd-part="' + esc(part.id) + '" ' + ids;
+      return '<div class="rd-part rd-tpart' + (lay ? ' rd-tlayout-on' : '') + '" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
         '<div class="rd-part-head"><span class="rd-part-kind">Table</span>' +
           /* RTX-2: the same toolbar a paragraph has, acting on whichever CELL was last
            * written in. A cell holds the same token markup a paragraph does, so there is
@@ -4756,39 +4803,50 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             '<button type="button" class="rd-tb" data-rd-ref-open="' + esc(part.id) + '" title="Insert a cross-reference into the cell you were writing in">🔗 Link</button>' +
             fieldButton(part.id) +
           '</span>' +
-          cb('data-rd-part-flag="centre" ' + host, 'Centre', part.centre === true) +
-          // TBS-1: this table opts in; the Formatting pane decides what opting in looks like.
-
-          // CAP-4: a table that names itself in its own title row, or one that is simply
-          // a layout, does not want "Table 7:" underneath it.
-          cb('data-rd-part-flag="noCaption" data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"', 'No caption', part.noCaption === true) +
           partControls(sec, part, i, n) + '</div>' +
-        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id, part.id) + rowsRepeatHtml(project, sec, part) +
-        (part.noCaption === true
-          ? '<p class="rd-state">No caption: this table is not numbered.</p>'
-          // DS-1: one line of text and fields, like a heading.
-          : richBox(project, 'data-rd-caption-rich="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" aria-label="Table caption" aria-multiline="false"', part.caption || '',
-              'rd-cap rd-oneline', 'Table caption — left blank, the section’s heading is used', sec.id, part.id)) +
+        refMenu(project, sec, part) + fieldMenu(project, sec.id, part.id, part.id) +
+        '<div class="rd-tsettings">' +
+          (part.noCaption === true
+            ? '<p class="rd-state">No caption: this table is not numbered.</p>'
+            // DS-1: one line of text and fields, like a heading.
+            : '<span class="rd-tset-lab">Caption</span>' +
+              richBox(project, 'data-rd-caption-rich="' + esc(part.id) + '" ' + ids + ' aria-label="Table caption" aria-multiline="false"', part.caption || '',
+                'rd-cap rd-oneline', 'Left blank, the section’s heading is used', sec.id, part.id)) +
+          '<div class="rd-tset-row">' +
+            // CAP-4: a table that names itself in its own title row, or one that is simply
+            // a layout, does not want "Table 7:" underneath it.
+            cb('data-rd-part-flag="noCaption" ' + host, 'No caption', part.noCaption === true) +
+            cb('data-rd-part-flag="centre" ' + host, 'Centre', part.centre === true) +
+            '<button type="button" class="rd-tlayout" data-rd-tlayout="' + esc(part.id) + '" aria-pressed="' + lay + '"' +
+            ' title="' + (lay ? 'Done shaping the table: hide the column, row and width controls' : 'Show the column, row and width controls') + '">' +
+            (lay ? '✓ Done editing layout' : '⚙ Edit table layout') + '</button>' +
+          '</div>' +
+          rowsRepeatHtml(project, sec, part) +
+        '</div>' +
         '<div class="rd-tablewrap"><div class="rd-tablescale" style="width:' + px + 'px">' +
           '<table class="rd-table rd-table-fixed" style="width:' + tablePx + 'px">' + group +
-          '<thead><tr>' + ths + '<th class="rd-rowdel' + (rowMm ? ' rd-rowdel-wide' : '') + '"' +
-            (rowMm ? ' title="Which rows take the extra height">↕' : '>') + '</th></tr></thead><tbody>' + trs + '</tbody></table></div></div>' +
+          '<thead><tr>' + ths + (lay ? '<th class="rd-rowdel' + (rowMm ? ' rd-rowdel-wide' : '') + '"' +
+            (rowMm ? ' title="Which rows take the extra height">↕' : '>') + '</th>' : '') + '</tr></thead><tbody>' + trs + '</tbody></table></div></div>' +
         '<div class="rd-tablebtns">' +
-          '<button type="button" data-rd-addrow="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '">+ Row</button>' +
-          '<button type="button" data-rd-addcol="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '">+ Column</button>' +
-          /* SPC-1: the table as a FORM. A signature block is a table whose cells are
-           * mostly empty and need to be big enough to write in, and nothing in the
-           * cells can say how tall a row is — so it is said here, in the same
-           * millimetres the Space part uses. */
-          '<label class="rd-mmlab rd-rowh">Extra row height' +
-            '<input class="rd-mm" type="number" min="0" max="' + App.docStore.MAX_SPACE_MM + '" step="1"' +
-              ' value="' + esc(String(App.docStore.mmValue(part.rowHeight) || '')) + '"' +
-              ' data-rd-rowheight="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' +
-              ' placeholder="0" aria-label="Extra height for every row of this table, in millimetres"> mm' +
-          '</label>' +
+          '<button type="button" data-rd-addrow="' + esc(part.id) + '" ' + ids + '>+ Row</button>' +
+          (lay
+            ? '<button type="button" data-rd-addcol="' + esc(part.id) + '" ' + ids + '>+ Column</button>' +
+              /* SPC-1: the table as a FORM. A signature block is a table whose cells are
+               * mostly empty and need to be big enough to write in, and nothing in the
+               * cells can say how tall a row is — so it is said here, in the same
+               * millimetres the Space part uses. */
+              '<label class="rd-mmlab rd-rowh">Extra row height' +
+                '<input class="rd-mm" type="number" min="0" max="' + App.docStore.MAX_SPACE_MM + '" step="1"' +
+                  ' value="' + esc(String(App.docStore.mmValue(part.rowHeight) || '')) + '"' +
+                  ' data-rd-rowheight="' + esc(part.id) + '" ' + ids +
+                  ' placeholder="0" aria-label="Extra height for every row of this table, in millimetres"> mm' +
+              '</label>'
+            : '') +
         '</div>' +
-        (rowMm ? rowHeightNote(part, rows.length, rowMm) : '') +
-        widthNote(widths, auto, 'data-rd-autowidth="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"') +
+        (lay
+          ? (rowMm ? rowHeightNote(part, rows.length, rowMm) : '') +
+            widthNote(widths, auto, 'data-rd-autowidth="' + esc(part.id) + '" ' + ids)
+          : '') +
         '</div>';
     }
 
@@ -5578,6 +5636,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             num('Border weight (pt)', 'tables.borderWidth', t.borderWidth, '', 0.25) +
             num('Text size (pt)', 'tables.fontSize', t.fontSize, '', 0.5) +
             num('Cell padding (mm)', 'tables.padding', t.padding, '', 0.5) +
+            num('Space between lines in a cell (pt)', 'tables.lineGap', t.lineGap, 'Added after each entry of a list, or each line break, in a cell — so a list in a cell does not run together', 1) +
             pick('Table position', 'tables.align', t.align, [{ value: 'left', label: 'Left' }, { value: 'centre', label: 'Centre' }]) +
             pick('Caption', 'tables.captionPosition', t.captionPosition, [{ value: 'below', label: 'Below the table' }, { value: 'above', label: 'Above the table' }]) +
           '</div>' +
@@ -7098,6 +7157,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         e.preventDefault();
         var live = liveBox(el);
         if (live) noteSelection(live);
+      });
+      dom.on(ctx.root, 'click', '[data-rd-tlayout]', function (e, el) {
+        var id = el.getAttribute('data-rd-tlayout');
+        _rd.tableLayout = _rd.tableLayout || {};
+        if (_rd.tableLayout[id]) delete _rd.tableLayout[id]; else _rd.tableLayout[id] = true;
+        repaint();
       });
       dom.on(ctx.root, 'click', '[data-rd-field-open]', function (e, el) {
         var id = el.getAttribute('data-rd-field-open');

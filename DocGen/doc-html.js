@@ -36,6 +36,7 @@ function css(s) {
     tb.borders === 'outer' ? `.doc-table { border: ${border}; }` : '',
     `.doc-table thead th { background: ${tb.header.fill}; color: ${tb.header.colour}; font-size: ${tb.header.size}pt; font-weight: ${tb.header.bold ? 700 : 400}; font-style: ${tb.header.italic ? 'italic' : 'normal'}; }`,
     `.doc-table thead { display: ${tb.header.repeat ? 'table-header-group' : 'table-row-group'}; }`,
+    tb.lineGap > 0 ? `.doc-table td .cell-gap { display: block; height: ${tb.lineGap}pt; }` : '',
     tb.banding.on ? `.doc-table tbody tr:nth-child(even) td { background: ${tb.banding.fill}; }` : '',
     tb.firstColumn.on ? `.doc-table tbody td:first-child { background: ${tb.firstColumn.fill}; font-weight: ${tb.firstColumn.bold ? 700 : 400}; }` : '',
     `.figure { margin: 6pt 0; break-inside: avoid; text-align: ${s.images.align === 'left' ? 'left' : 'center'}; }`,
@@ -50,9 +51,9 @@ function css(s) {
 }
 
 /** Runs as HTML. @param {any[]} runs */
-function runsHtml(runs) {
+function runsHtml(runs, br = '<br>') {
   return (runs ?? []).map((r) => {
-    if (r.br) return '<br>';
+    if (r.br) return br;
     let h = esc(r.text);
     if (r.code) h = `<code>${h}</code>`;
     if (r.italic) h = `<em>${h}</em>`;
@@ -73,6 +74,8 @@ export function renderHtml(doc, style, opts = {}) {
   const meta = doc.meta ?? {};
   const headings = (doc.blocks ?? []).filter((b) => b.kind === 'heading' && !b.noToc && b.level <= style.toc.depth);
   let wide = false;
+  // A break in a body cell, spaced out by the Style's gap (a list's entries) as in the PDF.
+  const cellBr = style.tables.lineGap > 0 ? '<span class="cell-gap"></span>' : '<br>';
   const body = (doc.blocks ?? []).map((b) => {
     const id = b.anchor ? ` id="${esc(b.anchor)}"` : '';
     const centre = b.centre ? ' centre' : '';
@@ -87,7 +90,7 @@ export function renderHtml(doc, style, opts = {}) {
       const title = b.titleRow ? `<tr><th colspan="${n}" class="centre">${runsHtml(b.titleRow)}</th></tr>` : '';
       return `<table class="doc-table"${id}>${b.caption ? `<caption>${runsHtml(b.caption.runs)}</caption>` : ''}${cols}` +
         `<thead>${title}<tr>${(b.header ?? []).map((/** @type {any} */ c) => `<th>${runsHtml(c)}</th>`).join('')}</tr></thead>` +
-        `<tbody>${(b.rows ?? []).map((/** @type {any[]} */ r) => `<tr>${r.map((c) => `<td>${runsHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+        `<tbody>${(b.rows ?? []).map((/** @type {any[]} */ r) => `<tr>${r.map((c) => `<td>${runsHtml(c, cellBr)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     }
     if (b.kind === 'figure') {
       const above = style.images.captionPosition === 'above';
