@@ -99,7 +99,9 @@ export function renderHtml(doc, style, opts = {}) {
     if (b.kind === 'table') {
       const cols = (b.columns ?? []).some((/** @type {any} */ c) => c?.width) ? `<colgroup>${b.columns.map((/** @type {any} */ c) => `<col style="width:${Math.round((c?.width ?? 0) * 100)}%">`).join('')}</colgroup>` : '';
       const n = b.header?.length ?? 0;
-      const title = b.titleRow ? `<tr><th colspan="${n}" class="centre">${runsHtml(b.titleRow)}</th></tr>` : '';
+      const title = !b.titleRow ? '' : b.titleAlign === 'left' || b.titleAlign === 'right'
+        ? `<tr><th colspan="${n}" style="text-align: ${b.titleAlign}">${runsHtml(b.titleRow)}</th></tr>`
+        : `<tr><th colspan="${n}" class="centre">${runsHtml(b.titleRow)}</th></tr>`;
       // A table with a look of its own carries its own rules, just before it.
       const tb = applyLook(style.tables, b.look);
       const lk = tb === style.tables ? '' : `lk${++looks}`;

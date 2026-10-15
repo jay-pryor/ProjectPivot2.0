@@ -261,10 +261,10 @@ test('Sections: three columns — categories, their fields, and the preview besi
 
 test('each kind of section offers its own categories', () => {
   const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
-  assert.deepEqual(cats(sectionAt(h, 'things')), ['heading', 'introduction', 'placement', 'table']);
-  assert.deepEqual(cats(sectionAt(h, 'meta')), ['heading', 'introduction', 'placement', 'table', 'rows']);
-  assert.deepEqual(cats(sectionAt(h, 'toc')), ['heading', 'placement']);
-  assert.deepEqual(cats(sectionAt(h, 'mine')), ['heading', 'placement', 'content']);
+  assert.deepEqual(cats(sectionAt(h, 'things')), ['heading', 'introduction', 'table']);
+  assert.deepEqual(cats(sectionAt(h, 'meta')), ['heading', 'introduction', 'table', 'rows']);
+  assert.deepEqual(cats(sectionAt(h, 'toc')), ['heading']);
+  assert.deepEqual(cats(sectionAt(h, 'mine')), ['heading', 'content']);
 });
 
 test('each category holds its existing controls', () => {
@@ -272,7 +272,7 @@ test('each category holds its existing controls', () => {
   const at = (id, cat) => sectionAt(h, id, cat).slice(sectionAt(h, id, cat).indexOf('data-rd-sec-fields'));
   assert.match(at('things', 'heading'), /data-rd-sec-heading="things"/);
   assert.match(at('mine', 'heading'), /data-rd-sec-heading-rich="mine"/);
-  assert.match(at('things', 'placement'), /data-rd-centre-part="heading" data-rd-block="things"[\s\S]*data-rd-pagebreak="things"[\s\S]*data-rd-notoc="things"[\s\S]*data-rd-space-block="things"/);
+  assert.match(at('things', 'heading'), /data-rd-sec-heading="things"[\s\S]*data-rd-centre-part="heading" data-rd-block="things"[\s\S]*data-rd-pagebreak="things"[\s\S]*data-rd-notoc="things"[\s\S]*data-rd-space-block="things"/);
   assert.match(at('things', 'introduction'), /data-rd-intro="things"[\s\S]*data-rd-intro-num="things"/);
   assert.match(at('things', 'table'), /data-rd-tbl-field="title"[\s\S]*data-rd-tbl-col=/);
   assert.match(at('meta', 'rows'), /data-rd-meta=/);
@@ -333,7 +333,7 @@ test('no one-line explanations anywhere in the designer: only messages about sta
   const pages = [];
   for (const pane of ['styles', 'templates', 'preview', 'generate']) pages.push(paneOf(h, pane));
   for (const sec of ['styles']) for (const s of ['page', 'body', 'tables', 'headerFooter', 'marking', 'numbering']) pages.push(paneOf(h, sec, s));
-  for (const [id, cs] of [['things', ['heading', 'placement', 'introduction', 'table']], ['meta', ['rows']], ['toc', ['heading']], ['mine', ['heading', 'placement', 'content']]]) for (const c of cs) pages.push(sectionAt(h, id, c));
+  for (const [id, cs] of [['things', ['heading', 'introduction', 'table']], ['meta', ['rows']], ['toc', ['heading']], ['mine', ['heading', 'content']]]) for (const c of cs) pages.push(sectionAt(h, id, c));
   const ALLOWED = [/^Nothing in this section yet\.$/, /^No .+ selected/, /^There are no sections yet\.$/, /^None written yet/, /page(s)? of \d+/i, /^Page \d+/, /^\d+ pages?$/];
   const notes = pages.flatMap((p) => [...p.matchAll(/<p class="muted[^"]*">([\s\S]*?)<\/p>/g)].map((m) => m[1].replace(/<[^>]+>/g, '').trim()));
   const stray = [...new Set(notes.filter((t) => t && !ALLOWED.some((re) => re.test(t))))];
@@ -396,10 +396,11 @@ test('Final review I3: the three columns stack by the pane\'s own width, not the
   assert.doesNotMatch(css, /@media \(max-width: 1400px\) \{ \.docgen \.rd-secgrid/);
 });
 
-test('Heading has no level box (the list sets it); Introduction comes before Placement', () => {
+test('Heading has no level box (the list sets it); Heading & Placement is one category, before Introduction', () => {
   const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }] });
-  assert.deepEqual(cats(sectionAt(h, 'things')), ['heading', 'introduction', 'placement', 'table']);
-  assert.deepEqual(cats(sectionAt(h, 'meta')), ['heading', 'introduction', 'placement', 'table', 'rows']);
+  assert.deepEqual(cats(sectionAt(h, 'things')), ['heading', 'introduction', 'table']);
+  assert.deepEqual(cats(sectionAt(h, 'meta')), ['heading', 'introduction', 'table', 'rows']);
+  assert.match(sectionAt(h, 'things'), /data-rd-sec-cat="heading"[^>]*>Heading &amp; Placement</);
   const fields = (id, cat) => { const html = sectionAt(h, id, cat); return html.slice(html.indexOf('data-rd-sec-fields')); };
   assert.doesNotMatch(fields('things', 'heading').split('data-rd-sec-prev')[0], /data-rd-level/);
   assert.doesNotMatch(fields('mine', 'heading').split('data-rd-sec-prev')[0], /data-rd-level/);
@@ -407,11 +408,11 @@ test('Heading has no level box (the list sets it); Introduction comes before Pla
 
 test('Placement centres the heading, the introduction and the table separately, in that order', () => {
   const h = host({ sections: [{ id: 'mine', title: 'Mine', parts: [] }], centred: { things: { intro: true } } });
-  const parts = (id) => { const html = sectionAt(h, id, 'placement'); return [...html.matchAll(/data-rd-centre-part="([a-z]+)"[^>]*?( checked)?>/g)].map((m) => m[1] + (m[2] ? '*' : '')); };
+  const parts = (id) => { const html = sectionAt(h, id, 'heading'); return [...html.matchAll(/data-rd-centre-part="([a-z]+)"[^>]*?( checked)?>/g)].map((m) => m[1] + (m[2] ? '*' : '')); };
   assert.deepEqual(parts('things'), ['heading', 'intro*', 'table*'], 'the table is centred by default');
   assert.deepEqual(parts('mine'), ['heading', 'content']);
   assert.deepEqual(parts('toc'), ['heading']);
-  assert.doesNotMatch(sectionAt(h, 'things', 'placement'), /Centre this section/);
+  assert.doesNotMatch(sectionAt(h, 'things', 'heading'), /Centre this section/);
 });
 
 test('a centring tick is stored per part; ticking a part of an old "centre everything" keeps the others', () => {
@@ -493,7 +494,7 @@ test('pressing a lit B, I or code with nothing selected ends that style at the c
 });
 
 test('Placement: centring under "Centre content", the rest under "Section placement", no "On the page"', () => {
-  const html = sectionAt(host(), 'things', 'placement');
+  const html = sectionAt(host(), 'things', 'heading');
   const f = html.slice(html.indexOf('data-rd-sec-fields'), html.indexOf('data-rd-sec-prev'));
   assert.doesNotMatch(f, /On the page/);
   assert.match(f, /<strong>Centre content<\/strong>[\s\S]*data-rd-centre-part="heading"[\s\S]*data-rd-centre-part="table"[\s\S]*<strong>Section placement<\/strong>[\s\S]*data-rd-pagebreak[\s\S]*data-rd-notoc[\s\S]*data-rd-space-block/);
@@ -824,7 +825,7 @@ test('a file dropped anywhere in the designer but a drop box is caught, so the b
 test('"Start this section on a new page" is ticked unless it was turned off; off is what is stored', () => {
   const h = host();
   const tick = (hh) => {
-    App.docHost.set(hh); RD.open(); RD.select('things'); RD._rd.secCat = 'placement';
+    App.docHost.set(hh); RD.open(); RD.select('things'); RD._rd.secCat = 'heading';
     const html = RD.render(hh.getState()); RD.close();
     return /data-rd-pagebreak="things"[^>]*checked/.test(html) || /<input[^>]*checked[^>]*data-rd-pagebreak="things"/.test(html);
   };
@@ -840,7 +841,7 @@ test('"Start this section on a new page" is ticked unless it was turned off; off
 test('"Centre table" is ticked unless it was turned off; off is what is stored', () => {
   const h = host();
   const ticked = (hh) => {
-    App.docHost.set(hh); RD.open(); RD.select('things'); RD._rd.secCat = 'placement';
+    App.docHost.set(hh); RD.open(); RD.select('things'); RD._rd.secCat = 'heading';
     const html = RD.render(hh.getState()); RD.close();
     return /<input type="checkbox" data-rd-centre-part="table" data-rd-block="things" checked>/.test(html);
   };
@@ -914,7 +915,7 @@ test('a new Style gets an id no one else\'s new Style will have', () => {
 
 test('Placement has a Landscape pages tick; only on is stored', () => {
   const h = host();
-  App.docHost.set(h); RD.open(); RD.select('things'); RD._rd.secCat = 'placement';
+  App.docHost.set(h); RD.open(); RD.select('things'); RD._rd.secCat = 'heading';
   const html = RD.render(h.getState()); RD.close();
   assert.match(html, /<input type="checkbox" data-rd-landscape="things"> Landscape pages/);
   App.docStore.setBlockFlag('landscape', 'things', true);

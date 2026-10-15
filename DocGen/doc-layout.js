@@ -32,10 +32,13 @@ export function atomsOf(runs, ts, ctx) {
     const raw = String(r.text ?? '') + (link ? ctx.refSuffix(link) : '');
     const font = fontName(r.code ? 'courier' : ts.family, ts.bold || !!r.bold, ts.italic || !!r.italic);
     const text = ctx.encode(raw);
+    let first = true;
     for (const piece of text.split(/( )/)) {
       if (!piece) continue;
       out.push({ text: piece, space: piece === ' ', font, size: ts.size, colour: r.colour ?? ts.colour,
-        underline: ts.underline || !!r.underline, link, width: textWidth(font, ts.size, piece) });
+        underline: ts.underline || !!r.underline, link, width: textWidth(font, ts.size, piece),
+        ...(r.todo ? { todo: true, ...(first ? { todoStart: true } : {}) } : {}) });
+      first = false;
     }
   }
   return out;
@@ -98,8 +101,19 @@ export function lineItems(line, x, base, width, align, last) {
   }
   /** @type {any[]} */
   const items = [];
+  /* A blank still to be filled in (`todo` runs) is marked for the screen: a `todo` item
+   * under each stretch of it on the line. The PDF writer draws only the kinds it knows. */
+  /** @type {any[]} */
+  const todos = [];
+  /** @type {any} */
+  let todo = null;
   let cx = start;
   for (const a of line.atoms) {
+    if (a.todo && !(a.space && !todo)) {
+      if (!todo) todos.push(todo = { kind: 'todo', x: cx, y: base - a.size * ASCENT, w: 0, h: a.size, start: false });
+      if (!a.space) todo.w = cx + a.width - todo.x;
+      if (a.todoStart) todo.start = true;
+    } else if (!a.todo) todo = null;
     if (!a.space) {
       items.push({ kind: 'text', x: cx, y: base, font: a.font, size: a.size, colour: a.colour, text: a.text });
       if (a.underline) items.push({ kind: 'rule', x1: cx, y1: base + a.size * 0.12, x2: cx + a.width, y2: base + a.size * 0.12, width: a.size * 0.05, colour: a.colour });
@@ -107,7 +121,7 @@ export function lineItems(line, x, base, width, align, last) {
     }
     cx += a.width + (a.space ? gap : 0);
   }
-  return items;
+  return todos.length ? todos.concat(items) : items;
 }
 
 /** Page size in points for a style. @param {any} style @returns {[number, number]} */
@@ -300,8 +314,46 @@ function flow(doc, style, pageOf, assets) {
     }
   };
 
+  /** @type {{ src: string[], page: number, x: number, y: number, w: number, h: number }[]} */
+  const regions = [];
+  /**
+   * Where a block that says which designer parts it prints for (`src`) landed: a box per page
+   * around what it drew there. The designer outlines these on screen; nothing writes them out.
+   * Items already on the first page are left out by identity, so a heading carried overleaf
+   * with a table is not counted as the table's.
+   * @param {any} b @param {() => void} place
+   */
+  const tracked = (b, place) => {
+    if (!Array.isArray(b.src)) { place(); return; }
+    const first = pages.length - 1, y0 = y;
+    const before = new Set(page.items);
+    place();
+    for (let pi = first; pi < pages.length; pi++) {
+      let top = Infinity, bot = -Infinity, lo = Infinity, hi = -Infinity;
+      for (const it of pages[pi].items) {
+        if (before.has(it) || it.kind === 'link' || it.kind === 'todo') continue;
+        if (it.kind === 'text') { top = Math.min(top, it.y - it.size * ASCENT); bot = Math.max(bot, it.y + it.size * (1 - ASCENT)); continue; }
+        if (it.kind === 'rule') {
+          const hw = (it.width || 0) / 2;
+          top = Math.min(top, Math.min(it.y1, it.y2) - hw); bot = Math.max(bot, Math.max(it.y1, it.y2) + hw);
+          lo = Math.min(lo, Math.min(it.x1, it.x2) - hw); hi = Math.max(hi, Math.max(it.x1, it.x2) + hw);
+          continue;
+        }
+        top = Math.min(top, it.y); bot = Math.max(bot, it.y + it.h);
+        lo = Math.min(lo, it.x); hi = Math.max(hi, it.x + it.w);
+      }
+      // Empty space (a Space part) is still somewhere: from where it started to where it ended.
+      if (top === Infinity && pi === first && pages.length - 1 === first && y > y0 + EPS) { top = y0; bot = y; }
+      if (top === Infinity) continue;
+      // Text is not measured here, so a box with text in it spans the text width.
+      const wide = lo === Infinity || pages[pi].items.some((it) => !before.has(it) && it.kind === 'text' && (it.x < lo || it.x > hi));
+      const x = wide ? left : lo, w = wide ? W : hi - lo;
+      regions.push({ src: b.src, page: pi, x, y: top, w, h: bot - top });
+    }
+  };
+
   const blocks = doc.blocks ?? [];
-  blocks.forEach((/** @type {any} */ b, /** @type {number} */ i) => {
+  blocks.forEach((/** @type {any} */ b, /** @type {number} */ i) => tracked(b, () => {
     if (i > 0 && blocks[i - 1].kind !== 'heading') lastHeading = null;   // something else came between
     if (b.kind === 'heading') heading(b, blocks[i + 1]);
     else if (b.kind === 'paragraph') paragraph(b);
@@ -325,8 +377,8 @@ function flow(doc, style, pageOf, assets) {
       page.items.push({ kind: 'rule', x1: left, y1: y, x2: left + W, y2: y, width: 0.5, colour: '#999999' });
       y += 6;
     }
-  });
-  return { pages, anchors, headings, replaced };
+  }));
+  return { pages, anchors, headings, replaced, regions };
 }
 
 /**
@@ -445,9 +497,10 @@ export function layoutTable(b, f) {
     return row;
   };
   const titleRow = b.titleRow ? (() => {
-    const ts = { ...head, align: 'centre' };
+    const align = b.titleAlign === 'left' || b.titleAlign === 'right' ? b.titleAlign : 'centre';
+    const ts = { ...head, align };
     const lines = breakLines(atomsOf(b.titleRow, ts, f.ctx), Math.max(1, total - 2 * pad));
-    return /** @type {Row} */ ({ cells: [{ lines, ts, align: 'centre' }], h: lines.length * ts.leading + 2 * pad, kind: 'title', span: true });
+    return /** @type {Row} */ ({ cells: [{ lines, ts, align }], h: lines.length * ts.leading + 2 * pad, kind: 'title', span: true });
   })() : null;
   const headRow = tb.header.show ? rowOf(b.header ?? [], 'head', 0) : null;
   const heads = /** @type {Row[]} */ ([titleRow, headRow].filter(Boolean));

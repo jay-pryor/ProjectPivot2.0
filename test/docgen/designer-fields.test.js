@@ -101,7 +101,7 @@ test('inside a hazard group a section can repeat per control', () => {
 test('with no platform chosen the workspace still draws', () => {
   const h = host(SECTIONS(), { levels: LEVELS });
   h.subject.list = () => [];
-  for (const cat of ['heading', 'repeat', 'content', 'placement']) assert.ok(render(h, { selected: 'sec1', secCat: cat }).length > 0, cat);
+  for (const cat of ['heading', 'repeat', 'content']) assert.ok(render(h, { selected: 'sec1', secCat: cat }).length > 0, cat);
 });
 
 test('a host with no catalogue has no Field button and no Repeat category', () => {

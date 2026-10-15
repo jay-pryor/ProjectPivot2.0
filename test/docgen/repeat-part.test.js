@@ -100,3 +100,18 @@ test('the editor draws a Repeat part with its own parts and add bar, and its fie
   assert.match(html, /data-rd-text="pa1"/);
   assert.match(html, /rd-chip rd-field" contenteditable="false" data-rd-tok="f:control\.id"/, 'a control field is in scope inside the Repeat part');
 });
+
+test('"+10" puts a 10mm Space straight after a part, in the same list — inside a Repeat part too', () => {
+  const h = host([nested(), { id: 'pa9', kind: 'para', text: 'After' }]);
+  const kinds = (list) => list.map((p) => p.kind + (p.kind === 'space' ? ':' + p.height : ''));
+  assert.equal(App.docStore.addSpaceAfter('sec1', 'pa1').ok, true);
+  const sec = h.getState().report.sections[0];
+  assert.deepEqual(kinds(sec.parts[0].parts), ['para', 'space:10', 'table']);
+  App.docStore.addSpaceAfter('sec1', 'rp1');
+  assert.deepEqual(kinds(sec.parts), ['repeat', 'space:10', 'para']);
+  assert.equal(App.docStore.addSpaceAfter('sec1', 'nope').ok, false);
+  // Every part but a Space carries the button.
+  RD.open(); RD.select('sec1'); RD._rd.secCat = 'content';
+  const html = RD.render(h.getState()); RD.close();
+  assert.deepEqual([...html.matchAll(/data-rd-space-after="([^"]+)"/g)].map((m) => m[1]).sort(), ['pa1', 'pa9', 'rp1', 'tb1']);
+});
