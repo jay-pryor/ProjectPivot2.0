@@ -37,8 +37,8 @@ export const STANDARD = Object.freeze({
     marking: T(9, { bold: true, align: 'centre', spaceAfter: 0 }),
   },
   tables: {
-    borders: 'all', borderColour: '#999999', borderWidth: 0.5, fontSize: 9, padding: 1.5, align: 'left', captionPosition: 'below',
-    header: { fill: '#d9e2f3', bold: true, italic: false, colour: '#000000', size: 9, repeat: true },
+    borders: 'all', borderColour: '#999999', borderWidth: 0.5, fontSize: 9, padding: 1.5, listGap: 0, align: 'left', captionPosition: 'below',
+    header: { show: true, fill: '#d9e2f3', bold: true, italic: false, colour: '#000000', size: 9, repeat: true },
     banding: { on: false, fill: '#f2f2f2' },
     firstColumn: { on: false, fill: '#e7e6e6', bold: true },
   },
@@ -133,9 +133,11 @@ export function normaliseStyle(raw) {
   const tables = {
     borders: pick(t.borders, td.borders, BORDERS, 'Table borders'), borderColour: colour(t.borderColour, td.borderColour, 'Table border colour'),
     borderWidth: num(t.borderWidth, td.borderWidth, 0, 4, 'Table border weight'), fontSize: num(t.fontSize, td.fontSize, 6, 24, 'Table text size'),
-    padding: num(t.padding, td.padding, 0, 10, 'Cell padding'), align: pick(t.align, td.align, ['left', 'centre'], 'Table alignment'),
+    padding: num(t.padding, td.padding, 0, 10, 'Cell padding'), listGap: num(t.listGap, td.listGap, 0, 24, 'Space between list entries in a cell'),
+    align: pick(t.align, td.align, ['left', 'centre'], 'Table alignment'),
     captionPosition: pick(t.captionPosition, td.captionPosition, ['above', 'below'], 'Caption position'),
     header: {
+      show: bool(t.header?.show, td.header.show),
       fill: colour(t.header?.fill, td.header.fill, 'Header row fill'), bold: bool(t.header?.bold, td.header.bold), italic: bool(t.header?.italic, td.header.italic),
       colour: colour(t.header?.colour, td.header.colour, 'Header row text colour'), size: num(t.header?.size, td.header.size, 6, 24, 'Header row size'),
       repeat: bool(t.header?.repeat, td.header.repeat),
@@ -227,4 +229,33 @@ export function fromProfile(p, familyOf = familyOfTex) {
     toc: { include: p.toc?.include, depth: p.toc?.depth },
   };
   return normaliseStyle(out).style;
+}
+
+/** What one table can set apart from its Style: its lines, and how its header row, first column and banding look. */
+export const LOOK_KEYS = Object.freeze({ header: ['show', 'fill', 'colour', 'bold', 'italic'], firstColumn: ['on', 'fill', 'bold'], banding: ['on', 'fill'] });
+
+/**
+ * A Style's table rules with one table's own look laid over them: what the look names
+ * replaces the Style's, the rest is the Style's. Checked by the Style's own rules, so a
+ * bad value in a look falls back to the Style's rather than reaching the page.
+ * @param {any} tables a normalised Style's `tables` @param {any} look
+ */
+export function applyLook(tables, look) {
+  if (!look || typeof look !== 'object') return tables;
+  /** @type {any} */
+  const raw = { ...tables };
+  if (look.borders !== undefined) raw.borders = look.borders;
+  for (const [k, keys] of Object.entries(LOOK_KEYS)) {
+    raw[k] = { ...tables[k] };
+    for (const f of keys) if (look[k] && look[k][f] !== undefined) raw[k][f] = look[k][f];
+  }
+  const checked = normaliseStyle({ tables: raw }).style.tables;
+  // A value the check refused is the Style's, not the built-in default's.
+  /** @type {any} */
+  const out = { ...tables, borders: BORDERS.includes(raw.borders) ? checked.borders : tables.borders };
+  for (const [k, keys] of Object.entries(LOOK_KEYS)) {
+    out[k] = { ...tables[k] };
+    for (const f of keys) if (String(checked[k][f]).toLowerCase() === String(raw[k][f]).toLowerCase()) out[k][f] = checked[k][f];
+  }
+  return out;
 }

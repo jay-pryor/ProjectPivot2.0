@@ -43,7 +43,7 @@ test('CSS comes from the style: fonts, sizes, colours, table header fill, page s
   const h = renderHtml(doc, style({ page: { paper: 'letter', margins: { top: 20 } }, text: { body: { family: 'times', size: 12, colour: '#112233' } }, tables: { header: { fill: '#abcdef' } } }));
   assert.match(h, /@page \{ size: letter portrait; margin: 20mm 25mm 25mm 25mm; \}/);
   assert.match(h, /p\.body \{[^}]*font-family: "Times New Roman"[^}]*font-size: 12pt[^}]*color: #112233/);
-  assert.match(h, /\.doc-table thead th \{[^}]*background: #abcdef/);
+  assert.match(h, /\.doc-table:not\(\.own\) thead th \{[^}]*background: #abcdef/);
 });
 
 import { prepareImage } from '../../DocGen/doc-images.js';

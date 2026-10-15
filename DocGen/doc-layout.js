@@ -1,6 +1,6 @@
 import { layoutFigure } from './doc-figure.js';
 import { fontName, toWinAnsi, textWidth } from './doc-fonts.js';
-import { PAPER_MM } from './doc-style.js';
+import { PAPER_MM, applyLook } from './doc-style.js';
 
 /** Points per millimetre. */
 export const MM = 72 / 25.4;
@@ -27,7 +27,7 @@ export function atomsOf(runs, ts, ctx) {
   /** @type {any[]} */
   const out = [];
   for (const r of runs ?? []) {
-    if (r.br) { out.push({ br: true }); continue; }
+    if (r.br) { out.push({ br: true, item: !!r.item }); continue; }
     const link = r.ref?.anchor ?? null;
     const raw = String(r.text ?? '') + (link ? ctx.refSuffix(link) : '');
     const font = fontName(r.code ? 'courier' : ts.family, ts.bold || !!r.bold, ts.italic || !!r.italic);
@@ -53,13 +53,13 @@ export function breakLines(atoms, width) {
   /** @type {any[]} */
   let line = [];
   let w = 0;
-  const push = (/** @type {boolean} */ hard) => {
+  const push = (/** @type {boolean} */ hard, item = false) => {
     while (line.length && line[line.length - 1].space) w -= line.pop().width;
-    lines.push({ atoms: line, width: w, hard });
+    lines.push({ atoms: line, width: w, hard, ...(item ? { item } : {}) });
     line = []; w = 0;
   };
   for (const a of atoms) {
-    if (a.br) { push(true); continue; }
+    if (a.br) { push(true, a.item); continue; }
     if (a.space && !line.length) continue;
     if (w + a.width <= width + EPS) { line.push(a); w += a.width; continue; }
     if (a.space) { push(false); continue; }
@@ -400,7 +400,8 @@ const ALIGN = { l: 'left', c: 'centre', r: 'right', left: 'left', centre: 'centr
  * @param {any} b @param {any} f the flow's state
  */
 export function layoutTable(b, f) {
-  const st = f.style, tb = st.tables;
+  // A table's own look (header, first column, banding, borders) over the Style's rules.
+  const st = f.style, tb = applyLook(st.tables, b.look);
   const n = Math.max(b.header?.length ?? 0, ...(b.rows ?? []).map((/** @type {any[]} */ r) => r.length), 0);
   if (!n) return;
   const pad = tb.padding * MM;
@@ -412,7 +413,10 @@ export function layoutTable(b, f) {
   const x0 = f.left + ((tb.align === 'centre' || b.centre) && total < f.W - EPS ? (f.W - total) / 2 : 0);
   const pageH = (f.style.page.margins ? (/** @type {any} */ (f.page).size[1] - (st.page.margins.top + st.page.margins.bottom) * MM) : 700);
 
-  /** @typedef {{ cells: { lines: any[], ts: any, align: string, fill?: string }[], h: number, kind: string, span?: boolean }} Row */
+  /** @typedef {{ cells: { lines: any[], ts: any, align: string, gap?: number, fill?: string }[], h: number, kind: string, span?: boolean }} Row */
+  /** A body cell's lines, with the Style's gap after each list entry but the last. */
+  const cellHeight = (/** @type {any[]} */ lines, /** @type {number} */ leading, /** @type {number} */ gap) =>
+    lines.length * leading + (gap ? lines.slice(0, -1).filter((l) => l.item).length * gap : 0);
   /** A row laid out: each cell's lines, and the row's height (cut to the page if it must be). */
   const rowOf = (/** @type {any[][]} */ cells, /** @type {string} */ kind, /** @type {number} */ idx, limit = pageH) => {
     /** @type {Row} */
@@ -421,14 +425,16 @@ export function layoutTable(b, f) {
       const ts = kind === 'head' ? head : k === 0 ? firstCol : body;
       const align = /** @type {any} */ (ALIGN)[b.columns?.[k]?.align ?? 'l'] ?? 'left';
       const lines = breakLines(atomsOf(cells[k] ?? [], ts, f.ctx), Math.max(1, widths[k] - 2 * pad));
-      row.cells.push({ lines, ts, align, fill: kind === 'body' && k === 0 && tb.firstColumn.on ? tb.firstColumn.fill : undefined });
-      row.h = Math.max(row.h, lines.length * ts.leading);
+      const gap = kind === 'body' ? tb.listGap : 0;
+      row.cells.push({ lines, ts, align, gap, fill: kind === 'body' && k === 0 && tb.firstColumn.on ? tb.firstColumn.fill : undefined });
+      row.h = Math.max(row.h, cellHeight(lines, ts.leading, gap));
     }
     const extra = kind === 'body' && b.rowHeight > 0 && (!b.tallRows || b.tallRows[idx]) ? b.rowHeight * MM : 0;
     row.h += 2 * pad + extra;
     if (row.h > limit) {
       for (const c of row.cells) {
-        const keep = Math.max(1, Math.floor((limit - 2 * pad) / c.ts.leading) - 1);
+        let keep = Math.max(1, Math.floor((limit - 2 * pad) / c.ts.leading) - 1);
+        while (keep > 1 && cellHeight(c.lines.slice(0, keep + 1), c.ts.leading, c.gap ?? 0) > limit - 2 * pad) keep--;
         if (c.lines.length > keep) {
           c.lines = c.lines.slice(0, keep);
           c.lines.push(breakLines(atomsOf([{ text: '[this cell continues beyond the page]', italic: true }], c.ts, f.ctx), Math.max(1, widths[0] * 4))[0]);
@@ -443,7 +449,7 @@ export function layoutTable(b, f) {
     const lines = breakLines(atomsOf(b.titleRow, ts, f.ctx), Math.max(1, total - 2 * pad));
     return /** @type {Row} */ ({ cells: [{ lines, ts, align: 'centre' }], h: lines.length * ts.leading + 2 * pad, kind: 'title', span: true });
   })() : null;
-  const headRow = rowOf(b.header ?? [], 'head', 0);
+  const headRow = tb.header.show ? rowOf(b.header ?? [], 'head', 0) : null;
   const heads = /** @type {Row[]} */ ([titleRow, headRow].filter(Boolean));
   const headsH = heads.reduce((a, r) => a + r.h, 0);
   // A row taller than a page is cut to what fits UNDER the header rows, which sit above it
@@ -467,7 +473,7 @@ export function layoutTable(b, f) {
       let ly = top + pad;
       c.lines.forEach((ln, i) => {
         f.page.items.push(...lineItems(ln, x + pad, ly + (c.ts.leading - c.ts.size) / 2 + c.ts.size * ASCENT, w - 2 * pad, c.align, i === c.lines.length - 1));
-        ly += c.ts.leading;
+        ly += c.ts.leading + (ln.item && i < c.lines.length - 1 ? c.gap ?? 0 : 0);
       });
       x += w;
     });
