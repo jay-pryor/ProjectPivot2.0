@@ -1,6 +1,6 @@
 import { layoutFigure } from './doc-figure.js';
 import { fontName, toWinAnsi, textWidth } from './doc-fonts.js';
-import { PAPER_MM } from './doc-style.js';
+import { PAPER_MM, applyLook } from './doc-style.js';
 
 /** Points per millimetre. */
 export const MM = 72 / 25.4;
@@ -400,7 +400,8 @@ const ALIGN = { l: 'left', c: 'centre', r: 'right', left: 'left', centre: 'centr
  * @param {any} b @param {any} f the flow's state
  */
 export function layoutTable(b, f) {
-  const st = f.style, tb = st.tables;
+  // A table's own look (header, first column, banding, borders) over the Style's rules.
+  const st = f.style, tb = applyLook(st.tables, b.look);
   const n = Math.max(b.header?.length ?? 0, ...(b.rows ?? []).map((/** @type {any[]} */ r) => r.length), 0);
   if (!n) return;
   const pad = tb.padding * MM;
@@ -448,7 +449,7 @@ export function layoutTable(b, f) {
     const lines = breakLines(atomsOf(b.titleRow, ts, f.ctx), Math.max(1, total - 2 * pad));
     return /** @type {Row} */ ({ cells: [{ lines, ts, align: 'centre' }], h: lines.length * ts.leading + 2 * pad, kind: 'title', span: true });
   })() : null;
-  const headRow = rowOf(b.header ?? [], 'head', 0);
+  const headRow = tb.header.show ? rowOf(b.header ?? [], 'head', 0) : null;
   const heads = /** @type {Row[]} */ ([titleRow, headRow].filter(Boolean));
   const headsH = heads.reduce((a, r) => a + r.h, 0);
   // A row taller than a page is cut to what fits UNDER the header rows, which sit above it

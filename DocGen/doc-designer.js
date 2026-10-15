@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { STANDARD as STYLE_STANDARD, PAPER_MM as STYLE_PAPER_MM, normaliseStyle, fromProfile, isStyle } from './doc-style.js';
+import { STANDARD as STYLE_STANDARD, PAPER_MM as STYLE_PAPER_MM, normaliseStyle, fromProfile, isStyle, applyLook as STYLE_APPLY_LOOK, LOOK_KEYS as STYLE_LOOK_KEYS } from './doc-style.js';
 import { layout } from './doc-layout.js';
 import { pagesHtml, cropPage } from './doc-preview.js';
 import { toWinAnsi } from './doc-fonts.js';
@@ -1301,6 +1301,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var centred = bag.centred || {};
       var tableText = bag.tables || {}, breaks = bag.pageBreak || {}, noToc = bag.noToc || {}, landscapes = bag.landscape || {};
       var space = bag.space || {};   // SPC-1
+      var looks = bag.tableLooks || {};
       return App.docBlocks.applySectionOrder(d, bag.order).map(function (b) {
         // NAM-2: a GENERATED section's heading is editable too. It has to be: once a
         // name and a heading are two different strings, a section whose name is a
@@ -1338,6 +1339,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           // TBL-1: the title row, caption and column headings of each table this section
           // produces, keyed by group value (or `_all` when it produces just the one).
           tables: tableText[b.id] || null,
+          // A generated table's own look over the Style's (header, first column, banding, borders).
+          look: looks[b.id] || null,
           /* SEC-4: whether this section starts a page of its own.
            *
            * Distinct from the formatting profile's per-LEVEL `pageBreakBefore`, which is
@@ -1686,7 +1689,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
                 rowsOut = tpl.map(cellsOf); tallOut = tall ? tall.slice() : [];
               }
               out.push({ kind: 'table', anchor: App.md.anchor('tbl-' + p.id), caption: caption(byId[p.id]), columns: cols, centre: centre,
-                header: p.header.map(runs1), rows: rowsOut,
+                header: p.header.map(runs1), rows: rowsOut, look: p.look || undefined,
+                // A merged cell across the top: one line of text and fields, when switched on.
+                titleRow: p.titleRowOn ? runs1(p.titleRow || '') : null,
                 rowHeight: Number(p.rowHeight) || 0, tallRows: tall ? tallOut : null });
             } else if (p.kind === 'image') { var fb = figureBlock(p); if (fb) out.push(fb); }
           });
@@ -1694,14 +1699,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         }
         (Array.isArray(b.content) ? b.content : []).forEach(function (t) {
           out.push({ kind: 'table', anchor: t.captionId ? App.md.anchor('tbl-' + t.captionId) : undefined, caption: t.noCaption ? null : caption(byId[App.md.anchor('tbl-' + t.captionId)]),
-            titleRow: t.titleRow ? textRuns(t.titleRow) : null, centre: centres(b, 'table'),
+            titleRow: t.titleRow ? textRuns(t.titleRow) : null, centre: centres(b, 'table'), look: b.look || undefined,
             columns: t.header.map(function (_, k) { return { width: t.widths ? t.widths[k] : undefined }; }),
             header: t.header.map(function (h) { return textRuns(h); }), rows: t.rows.map(function (r) { return r.map(function (c) { return c.code ? textRuns(c.text, { code: true }) : textRuns(c.text); }); }) });
         });
       });
       // Tags in hand-written runs, too (headings and generated cells were filled above).
       out.forEach(function (blk) {
-        [blk.runs, blk.caption && blk.caption.runs].concat(blk.header || [], [].concat.apply([], blk.rows || [])).forEach(function (rs) {
+        [blk.runs, blk.caption && blk.caption.runs, blk.titleRow].concat(blk.header || [], [].concat.apply([], blk.rows || [])).forEach(function (rs) {
           (rs || []).forEach(function (r) { if (r && r.text) r.text = tag(r.text); });
         });
       });
@@ -1825,7 +1830,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       fillsIn: fillsIn,
       // The blocks a document is made of, and the columns a generated one prints.
       reportBlocks: hostBlocks, sectionColumns: hostColumns, sectionColumnKey: sectionColumnKey,
-      centreParts: centreParts, CENTRE_ON: CENTRE_ON,
+      centreParts: centreParts, CENTRE_ON: CENTRE_ON, LOOK_KEYS: STYLE_LOOK_KEYS, applyLook: STYLE_APPLY_LOOK,
       // How many rows sit in each of the host's filter categories.
       filterCounts: filterCounts,
       // GEN-TAB: `/[Tag]` placeholders — finding them and filling them.
@@ -2037,6 +2042,55 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         b.space = b.space || {};
         if (v > 0) b.space[blockId] = v; else delete b.space[blockId];
         if (!Object.keys(b.space).length) delete b.space;
+        if (!Object.keys(b).length) delete p.report;
+      });
+      return ok();
+    }
+
+    /**
+     * A table's own look: one value over its Style's (`borders`, `header.fill`, …), or
+     * undefined to hand that one back to the Style. Only what differs is stored, and a look
+     * with nothing left in it is no look at all, so "Back to Style" leaves no trace (DOD-7).
+     * @returns {?Object} the look after the change, or null when it is empty
+     */
+    function lookWith(look, key, value) {
+      var next = JSON.parse(JSON.stringify(look || {}));
+      var path = String(key || '').split('.');
+      var okKey = path.length === 1 ? path[0] === 'borders'
+        : path.length === 2 && (App.docGen.LOOK_KEYS[path[0]] || []).indexOf(path[1]) !== -1;
+      if (!okKey) return look || null;
+      if (path.length === 1) { if (value === undefined) delete next.borders; else next.borders = value; }
+      else {
+        next[path[0]] = next[path[0]] || {};
+        if (value === undefined) delete next[path[0]][path[1]]; else next[path[0]][path[1]] = value;
+        if (!Object.keys(next[path[0]]).length) delete next[path[0]];
+      }
+      return Object.keys(next).length ? next : null;
+    }
+
+    /** A designer table's look: one value (`key`), or the whole look cleared when `key` is null. */
+    function setPartLook(sectionId, partId, key, value) {
+      if (!P()) return errNoProject();
+      var at0 = findSection(P(), sectionId) && locate(P(), sectionId, partId);
+      if (!at0 || at0.part.kind !== 'table') return err('Unknown table.', partId);
+      App.docHost.get().commit(function (p) {
+        var part = locate(p, sectionId, partId).part;
+        var next = key === null ? null : lookWith(part.look, key, value);
+        if (next) part.look = next; else delete part.look;
+      });
+      return ok();
+    }
+
+    /** A generated section's table look, kept by the section's id like its other rules. */
+    function setBlockLook(blockId, key, value) {
+      if (!P()) return errNoProject();
+      if (!blockId) return err('A section is required.');
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        b.tableLooks = b.tableLooks || {};
+        var next = key === null ? null : lookWith(b.tableLooks[blockId], key, value);
+        if (next) b.tableLooks[blockId] = next; else delete b.tableLooks[blockId];
+        if (!Object.keys(b.tableLooks).length) delete b.tableLooks;
         if (!Object.keys(b).length) delete p.report;
       });
       return ok();
@@ -2415,7 +2469,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * name and an introduction behind for an id nothing can reach.
      */
     function dropBlock(b, id) {
-      ['levels', 'centred', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
+      ['levels', 'centred', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths', 'tableLooks',
         'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) {
         if (!b[k]) return;
         delete b[k][id];
@@ -3200,6 +3254,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           introNumbered: JSON.parse(JSON.stringify(b.introNumbered || {})),
           tableStyles: JSON.parse(JSON.stringify(b.tableStyles || {})),
           tableWidths: JSON.parse(JSON.stringify(b.tableWidths || {})),
+          tableLooks: JSON.parse(JSON.stringify(b.tableLooks || {})),
           // TBL-1/SEC-4: the wording of each generated table, which sections start a
           // page, and which are kept out of the contents list — all design decisions.
           tables: JSON.parse(JSON.stringify(b.tables || {})),
@@ -3243,13 +3298,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function applyReportTemplate(bag0, t, keepStyles) {
       var b = JSON.parse(JSON.stringify(bag0 || {}));
       b.order = (t.order || []).slice();
-      ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
+      ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths', 'tableLooks',
         'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) { b[k] = JSON.parse(JSON.stringify(t[k] || {})); });
       b.sections = JSON.parse(JSON.stringify(t.sections || []));
       if (Array.isArray(t.registers)) b.registers = t.registers.slice(); else delete b.registers;
       if (!b.order.length) delete b.order;
       if (!b.sections.length) delete b.sections;
-      ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths',
+      ['levels', 'centred', 'meta', 'names', 'headings', 'intros', 'introNumbered', 'tableStyles', 'tableWidths', 'tableLooks',
         'tables', 'pageBreak', 'noToc', 'landscape', 'space'].forEach(function (k) { if (!Object.keys(b[k]).length) delete b[k]; });
       if (t.format) {
         var f = App.docFormat.normalise(t.format);
@@ -3280,7 +3335,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // SEC-4: per-section placement — centring, a page of its own, out of the contents.
       setBlockFlag: setBlockFlag,
       // SPC-1: …and how far down the page its heading starts.
-      setBlockSpace: setBlockSpace, mmValue: mmValue,
+      setBlockSpace: setBlockSpace, mmValue: mmValue, setPartLook: setPartLook, setBlockLook: setBlockLook,
       DEFAULT_SPACE_MM: DEFAULT_SPACE_MM, MAX_SPACE_MM: MAX_SPACE_MM,
       // CLS-1: the classification banner, which is a document decision, not a per-run one.
       setClassification: setClassification,
@@ -4089,6 +4144,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       conflict: null,        // { kindKey, plan, decisions } while an import is being resolved
       refFor: null,          // part id whose "insert reference" menu is open
       tableLayout: {},       // part ids of the tables whose layout controls are showing
+      lookOpen: {},          // the tables whose Formatting panel is open, by target
       preview: null,         // cached layout of the document, so switching panes is not a re-layout
       refs: null             // cached reference targets of the built document
     };
@@ -4261,14 +4317,15 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       };
       var out = '<div class="rd-chipedit"><div class="rd-refmenu-h">' + esc(fieldLabel(ce.tag)) + (childList ? ' <em>— every ' + esc(collLabel(c, p.coll).toLowerCase()) + '\'s, as a list</em>' : '') + '</div><div class="rd-grid">';
       if (childList) {
-        out += '<label class="rd-lab rd-lab-s">Sort by<select data-rd-chip-sfield aria-label="Sort by">' + fopts(so.field, 'Register order') + '</select></label>' +
-          (so.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select data-rd-chip-sdir aria-label="Sort direction"><option value="asc"' + (so.dir === 'desc' ? '' : ' selected') + '>Ascending</option>' +
-            '<option value="desc"' + (so.dir === 'desc' ? ' selected' : '') + '>Descending</option></select></label>' : '') +
-          '<label class="rd-lab rd-lab-s">Only where<select data-rd-chip-wfield aria-label="Filter field">' + fopts(w.field, 'Every one') + '</select></label>' +
-          (w.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select data-rd-chip-wop aria-label="Filter test">' + DATA.OPS.map(function (op) {
+        out += '<div class="rd-filtsort">' +
+          '<div class="rd-fs-row"><span class="rd-fs-lab">Filter</span><select data-rd-chip-wfield aria-label="Filter field">' + fopts(w.field, 'No filter') + '</select>' +
+          (w.field ? '<select data-rd-chip-wop aria-label="Filter test">' + DATA.OPS.map(function (op) {
               return '<option value="' + op + '"' + (op === (w.op || 'is') ? ' selected' : '') + '>' + esc(DATA.OP_LABELS[op]) + '</option>';
-            }).join('') + '</select></label>' +
-            (w.op === 'empty' || w.op === 'set' ? '' : '<label class="rd-lab rd-lab-s">&nbsp;<input data-rd-chip-wval value="' + esc(w.value || '') + '" aria-label="Filter value"></label>') : '');
+            }).join('') + '</select>' +
+            (w.op === 'empty' || w.op === 'set' ? '' : '<input data-rd-chip-wval value="' + esc(w.value || '') + '" aria-label="Filter value">') : '') + '</div>' +
+          '<div class="rd-fs-row rd-fs-sort"><span class="rd-fs-lab">Sort by</span><select data-rd-chip-sfield aria-label="Sort by">' + fopts(so.field, 'Register order') + '</select>' +
+          (so.field ? '<select data-rd-chip-sdir aria-label="Sort direction"><option value="asc"' + (so.dir === 'desc' ? '' : ' selected') + '>Ascending</option>' +
+            '<option value="desc"' + (so.dir === 'desc' ? ' selected' : '') + '>Descending</option></select>' : '') + '</div></div>';
       }
       if (childList || def.type === 'list') {
         var styles = [['lines', 'One per line'], ['num', 'Numbered'], ['bullet', 'Bulleted'], ['comma', 'Separated by commas']];
@@ -4739,6 +4796,48 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         '</div>';
     }
 
+    /**
+     * A table's Formatting: its lines, header row, first column and banding, each showing what
+     * the table prints with — the Style's value until the table changes it. A changed value is
+     * marked, and "Back to Style" hands them all back.
+     * @param {string} target `p|<sectionId>|<partId>` for a designer table, `b|<blockId>` for a generated one
+     */
+    function lookPanel(project, look, target) {
+      var base = App.docFormat.resolve(project).tables;
+      var eff = App.docGen.applyLook(base, look);
+      var own = function (k, f) { return !!(look && (f ? look[k] && look[k][f] !== undefined : look[k] !== undefined)); };
+      var t = ' data-rd-look-t="' + esc(target) + '"';
+      var mark = function (k, f) { return own(k, f) ? ' rd-own' : ''; };
+      var tick = function (k, f, label) {
+        return '<label class="gen-opt' + mark(k, f) + '"><input type="checkbox" data-rd-look="' + k + '.' + f + '"' + t + (eff[k][f] ? ' checked' : '') + '> ' + esc(label) + '</label>';
+      };
+      var colour = function (k, f, label) {
+        return '<label class="rd-look-col' + mark(k, f) + '">' + esc(label) + '<input type="color" data-rd-look="' + k + '.' + f + '"' + t +
+          ' value="' + esc(String(eff[k][f]).toLowerCase()) + '" aria-label="' + esc(label) + '"></label>';
+      };
+      var count = 0;
+      if (look) { if (look.borders !== undefined) count++; Object.keys(App.docGen.LOOK_KEYS).forEach(function (k) { count += Object.keys(look[k] || {}).length; }); }
+      var open = !!(_rd.lookOpen && _rd.lookOpen[target]);
+      var bopts = [['all', 'All lines'], ['horizontal', 'Between rows only'], ['outer', 'Outside only'], ['none', 'None']];
+      return '<div class="rd-look' + (open ? ' open' : '') + '">' +
+        '<button type="button" class="rd-look-sum" data-rd-look-open="' + esc(target) + '" aria-expanded="' + open + '">' +
+          (open ? '▾' : '▸') + ' Formatting <span class="rd-state">' + (count ? count + ' change' + (count === 1 ? '' : 's') + ' from the Style' : 'Follows the Style') + '</span></button>' +
+        (open
+          ? '<div class="rd-look-body">' +
+              '<div class="rd-look-row"><span class="rd-look-h">Borders</span><select data-rd-look="borders"' + t + ' aria-label="Borders" class="' + mark('borders') + '">' +
+                bopts.map(function (o) { return '<option value="' + o[0] + '"' + (eff.borders === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div>' +
+              '<div class="rd-look-row"><span class="rd-look-h">Header row</span>' + tick('header', 'show', 'Show') +
+                (eff.header.show ? colour('header', 'fill', 'Fill') + colour('header', 'colour', 'Text') + tick('header', 'bold', 'Bold') + tick('header', 'italic', 'Italic') : '') + '</div>' +
+              '<div class="rd-look-row"><span class="rd-look-h">First column</span>' + tick('firstColumn', 'on', 'Shade') +
+                (eff.firstColumn.on ? colour('firstColumn', 'fill', 'Fill') + tick('firstColumn', 'bold', 'Bold') : '') + '</div>' +
+              '<div class="rd-look-row"><span class="rd-look-h">Banded rows</span>' + tick('banding', 'on', 'On') +
+                (eff.banding.on ? colour('banding', 'fill', 'Fill') : '') + '</div>' +
+              '<div class="rd-look-row"><button type="button" data-rd-look-reset' + t + (count ? '' : ' disabled') + ' title="Hand every one of these back to the Style">Back to Style</button>' +
+                '<span class="rd-state">Marked values are this table’s own; the rest follow the Style.</span></div>' +
+            '</div>'
+          : '') + '</div>';
+    }
+
     function tableEditor(project, sec, part, i, n) {
       var head = part.header || [], rows = part.rows || [], align = part.align || [];
       var widths = (part.widths && part.widths.length === head.length) ? part.widths : null;
@@ -4773,10 +4872,18 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
                   ['l', 'c', 'r'].map(function (a) { return '<option value="' + a + '"' + ((align[c] || 'l') === a ? ' selected' : '') + '>' + (a === 'l' ? '⇤' : a === 'c' ? '↔' : '⇥') + '</option>'; }).join('') +
                 '</select>' +
                 pctChip(target, c, pct, auto) +
-                '<button type="button" class="danger" data-rd-delcol="' + esc(part.id) + '" ' + ids + ' data-rd-col="' + c + '"' + (head.length <= 1 ? ' disabled' : '') + ' title="Delete this column">✕</button>' +
               '</span>' + grip(target, c, c === head.length - 1)
             : '') + '</th>';
       }).join('');
+      // Layout mode: each column's delete sits above it, outside the table's lines.
+      var colctl = lay ? '<tr class="rd-colctl">' + head.map(function (_, c) {
+        return '<th><button type="button" class="danger" data-rd-delcol="' + esc(part.id) + '" ' + ids + ' data-rd-col="' + c + '"' + (head.length <= 1 ? ' disabled' : '') +
+          ' title="Delete column ' + (c + 1) + '" aria-label="Delete column ' + (c + 1) + '">✕</button></th>';
+      }).join('') + '<th></th></tr>' : '';
+      // A title row: one merged cell across the top, above the column headings.
+      var titleTr = part.titleRowOn ? '<tr class="rd-titlerow"><th colspan="' + head.length + '">' + richBox(project,
+          'data-rd-titlerow-rich="' + esc(part.id) + '" ' + ids + ' aria-label="Title row"', part.titleRow || '', 'rd-cellbox', 'Title row', sec.id, part.id) +
+        '</th>' + (lay ? '<th class="rd-rowdel"></th>' : '') + '</tr>' : '';
       /* SPC-1: the tick only appears once there is a height to apply — a column of ticks
        * that do nothing is worse than no column at all. */
       var trs = rows.map(function (r, ri) {
@@ -4823,15 +4930,17 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             // a layout, does not want "Table 7:" underneath it.
             cb('data-rd-part-flag="noCaption" ' + host, 'No caption', part.noCaption === true) +
             cb('data-rd-part-flag="centre" ' + host, 'Centre', part.centre === true) +
+            cb('data-rd-part-flag="titleRowOn" ' + host, 'Title row', part.titleRowOn === true) +
             '<button type="button" class="rd-tlayout" data-rd-tlayout="' + esc(part.id) + '" aria-pressed="' + lay + '"' +
             ' title="' + (lay ? 'Done shaping the table: hide the column, row and width controls' : 'Show the column, row and width controls') + '">' +
             (lay ? '✓ Done editing layout' : '⚙ Edit table layout') + '</button>' +
           '</div>' +
           rowsRepeatHtml(project, sec, part) +
+          lookPanel(project, part.look, partTarget(sec.id, part.id)) +
         '</div>' +
         '<div class="rd-tablewrap"><div class="rd-tablescale" style="width:' + px + 'px">' +
           '<table class="rd-table rd-table-fixed" style="width:' + tablePx + 'px">' + group +
-          '<thead><tr>' + ths + (lay ? '<th class="rd-rowdel' + (rowMm ? ' rd-rowdel-wide' : '') + '"' +
+          '<thead>' + colctl + titleTr + '<tr>' + ths + (lay ? '<th class="rd-rowdel' + (rowMm ? ' rd-rowdel-wide' : '') + '"' +
             (rowMm ? ' title="Which rows take the extra height">↕' : '>') + '</th>' : '') + '</tr></thead><tbody>' + trs + '</tbody></table></div></div>' +
         '<div class="rd-tablebtns">' +
           '<button type="button" data-rd-addrow="' + esc(part.id) + '" ' + ids + '>+ Row</button>' +
@@ -5274,19 +5383,19 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var noValue = w.op === 'empty' || w.op === 'set';
       var lost = w.field && !fields.some(function (f) { return f.id === w.field; });
       var collName = c.collections[each] ? c.collections[each].label : each;
-      return '<div class="rd-grid">' +
-        '<label class="rd-lab rd-lab-s">Only where<select ' + at('wfield') + ' aria-label="Filter field">' + fieldOpts(w.field, 'Every one') +
-          (lost ? '<option value="' + esc(w.field) + '" selected>' + esc(w.field) + ' (not a ' + esc(collName) + ' field)</option>' : '') + '</select></label>' +
+      return '<div class="rd-filtsort">' +
+        '<div class="rd-fs-row"><span class="rd-fs-lab">Filter</span><select ' + at('wfield') + ' aria-label="Filter field">' + fieldOpts(w.field, 'No filter') +
+          (lost ? '<option value="' + esc(w.field) + '" selected>' + esc(w.field) + ' (not a ' + esc(collName) + ' field)</option>' : '') + '</select>' +
         (w.field
-          ? '<label class="rd-lab rd-lab-s">&nbsp;<select ' + at('wop') + ' aria-label="Filter test">' + DATA.OPS.map(function (o) {
+          ? '<select ' + at('wop') + ' aria-label="Filter test">' + DATA.OPS.map(function (o) {
               return '<option value="' + o + '"' + (o === (w.op || 'is') ? ' selected' : '') + '>' + esc(DATA.OP_LABELS[o]) + '</option>';
-            }).join('') + '</select></label>' +
-            (noValue ? '' : '<label class="rd-lab rd-lab-s">&nbsp;<input ' + at('wval') + ' value="' + esc(w.value || '') + '" aria-label="Filter value"></label>')
-          : '') +
-        '<label class="rd-lab rd-lab-s">Sort by<select ' + at('sfield') + ' aria-label="Sort by">' + fieldOpts(so.field, 'Register order') + '</select></label>' +
-        (so.field ? '<label class="rd-lab rd-lab-s">&nbsp;<select ' + at('sdir') + ' aria-label="Sort direction">' +
-          '<option value="asc"' + (so.dir === 'desc' ? '' : ' selected') + '>Ascending</option><option value="desc"' + (so.dir === 'desc' ? ' selected' : '') + '>Descending</option></select></label>' : '') +
-        '</div>' +
+            }).join('') + '</select>' +
+            (noValue ? '' : '<input ' + at('wval') + ' value="' + esc(w.value || '') + '" aria-label="Filter value">')
+          : '') + '</div>' +
+        '<div class="rd-fs-row rd-fs-sort"><span class="rd-fs-lab">Sort by</span><select ' + at('sfield') + ' aria-label="Sort by">' + fieldOpts(so.field, 'Register order') + '</select>' +
+        (so.field ? '<select ' + at('sdir') + ' aria-label="Sort direction">' +
+          '<option value="asc"' + (so.dir === 'desc' ? '' : ' selected') + '>Ascending</option><option value="desc"' + (so.dir === 'desc' ? ' selected' : '') + '>Descending</option></select>' : '') +
+        '</div></div>' +
         (lost ? '<p class="rpt-omit">The filter is on a field ' + esc(c.collections[each] ? (c.collections[each].plural || collName) : each) + ' do not have: nothing is filtered.</p>' : '');
     }
 
@@ -5297,7 +5406,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var lists = reachIn(project, sec.id, part.id).lists;
       var r = part.repeat || null, each = r ? r.each : '';
       var extra = ' data-rd-sec="' + esc(sec.id) + '"';
-      var opts2 = '<option value=""' + (each ? '' : ' selected') + '>As written</option>' +
+      var opts2 = '<option value=""' + (each ? '' : ' selected') + '>Custom</option>' +
         lists.map(function (k) { return '<option value="' + esc(k) + '"' + (k === each ? ' selected' : '') + '>' + esc(collLabel(c, k)) + '</option>'; }).join('') +
         (each && lists.indexOf(each) === -1 ? '<option value="' + esc(each) + '" selected>' + esc(collLabel(c, each)) + ' (not available here)</option>' : '');
       return '<div class="rd-rows-repeat"><label class="rd-lab rd-lab-s">Rows<select data-rd-rows-each="' + esc(part.id) + '"' + extra + ' aria-label="Rows">' + opts2 + '</select></label>' +
@@ -5423,7 +5532,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var inner = partsHtml(project, sec, part.parts || []);
       return '<div class="rd-part rd-repeatpart" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
         '<div class="rd-part-head"><span class="rd-part-kind">\u21bb Repeat</span>' +
-          '<label class="rd-lab rd-lab-s rd-inline">For each<select data-rd-rpart-each="' + esc(part.id) + '"' + extra + ' aria-label="Repeat for each">' + opts2 + '</select></label>' +
+          '<label class="rd-rp-each">for each<select data-rd-rpart-each="' + esc(part.id) + '"' + extra + ' aria-label="Repeat for each">' + opts2 + '</select></label>' +
           partControls(sec, part, i, n) + '</div>' +
         (c && each ? filterSortHtml(c, each, part.repeat, 'data-rd-rpart-', part.id, extra) : '<p class="rd-state">Choose what to repeat for; the parts below print once for each.</p>') +
         '<div class="rd-parts rd-nested" data-rd-partdrop="' + esc(part.id) + '">' + (inner || '<p class="rd-state">Nothing inside yet. Drag a part here, or add one below.</p>') + '</div>' +
@@ -5450,7 +5559,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (cat === 'rows') return metaPane(project);
       if (cat === 'table') {
         var cols = App.docGen.sectionColumns(H(), block, opts());
-        return tableChoices(project, block) + tableWordingEditor(project, block) +
+        return tableChoices(project, block) + lookPanel(project, block.look, 'b|' + block.id) + tableWordingEditor(project, block) +
           (cols && cols.all.length ? widthStrip(project, block.id, cols.all, block.widths) : '');
       }
       if (cat === 'content' && sec) {
@@ -5649,7 +5758,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           '<div class="rd-fieldset"><strong>Header row</strong><div class="rd-grid">' +
             colourField('Fill', 'tables.header.fill', t.header.fill) + colourField('Text colour', 'tables.header.colour', t.header.colour) +
             num('Text size (pt)', 'tables.header.size', t.header.size, '', 0.5) +
-          '</div><div class="rd-flags">' + flagField('Bold', 'tables.header.bold', t.header.bold) + flagField('Italic', 'tables.header.italic', t.header.italic) +
+          '</div><div class="rd-flags">' + flagField('Show the header row', 'tables.header.show', t.header.show) + flagField('Bold', 'tables.header.bold', t.header.bold) + flagField('Italic', 'tables.header.italic', t.header.italic) +
             flagField('Repeat on every page', 'tables.header.repeat', t.header.repeat) + '</div></div>' +
           '<div class="rd-fieldset"><strong>Rows</strong><div class="rd-flags">' + flagField('Shade every other row', 'tables.banding.on', t.banding.on) + '</div>' +
             '<div class="rd-grid">' + colourField('Shade', 'tables.banding.fill', t.banding.fill) + '</div></div>' +
@@ -6244,6 +6353,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (el.hasAttribute('data-rd-sec-heading-rich')) return '[data-rd-sec-heading-rich="' + el.getAttribute('data-rd-sec-heading-rich') + '"]';
       if (el.hasAttribute('data-rd-fill')) return '[data-rd-fill="' + el.getAttribute('data-rd-fill') + '"][data-rd-fill-key="' + el.getAttribute('data-rd-fill-key') + '"]';
       if (el.hasAttribute('data-rd-caption-rich')) return '[data-rd-caption-rich="' + el.getAttribute('data-rd-caption-rich') + '"]';
+      if (el.hasAttribute('data-rd-titlerow-rich')) return '[data-rd-titlerow-rich="' + el.getAttribute('data-rd-titlerow-rich') + '"]';
       if (el.hasAttribute('data-rd-cell')) {
         return '[data-rd-cell="' + el.getAttribute('data-rd-cell') + '"]' +
           '[data-rd-row="' + el.getAttribute('data-rd-row') + '"]' +
@@ -6272,6 +6382,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (el.hasAttribute('data-rd-caption-rich')) {
         var cap = el.getAttribute('data-rd-caption-rich');
         return function (next) { return App.docStore.updatePart(sec, cap, { caption: oneLine(next) }); };
+      }
+      if (el.hasAttribute('data-rd-titlerow-rich')) {
+        var trow = el.getAttribute('data-rd-titlerow-rich');
+        return function (next) { return App.docStore.updatePart(sec, trow, { titleRow: next }); };
       }
       if (el.hasAttribute('data-rd-fill')) {
         var fid = el.getAttribute('data-rd-fill'), fkey = el.getAttribute('data-rd-fill-key');
@@ -6366,7 +6480,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // DS-1: chips named in the box's own scope, as a full drawing names them.
       var at = function (k) { return el && el.getAttribute ? el.getAttribute(k) : null; };
       var secId = at('data-rd-sec') || at('data-rd-sec-heading-rich') || at('data-rd-intro');
-      var partId = at('data-rd-text') || at('data-rd-cell') || at('data-rd-caption-rich');
+      var partId = at('data-rd-text') || at('data-rd-cell') || at('data-rd-caption-rich') || at('data-rd-titlerow-rich');
       return RT.toHtml(tokens, { resolveRef: p && H() ? refResolver(p) : null, fieldLabel: p && H() ? fieldLabelIn(p, secId, partId) : null });
     }
 
@@ -7164,6 +7278,30 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var live = liveBox(el);
         if (live) noteSelection(live);
       });
+      // A table's Formatting: open or shut, one value, or all of them back to the Style.
+      function lookWrite(el, key, value) {
+        var t = String(el.getAttribute('data-rd-look-t') || '').split('|');
+        quietly(function () {
+          logIssues(t[0] === 'p' ? App.docStore.setPartLook(t[1], t[2], key, value) : App.docStore.setBlockLook(t[1], key, value));
+        });
+        dirty(); repaint();
+      }
+      dom.on(ctx.root, 'click', '[data-rd-look-open]', function (e, el) {
+        var k = el.getAttribute('data-rd-look-open');
+        _rd.lookOpen = _rd.lookOpen || {};
+        if (_rd.lookOpen[k]) delete _rd.lookOpen[k]; else _rd.lookOpen[k] = true;
+        repaint();
+      });
+      dom.on(ctx.root, 'change', '[data-rd-look]', function (e, el) {
+        var key = el.getAttribute('data-rd-look');
+        var v = el.type === 'checkbox' ? el.checked : el.value;
+        // The same as the Style is no override at all, so the table follows the Style again.
+        var base = App.docFormat.resolve(P()).tables;
+        var path = key.split('.');
+        var styleV = path.length === 1 ? base[path[0]] : base[path[0]][path[1]];
+        lookWrite(el, key, String(v).toLowerCase() === String(styleV).toLowerCase() ? undefined : v);
+      });
+      dom.on(ctx.root, 'click', '[data-rd-look-reset]', function (e, el) { lookWrite(el, null); });
       dom.on(ctx.root, 'click', '[data-rd-tlayout]', function (e, el) {
         var id = el.getAttribute('data-rd-tlayout');
         _rd.tableLayout = _rd.tableLayout || {};

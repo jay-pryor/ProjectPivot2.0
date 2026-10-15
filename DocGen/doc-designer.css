@@ -396,7 +396,8 @@
   .docgen .rd-rowtpl td:first-child { box-shadow: inset 3px 0 0 var(--c-accent);}
   /* DS-4: a Repeat part, its own parts framed inside it. */
   .docgen .rd-repeatpart { border-left: 3px solid var(--c-accent);}
-  .docgen .rd-repeatpart .rd-inline { display: inline-flex; gap: 6px; align-items: center; margin-left: 8px;}
+  .docgen .rd-repeatpart .rd-rp-each { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--c-text-muted);}
+  .docgen .rd-repeatpart .rd-rp-each select { font-size: 12px;}
   .docgen .rd-parts.rd-nested { margin: 6px 0 0 6px; padding-left: 8px; border-left: 1px dashed var(--c-border);}
   /* DS-5: blanks written by hand. */
   .docgen .rd-tofill { background: var(--c-warn-bg);}
@@ -435,3 +436,39 @@
   .docgen .rd-tpart .rd-table td .rd-cellbox { background: var(--c-surface);}
   .docgen .rd-tpart .rd-table .rd-rowdel { border: 0; background: transparent; padding-left: 4px; vertical-align: middle; white-space: nowrap;}
   .docgen .rd-tpart.rd-tlayout-on .rd-colbar { background: var(--c-surface-alt);}
+
+  /* A field chip in a table cell wraps with the cell rather than running out of it; each
+     line of a wrapped chip keeps its own outline. */
+  .docgen .rd-cellbox .rd-chip.rd-field, .docgen .rd-cellbox .rd-chip.rd-fill { white-space: normal; overflow-wrap: anywhere;
+    -webkit-box-decoration-break: clone; box-decoration-break: clone;}
+
+  /* Filter, then Sort by: one row each with the label at a fixed width, a rule between. */
+  .docgen .rd-filtsort { display: flex; flex-direction: column; margin: 6px 0; font-size: 12px;}
+  .docgen .rd-grid > .rd-filtsort { grid-column: 1 / -1; margin: 0;}
+  .docgen .rd-fs-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 4px 0;}
+  .docgen .rd-fs-row + .rd-fs-row { border-top: 1px solid var(--c-border); margin-top: 2px; padding-top: 6px;}
+  .docgen .rd-fs-lab { flex: 0 0 52px; color: var(--c-text-muted);}
+  .docgen .rd-fs-row select, .docgen .rd-fs-row input { font-size: 12px; min-width: 0; max-width: 100%; width: auto;}
+  .docgen .rd-fs-row select { flex: 0 1 auto;}
+  .docgen .rd-fs-row input { flex: 1 1 70px; min-width: 60px;}
+
+  /* Layout mode: an alignment picker with no arrow, so it fits beside the width. */
+  .docgen .rd-colbar select { -webkit-appearance: none; appearance: none; flex: 0 0 auto; width: 28px; padding: 0; text-align: center; text-align-last: center; cursor: pointer;}
+  /* The column deletes in a strip of their own above the table, outside its lines. */
+  .docgen .rd-tpart .rd-table thead tr.rd-colctl th { border: 0; background: transparent; padding: 0 0 3px; text-align: center; vertical-align: bottom;}
+  .docgen .rd-colctl button, .docgen .rd-tpart .rd-rowdel button { font-size: 11px; line-height: 1; padding: 3px 6px;}
+
+  /* A table's Formatting: shut to one line until opened; a value the table set itself is marked. */
+  .docgen .rd-look { grid-column: 1 / -1; border-top: 1px solid var(--c-border); padding-top: 6px; font-size: 12px;}
+  .docgen .rd-look-sum { font: inherit; font-size: 12px; background: none; border: 0; padding: 0; color: var(--c-text); cursor: pointer; display: inline-flex; gap: 6px; align-items: baseline;}
+  .docgen .rd-look-body { display: flex; flex-direction: column; gap: 6px; margin-top: 8px;}
+  .docgen .rd-look-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center;}
+  .docgen .rd-look-h { flex: 0 0 84px; color: var(--c-text-muted);}
+  .docgen .rd-look-col { display: inline-flex; gap: 4px; align-items: center; color: var(--c-text-muted);}
+  .docgen .rd-look-col input[type="color"] { width: 26px; height: 20px; padding: 0; border: 1px solid var(--c-border); border-radius: 3px; background: none; cursor: pointer;}
+  .docgen .rd-look .rd-own { font-weight: 600; color: var(--c-text);}
+  .docgen .rd-look .rd-own::after { content: " •"; color: var(--c-accent);}
+  .docgen .rd-look select.rd-own { border-color: var(--c-accent);}
+  .docgen .rd-fieldset + .rd-look, .docgen .rd-sec-fields > .rd-look { margin: 10px 0; padding: 8px 10px; border: 1px solid var(--c-border); border-radius: 6px;}
+  /* The title row: one merged cell across the top of the table. */
+  .docgen .rd-tpart .rd-table tr.rd-titlerow th .rd-cellbox { text-align: center; font-weight: 600; background: color-mix(in srgb, var(--c-accent) 28%, var(--c-surface));}

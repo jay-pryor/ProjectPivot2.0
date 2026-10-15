@@ -1,4 +1,5 @@
 import { FIGURE_LAYOUTS, dataUri } from './doc-images.js';
+import { applyLook } from './doc-style.js';
 
 const FAMILY_CSS = {
   helvetica: 'Helvetica, Arial, "Liberation Sans", sans-serif',
@@ -15,10 +16,30 @@ function textCss(t) {
     `text-align: ${align(t.align)}; line-height: ${Math.round(120 * t.lineSpacing) / 100}; margin: ${t.spaceBefore}pt 0 ${t.spaceAfter}pt;`;
 }
 
+/**
+ * One set of table rules, for the Style's tables (`sel` skips those with a look of their own)
+ * or for one table's own look.
+ * @param {string} sel @param {any} tb a Style's `tables`, with any look laid over @param {string} family
+ */
+function tableCss(sel, tb, family) {
+  const border = tb.borders === 'none' ? 'none' : `${tb.borderWidth}pt solid ${tb.borderColour}`;
+  return [
+    `${sel} { border-collapse: collapse; width: 100%; margin: 6pt ${tb.align === 'centre' ? 'auto' : '0'}; font-family: ${FAMILY_CSS[/** @type {'times'} */ (family)]}; font-size: ${tb.fontSize}pt; }`,
+    `${sel} caption { caption-side: ${tb.captionPosition === 'above' ? 'top' : 'bottom'}; }`,
+    `${sel} th, ${sel} td { border: ${tb.borders === 'all' ? border : 'none'}; padding: ${tb.padding}mm; vertical-align: top; text-align: left; }`,
+    tb.borders === 'horizontal' ? `${sel} tr { border-top: ${border}; border-bottom: ${border}; }` : '',
+    tb.borders === 'outer' ? `${sel} { border: ${border}; }` : '',
+    `${sel} thead th { background: ${tb.header.fill}; color: ${tb.header.colour}; font-size: ${tb.header.size}pt; font-weight: ${tb.header.bold ? 700 : 400}; font-style: ${tb.header.italic ? 'italic' : 'normal'}; }`,
+    `${sel} thead { display: ${tb.header.repeat ? 'table-header-group' : 'table-row-group'}; }`,
+    tb.listGap > 0 ? `${sel} td .cell-gap { display: block; height: ${tb.listGap}pt; }` : '',
+    tb.banding.on ? `${sel} tbody tr:nth-child(even) td { background: ${tb.banding.fill}; }` : '',
+    tb.firstColumn.on ? `${sel} tbody td:first-child { background: ${tb.firstColumn.fill}; font-weight: ${tb.firstColumn.bold ? 700 : 400}; }` : '',
+  ].filter(Boolean);
+}
+
 /** The page's CSS, from the style. @param {any} s */
 function css(s) {
   const m = s.page.margins, t = s.text, tb = s.tables;
-  const border = tb.borders === 'none' ? 'none' : `${tb.borderWidth}pt solid ${tb.borderColour}`;
   return [
     `@page { size: ${s.page.paper} ${s.page.orientation}; margin: ${m.top}mm ${m.right}mm ${m.bottom}mm ${m.left}mm; }`,
     'body { margin: 0; background: #fff; }',
@@ -29,16 +50,7 @@ function css(s) {
     `code { font-family: ${FAMILY_CSS.courier}; }`, '.num { margin-right: .4em; }', '.centre { text-align: center; }',
     `.toc .toc1 { ${textCss(t.toc1)} } .toc .toc2 { ${textCss(t.toc2)} padding-left: 14pt; } .toc .toc3 { ${textCss(t.toc3)} padding-left: 28pt; }`,
     '.toc a { color: inherit; text-decoration: none; }',
-    `.doc-table { border-collapse: collapse; width: 100%; margin: 6pt ${tb.align === 'centre' ? 'auto' : '0'}; font-family: ${FAMILY_CSS[/** @type {'times'} */ (t.body.family)]}; font-size: ${tb.fontSize}pt; }`,
-    `.doc-table caption { caption-side: ${tb.captionPosition === 'above' ? 'top' : 'bottom'}; }`,
-    `.doc-table th, .doc-table td { border: ${tb.borders === 'all' ? border : 'none'}; padding: ${tb.padding}mm; vertical-align: top; text-align: left; }`,
-    tb.borders === 'horizontal' ? `.doc-table tr { border-top: ${border}; border-bottom: ${border}; }` : '',
-    tb.borders === 'outer' ? `.doc-table { border: ${border}; }` : '',
-    `.doc-table thead th { background: ${tb.header.fill}; color: ${tb.header.colour}; font-size: ${tb.header.size}pt; font-weight: ${tb.header.bold ? 700 : 400}; font-style: ${tb.header.italic ? 'italic' : 'normal'}; }`,
-    `.doc-table thead { display: ${tb.header.repeat ? 'table-header-group' : 'table-row-group'}; }`,
-    tb.listGap > 0 ? `.doc-table td .cell-gap { display: block; height: ${tb.listGap}pt; }` : '',
-    tb.banding.on ? `.doc-table tbody tr:nth-child(even) td { background: ${tb.banding.fill}; }` : '',
-    tb.firstColumn.on ? `.doc-table tbody td:first-child { background: ${tb.firstColumn.fill}; font-weight: ${tb.firstColumn.bold ? 700 : 400}; }` : '',
+    ...tableCss('.doc-table:not(.own)', tb, t.body.family),
     `.figure { margin: 6pt 0; break-inside: avoid; text-align: ${s.images.align === 'left' ? 'left' : 'center'}; }`,
     '.fig-row { display: grid; gap: 4mm; margin-bottom: 4mm; }', '.fig-cell { margin: 0; }', '.fig-cell img { max-width: 100%; height: auto; }',
     s.images.border === 'line' ? `.fig-cell img.bordered { border: ${s.images.borderWidth}pt solid ${s.images.borderColour}; }` : '',
@@ -73,7 +85,7 @@ const plain = (/** @type {any[]} */ runs) => (runs ?? []).map((r) => (r.br ? ' '
 export function renderHtml(doc, style, opts = {}) {
   const meta = doc.meta ?? {};
   const headings = (doc.blocks ?? []).filter((b) => b.kind === 'heading' && !b.noToc && b.level <= style.toc.depth);
-  let wide = false;
+  let wide = false, looks = 0;
   // The break between a list's entries in a body cell, spaced by the Style's gap as in the PDF.
   const cellBr = style.tables.listGap > 0 ? '<span class="cell-gap"></span>' : '<br>';
   const body = (doc.blocks ?? []).map((b) => {
@@ -88,8 +100,13 @@ export function renderHtml(doc, style, opts = {}) {
       const cols = (b.columns ?? []).some((/** @type {any} */ c) => c?.width) ? `<colgroup>${b.columns.map((/** @type {any} */ c) => `<col style="width:${Math.round((c?.width ?? 0) * 100)}%">`).join('')}</colgroup>` : '';
       const n = b.header?.length ?? 0;
       const title = b.titleRow ? `<tr><th colspan="${n}" class="centre">${runsHtml(b.titleRow)}</th></tr>` : '';
-      return `<table class="doc-table"${id}>${b.caption ? `<caption>${runsHtml(b.caption.runs)}</caption>` : ''}${cols}` +
-        `<thead>${title}<tr>${(b.header ?? []).map((/** @type {any} */ c) => `<th>${runsHtml(c)}</th>`).join('')}</tr></thead>` +
+      // A table with a look of its own carries its own rules, just before it.
+      const tb = applyLook(style.tables, b.look);
+      const lk = tb === style.tables ? '' : `lk${++looks}`;
+      const rules = lk ? `<style>\n${tableCss(`.doc-table.own.${lk}`, tb, style.text.body.family).join('\n')}\n</style>\n` : '';
+      const head = tb.header.show ? `<tr>${(b.header ?? []).map((/** @type {any} */ c) => `<th>${runsHtml(c)}</th>`).join('')}</tr>` : '';
+      return `${rules}<table class="doc-table${lk ? ` own ${lk}` : ''}"${id}>${b.caption ? `<caption>${runsHtml(b.caption.runs)}</caption>` : ''}${cols}` +
+        `<thead>${title}${head}</thead>` +
         `<tbody>${(b.rows ?? []).map((/** @type {any[]} */ r) => `<tr>${r.map((c) => `<td>${runsHtml(c, cellBr)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     }
     if (b.kind === 'figure') {

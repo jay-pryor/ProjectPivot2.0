@@ -38,7 +38,7 @@ test('PDF: plain line breaks and wrapped lines take no gap', () => {
 test('HTML: a spacer of the gap\'s height between list entries; a plain break stays a break', () => {
   assert.ok(!renderHtml(doc, style()).includes('cell-gap'));
   const h = renderHtml(doc, style({ listGap: 6 }));
-  assert.match(h, /\.doc-table td \.cell-gap \{ display: block; height: 6pt; \}/);
+  assert.match(h, /\.doc-table:not\(\.own\) td \.cell-gap \{ display: block; height: 6pt; \}/);
   assert.match(h, /• First<span class="cell-gap"><\/span>• Second<br>more<span class="cell-gap"><\/span>• Third/);
 });
 
