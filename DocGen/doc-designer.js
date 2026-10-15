@@ -932,13 +932,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
 
     /* -------------------------------------------------------------------------
-     * The ephemeral description of ONE generation run: which subject it is about,
-     * what the file will be called, and the answers to its /[Tag] placeholders.
+     * The ephemeral description of ONE generation run: which subject it is about and
+     * what the file will be called.
      *
-     * NOT persisted, and deliberately so — a tag value is typically today's date or
-     * the name of the person issuing the document, and the point of a placeholder is
-     * that the same design produces a different document each time. Everything about
-     * what the report is MADE of lives in the project instead.
+     * The answers to the /[Tag] placeholders used to live here too, unsaved. They are
+     * now stored with the design (`report.tags`), so a draft keeps what was written into
+     * them across a save and a reload — each report its own. `tags` here is only a
+     * fallback a caller can still set, under what the design holds.
      *
      * It belongs to the module because the designer is what decides it. It used to
      * live in CH's Generate tab as a plain object the designer reached in and wrote
@@ -1003,8 +1003,17 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         columns: stored.columns || {},
         relevance: Object.assign(rel, stored.relevance || {}),
         // CLS-1: from the PROJECT, so it survives a reload and travels with the file.
-        classification: typeof bag.classification === 'string' ? bag.classification : ''
+        classification: typeof bag.classification === 'string' ? bag.classification : '',
+        // The placeholder answers, likewise: saved with the draft.
+        tags: Object.assign({}, _session.tags, tagsOf(bag))
       });
+    }
+
+    /** The stored /[Tag] answers of a design, keeping only text. */
+    function tagsOf(bag) {
+      var t = bag && bag.tags, out = {};
+      if (t && typeof t === 'object' && !Array.isArray(t)) Object.keys(t).forEach(function (k) { if (typeof t[k] === 'string') out[k] = t[k]; });
+      return out;
     }
 
     /** HOST-2: the run context a section is filled with: the host's, or the subject and the time. */
@@ -1567,7 +1576,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             if (v.trim()) {
               return App.md.runs(v, { resolveRef: cur.ref }).reduce(function (a, ps, i) { return i ? a.concat([{ br: true }, { br: true }], ps) : ps; }, []);
             }
-            return [{ text: '[To fill in: ' + ((fl && fl.label) || 'text') + ']', bold: true }];
+            // `todo`: the preview flags it (the PDF prints it as it is).
+            return [{ text: '[To fill in: ' + ((fl && fl.label) || 'text') + ']', bold: true, todo: true }];
           }
           var parsed = DATA.parseFieldTag(tag);
           var res = catalogue ? DATA.resolveField(scope, parsed, catalogue) : { kind: 'unknown' };
@@ -1650,7 +1660,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         if (b.content === 'toc') { out.push({ kind: 'toc' }); return; }
         if (b.kind === 'custom') {
           var blockField = cur.field, blockRef = cur.ref;
-          (b.parts || []).forEach(function (p) {
+          var partBlocks = function (p) {
             // DS-4: a part printed by a Repeat part reads its fields, and its references, in its own copy.
             cur.field = p.scope ? fieldsAt(p.scope) : blockField;
             cur.ref = p.sfx && p.sfx !== b.suffix ? refAt(p.sfx) : blockRef;
@@ -1692,8 +1702,17 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
                 header: p.header.map(runs1), rows: rowsOut, look: p.look || undefined,
                 // A merged cell across the top: one line of text and fields, when switched on.
                 titleRow: p.titleRowOn ? runs1(p.titleRow || '') : null,
+                titleAlign: p.titleAlign === 'l' ? 'left' : p.titleAlign === 'r' ? 'right' : 'centre',
                 rowHeight: Number(p.rowHeight) || 0, tallRows: tall ? tallOut : null });
             } else if (p.kind === 'image') { var fb = figureBlock(p); if (fb) out.push(fb); }
+          };
+          (b.parts || []).forEach(function (p) {
+            var from = out.length;
+            partBlocks(p);
+            // Which designer parts each block prints for — what the preview outlines when a
+            // part is picked. Never drawn: the PDF and HTML writers do not read it.
+            var src = (p.within || []).concat([p.tplId || p.id]);
+            for (var k = from; k < out.length; k++) out[k].src = src;
           });
           return;
         }
@@ -1781,7 +1800,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       function where(scope) {
         return scope.slice(1).map(function (x) { return DATA.textOf(x.entry.values.id) || DATA.textOf(x.entry.values.title) || x.entry.key; }).join(' \u203a ');
       }
-      function scan(text, scope, secId) {
+      function scan(text, scope, secId, partId) {
         var m;
         RE.lastIndex = 0;
         while ((m = RE.exec(String(text || ''))) !== null) {
@@ -1790,23 +1809,24 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           if (!fl || seen[fl.id + '|' + key]) continue;
           seen[fl.id + '|' + key] = true;
           (live[fl.id] = live[fl.id] || {})[key] = true;
-          items.push({ id: fl.id, label: fl.label, key: key, where: where(scope), sectionId: secId, value: String(((fills[fl.id] || {})[key]) || '') });
+          items.push({ id: fl.id, label: fl.label, key: key, where: where(scope), sectionId: secId, partId: partId || null,
+            value: String(((fills[fl.id] || {})[key]) || '') });
         }
       }
       DATA.expandRepeats(blocks, cat, levels).forEach(function (b) {
         var sc = b.scope || root, sid = b.templateId || b.id;
         scan(b.intro, sc, sid);
         (b.parts || []).forEach(function (p) {
-          var ps = p.scope || sc;
-          if (p.kind === 'para') scan(p.text, ps, sid);
+          var ps = p.scope || sc, pid = p.tplId || p.id;
+          if (p.kind === 'para') scan(p.text, ps, sid, pid);
           if (p.kind !== 'table') return;
-          (p.header || []).forEach(function (h) { scan(h, ps, sid); });
+          (p.header || []).forEach(function (h) { scan(h, ps, sid, pid); });
           var rowScopes = [ps];
           if (p.repeat && p.repeat.each && ps.length) {
             var its = DATA.childrenIn(ps, p.repeat.each, cat);
             if (its) rowScopes = DATA.select(its, p.repeat.where, p.repeat.sort).map(function (e) { return ps.concat([{ coll: p.repeat.each, entry: e }]); });
           }
-          rowScopes.forEach(function (rs) { (p.rows || []).forEach(function (r) { (r || []).forEach(function (c) { scan(c, rs, sid); }); }); });
+          rowScopes.forEach(function (rs) { (p.rows || []).forEach(function (r) { (r || []).forEach(function (c) { scan(c, rs, sid, pid); }); }); });
         });
       });
       // A blank in a section left out for now keeps its answers: they are not leftovers.
@@ -2107,6 +2127,21 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * with no decision in it, and a document issued from an unticked session went out
      * unmarked. Stored with the design; none is stored as absence.
      */
+    /** A /[Tag] placeholder's answer, stored with the design; blank removes it. */
+    function setTag(name, value) {
+      if (!P()) return errNoProject();
+      var k = String(name || '');
+      if (!k) return err('A placeholder needs a name.', 'tags');
+      var v = value == null ? '' : String(value);
+      App.docHost.get().commit(function (p) {
+        var b = bag(p);
+        var t = (b.tags && typeof b.tags === 'object' && !Array.isArray(b.tags)) ? b.tags : {};
+        if (v.trim()) t[k] = v; else delete t[k];
+        if (Object.keys(t).length) b.tags = t; else delete b.tags;
+        if (!Object.keys(b).length) delete p.report;
+      });
+      return ok();
+    }
     function setClassification(marking) {
       if (!P()) return errNoProject();
       var text = marking == null ? '' : String(marking);
@@ -2574,6 +2609,23 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var part = blankPart(kind, id);
         if (at === undefined || at === null || at < 0 || at > list.length) list.push(part);
         else list.splice(at, 0, part);
+      });
+      return { ok: true, id: id, issues: [] };
+    }
+    /**
+     * A Space part straight after a part, in the same list (inside a Repeat part, if that is
+     * where the part is): the "+10" in a part's corner. `mm` defaults to 10.
+     */
+    function addSpaceAfter(sectionId, partId, mm) {
+      if (!P()) return errNoProject();
+      if (!locate(P(), sectionId, partId)) return err('Unknown part.', partId);
+      var id = null;
+      App.docHost.get().commit(function (p) {
+        var at = locate(p, sectionId, partId);
+        id = nextId('part', allParts(p));
+        var gap = blankPart('space', id);
+        gap.height = mmValue(mm == null ? 10 : mm) || DEFAULT_SPACE_MM;
+        at.list.splice(at.index + 1, 0, gap);
       });
       return { ok: true, id: id, issues: [] };
     }
@@ -3338,7 +3390,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       setBlockSpace: setBlockSpace, mmValue: mmValue, setPartLook: setPartLook, setBlockLook: setBlockLook,
       DEFAULT_SPACE_MM: DEFAULT_SPACE_MM, MAX_SPACE_MM: MAX_SPACE_MM,
       // CLS-1: the classification banner, which is a document decision, not a per-run one.
-      setClassification: setClassification,
+      setClassification: setClassification, setTag: setTag,
       // NAM-1 / SEC-1 / TBS-1: a section's name, its introduction, its table styling.
       setBlockName: setBlockName, setBlockHeading: setBlockHeading, setBlockIntro: setBlockIntro,
       setBlockIntroNumbered: setBlockIntroNumbered,
@@ -3349,7 +3401,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       setReportInclude: setReportInclude, INCLUDE_MAPS: INCLUDE_MAPS,
       addSection: addSection, setSectionRepeat: setSectionRepeat, setPartRepeat: setPartRepeat, normRepeat: normRepeat, findPart: findPart, enclosingRepeats: enclosingRepeats,
       nextFillId: nextFillId, setFill: setFill, pruneFills: pruneFills, addRegister: addRegister, removeRegister: removeRegister, updateSection: updateSection, removeSection: removeSection,
-      addPart: addPart, updatePart: updatePart, removePart: removePart, movePart: movePart, setParaLevel: setParaLevel,
+      addPart: addPart, addSpaceAfter: addSpaceAfter, updatePart: updatePart, removePart: removePart, movePart: movePart, setParaLevel: setParaLevel,
       setPartImage: setPartImage, setPartImageField: setPartImageField, addStandardImage: addStandardImage, renameStandardImage: renameStandardImage, removeStandardImage: removeStandardImage, standardImageUses: standardImageUses,
       setCell: setCell, addRow: addRow, removeRow: removeRow,
       // SPC-1: which rows take the table's extra height.
@@ -4144,6 +4196,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       conflict: null,        // { kindKey, plan, decisions } while an import is being resolved
       refFor: null,          // part id whose "insert reference" menu is open
       tableLayout: {},       // part ids of the tables whose layout controls are showing
+      picked: {},            // part ids outlined in the section preview (screen only)
       lookOpen: {},          // the tables whose Formatting panel is open, by target
       preview: null,         // cached layout of the document, so switching panes is not a re-layout
       refs: null             // cached reference targets of the built document
@@ -4597,6 +4650,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     function partControls(sec, part, i, n) {
       return '<span class="rd-part-move">' +
+        '<button type="button" class="rd-part-goto" data-rd-part-goto="' + esc(part.id) + '" title="Go to this block in the preview" aria-label="Go to this block in the preview">◎</button>' +
         '<button type="button" data-rd-part-up="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' + (i === 0 ? ' disabled' : '') + ' title="Move up">▲</button>' +
         '<button type="button" data-rd-part-down="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' + (i === n - 1 ? ' disabled' : '') + ' title="Move down">▼</button>' +
         '<button type="button" class="danger" data-rd-part-del="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" title="Delete this block">✕</button>' +
@@ -4680,7 +4734,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
 
     function paraEditor(project, sec, part, i, n) {
       var host = 'data-rd-part="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"';
-      return '<div class="rd-part" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
+      return '<div class="rd-part' + pickCls(part) + '" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
         '<div class="rd-part-head"><span class="rd-part-kind">Paragraph</span>' +
           '<span class="rd-tbs">' + toolbar(host) +
             '<button type="button" class="rd-tb" data-rd-ref-open="' + esc(part.id) + '" title="Insert a cross-reference that survives renaming and reordering">🔗 Link</button>' +
@@ -4838,6 +4892,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           : '') + '</div>';
     }
 
+    /** A table's title row alignment: l, c or r — centred unless chosen otherwise. */
+    function titleAlignOf(part) { return part.titleAlign === 'l' || part.titleAlign === 'r' ? part.titleAlign : 'c'; }
+    var TITLE_ALIGN_CSS = { l: 'left', c: 'center', r: 'right' };
+
+    /** A part picked to be outlined in the section preview shows it here too. */
+    function pickCls(part) { return _rd.picked[part.id] ? ' rd-picked' : ''; }
+
     function tableEditor(project, sec, part, i, n) {
       var head = part.header || [], rows = part.rows || [], align = part.align || [];
       var widths = (part.widths && part.widths.length === head.length) ? part.widths : null;
@@ -4882,7 +4943,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       }).join('') + '<th></th></tr>' : '';
       // A title row: one merged cell across the top, above the column headings.
       var titleTr = part.titleRowOn ? '<tr class="rd-titlerow"><th colspan="' + head.length + '">' + richBox(project,
-          'data-rd-titlerow-rich="' + esc(part.id) + '" ' + ids + ' aria-label="Title row"', part.titleRow || '', 'rd-cellbox', 'Title row', sec.id, part.id) +
+          'data-rd-titlerow-rich="' + esc(part.id) + '" ' + ids + ' aria-label="Title row" style="text-align:' + TITLE_ALIGN_CSS[titleAlignOf(part)] + '"',
+          part.titleRow || '', 'rd-cellbox', 'Title row', sec.id, part.id) +
         '</th>' + (lay ? '<th class="rd-rowdel"></th>' : '') + '</tr>' : '';
       /* SPC-1: the tick only appears once there is a height to apply — a column of ticks
        * that do nothing is worse than no column at all. */
@@ -4905,7 +4967,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           : '') + '</tr>';
       }).join('');
       var host = 'data-rd-part="' + esc(part.id) + '" ' + ids;
-      return '<div class="rd-part rd-tpart' + (lay ? ' rd-tlayout-on' : '') + '" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
+      return '<div class="rd-part rd-tpart' + (lay ? ' rd-tlayout-on' : '') + '' + pickCls(part) + '" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
         '<div class="rd-part-head"><span class="rd-part-kind">Table</span>' +
           /* RTX-2: the same toolbar a paragraph has, acting on whichever CELL was last
            * written in. A cell holds the same token markup a paragraph does, so there is
@@ -4931,6 +4993,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             cb('data-rd-part-flag="noCaption" ' + host, 'No caption', part.noCaption === true) +
             cb('data-rd-part-flag="centre" ' + host, 'Centre', part.centre === true) +
             cb('data-rd-part-flag="titleRowOn" ' + host, 'Title row', part.titleRowOn === true) +
+            (part.titleRowOn === true
+              ? '<select class="rd-titlealign" data-rd-titlealign="' + esc(part.id) + '" ' + ids + ' aria-label="Title row alignment" title="Title row alignment">' +
+                  [['l', '⇤ Left'], ['c', '↔ Centre'], ['r', '⇥ Right']].map(function (o) {
+                    return '<option value="' + o[0] + '"' + (titleAlignOf(part) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+                  }).join('') + '</select>'
+              : '') +
             '<button type="button" class="rd-tlayout" data-rd-tlayout="' + esc(part.id) + '" aria-pressed="' + lay + '"' +
             ' title="' + (lay ? 'Done shaping the table: hide the column, row and width controls' : 'Show the column, row and width controls') + '">' +
             (lay ? '✓ Done editing layout' : '⚙ Edit table layout') + '</button>' +
@@ -4984,7 +5052,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
 
     function simplePart(sec, part, i, n, label, note) {
-      return '<div class="rd-part rd-part-simple" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
+      return '<div class="rd-part rd-part-simple' + pickCls(part) + '" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
         '<div class="rd-part-head"><span class="rd-part-kind">' + esc(label) + '</span>' +
           partControls(sec, part, i, n) + '</div></div>';
     }
@@ -4998,7 +5066,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      */
     function spaceEditor(sec, part, i, n) {
       var mm = App.docStore.mmValue(part.height);
-      return '<div class="rd-part rd-part-simple" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
+      return '<div class="rd-part rd-part-simple' + pickCls(part) + '" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
         '<div class="rd-part-head"><span class="rd-part-kind">Space</span>' +
           '<label class="rd-mmlab">' +
             '<input class="rd-mm" type="number" min="0" max="' + App.docStore.MAX_SPACE_MM + '" step="1"' +
@@ -5067,7 +5135,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var count = FIG_BOXES(part.layout);
       var boxes = '';
       for (var k = 0; k < count; k++) boxes += imageBox(project, sec, part, k);
-      return '<div class="rd-part rd-part-image" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
+      return '<div class="rd-part rd-part-image' + pickCls(part) + '" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
         '<div class="rd-part-head"><span class="rd-part-kind">Image</span>' +
           imgSelect('data-rd-img-layout', part.id, sec.id, FIGURE_LAYOUTS[part.layout] ? part.layout : 'single', IMAGE_LAYOUTS, 'Layout') +
           imgSelect('data-rd-img-captions', part.id, sec.id, part.captions || 'one', IMAGE_CAPTIONS, 'Captions') +
@@ -5194,11 +5262,21 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var m = p.style.page.margins, MMPT = 72 / 25.4;
       var bands = [];
       var lastPage = end ? end.page : p.pages.length - 1;
+      // The picked parts, outlined where they landed (a part can land in more than one place).
+      var isPicked = function (r) { return r.src.some(function (id) { return _rd.picked[id]; }); };
+      // Every part's place, too, cut to the bands: what a part's ◎ scrolls to.
+      var bandRegions = [];
       for (var pg = mine.page; pg <= lastPage; pg++) {
         var page = p.pages[pg];
         var top = pg === mine.page ? Math.max(0, mine.y - 2) : m.top * MMPT - 2;
         var bottom = end && pg === end.page ? end.y - 1 : page.size[1] - m.bottom * MMPT + 2;
-        if (bottom - top > 1) bands.push(cropPage(page, top, bottom));
+        if (bottom - top > 1) {
+          bands.push(cropPage(page, top, bottom));
+          (p.regions || []).forEach(function (r) {
+            var y0 = Math.max(r.y, top), y1 = Math.min(r.y + r.h, bottom);
+            if (r.page === pg && y1 > y0) bandRegions.push({ src: r.src, page: bands.length - 1, x: r.x, y: y0 - top, w: r.w, h: y1 - y0 });
+          });
+        }
       }
       var k = zoomOf('section');
       var zoom = zoomBar('section');
@@ -5212,8 +5290,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
         // The whole document, opened at this section; or just this section, cut from it.
         '<div class="rd-secprev rd-preview-pages">' + (whole
-          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: here, imageUrl: imageUrl })
-          : pagesHtml(bands, { scale: k, imageUrl: imageUrl })) + '</div>';
+          ? pagesHtml(p.pages, { scale: k, anchors: p.anchors, here: here, imageUrl: imageUrl, marks: (p.regions || []).filter(isPicked), targets: p.regions || [] })
+          : pagesHtml(bands, { scale: k, imageUrl: imageUrl, marks: bandRegions.filter(isPicked), targets: bandRegions })) + '</div>';
     }
 
     function metaPane(project) {
@@ -5461,12 +5539,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     }
 
     /** The categories of a section's settings, by kind. */
-    var SEC_CATEGORIES = { fill: 'Fill in', heading: 'Heading', repeat: 'Repeat', placement: 'Placement', introduction: 'Introduction', table: 'Table', rows: 'Rows', content: 'Content' };
+    var SEC_CATEGORIES = { fill: 'Fill in', heading: 'Heading & Placement', repeat: 'Repeat', introduction: 'Introduction', table: 'Table', rows: 'Rows', content: 'Content' };
     function categoriesFor(block) {
-      var ids = block.kind === 'toc' ? ['heading', 'placement']
+      // The heading and where the section sits share one category: each alone was too little to fill one.
+      var ids = block.kind === 'toc' ? ['heading']
         // DS-2: an own section can repeat per register entry, where the host has registers.
-        : block.kind === 'custom' ? (catalogue() ? ['heading', 'repeat', 'placement', 'content'] : ['heading', 'placement', 'content']).concat(holdsFill(block) ? ['fill'] : [])
-        : ['heading', 'introduction', 'placement'].concat(
+        : block.kind === 'custom' ? (catalogue() ? ['heading', 'repeat', 'content'] : ['heading', 'content']).concat(holdsFill(block) ? ['fill'] : [])
+        : ['heading', 'introduction'].concat(
             ((App.docGen.sectionColumns(H(), block, opts()) || { all: [] }).all.length ? ['table'] : []),
             block.kind === 'meta' ? ['rows'] : []);
       return ids.map(function (id) { return { id: id, label: SEC_CATEGORIES[id] }; });
@@ -5497,14 +5576,22 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     /** The editors of a list of parts — a section's, or a Repeat part's own. */
     function partsHtml(project, sec, parts) {
       return parts.map(function (p, i) {
-        if (p.kind === 'para') return paraEditor(project, sec, p, i, parts.length);
-        if (p.kind === 'table') return tableEditor(project, sec, p, i, parts.length);
-        if (p.kind === 'rule') return simplePart(sec, p, i, parts.length, 'Horizontal line', 'A rule across the page.');
-        if (p.kind === 'space') return spaceEditor(sec, p, i, parts.length);
-        if (p.kind === 'image') return imageEditor(project, sec, p, i, parts.length);
-        if (p.kind === 'repeat') return repeatPartEditor(project, sec, p, i, parts.length);
-        return simplePart(sec, p, i, parts.length, 'Page break', 'Forces what follows onto a new page.');
+        var html = partHtml(project, sec, parts, p, i);
+        // Every part but a Space has a "+10" in its bottom corner: a 10mm Space straight after it.
+        if (p.kind === 'space' || html.slice(-6) !== '</div>') return html;
+        return html.slice(0, -6) + '<button type="button" class="rd-spaceafter" data-rd-space-after="' + esc(p.id) + '" data-rd-sec="' + esc(sec.id) + '"' +
+          ' title="Insert a 10mm space after this" aria-label="Insert a 10mm space after this">+10</button></div>';
       }).join('');
+    }
+    /** One part's editor. */
+    function partHtml(project, sec, parts, p, i) {
+      if (p.kind === 'para') return paraEditor(project, sec, p, i, parts.length);
+      if (p.kind === 'table') return tableEditor(project, sec, p, i, parts.length);
+      if (p.kind === 'rule') return simplePart(sec, p, i, parts.length, 'Horizontal line', 'A rule across the page.');
+      if (p.kind === 'space') return spaceEditor(sec, p, i, parts.length);
+      if (p.kind === 'image') return imageEditor(project, sec, p, i, parts.length);
+      if (p.kind === 'repeat') return repeatPartEditor(project, sec, p, i, parts.length);
+      return simplePart(sec, p, i, parts.length, 'Page break', 'Forces what follows onto a new page.');
     }
     /** The add buttons, into a section or (with `parentId`) into a Repeat part. */
     function addPartButtons(sec, parentId) {
@@ -5530,7 +5617,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         lists.map(function (k) { return '<option value="' + esc(k) + '"' + (k === each ? ' selected' : '') + '>' + esc(collLabel(c, k)) + '</option>'; }).join('') +
         (each && lists.indexOf(each) === -1 ? '<option value="' + esc(each) + '" selected>' + esc(collLabel(c, each)) + ' (not available here)</option>' : '');
       var inner = partsHtml(project, sec, part.parts || []);
-      return '<div class="rd-part rd-repeatpart" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
+      return '<div class="rd-part rd-repeatpart' + pickCls(part) + '" draggable="true" data-rd-partrow="' + esc(part.id) + '">' +
         '<div class="rd-part-head"><span class="rd-part-kind">\u21bb Repeat</span>' +
           '<label class="rd-rp-each">for each<select data-rd-rpart-each="' + esc(part.id) + '"' + extra + ' aria-label="Repeat for each">' + opts2 + '</select></label>' +
           partControls(sec, part, i, n) + '</div>' +
@@ -5550,9 +5637,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
               fieldMenu(project, sec.id, 'head:' + sec.id) +
               richBox(project, 'data-rd-sec-heading-rich="' + esc(sec.id) + '" aria-label="Section heading" aria-multiline="false"', sec.title || '', 'rd-title rd-oneline',
                 'None: the section is body text', sec.id) + '</div>'
-          : nameField(block, block.defaultTitle));
+          : nameField(block, block.defaultTitle)) + centreToggle(project, block, resolved);
       }
-      if (cat === 'placement') return centreToggle(project, block, resolved);
       if (cat === 'repeat') return repeatPane(project, block);
       if (cat === 'fill') return fillPane(project, block);
       if (cat === 'introduction') return introField(project, block);
@@ -5911,7 +5997,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           });
         }
         var r = layout(built.document, s, { images: imageSizes(built.document) });
-        return { document: built.document, style: s, tags: built.tags, pages: r.pages, anchors: r.anchors, headings: r.headings, replaced: r.replaced };
+        return { document: built.document, style: s, tags: built.tags, pages: r.pages, anchors: r.anchors, headings: r.headings, replaced: r.replaced, regions: r.regions };
       } catch (e) {
         return { error: 'The pages could not be laid out: ' + (e && e.message) };
       }
@@ -6020,15 +6106,29 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
      * end, and nothing short of the end sees all three.
      */
     /** DS-5: on Generate, the blanks still empty and the sections they are in. */
-    function fillsNote(project) {
-      var empty = fillsNow(project).items.filter(function (i) { return !i.value.trim(); });
-      if (!empty.length) return '';
-      var secs = [];
-      empty.forEach(function (i) { if (secs.indexOf(i.sectionId) === -1) secs.push(i.sectionId); });
-      var names = secs.map(function (id) { var s0 = customSection(project, id); return esc(shownText((s0 && s0.title) || id)); });
+    /**
+     * Every blank in the document, filled or not: what it is, where, whether it has an
+     * answer, and a way to it — the section's Fill in, with the block it sits in shown in
+     * the preview.
+     */
+    function blanksTable(project) {
+      var items = fillsNow(project).items;
+      if (!items.length) return '';
+      var empty = items.filter(function (i) { return !i.value.trim(); }).length;
       return '<div class="rd-fieldset"><strong title="Blanks written by hand for each entry, under each section\'s Fill in">Blanks</strong>' +
-        '<p class="rpt-omit"><strong>' + empty.length + '</strong> blank' + (empty.length === 1 ? '' : 's') + ' still to fill in, in ' + names.join(', ') + '.' +
-        ' They print as [To fill in: …] until they are.</p></div>';
+        '<table class="rd-blanks"><thead><tr><th>Blank</th><th>Section</th><th>For</th><th>Status</th><th></th></tr></thead><tbody>' +
+        items.map(function (i) {
+          var s0 = customSection(project, i.sectionId), done = !!i.value.trim();
+          return '<tr class="' + (done ? 'rd-blank-done' : 'rd-blank-open') + '">' +
+            '<td>' + esc(i.label || 'To fill in') + '</td>' +
+            '<td>' + esc(shownText((s0 && s0.title) || '(untitled section)')) + '</td>' +
+            '<td>' + (i.where ? esc(i.where) : '<span class="rd-state">\u2014</span>') + '</td>' +
+            '<td>' + (done ? '<span class="rd-blank-ok">\u2713 Filled in</span>' : '<span class="rd-blank-todo">! Empty</span>') + '</td>' +
+            '<td><button type="button" data-rd-goto-blank="' + esc(i.id) + '" data-rd-fill-key="' + esc(i.key) + '" data-rd-sec="' + esc(i.sectionId) + '"' +
+              (i.partId ? ' data-rd-part="' + esc(i.partId) + '"' : '') + '>Go to blank</button></td></tr>';
+        }).join('') + '</tbody></table>' +
+        (empty ? '<p class="rpt-omit"><strong>' + empty + '</strong> blank' + (empty === 1 ? '' : 's') + ' still to fill in. They print as [To fill in: …] until they are.</p>'
+          : '<p class="rpt-omit muted">Every blank is filled in.</p>') + '</div>';
     }
 
     function paneGenerate(project, view) {
@@ -6059,14 +6159,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           }).join('')
         : '<p class="rd-state">None yet. Write <code>/[Date]</code> in any text to add one.</p>';
 
-      return '<div class="rd-fieldset"><strong title="Each /[Tag] in the document is replaced by what you write here; one left blank prints as it stands.">Placeholders</strong>' +
+      return '<div class="rd-gen"><div class="rd-fieldset"><strong title="Each /[Tag] in the document is replaced by what you write here; one left blank prints as it stands.">Placeholders</strong>' +
           tagRows +
           (unfilled.length
             ? '<p class="rpt-omit"><strong>' + unfilled.length + '</strong> placeholder' + (unfilled.length === 1 ? '' : 's') +
               ' still to fill in: ' + unfilled.map(function (t) { return '<code>/[' + esc(t) + ']</code>'; }).join(' ') + '</p>'
             : (tags.length ? '<p class="rpt-omit muted">Every placeholder has a value.</p>' : '')) +
         '</div>' +
-        fillsNote(project) +
+        blanksTable(project) +
         (replaced.length
           ? '<div class="rd-fieldset rd-replaced"><strong title="The PDF\'s standard fonts write these another way (≥ as >=, ✓ as Yes) or as ?. The HTML shows them as they are.">Characters the PDF cannot show</strong>' +
               '<p>' + replaced.map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(' ') + '</p></div>'
@@ -6075,16 +6175,32 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           ? '<div class="rd-fieldset rd-replaced"><strong title="These show as a grey box until the file is back in the folder">Images missing from the folder</strong>' +
               '<p>' + missingImgs.map(function (n) { return '<code>' + esc(n) + '</code>'; }).join(' ') + '</p></div>'
           : '') +
-        '<div class="rd-fieldset"><strong>Make the report</strong>' +
-          (ready ? '' : '<p class="rd-state">This ' + esc(noun()) + ' is not ready.</p>') +
-          (laid.error ? '<p class="rd-err">' + esc(laid.error) + '</p>' : '') +
-          '<div class="rd-addbar">' +
-            // The HOST wires these ([data-generate-action], reading data-generate-format):
-            // where a file goes is its business, not the designer's.
-            '<button type="button" class="primary" data-generate-action="document" data-generate-format="pdf"' + (ready ? '' : ' disabled') + '>Make PDF</button>' +
-            '<button type="button" data-generate-action="document" data-generate-format="html"' + (ready ? '' : ' disabled') + '>Make HTML</button>' +
-          '</div>' +
-        '</div>';
+        makeBar(ready, laid.error, unfilled.length, fillsNow(project).items.filter(function (i) { return !i.value.trim(); }).length) + '</div>';
+    }
+
+    /**
+     * The Make buttons, big, in the bottom right of the tab (they stay there as it
+     * scrolls). Locked — and saying why — while a placeholder or a blank is still empty:
+     * a report made then would print "/[Date]" or "[To fill in: …]".
+     */
+    var LOCK_SVG = '<svg class="rd-lock" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="3" y="7" width="10" height="8" rx="1.5" fill="currentColor"/>' +
+      '<path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
+    function makeBar(ready, error, tagsLeft, blanksLeft) {
+      var why = [];
+      if (!ready) why.push('this ' + esc(noun()) + ' is not ready');
+      if (tagsLeft) why.push(tagsLeft + ' placeholder' + (tagsLeft === 1 ? '' : 's') + ' to fill in');
+      if (blanksLeft) why.push(blanksLeft + ' blank' + (blanksLeft === 1 ? '' : 's') + ' to fill in');
+      var locked = why.length > 0;
+      var tip = locked ? ' title="Not yet: ' + why.join(', ') + '"' : '';
+      return '<div class="rd-makebar' + (locked ? ' rd-make-locked' : '') + '">' +
+        (error ? '<p class="rd-err">' + esc(error) + '</p>' : '') +
+        (locked ? '<p class="rd-make-why">' + LOCK_SVG + 'Not yet: ' + why.join(', ') + '.</p>' : '') +
+        '<div class="rd-make-btns">' +
+          // The HOST wires these ([data-generate-action], reading data-generate-format):
+          // where a file goes is its business, not the designer's.
+          '<button type="button" class="rd-make" data-generate-action="document" data-generate-format="html"' + (locked ? ' disabled' : '') + tip + '>Make HTML</button>' +
+          '<button type="button" class="rd-make primary" data-generate-action="document" data-generate-format="pdf"' + (locked ? ' disabled' : '') + tip + '>Make PDF</button>' +
+        '</div></div>';
     }
 
     // ======================================================================
@@ -6203,6 +6319,40 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     var SCROLLERS = ['.modal-body', '.rd-pane', '[data-rd-sec-fields]', '[data-rd-sec-prev]', '[data-rd-style-preview]', '#rd-preview-doc'];
     /** Run a redraw, then put each scrolling area back where it was, so changing a setting
      *  does not throw the preview back to the top. */
+    /**
+     * Scroll `v` down by `dy` (and `h` across by `dx`) as a visible glide: eased, and longer
+     * for a longer way, so the eye can follow it. Then `done`.
+     */
+    function glide(v, h, dy, dx, done) {
+      var y0 = v.scrollTop, x0 = h ? h.scrollLeft : 0;
+      var dist = Math.max(Math.abs(dy), Math.abs(dx));
+      var ms = dist < 2 ? 0 : Math.min(1100, 300 + dist * 0.35), t0 = null;
+      var ease = function (t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+      function step(now) {
+        if (t0 === null) t0 = now;
+        var t = ms ? Math.min(1, (now - t0) / ms) : 1, e2 = ease(t);
+        v.scrollTop = y0 + dy * e2;
+        if (h) h.scrollLeft = x0 + dx * e2;
+        if (t < 1) requestAnimationFrame(step); else if (done) done();
+      }
+      requestAnimationFrame(step);
+    }
+    /** Play a one-off animation class on an element, restarting it if it is already playing. */
+    function flash(el, cls) {
+      el.classList.remove(cls);
+      void el.offsetWidth;
+      el.classList.add(cls);
+    }
+    /** The nearest ancestor that scrolls up and down, or null. */
+    function scrollerOf(el) {
+      for (var x = el.parentElement; x; x = x.parentElement) {
+        var oy = getComputedStyle(x).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && x.scrollHeight > x.clientHeight) return x;
+      }
+      return null;
+    }
+    /** An id made safe for an attribute selector. */
+    function cssId(id) { return String(id).replace(/["\\]/g, '\\$&'); }
     function keepScroll(host, redraw) {
       var was = SCROLLERS.map(function (sel) {
         var el = host.querySelector(sel);
@@ -6244,6 +6394,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (_gate.pressing) { _gate.pending = true; return; }
       if (!refresh() && _ctx) _ctx.refreshMain();
     }
+    /** What a press or click inside a part is aimed at, rather than at the part itself. */
+    var CONTROLS = 'button, input, select, textarea, label, a[href], summary, [contenteditable]:not([contenteditable="false"])';
     function quietly(fn) { if (_ctx && _ctx.quietEdit) _ctx.quietEdit(fn); else fn(); }
     /** Any project write invalidates the cached preview — it is a render of the project. */
     function dirty() { _rd.preview = null; _rd.refs = null; _rd.cat = null; _rd.fills = null; _scopes = {}; }
@@ -6674,6 +6826,43 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       RELEASE_ON.forEach(function (t) { document.addEventListener(t, release, true); });
       window.addEventListener('blur', release);
 
+      /* A part (and a section in the list) is draggable, to reorder it, and so is everything
+       * in it: a hand that moves a few pixels while pressing a button inside — a table's
+       * column ✕ — starts dragging the whole part, and the click never comes. So a press on
+       * a control switches dragging off around it until the press ends. A control that is
+       * itself draggable (a field in the Field menu) keeps its own drag. */
+      var undragged = [];
+      ctx.root.addEventListener('pointerdown', function (e) {
+        var c = e.target && e.target.closest && e.target.closest(CONTROLS);
+        if (!c || c.getAttribute('draggable') === 'true') return;
+        for (var el = c.parentNode; el && el !== ctx.root; el = el.parentNode) {
+          if (el.getAttribute && el.getAttribute('draggable') === 'true') { el.setAttribute('draggable', 'false'); undragged.push(el); }
+        }
+      }, true);
+      function redrag() {
+        undragged.forEach(function (el) { el.setAttribute('draggable', 'true'); });
+        undragged = [];
+      }
+      ['pointerup', 'pointercancel'].forEach(function (t) { document.addEventListener(t, redrag, true); });
+      window.addEventListener('blur', redrag);
+
+      /* Picking parts to outline in the section preview: a click anywhere in a part that is
+       * not one of its controls or text boxes picks it, and again un-picks it; Escape
+       * un-picks them all. The outline is drawn on screen only. */
+      dom.on(ctx.root, 'click', '[data-rd-partrow]', function (e, el) {
+        if (e.target.closest && e.target.closest(CONTROLS + ', [data-rd-colresize]')) return;
+        var sel = window.getSelection && window.getSelection();
+        if (sel && !sel.isCollapsed && el.contains(sel.anchorNode)) return;   // text was being selected
+        var id = el.getAttribute('data-rd-partrow');
+        if (_rd.picked[id]) delete _rd.picked[id]; else _rd.picked[id] = true;
+        repaint();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape' || !_rd.open || !Object.keys(_rd.picked).length) return;
+        _rd.picked = {};
+        repaint();
+      });
+
       dom.on(ctx.root, 'click', '[data-rd-open]', function () {
         _rd.open = true; dirty(); ctx.refreshMain();
       });
@@ -6851,11 +7040,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
       // GEN-TAB: the placeholder values. Session state, like the relevance filter
       // beside them — a tag value is an answer for THIS run.
+      // Saved with the design, so a draft keeps its answers (the app's Save writes them).
       dom.on(ctx.root, 'change', '[data-rd-tag]', function (e, el) {
-        var s = session();
-        s.tags = s.tags || {};
-        var k = el.getAttribute('data-rd-tag');
-        if (String(el.value).trim()) s.tags[k] = el.value; else delete s.tags[k];
+        quietly(function () { logIssues(App.docStore.setTag(el.getAttribute('data-rd-tag'), el.value)); });
         dirty(); repaint();
       });
       // CLS-1: the classification banner is a decision about the DOCUMENT, so it is
@@ -7042,6 +7229,101 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // ---- parts ------------------------------------------------------------
       dom.on(ctx.root, 'click', '[data-rd-addpart]', function (e, el) {
         logIssues(App.docStore.addPart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-addpart'), null, el.getAttribute('data-rd-parent') || null));
+        dirty(); repaint();
+      });
+      /* ◎: scroll the section preview, in whichever view it is showing, to where the part
+       * lands — an animated scroll rather than a jump, so the direction and distance show —
+       * then flash its place. */
+      dom.on(ctx.root, 'click', '[data-rd-part-goto]', function (e, el) { inPreview(el.getAttribute('data-rd-part-goto'), true); });
+      /* Go to blank (Generate): the blank's section, on its Fill in, with the blank's box
+       * glided to and flashed — and the preview beside it taken to the block it sits in. */
+      dom.on(ctx.root, 'click', '[data-rd-goto-blank]', function (e, el) {
+        var fid = el.getAttribute('data-rd-goto-blank'), key = el.getAttribute('data-rd-fill-key'), part = el.getAttribute('data-rd-part');
+        _rd.pane = 'section'; _rd.selected = el.getAttribute('data-rd-sec'); _rd.secCat = 'fill';
+        repaint();
+        var box = [].filter.call(ctx.root.querySelectorAll('[data-rd-fill]'), function (b) {
+          return b.getAttribute('data-rd-fill') === fid && b.getAttribute('data-rd-fill-key') === key;
+        })[0];
+        var item = box && box.closest('.rd-fillitem');
+        if (item) {
+          var v = scrollerOf(item);
+          var done = function () { flash(item, 'rd-part-flash'); };
+          if (v) {
+            var vr = v.getBoundingClientRect(), ir = item.getBoundingClientRect();
+            glide(v, null, ir.top - vr.top - Math.max(16, (v.clientHeight - ir.height) / 2), 0, done);
+          } else done();
+        }
+        if (part) inPreview(part, false);
+      });
+      /** Glide the section preview to where a part lands, and flash it; `say` explains when it cannot. */
+      function inPreview(id, say) {
+        var box = ctx.root.querySelector('[data-rd-sec-prev]');
+        var target = box && [].filter.call(box.querySelectorAll('.dp-target'), function (t) {
+          return (t.getAttribute('data-dp-part') || '').split(' ').indexOf(id) !== -1;
+        })[0];
+        if (!target) {
+          if (say) App.docHost.log({ severity: 'warning', message: box && box.querySelector('.dp-page')
+            ? 'That block prints nothing yet, so it is not on the page.' : 'Choose a ' + noun() + ' to see the preview.' });
+          return;
+        }
+        var tr = target.getBoundingClientRect(), br = box.getBoundingClientRect();
+        // Centred in the view when it fits; its top a little below the view's top when it does not.
+        var dy = tr.top - br.top - Math.max(16, (box.clientHeight - tr.height) / 2);
+        var wide = box.querySelector('.rd-secprev');
+        var dx = 0;
+        if (wide && wide.scrollWidth > wide.clientWidth) {
+          var wr = wide.getBoundingClientRect();
+          dx = tr.left - wr.left - Math.max(16, (wide.clientWidth - tr.width) / 2);
+        }
+        glide(box, wide, dy, dx, function () { flash(target, 'dp-target-flash'); });
+      }
+      /** The part of the section preview under a point: the smallest box there, and of the
+       *  parts it prints for, the innermost (a part inside a Repeat part, not the Repeat). */
+      function partAt(e) {
+        var box = ctx.root.querySelector('[data-rd-sec-prev]');
+        if (!box || !box.contains(e.target)) return null;
+        var best = null, area = Infinity;
+        [].forEach.call(box.querySelectorAll('.dp-target'), function (t) {
+          var r = t.getBoundingClientRect();
+          if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+          if (r.width * r.height < area) { area = r.width * r.height; best = t; }
+        });
+        if (!best) return null;
+        var ids = (best.getAttribute('data-dp-part') || '').split(' ');
+        return ids[ids.length - 1] || null;
+      }
+      // Ctrl+click in the preview picks (or un-picks) the part there, as a click on its editor does.
+      ctx.root.addEventListener('click', function (e) {
+        if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return;
+        var id = partAt(e);
+        if (!id) return;
+        e.preventDefault(); e.stopPropagation();
+        if (_rd.picked[id]) delete _rd.picked[id]; else _rd.picked[id] = true;
+        repaint();
+      }, true);
+      /* A double-click in the preview opens the part's editor: its section's Content (the
+       * whole document can show another section's parts), glided to and flashed. */
+      dom.on(ctx.root, 'dblclick', '[data-rd-sec-prev]', function (e) {
+        var id = partAt(e);
+        if (!id) return;
+        if (window.getSelection) { try { window.getSelection().removeAllRanges(); } catch (err) { /* nothing selected */ } }
+        var row = ctx.root.querySelector('[data-rd-partrow="' + cssId(id) + '"]');
+        if (!row) {
+          var state = H().getState();
+          var sec = ((state.report || {}).sections || []).filter(function (s) { return App.docStore.findPart(state, s.id, id); })[0];
+          if (!sec) return;
+          _rd.selected = sec.id; _rd.secCat = 'content';
+          repaint();
+          row = ctx.root.querySelector('[data-rd-partrow="' + cssId(id) + '"]');
+          if (!row) return;
+        }
+        var v = scrollerOf(row);
+        if (!v) { flash(row, 'rd-part-flash'); return; }
+        var vr = v.getBoundingClientRect(), rr = row.getBoundingClientRect();
+        glide(v, null, rr.top - vr.top - Math.max(16, (v.clientHeight - rr.height) / 2), 0, function () { flash(row, 'rd-part-flash'); });
+      });
+      dom.on(ctx.root, 'click', '[data-rd-space-after]', function (e, el) {
+        logIssues(App.docStore.addSpaceAfter(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-space-after')));
         dirty(); repaint();
       });
       dom.on(ctx.root, 'click', '[data-rd-part-del]', function (e, el) {
@@ -7532,6 +7814,12 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // focusout handler above — and, like the others, without a repaint: the box
       // already shows what was typed, and a repaint mid-table would move focus out of
       // the row being filled in.
+      dom.on(ctx.root, 'change', '[data-rd-titlealign]', function (e, el) {
+        // Centred is the default, so it is stored as no choice at all.
+        var v = el.value === 'l' || el.value === 'r' ? el.value : undefined;
+        quietly(function () { logIssues(App.docStore.updatePart(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-titlealign'), { titleAlign: v })); });
+        dirty(); repaint();
+      });
       dom.on(ctx.root, 'change', '[data-rd-align]', function (e, el) {
         quietly(function () { App.docStore.setAlign(el.getAttribute('data-rd-sec'), el.getAttribute('data-rd-align'), Number(el.getAttribute('data-rd-col')), el.value); });
         dirty();

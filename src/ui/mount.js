@@ -313,6 +313,12 @@ export function mount(root, controller) {
     // The designer's own Save button follows the app's state (unsaved, saving, saved).
     const slot = designerEl.querySelector('[data-rd-save-slot]');
     if (slot) slot.innerHTML = saveButton(state).toString();
+    // So does the bar along the foot of the top bar, which the designer's window covers: drawn
+    // along its own heading instead. Added once per save, so a repaint mid-save does not restart it.
+    const head = slot?.closest('.modal-head');
+    const bar = head?.querySelector(':scope > .save-progress');
+    if (head && state.saving && !bar) head.insertAdjacentHTML('beforeend', '<div class="save-progress" role="progressbar" aria-label="Saving"><span></span></div>');
+    else if (bar && !state.saving) bar.remove();
   };
   window.addEventListener('resize', () => { fitAttention(appEl); fitAll(appEl); });
   window.addEventListener('resize', () => placeTour(appEl, tourAt));

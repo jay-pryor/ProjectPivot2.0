@@ -165,6 +165,11 @@
   .docgen .rd-fmt-body[disabled] { opacity: 0.55;}
   .docgen .rd-parts { display: flex; flex-direction: column; gap: 10px; margin: 10px 0;}
   .docgen .rd-part { border: 1px solid var(--c-border); border-radius: 6px; padding: 8px; background: var(--c-surface-alt);}
+  /* "+10": a 10mm Space after the part, in its bottom-right corner, with room kept for it. */
+  .docgen .rd-part:has(> .rd-spaceafter) { position: relative; padding-bottom: 30px;}
+  .docgen .rd-spaceafter { position: absolute; right: 6px; bottom: 6px; width: 22px; height: 22px; padding: 0; font: inherit; font-size: 9px;
+    font-weight: 600; line-height: 1; border: 1px solid var(--c-border); border-radius: 3px; background: var(--c-surface); color: var(--c-text-muted); cursor: pointer;}
+  .docgen .rd-spaceafter:hover { border-color: var(--c-accent); color: var(--c-text);}
   .docgen .rd-part.dragging { opacity: 0.5;}
   .docgen .rd-part.drop-target { border-color: var(--c-accent); border-style: dashed;}
   .docgen .rd-part-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;}
@@ -220,6 +225,24 @@
   .docgen .rd-hf-slots { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;}
   .docgen .rd-tagrow { display: grid; grid-template-columns: minmax(90px, auto) 1fr; align-items: center; gap: 8px; margin: 4px 0;}
   .docgen .rd-tagrow code { font-size: 12px;}
+  /* Generate: every blank, filled or not, with a way to it. */
+  .docgen .rd-blanks { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0;}
+  .docgen .rd-blanks th { text-align: left; font-weight: 600; color: var(--c-text-muted); padding: 4px 8px; border-bottom: 1px solid var(--c-border);}
+  .docgen .rd-blanks td { padding: 5px 8px; border-bottom: 1px solid var(--c-border); vertical-align: middle;}
+  .docgen .rd-blanks td:last-child { text-align: right; white-space: nowrap;}
+  .docgen .rd-blank-ok { color: var(--c-text-muted);}
+  .docgen .rd-blank-todo { color: #f08c00; font-weight: 700;}
+  /* The Make buttons: big, in the bottom right, and staying there as the tab scrolls. */
+  .docgen .rd-gen { display: flex; flex-direction: column; min-height: 100%; background: inherit;}
+  .docgen .rd-makebar { position: sticky; bottom: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+    margin-top: auto; padding: 16px 0 4px; background: inherit;}
+  .docgen .rd-lock { vertical-align: -1px; margin-right: 5px;}
+  .docgen .rd-make-btns { display: flex; gap: 12px;}
+  .docgen button.rd-make { font-size: 16px; font-weight: 700; padding: 12px 30px; border-radius: 8px; min-width: 160px; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .25);}
+  .docgen button.rd-make:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0, 0, 0, .3);}
+  .docgen button.rd-make:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; filter: grayscale(.6);}
+  .docgen .rd-make-why { margin: 0; font-size: 12px; color: #f08c00; font-weight: 600;}
   .docgen .rd-reftarget { display: flex; align-items: center; gap: 6px; padding: 2px 0;}
   .docgen .rd-reftarget-l { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
   .docgen .rd-refreadings { flex: 0 0 auto; display: flex; gap: 2px;}
@@ -427,6 +450,10 @@
   .docgen .rd-tset-row { grid-column: 1 / -1; display: flex; gap: 14px; flex-wrap: wrap; align-items: center;}
   .docgen .rd-tsettings .rd-rows-repeat { grid-column: 1 / -1; margin: 0;}
   .docgen .rd-tsettings .rd-rows-repeat > .rd-lab { flex-direction: row; font-size: 12px; color: var(--c-text-muted); padding: 0; margin: 0;}
+  /* The line saying what the rows repeat for, clear of the Rows drop-down. */
+  .docgen .rd-rows-repeat > .rd-lab + .rd-state { margin-left: 12px;}
+  .docgen .rd-titlealign { font: inherit; font-size: 12px; height: 24px; padding: 0 4px; background: var(--c-surface); color: var(--c-text);
+    border: 1px solid var(--c-border); border-radius: 4px;}
   .docgen .rd-tlayout { margin-left: auto; font: inherit; font-size: 12px; height: 24px; padding: 0 8px; border: 1px solid var(--c-border);
     border-radius: 4px; background: var(--c-surface); color: var(--c-text); cursor: pointer;}
   .docgen .rd-tlayout[aria-pressed="true"] { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-text);}
@@ -457,6 +484,26 @@
   /* The column deletes in a strip of their own above the table, outside its lines. */
   .docgen .rd-tpart .rd-table thead tr.rd-colctl th { border: 0; background: transparent; padding: 0 0 3px; text-align: center; vertical-align: bottom;}
   .docgen .rd-colctl button, .docgen .rd-tpart .rd-rowdel button { font-size: 11px; line-height: 1; padding: 3px 6px;}
+  /* Each column's alignment and width sit along the BOTTOM of the heading row, so they line
+     up when one heading wraps to more lines than the others. The heading's shade fills the
+     cell, so a short heading does not leave a gap above its bar. */
+  .docgen .rd-tpart.rd-tlayout-on .rd-table thead tr:last-child th:not(.rd-rowdel) { padding-bottom: 24px;
+    background: color-mix(in srgb, var(--c-accent) 18%, var(--c-surface));}
+  .docgen .rd-tpart.rd-tlayout-on .rd-colbar { position: absolute; left: 0; right: 0; bottom: 0; height: 24px; box-sizing: border-box;}
+
+  /* A part picked to be outlined in the section preview (screen only), and the outline. */
+  .docgen .rd-part.rd-picked { border-color: #e02424; box-shadow: 0 0 0 1px #e02424;}
+  /* A blank still to be filled in, on screen only: highlighted, and flagged in the margin. */
+  .docgen .dp-todo { position: absolute; background: #ffd23f; border-radius: 2px; box-shadow: 0 0 0 1px #f08c00;}
+  .docgen .dp-todo-flag { position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 50%;
+    background: #f08c00; color: #fff; font-family: Arial, sans-serif; font-weight: 700; line-height: 1;}
+  /* Where a part landed: invisible, until its ◎ is pressed and it flashes. */
+  .docgen .dp-target { position: absolute; box-sizing: border-box; pointer-events: none; border-radius: 2px;}
+  .docgen .dp-target.dp-target-flash { animation: dp-flash 1.4s ease-out;}
+  @keyframes dp-flash { 0%, 40% { box-shadow: 0 0 0 3px #e02424, 0 0 12px 4px rgba(224, 36, 36, .45); background: rgba(224, 36, 36, .08);} 100% { box-shadow: 0 0 0 3px rgba(224, 36, 36, 0); background: transparent;}}
+  .docgen .rd-part.rd-part-flash { animation: rd-part-flash 1.4s ease-out;}
+  @keyframes rd-part-flash { 0%, 40% { box-shadow: 0 0 0 3px #e02424, 0 0 14px 4px rgba(224, 36, 36, .4);} 100% { box-shadow: 0 0 0 3px rgba(224, 36, 36, 0);}}
+  .docgen .dp-mark { position: absolute; box-sizing: border-box; border: 2px solid #e02424; pointer-events: none; z-index: 3;}
 
   /* A table's Formatting: shut to one line until opened; a value the table set itself is marked. */
   .docgen .rd-look { grid-column: 1 / -1; border-top: 1px solid var(--c-border); padding-top: 6px; font-size: 12px;}

@@ -20,7 +20,13 @@ const px = (n) => `${Math.round(n * 1000) / 1000}px`;
  * contents entry or a reference can jump to it.
  * @param {{ size: [number, number], items: any[] }[]} pages
  * `here` marks one anchor (data-rd-here), for the designer to scroll to.
- * @param {{ scale?: number, anchors?: Record<string, { page: number, y: number }>, here?: string, imageUrl?: (src: string) => string | null }} [o]
+ * `marks` are boxes (in points, by page index) outlined over the pages: the designer's picked
+ * parts. They are screen-only — the PDF writer draws the pages' items, never these.
+ * @param {{ scale?: number, anchors?: Record<string, { page: number, y: number }>, here?: string, imageUrl?: (src: string) => string | null,
+ *   marks?: { page: number, x: number, y: number, w: number, h: number }[],
+ *   targets?: { src: string[], page: number, x: number, y: number, w: number, h: number }[] }} [o]
+ * `targets` are where the designer's parts landed (invisible boxes, `data-dp-part` naming the
+ * parts), for it to scroll to.
  */
 export function pagesHtml(pages, o = {}) {
   const k = o.scale ?? 1;
@@ -45,9 +51,17 @@ export function pagesHtml(pages, o = {}) {
       const box = `left:${px(it.x * k)};top:${px(it.y * k)};width:${px(it.w * k)};height:${px(it.h * k)}`;
       return u ? `<img class="dp-image" src="${esc(u)}" alt="" style="${box}">` : `<div class="dp-fill" style="${box};background:#eeeeee"></div>`;
     }
+    // A blank still to be filled in: highlighted, with a badge in the margin at its line.
+    if (it.kind === 'todo') {
+      return `<div class="dp-todo" style="left:${px((it.x - 1.5) * k)};top:${px((it.y - 1) * k)};width:${px((it.w + 3) * k)};height:${px((it.h + 2) * k)}"></div>` +
+        (it.start ? `<span class="dp-todo-flag" title="To fill in" style="left:${px(10 * k)};top:${px((it.y + it.h / 2 - 6) * k)};width:${px(12 * k)};height:${px(12 * k)};font-size:${px(9 * k)}">!</span>` : '');
+    }
     if (it.kind === 'link') return `<a class="dp-link" data-prv-jump="${esc(it.to)}" style="left:${px(it.x * k)};top:${px(it.y * k)};width:${px(it.w * k)};height:${px(it.h * k)}"></a>`;
     return '';
-  }).join('') + '</div>').join('');
+  }).join('') + (o.targets ?? []).filter((t) => t.page === i).map((t) =>
+    `<div class="dp-target" data-dp-part="${esc(t.src.join(' '))}" style="left:${px((t.x - 3) * k)};top:${px((t.y - 3) * k)};width:${px((t.w + 6) * k)};height:${px((t.h + 6) * k)}"></div>`).join('') +
+    (o.marks ?? []).filter((m) => m.page === i).map((m) =>
+    `<div class="dp-mark" style="left:${px((m.x - 3) * k)};top:${px((m.y - 3) * k)};width:${px((m.w + 6) * k)};height:${px((m.h + 6) * k)}"></div>`).join('') + '</div>').join('');
 }
 
 /**
@@ -61,7 +75,7 @@ export function cropPage(page, top, bottom) {
   const items = [];
   for (const it of page.items) {
     if (it.kind === 'text') { if (it.y > top && it.y <= bottom + 0.01) items.push({ ...it, y: it.y - top }); continue; }
-    if (it.kind === 'image') { if (it.y < bottom && it.y + it.h > top) items.push({ ...it, y: it.y - top }); continue; }
+    if (it.kind === 'image' || it.kind === 'todo') { if (it.y < bottom && it.y + it.h > top) items.push({ ...it, y: it.y - top }); continue; }
     if (it.kind === 'fill') {
       const y0 = Math.max(top, it.y), y1 = Math.min(bottom, it.y + it.h);
       if (y1 > y0) items.push({ ...it, y: y0 - top, h: y1 - y0 });

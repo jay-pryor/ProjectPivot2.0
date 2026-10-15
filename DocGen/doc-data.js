@@ -304,22 +304,25 @@ export function expandRepeats(blocks, catalogue, levels) {
    * DS-4: a block's parts with each Repeat part replaced by its parts once per item; a part
    * printed inside one carries the scope it reads its fields in (`scope`).
    */
-  function expandParts(parts, scope, suffix, inner) {
+  function expandParts(parts, scope, suffix, inner, path = []) {
     const res = [];
     parts.forEach((p) => {
       if (p && p.kind === 'repeat') {
         const each = p.repeat && p.repeat.each;
         if (!each || !scope.length) return;               // nothing to repeat for, or unbound
         const kids = childrenIn(scope, each, cat);
-        if (kids === null) { expandParts(p.parts || [], scope, suffix, inner).forEach((q) => res.push(q)); return; }
+        const within = path.concat([p.id]);
+        if (kids === null) { expandParts(p.parts || [], scope, suffix, inner, within).forEach((q) => res.push(q)); return; }
         select(kids, p.repeat.where, p.repeat.sort).forEach((e) => {
-          expandParts(p.parts || [], scope.concat([{ coll: each, entry: e }]), suffix + '~' + e.key, true).forEach((q) => res.push(q));
+          expandParts(p.parts || [], scope.concat([{ coll: each, entry: e }]), suffix + '~' + e.key, true, within).forEach((q) => res.push(q));
         });
         return;
       }
       const q = Object.assign({}, p, { id: suffix ? p.id + suffix : p.id });
       // A copy knows the part it was made from, and the entries it was made for.
       if (suffix) { q.tplId = p.id; q.sfx = suffix; }
+      // The designer's parts this one prints for: the Repeat parts around it, then itself.
+      if (path.length) q.within = path;
       if (inner) q.scope = scope;
       if (typeof p.caption === 'string') q.caption = caption(p.caption, scope);
       if (Array.isArray(p.images)) q.images = p.images.map((im) => (im && typeof im.caption === 'string' ? Object.assign({}, im, { caption: caption(im.caption, scope) }) : im));

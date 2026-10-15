@@ -275,7 +275,7 @@ section { margin: 0 0 22px; }
 /* The window: a page title like the app's, on the app's bar colour. */
 .docgen .modal-overlay { background: rgba(0, 0, 0, .5); }
 .docgen .modal { background: var(--p-bg); border-color: var(--p-line); box-shadow: 0 8px 24px rgba(0, 0, 0, .28); }
-.docgen .modal-head { background: var(--p-bar); color: var(--p-bar-fg); border-bottom-color: var(--p-line); }
+.docgen .modal-head { position: relative; background: var(--p-bar); color: var(--p-bar-fg); border-bottom-color: var(--p-line); }
 .docgen .modal-head h3 { font-family: var(--p-display); text-transform: uppercase; letter-spacing: .12em; font-weight: 600; font-size: 20px; }
 .docgen .modal-head .modal-sub { color: var(--p-bar-fg); opacity: .8; font-size: 13px; }
 .docgen .modal-close { color: var(--p-bar-fg); background: none; border: 1px solid transparent; padding: 0 6px; }

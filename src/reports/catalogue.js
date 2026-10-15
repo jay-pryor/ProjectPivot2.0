@@ -67,7 +67,7 @@ const COLLECTIONS = {
     f('sfarpJustification', 'SFARP justification'), f('sfarpConclusion', 'SFARP conclusion'), f('sfarpConditions', 'Conditions of validity')],
     children: ['control', 'assessment', 'safetyReport', 'reference'] },
   control: { label: 'Control', plural: 'Controls', fields: CONTROL_FIELDS, children: [] },
-  assessment: { label: 'Assessment', plural: 'Assessments', fields: [f('stage', 'Stage'), f('receptor', 'Receptor'), f('likelihood', 'Likelihood'), f('likelihoodWhy', 'Likelihood justification'),
+  assessment: { label: 'Risk category', plural: 'Risk categories', fields: [f('stage', 'Stage'), f('receptor', 'Receptor'), f('likelihood', 'Likelihood'), f('likelihoodWhy', 'Likelihood justification'),
     f('consequence', 'Consequence'), f('consequenceWhy', 'Consequence justification'), f('level', 'Level', 'rating')], children: [] },
   safetyReport: { label: 'Safety report', plural: 'Safety reports', fields: SAFETY_FIELDS, children: [] },
   reference: { label: 'Reference', plural: 'References', fields: [f('id', 'ID'), f('title', 'Title'), f('docNumber', 'Doc number'), f('revision', 'Revision'), f('supports', 'Supports')], children: [] },
