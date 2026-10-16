@@ -24,7 +24,7 @@ const px = (n) => `${Math.round(n * 1000) / 1000}px`;
  * parts. They are screen-only — the PDF writer draws the pages' items, never these.
  * @param {{ scale?: number, anchors?: Record<string, { page: number, y: number }>, here?: string, imageUrl?: (src: string) => string | null,
  *   marks?: { page: number, x: number, y: number, w: number, h: number }[],
- *   targets?: { src: string[], sec?: string | null, page: number, x: number, y: number, w: number, h: number }[],
+ *   targets?: { src: string[], sec?: string | null, inst?: string | null, page: number, x: number, y: number, w: number, h: number }[],
  *   markup?: { id: string, kind: string, page: number, x: number, y: number, w: number, h: number, born?: number, sel?: boolean }[],
  *   comments?: { id: string, page: number, y: number, n?: number, pending?: boolean }[] }} [o]
  * `targets` are where the designer's parts landed (invisible boxes, `data-dp-part` naming the
@@ -66,7 +66,7 @@ export function pagesHtml(pages, o = {}) {
     if (it.kind === 'link') return `<a class="dp-link" data-prv-jump="${esc(it.to)}" style="left:${px(it.x * k)};top:${px(it.y * k)};width:${px(it.w * k)};height:${px(it.h * k)}"></a>`;
     return '';
   }).join('') + (o.targets ?? []).filter((t) => t.page === i).map((t) =>
-    `<div class="dp-target" data-dp-part="${esc(t.src.join(' '))}"${t.sec ? ` data-dp-sec="${esc(t.sec)}"` : ''} style="left:${px((t.x - 3) * k)};top:${px((t.y - 3) * k)};width:${px((t.w + 6) * k)};height:${px((t.h + 6) * k)}"></div>`).join('') +
+    `<div class="dp-target" data-dp-part="${esc(t.src.join(' '))}"${t.sec ? ` data-dp-sec="${esc(t.sec)}"` : ''}${t.inst ? ` data-dp-inst="${esc(t.inst)}"` : ''} style="left:${px((t.x - 3) * k)};top:${px((t.y - 3) * k)};width:${px((t.w + 6) * k)};height:${px((t.h + 6) * k)}"></div>`).join('') +
     (o.marks ?? []).filter((m) => m.page === i).map((m) =>
     `<div class="dp-mark" style="left:${px((m.x - 3) * k)};top:${px((m.y - 3) * k)};width:${px((m.w + 6) * k)};height:${px((m.h + 6) * k)}"></div>`).join('') +
     markup.filter((m) => m.page === i).map((m) =>

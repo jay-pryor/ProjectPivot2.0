@@ -126,3 +126,25 @@ test('every printed block says which section it prints for (a copy: the section 
   const html = RD.render(h.getState()); RD.close();
   assert.match(html, /<h5 class="rd-sec-title"><span>[^<]*<\/span><button[^>]*data-rd-sec-goto="sec1"/);
 });
+
+test('each printing of a repeated block is its own (`inst`) while all share the block (`src`): a preview pick is one copy, an editor pick is all', () => {
+  const blocks = doc(host()).blocks.filter((b) => b.kind === 'paragraph' && b.src && b.src.includes('pa1'));
+  assert.equal(blocks.length, 3, 'one per control');
+  assert.equal(new Set(blocks.map((b) => b.inst)).size, 3, 'each copy its own');
+  assert.ok(blocks.every((b) => b.src.join() === 'rp1,pa1'), 'all the same block');
+  assert.ok(blocks.every((b) => b.inst.startsWith('pa1~')), 'named after the block it copies');
+});
+
+test('outlines: picking one copy in a preview outlines that copy alone; picking the block outlines every copy', () => {
+  const h = host();
+  const outlines = (picked, pickedInst) => {
+    RD.open(); RD.select('sec1'); RD._rd.pane = 'section'; RD._rd.secWhole = true;
+    RD._rd.picked = picked; RD._rd.pickedInst = pickedInst; RD._rd.preview = null;
+    const html = RD.render(h.getState()); RD.close();
+    return (html.match(/class="dp-mark"/g) || []).length;
+  };
+  const insts = [...new Set([...RD.render(h.getState()).matchAll(/data-dp-part="rp1 pa1" data-dp-sec="[^"]*" data-dp-inst="([^"]+)"/g)].map((m) => m[1]))];
+  assert.equal(outlines({}, { [insts[1] ?? 'pa1~h1~c2']: true }), 1);
+  assert.equal(outlines({ pa1: true }, {}), 3);
+  RD._rd.picked = {}; RD._rd.pickedInst = {};
+});

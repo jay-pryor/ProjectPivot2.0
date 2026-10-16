@@ -314,7 +314,7 @@ function flow(doc, style, pageOf, assets) {
     }
   };
 
-  /** @type {{ src: string[], sec: string | null, bi: number, page: number, x: number, y: number, w: number, h: number }[]} */
+  /** @type {{ src: string[], sec: string | null, inst: string | null, bi: number, page: number, x: number, y: number, w: number, h: number }[]} */
   const regions = [];
   /**
    * Where a block that says which designer parts (`src`) or section (`sec`) it prints for landed: a box per page
@@ -348,7 +348,7 @@ function flow(doc, style, pageOf, assets) {
       // Text is not measured here, so a box with text in it spans the text width.
       const wide = lo === Infinity || pages[pi].items.some((it) => !before.has(it) && it.kind === 'text' && (it.x < lo || it.x > hi));
       const x = wide ? left : lo, w = wide ? W : hi - lo;
-      regions.push({ src: b.src || [], sec: b.sec || null, bi, page: pi, x, y: top, w, h: bot - top });
+      regions.push({ src: b.src || [], sec: b.sec || null, inst: b.inst || null, bi, page: pi, x, y: top, w, h: bot - top });
     }
   };
 
