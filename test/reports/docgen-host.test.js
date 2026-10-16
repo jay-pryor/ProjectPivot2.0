@@ -101,7 +101,7 @@ test('Hazards has four risk columns; Risk assessments and SFARP sections', async
   const ra = secs.find((s) => s.id === 'assessments');
   assert.equal(ra.label, 'Risk assessments');
   const envResidual = ra.rows().find((r) => r.stage === 'residual' && r.receptor === 'environment');
-  assert.deepEqual(ra.columns.map((c) => c.get(envResidual)), ['Residual', 'Environment', 'C', '', '2', 'Large spill', 'Serious (2C)']);
+  assert.deepEqual(ra.columns.map((c) => c.get(envResidual)), ['Residual', 'Environment', 'Occasional (C)', '', 'Critical (2)', 'Large spill', 'Serious (2C)']);
   const sf = secs.find((s) => s.id === 'sfarp');
   assert.deepEqual(sf.columns.map((c) => c.label), ['Justification', 'Conclusion', 'Conditions of validity']);
   assert.equal(sf.columns[1].get(sf.rows()[0]), 'SFARP achieved');
