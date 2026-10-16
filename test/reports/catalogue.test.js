@@ -83,3 +83,13 @@ test('every field resolves against the catalogue: date-sorted safety report desc
   const res = D.resolveField(scope, D.parseFieldTag('f:safetyReport.description?sort=date'), c);
   assert.deepEqual(res, { kind: 'list', items: ['earlier one', 'later one'] });
 });
+
+test('a risk category gives its likelihood and consequence in words, as the level is written', async () => {
+  const { likelihoodText, consequenceText } = await import('../../src/core/matrix.js');
+  assert.equal(likelihoodText('C'), 'Occasional (C)');
+  assert.equal(likelihoodText('G'), 'Not Credible (G)');
+  assert.equal(consequenceText(3), 'Marginal (3)');
+  assert.equal(consequenceText('1'), 'Catastrophic (1)');
+  assert.equal(likelihoodText(null), '');
+  assert.equal(consequenceText(null), '');
+});

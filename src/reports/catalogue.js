@@ -1,5 +1,5 @@
 import { BANDS } from '../core/matrix.js';
-import { formatRating } from '../core/matrix.js';
+import { formatRating, likelihoodText, consequenceText } from '../core/matrix.js';
 import { RECEPTORS, RECEPTOR_WORD, stageKey } from '../core/receptors.js';
 
 /** @typedef {import('./snapshot.js').Snapshot} Snapshot */
@@ -118,7 +118,8 @@ export function catalogueFor(s) {
       control: h.controls.map((c) => controlEntry(withHazard(c))),
       assessment: (h.assessments ?? []).map((a) => entry(`${a.stage}:${a.receptor}`, {
         stage: a.stage === 'initial' ? 'Initial' : 'Residual', receptor: RECEPTOR_WORD[/** @type {'personnel'} */ (a.receptor)] ?? a.receptor,
-        likelihood: a.likelihood ?? '', likelihoodWhy: a.likelihoodWhy ?? '', consequence: a.consequence == null ? '' : String(a.consequence),
+        // In words, as the level is: "Occasional (C)", "Marginal (3)".
+        likelihood: likelihoodText(a.likelihood), likelihoodWhy: a.likelihoodWhy ?? '', consequence: consequenceText(a.consequence),
         consequenceWhy: a.consequenceWhy ?? '', level: ratingValue(a.level),
       })),
       safetyReport: (h.safetyReports ?? []).map((x) => safetyEntry(withHazard(x))),

@@ -64,6 +64,18 @@ export function ratingFor(consequence, likelihood) {
   return { band: MATRIX[c][LETTERS.indexOf(l)], cell: `${c}${l}` };
 }
 
+/** A likelihood as a document writes it, word first: "Occasional (C)". Empty when not entered. @param {unknown} letter */
+export function likelihoodText(letter) {
+  const l = LIKELIHOODS.find((x) => x.letter === letter);
+  return l ? `${l.label} (${l.letter})` : '';
+}
+
+/** A consequence as a document writes it, word first: "Marginal (3)". Empty when not entered. @param {unknown} level */
+export function consequenceText(level) {
+  const c = CONSEQUENCES.find((x) => x.level === Number(level));
+  return level != null && level !== '' && c ? `${c.label} (${c.level})` : '';
+}
+
 /**
  * @param {{ consequence: number | null, likelihood: string | null } | null | undefined} pair
  * @returns {string} `Serious (2C)`, or `Uncategorised`

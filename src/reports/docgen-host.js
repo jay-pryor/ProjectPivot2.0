@@ -4,7 +4,7 @@ import { buildSnapshot } from './snapshot.js';
 import { catalogueFor, STATUS_WORD, byItem, byControl, hazardsOf, perHazard } from './catalogue.js';
 import { STARTERS } from './starters.js';
 import { live } from '../core/data.js';
-import { formatRating } from '../core/matrix.js';
+import { formatRating, likelihoodText, consequenceText } from '../core/matrix.js';
 import { RECEPTORS, RECEPTOR_WORD, stageKey } from '../core/receptors.js';
 import { toIsoUtc, aestDate } from '../core/time.js';
 import { imageInfo, imagePath, MAX_IMAGE_BYTES, tooManyPixels } from '../../DocGen/doc-images.js';
@@ -170,9 +170,9 @@ function sectionsFor(s) {
       columns: [
         { id: 'stage', label: 'Stage', w: 2, get: (/** @type {any} */ r) => (r.stage === 'initial' ? 'Initial' : 'Residual') },
         { id: 'receptor', label: 'Receptor', w: 2, get: (/** @type {any} */ r) => RECEPTOR_WORD[/** @type {'personnel'} */ (r.receptor)] ?? r.receptor },
-        { id: 'likelihood', label: 'Likelihood', w: 2, get: (/** @type {any} */ r) => r.likelihood ?? '' },
+        { id: 'likelihood', label: 'Likelihood', w: 2, get: (/** @type {any} */ r) => likelihoodText(r.likelihood) },
         { id: 'likelihoodWhy', label: 'Likelihood justification', w: 5, get: (/** @type {any} */ r) => r.likelihoodWhy },
-        { id: 'consequence', label: 'Consequence', w: 2, get: (/** @type {any} */ r) => (r.consequence == null ? '' : String(r.consequence)) },
+        { id: 'consequence', label: 'Consequence', w: 2, get: (/** @type {any} */ r) => consequenceText(r.consequence) },
         { id: 'consequenceWhy', label: 'Consequence justification', w: 5, get: (/** @type {any} */ r) => r.consequenceWhy },
         { id: 'level', label: 'Assessed level', w: 3, get: (/** @type {any} */ r) => r.level },
       ],
