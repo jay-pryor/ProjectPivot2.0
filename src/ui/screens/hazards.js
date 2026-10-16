@@ -154,13 +154,15 @@ function controlsTable(state, data, h, d) {
   return dataTable(state, {
     id: 'hazardControls',
     rowKey: (c) => c.control.id,
+    // A double-click on the row opens the control, as its C-00X does.
+    rowAttrs: (c) => ({ dblclick: 'go', view: 'control', id: c.control.id }),
     rows: [...d.controls].sort((a, b) => tierRank(a.control.tier) - tierRank(b.control.tier) || byNumber(a.control, b.control)),
     empty: 'No controls linked yet.',
     tools: plus({ action: 'openPicker', picker: 'linkControls', 'hazard-id': h.id }, 'Link controls'),
     columns: [
       { ...idColumn((c) => c.control, controlLabel, (c) => go(idTag(controlLabel(c.control)), 'control', { id: c.control.id })), label: 'Control ID', width: 180, minWidth: 150 },
       { key: 'control', label: 'Control', width: 620, minWidth: 200, value: (c) => c.control.title, filter: 'text',
-        render: (c) => html`${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
+        render: (c) => html`${c.control.title}${statusTag(c.control.status)}` },
       tierColumn((c) => c.control, false),
       { key: 'kind', label: 'Kind', width: 300, minWidth: 150, value: (c) => c.link.kind,
         render: (c) => html`<select class="quiet" name="kind" aria-label="Kind of ${c.control.title}" ${dataAttrs({ change: 'setControlKind', 'hazard-id': h.id, 'control-id': c.control.id })}>${CONTROL_KINDS.map((k) => option(k, k, c.link.kind))}</select>` },

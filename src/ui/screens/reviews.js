@@ -110,6 +110,8 @@ function pastReviews(state, data, p) {
   return dataTable(state, {
     id: 'pastReviews',
     rowKey: (c) => c.review.id,
+    // A double-click on the row opens that review, as its date does.
+    rowAttrs: (c) => ({ dblclick: 'go', view: 'platformReview', id: p.id, 'review-id': c.review.id }),
     rows: completedReviews(data, p.id),
     empty: 'No completed reviews yet.',
     columns: [

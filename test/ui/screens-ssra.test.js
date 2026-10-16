@@ -146,8 +146,8 @@ test('the Overview lists the hazard\'s controls with their shared recommendation
   assert.match(out, />Cuts spread<\/textarea>/);
   assert.match(out, /<th data-col="description"/);
   assert.match(out, /<th data-col="platforms"[\s\S]*?On platforms/);
-  assert.match(out, /<tr data-row="c1">[\s\S]*?<ul class="plain dots"><li>Alpha <span class="tag state-rejected">Rejected<\/span><\/li><li>Bravo <span class="tag state-recommended">Recommended<\/span><\/li><\/ul>/);
-  assert.match(out, /<tr data-row="c3">[\s\S]*?<ul class="plain dots"><li>Alpha <span class="tag state-recommended">Recommended<\/span><\/li><\/ul>/, 'on Alpha alone');
+  assert.match(out, /<tr data-row="c1"[^>]*>[\s\S]*?<ul class="plain dots"><li>Alpha <span class="tag state-rejected">Rejected<\/span><\/li><li>Bravo <span class="tag state-recommended">Recommended<\/span><\/li><\/ul>/);
+  assert.match(out, /<tr data-row="c3"[^>]*>[\s\S]*?<ul class="plain dots"><li>Alpha <span class="tag state-recommended">Recommended<\/span><\/li><\/ul>/, 'on Alpha alone');
 });
 
 test('Add controls offers live controls not on this platform, naming the hazard\'s other platforms each is on', () => {
@@ -415,4 +415,11 @@ test('risk panels show ratings only, justifications only, or both; SFARP and con
   assert.match(riskPanels(state, d, h, 'p1', 'residual').toString(), /name="likelihood".*name="likelihoodWhy"/s);
   assert.match(sfarpArea(d, h, 'p1').toString(), /name="justification".*name="conclusion".*name="conditions"/s);
   assert.match(controlsSection(state, d, h, 'p1', 'Alpha').toString(), /Sprinklers/);
+});
+
+test('a hazard\'s controls: the C-00X is the one link, the name is plain text, and a double-click on the row opens the control', () => {
+  const out = hazardView(state, controlled(), 'h1').toString();
+  const table = out.slice(out.indexOf('data-table="hazardControls"'));
+  assert.match(table, /<tr data-row="c1" data-dblclick="go" data-view="control" data-id="c1">/);
+  assert.doesNotMatch(table.split('</tr>')[1] ?? '', /class="link"[^>]*data-view="control"[^>]*>[^C<][^<]*<\/button>/, 'no second link on the name');
 });

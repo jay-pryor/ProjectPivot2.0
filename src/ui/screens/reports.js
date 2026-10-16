@@ -24,6 +24,8 @@ export function reportsView(state, data) {
       ${dataTable(state, {
         id: 'reports',
         rowKey: (r) => r.id,
+        // A double-click on the row opens the report in the Report Designer, as its ✎ does.
+        rowAttrs: (r) => ({ dblclick: 'openReportDesigner', id: r.id }),
         rows: reports,
         empty: 'No reports yet.',
         columns: [

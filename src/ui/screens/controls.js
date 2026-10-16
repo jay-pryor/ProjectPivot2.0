@@ -141,12 +141,13 @@ export function controlView(state, data, id) {
         { key: 'usage', label: 'Applies to', icon: 'analysis', badge: usage.length, body: () => dataTable(state, {
           id: 'controlUsage',
           rowKey: (u) => u.hazard.id,
+          rowAttrs: (u) => ({ dblclick: 'go', view: 'hazard', id: u.hazard.id }),
           rows: usage,
           empty: 'Not linked to any hazard yet. Link it with the +.',
           tools: c.status === 'live' ? plus({ action: 'openPicker', picker: 'controlHazards', 'control-id': id }, 'Link to hazards') : '',
           columns: [
             { key: 'hazard', label: 'Applies to', width: 600, minWidth: 200, value: (u) => `${hazardLabel(u.hazard)} ${u.hazard.title}`,
-              render: (u) => html`<span class="id">${idTag(hazardLabel(u.hazard))}</span> ${go(u.hazard.title, 'hazard', { id: u.hazard.id })}` },
+              render: (u) => html`<span class="id">${go(idTag(hazardLabel(u.hazard)), 'hazard', { id: u.hazard.id })}</span> ${u.hazard.title}` },
             { key: 'kind', label: 'Kind', width: 260, minWidth: 130, value: (u) => u.kind },
             { key: 'platforms', label: 'Platforms', width: 720, minWidth: 200, value: (u) => u.platforms.map((p) => p.platform.name).join(', '),
               render: (u) => (u.platforms.length ? u.platforms.map((p) => html`<span class="onplat">${p.platform.name} ${stateTag(p.state)}</span> `) : '—') },
@@ -228,11 +229,12 @@ function controlPlatformTab(state, data, c, platformId) {
     <section class="block">${dataTable(state, {
       id: 'controlPlatformUses',
       rowKey: (u) => u.hazard.id,
+      rowAttrs: (u) => ({ dblclick: 'go', view: 'hazard', id: u.hazard.id, tab: `p:${platformId}` }),
       rows,
       empty: 'No hazard on this platform uses it.',
       columns: [
         { key: 'hazard', label: `Hazards on ${p.name}`, width: 520, minWidth: 200, value: (u) => `${hazardLabel(u.hazard)} ${u.hazard.title}`,
-          render: (u) => html`<span class="id">${idTag(hazardLabel(u.hazard))}</span> ${go(u.hazard.title, 'hazard', { id: u.hazard.id, tab: `p:${platformId}` })}` },
+          render: (u) => html`<span class="id">${go(idTag(hazardLabel(u.hazard)), 'hazard', { id: u.hazard.id, tab: `p:${platformId}` })}</span> ${u.hazard.title}` },
         { key: 'kind', label: 'Kind', width: 200, minWidth: 110, value: (u) => u.kind },
         { key: 'state', label: 'Status', width: 240, minWidth: 150, value: (u) => CONTROL_STATUSES.indexOf(u.state),
           render: (u) => statusSelect(data, { hazardId: u.hazard.id, control: c, platformId, state: u.state }) },

@@ -57,5 +57,7 @@ test('the platform\'s controls table has the control ID and the control name in 
   const table = out.slice(out.indexOf('data-table="platformControls"'));
   const heads = [...table.split('</thead>')[0].matchAll(/<th data-col="(\w+)"/g)].map((m) => m[1]);
   assert.deepEqual(heads.slice(0, 2), ['id', 'control']);
-  assert.match(table, /<td><button type="button" class="link" data-action="go" data-view="control" data-id="c1">C-001<\/button><\/td><td><button type="button" class="link" data-action="go" data-view="control" data-id="c1">Sprinklers<\/button><\/td>/);
+  // The ID is the link; the name beside it is plain text, and a double-click on the row opens the control.
+  assert.match(table, /<td><button type="button" class="link" data-action="go" data-view="control" data-id="c1">C-001<\/button><\/td><td>Sprinklers<\/td>/);
+  assert.match(table, /<tr[^>]*data-dblclick="go" data-view="control" data-id="c1"/);
 });

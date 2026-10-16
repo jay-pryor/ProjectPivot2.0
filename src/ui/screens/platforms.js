@@ -191,7 +191,7 @@ export function platformView(state, data, id) {
                 ? html`<input class="cell-edit" name="reportId" value="${r.link.reportId ?? ''}" placeholder="${hazardLabel(r.hazard)}" aria-label="Report ID" autofocus ${dataAttrs({ change: 'setReportId', 'hazard-id': r.hazard.id, 'platform-id': id })}>`
                 : html`<span class="cell-text" ${dataAttrs({ dblclick: 'startEdit', kind: 'reportId', id: r.hazard.id })} title="Double-click to change">${idTag(r.reportId)}</span>`) },
             { key: 'hazard', label: 'Hazards', width: 600, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`,
-              render: (r) => html`<span class="id">${idTag(hazardLabel(r.hazard))}</span> ${go(r.hazard.title, 'hazard', { id: r.hazard.id, tab: `p:${id}` })}` },
+              render: (r) => html`<span class="id">${go(idTag(hazardLabel(r.hazard)), 'hazard', { id: r.hazard.id, tab: `p:${id}` })}</span> ${r.hazard.title}` },
             // Calculated levels only: likelihood and consequence are set on the hazard's platform tab.
             ...['initial', 'residual'].flatMap((stage) => RECEPTORS.map((receptor) => ({
               key: stageKey(stage, receptor), label: `${stage === 'initial' ? 'Initial' : 'Residual'} (${receptor})`, width: 210, minWidth: 150, className: `tint-${stage}`,
@@ -206,11 +206,14 @@ export function platformView(state, data, id) {
           id: 'platformControls',
           rowKey: (c) => `${c.hazard.id}:${c.control.id}`,
           rows: controlRows,
+          // A double-click on the row opens the control, as its C-00X does.
+          rowAttrs: (c) => ({ dblclick: 'go', view: 'control', id: c.control.id }),
           empty: 'The hazards here have no controls yet. Link controls on a hazard\'s page.',
           columns: [
             idColumn((c) => c.control, controlLabel, (c) => go(idTag(controlLabel(c.control)), 'control', { id: c.control.id })),
             { key: 'control', label: `Controls on ${p.name}`, width: 440, minWidth: 180, value: (c) => c.control.title, filter: 'text',
-              render: (c) => html`${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}` },
+              // Plain text: the C-00X beside it is the link.
+              render: (c) => html`${c.control.title}${statusTag(c.control.status)}` },
             { key: 'hazard', label: 'For hazard', width: 300, minWidth: 140, value: (c) => hazardLabel(c.hazard), filter: 'text',
               render: (c) => go(idTag(hazardLabel(c.hazard)), 'hazard', { id: c.hazard.id }) },
             { ...tierColumn((c) => c.control), render: (c) => html`<select class="quiet" name="tier" aria-label="Tier of ${c.control.title}" ${dataAttrs({ change: 'updateControl', id: c.control.id })}>${option('', 'Not set', c.control.tier ?? '')}${CONTROL_TIERS.map((t) => option(t, t, c.control.tier ?? ''))}</select>` },

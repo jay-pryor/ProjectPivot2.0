@@ -25,7 +25,7 @@ const px = (n) => `${Math.round(n * 1000) / 1000}px`;
  * @param {{ scale?: number, anchors?: Record<string, { page: number, y: number }>, here?: string, imageUrl?: (src: string) => string | null,
  *   marks?: { page: number, x: number, y: number, w: number, h: number }[],
  *   targets?: { src: string[], sec?: string | null, page: number, x: number, y: number, w: number, h: number }[],
- *   markup?: { id: string, kind: string, page: number, x: number, y: number, w: number, h: number, born?: number }[],
+ *   markup?: { id: string, kind: string, page: number, x: number, y: number, w: number, h: number, born?: number, sel?: boolean }[],
  *   comments?: { id: string, page: number, y: number, n?: number, pending?: boolean }[] }} [o]
  * `targets` are where the designer's parts landed (invisible boxes, `data-dp-part` naming the
  * parts), for it to scroll to.
@@ -70,8 +70,10 @@ export function pagesHtml(pages, o = {}) {
     (o.marks ?? []).filter((m) => m.page === i).map((m) =>
     `<div class="dp-mark" style="left:${px((m.x - 3) * k)};top:${px((m.y - 3) * k)};width:${px((m.w + 6) * k)};height:${px((m.h + 6) * k)}"></div>`).join('') +
     markup.filter((m) => m.page === i).map((m) =>
-      `<div class="dp-mk dp-mk-${m.kind === 'box' ? 'box' : 'hl'}${m.born ? ' dp-mk-fade' : ''}" data-mk="${esc(m.id)}" style="left:${px(m.x * k)};top:${px(m.y * k)};` +
-      `width:${px(Math.max(1, m.w) * k)};height:${px(Math.max(1, m.h) * k)}${m.born ? `;animation-delay:${Math.max(0, 5000 - (now - m.born))}ms` : ''}"></div>`).join('') +
+      `<div class="dp-mk dp-mk-${m.kind === 'box' ? 'box' : 'hl'}${m.born ? ' dp-mk-fade' : ''}${m.sel ? ' dp-mk-sel' : ''}" data-mk="${esc(m.id)}" style="left:${px(m.x * k)};top:${px(m.y * k)};` +
+      `width:${px(Math.max(1, m.w) * k)};height:${px(Math.max(1, m.h) * k)}${m.born ? `;animation-delay:${Math.max(0, 5000 - (now - m.born))}ms` : ''}">` +
+      // A selected one carries its own delete, at its top-right corner.
+      `${m.sel ? `<button type="button" class="dp-mk-x" data-mk-del="${esc(m.id)}" title="Remove this markup (Delete)" aria-label="Remove this markup">\u2715</button>` : ''}</div>`).join('') +
     '</div>', p)).join('');
 
   /** A page, or — when it has comments — the page and its comment symbols together. @param {number} i @param {string} page @param {any} p */

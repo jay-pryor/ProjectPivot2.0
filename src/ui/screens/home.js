@@ -91,7 +91,7 @@ export function openItemsView(state, data) {
   };
   const keys = shownRows(state, ackSpec).map((r) => `${r.entry.id}|${r.platform.id}`);
   const overdue = items.reviews.filter((r) => r.state === 'overdue').length;
-  const hazardCell = (/** @type {any} */ r) => html`<span class="id">${idTag(hazardLabel(r.hazard))}</span> ${go(r.hazard.title, 'hazard', { id: r.hazard.id })}`;
+  const hazardCell = (/** @type {any} */ r) => html`<span class="id">${go(idTag(hazardLabel(r.hazard)), 'hazard', { id: r.hazard.id })}</span> ${r.hazard.title}`;
   const open = state.sections?.openItems === undefined ? 'acks' : state.sections.openItems;
   /** A headline count that opens its section below. @param {string} key @param {number} n @param {string} one @param {string} many @param {string} [tone] */
   // Any count above nought is highlighted (overdue reviews in red, the rest orange); nought stays plain.
@@ -141,7 +141,8 @@ export function openItemsView(state, data) {
         columns: [
           { key: 'platform', label: 'Platform', width: 220, minWidth: 140, value: (r) => r.platform.name, filter: 'text', render: (r) => platformLink(r.platform) },
           { key: 'hazard', label: 'Hazard', width: 380, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`, filter: 'text', render: hazardCell },
-          { key: 'control', label: 'Control', width: 320, minWidth: 200, value: (r) => r.control.title, filter: 'text', render: (r) => go(r.control.title, 'control', { id: r.control.id, tab: `p:${r.platform.id}` }) },
+          { key: 'control', label: 'Control', width: 320, minWidth: 200, value: (r) => `${controlLabel(r.control)} ${r.control.title}`, filter: 'text',
+            render: (r) => html`<span class="id">${go(idTag(controlLabel(r.control)), 'control', { id: r.control.id, tab: `p:${r.platform.id}` })}</span> ${r.control.title}` },
           // Choosing Rejected asks why, in place, before it is set.
           { key: 'status', label: 'Status', width: 250, minWidth: 180, sortable: false,
             render: (r) => html`<div class="await-status">${statusSelect(data, { hazardId: r.hazard.id, control: r.control, platformId: r.platform.id, state: 'recommended' })}${rejectionCell(state, { control: r.control, state: 'recommended', ruling: null }, r.hazard.id, r.platform.id, r.platform.name)}</div>` },
@@ -153,7 +154,8 @@ export function openItemsView(state, data) {
         columns: [
           { key: 'platform', label: 'Platform', width: 300, minWidth: 140, value: (r) => r.platform.name, filter: 'text', render: (r) => platformLink(r.platform) },
           { key: 'hazard', label: 'Hazard', width: 520, minWidth: 200, value: (r) => `${hazardLabel(r.hazard)} ${r.hazard.title}`, filter: 'text', render: hazardCell },
-          { key: 'control', label: 'Control', width: 520, minWidth: 200, value: (r) => r.control.title, filter: 'text', render: (r) => go(r.control.title, 'control', { id: r.control.id }) },
+          { key: 'control', label: 'Control', width: 520, minWidth: 200, value: (r) => `${controlLabel(r.control)} ${r.control.title}`, filter: 'text',
+            render: (r) => html`<span class="id">${go(idTag(controlLabel(r.control)), 'control', { id: r.control.id })}</span> ${r.control.title}` },
         ],
       })}</section>` },
       { key: 'unrated', label: 'Hazards without ratings', icon: 'initial', badge: items.unrated.length, body: () => html`<h2>Hazards without ratings</h2><section class="block">${dataTable(state, {
@@ -181,7 +183,7 @@ export function openItemsView(state, data) {
         columns: [
           { key: 'platform', label: 'Platform', width: 300, minWidth: 140, value: (r) => r.platform.name, filter: 'text', render: (r) => platformLink(r.platform) },
           { key: 'control', label: 'Control', width: 520, minWidth: 200, value: (r) => `${controlLabel(r.control)} ${r.control.title}`, filter: 'text',
-            render: (r) => html`<span class="id">${idTag(controlLabel(r.control))}</span> ${go(r.control.title, 'control', { id: r.control.id, tab: `p:${r.platform.id}` })}` },
+            render: (r) => html`<span class="id">${go(idTag(controlLabel(r.control)), 'control', { id: r.control.id, tab: `p:${r.platform.id}` })}</span> ${r.control.title}` },
           { key: 'missing', label: 'Not set', width: 280, minWidth: 140, value: (r) => r.missing.join(', ') },
         ],
       })}</section>` },
