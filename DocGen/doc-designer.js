@@ -1744,7 +1744,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
             // Which designer parts each block prints for — what the preview outlines when a
             // part is picked. Never drawn: the PDF and HTML writers do not read it.
             var src = (p.within || []).concat([p.tplId || p.id]);
-            for (var k = from; k < out.length; k++) out[k].src = src;
+            // `inst`: this one printing of it — a copy in a repeat has its own — for a pick in the preview.
+            for (var k = from; k < out.length; k++) { out[k].src = src; out[k].inst = p.id; }
           });
           return;
         }
@@ -3091,12 +3092,25 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
     }
 
+    /**
+     * A table's column lists made whole before a column edit: one alignment per column
+     * (left where none was given) and a rows list. A table written by a starter or a
+     * template may leave the alignments out, and an edit that assumed them did nothing.
+     */
+    function wholeTable(t) {
+      if (!Array.isArray(t.rows)) t.rows = [];
+      var n = (t.header || []).length;
+      var a = Array.isArray(t.align) ? t.align.slice(0, n) : [];
+      while (a.length < n) a.push('l');
+      t.align = a;
+      return t;
+    }
     function addColumn(sectionId, partId) {
       if (!P()) return errNoProject();
       var t0 = part(P(), sectionId, partId);
       if (!t0 || t0.kind !== 'table') return err('Unknown table.', partId);
       App.docHost.commit(function (p) {
-        var t = part(p, sectionId, partId);
+        var t = wholeTable(part(p, sectionId, partId));
         var n = t.header.length;
         t.header.push('Column ' + (n + 1));
         t.align.push('l');
@@ -3116,6 +3130,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var t = part(p, sectionId, partId);
         // A table with no columns cannot render, so the last one is not removable.
         if (!t || !t.header || t.header.length <= 1 || at < 0 || at >= t.header.length) return;
+        wholeTable(t);
         var had = Array.isArray(t.widths) && t.widths.length === t.header.length;
         t.header.splice(at, 1);
         t.align.splice(at, 1);
@@ -3225,7 +3240,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       if (['l', 'c', 'r'].indexOf(value) === -1) return err('Alignment must be l, c or r.');
       App.docHost.commit(function (p) {
         var t = part(p, sectionId, partId);
-        if (t && t.align) t.align[col] = value;
+        if (t && t.header) wholeTable(t).align[col] = value;
       });
       return ok();
     }
@@ -4324,7 +4339,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       conflict: null,        // { kindKey, plan, decisions } while an import is being resolved
       refFor: null,          // part id whose "insert reference" menu is open
       tableLayout: {},       // part ids of the tables whose layout controls are showing
-      picked: {},            // part ids outlined in the section preview (screen only)
+      picked: {},            // part ids outlined in the previews, every copy (picked in the editor; screen only)
+      pickedInst: {},        // single printings outlined (a copy picked in a preview)
       lookOpen: {},          // the tables whose Formatting panel is open, by target
       preview: null,         // cached layout of the document, so switching panes is not a re-layout
       refs: null             // cached reference targets of the built document
@@ -5110,7 +5126,16 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       '<circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg>';
 
     /** A part picked to be outlined in the section preview shows it here too. */
-    function pickCls(part) { return _rd.picked[part.id] ? ' rd-picked' : ''; }
+    function pickCls(part) {
+      // The editor's block shows picked when it is, or when any copy of it is.
+      var inst = _rd.pickedInst || {};
+      var copy = Object.keys(inst).some(function (k) { return k === part.id || k.indexOf(part.id + '~') === 0; });
+      return _rd.picked[part.id] || copy ? ' rd-picked' : '';
+    }
+    /** Whether a region of the page is outlined: its block picked in the editor (every copy), or this copy picked in a preview. */
+    function regionPicked(r) {
+      return r.src.some(function (id) { return _rd.picked[id]; }) || !!(r.inst && (_rd.pickedInst || {})[r.inst]);
+    }
 
     function tableEditor(project, sec, part, i, n) {
       var head = part.header || [], rows = part.rows || [], align = part.align || [];
@@ -5485,7 +5510,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       var bands = [];
       var lastPage = end ? end.page : p.pages.length - 1;
       // The picked parts, outlined where they landed (a part can land in more than one place).
-      var isPicked = function (r) { return r.src.some(function (id) { return _rd.picked[id]; }); };
+      var isPicked = regionPicked;
       // Every part's place, too, cut to the bands: what a part's ◎ scrolls to.
       var bandRegions = [];
       // And where each link target lands in the bands, so a link inside the section can be followed in place.
@@ -5504,7 +5529,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           });
           (p.regions || []).forEach(function (r) {
             var y0 = Math.max(r.y, top), y1 = Math.min(r.y + r.h, bottom);
-            if (r.page === pg && y1 > y0) bandRegions.push({ src: r.src, sec: r.sec, page: bands.length - 1, x: r.x, y: y0 - top, w: r.w, h: y1 - y0 });
+            if (r.page === pg && y1 > y0) bandRegions.push({ src: r.src, sec: r.sec, inst: r.inst, page: bands.length - 1, x: r.x, y: y0 - top, w: r.w, h: y1 - y0 });
           });
         }
       }
@@ -6473,7 +6498,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           '<article class="rd-preview-doc rd-preview-pages' + reviewCls() + '" id="rd-preview-doc">' +
             pagesHtml(p.pages, Object.assign({ scale: zoomOf('preview'), anchors: p.anchors, imageUrl: imageUrl,
             // Ctrl+click picks here too, so the outlines (and the parts behind them) come along.
-            marks: (p.regions || []).filter(function (r) { return r.src.some(function (id) { return _rd.picked[id]; }); }), targets: p.regions || [] }, reviewLayer(project))) + '</article>' +
+            marks: (p.regions || []).filter(regionPicked), targets: p.regions || [] }, reviewLayer(project))) + '</article>' +
         '</div></div>';
     }
 
@@ -7468,7 +7493,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var sel = window.getSelection && window.getSelection();
         if (sel && !sel.isCollapsed && el.contains(sel.anchorNode)) return;   // text was being selected
         var id = el.getAttribute('data-rd-partrow');
-        if (_rd.picked[id]) delete _rd.picked[id]; else _rd.picked[id] = true;
+        // In the editor a pick is the block: every copy of it. Un-picking it lets go of any single copies too.
+        var inst = _rd.pickedInst || {};
+        var copies = Object.keys(inst).filter(function (k) { return k === id || k.indexOf(id + '~') === 0; });
+        if (_rd.picked[id] || copies.length) { delete _rd.picked[id]; copies.forEach(function (k) { delete inst[k]; }); }
+        else _rd.picked[id] = true;
         repaint();
       });
       /* Escape steps back one thing at a time: a comment being written, then an open
@@ -7478,7 +7507,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         if (_rd.cmtDraft) { _rd.cmtDraft = null; hidePop(); repaint(); return; }
         if (_pop) { hidePop(); return; }
         if (Object.keys(_rd.mkSel || {}).length) { _rd.mkSel = {}; repaint(); return; }
-        if (Object.keys(_rd.picked).length) { _rd.picked = {}; repaint(); return; }
+        if (Object.keys(_rd.picked).length || Object.keys(_rd.pickedInst || {}).length) { _rd.picked = {}; _rd.pickedInst = {}; repaint(); return; }
         if (_rd.tool || _rd.commenting) { _rd.tool = null; _rd.commenting = false; repaint(); }
       });
 
@@ -8070,7 +8099,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         });
         if (!best) return null;
         var ids = (best.getAttribute('data-dp-part') || '').split(' ').filter(Boolean);
-        return { part: ids[ids.length - 1] || null, sec: best.getAttribute('data-dp-sec') || null };
+        return { part: ids[ids.length - 1] || null, sec: best.getAttribute('data-dp-sec') || null, inst: best.getAttribute('data-dp-inst') || null, all: ids };
       }
       // Ctrl+click in the preview picks (or un-picks) the part there, as a click on its editor does.
       ctx.root.addEventListener('click', function (e) {
@@ -8078,7 +8107,14 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         var at = partAt(e), id = at && at.part;
         if (!id) return;
         e.preventDefault(); e.stopPropagation();
-        if (_rd.picked[id]) delete _rd.picked[id]; else _rd.picked[id] = true;
+        /* In a preview a pick is of THIS printing: one copy of a repeated block, not all of
+         * them (a pick on the block in the editor is the one that means every copy). One
+         * outlined because its block is picked is un-picked as the block. */
+        var inst = at.inst || id;
+        _rd.pickedInst = _rd.pickedInst || {};
+        if (_rd.pickedInst[inst]) delete _rd.pickedInst[inst];
+        else if (at.all.some(function (x) { return _rd.picked[x]; })) at.all.forEach(function (x) { delete _rd.picked[x]; });
+        else _rd.pickedInst[inst] = true;
         repaint();
       }, true);
       /* A double-click in the preview opens the part's editor: its section's Content (the

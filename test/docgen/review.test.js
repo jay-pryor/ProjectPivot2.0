@@ -73,3 +73,18 @@ test('selected markup can be removed one by one; a selected one is drawn with it
   const html = pagesHtml([{ size: [100, 100], items: [] }], { markup: [{ id: 'mk2', kind: 'box', page: 0, x: 5, y: 40, w: 50, h: 20, sel: true }] });
   assert.match(html, /class="dp-mk dp-mk-box dp-mk-sel" data-mk="mk2"[^>]*><button type="button" class="dp-mk-x" data-mk-del="mk2"/);
 });
+
+test('a table written without column alignments (as the SSRA starter writes them) can still lose and gain columns', () => {
+  const h = host();
+  h.getState().report.sections[0].parts.push({ id: 't9', kind: 'table', caption: 'From a starter', header: ['ID', 'Reference', 'Doc', 'Rev'], widths: [0.15, 0.5, 0.2, 0.15], rows: [['a', 'b', 'c', 'd']] });
+  const t = () => h.getState().report.sections[0].parts.find((p) => p.id === 't9');
+  App.docStore.removeColumn('sec1', 't9', 1);
+  assert.deepEqual(t().header, ['ID', 'Doc', 'Rev']);
+  assert.deepEqual(t().rows, [['a', 'c', 'd']]);
+  assert.deepEqual(t().align, ['l', 'l', 'l']);
+  assert.equal(t().widths.length, 3);
+  App.docStore.addColumn('sec1', 't9');
+  assert.deepEqual(t().header, ['ID', 'Doc', 'Rev', 'Column 4']);
+  App.docStore.setAlign('sec1', 't9', 0, 'c');
+  assert.equal(t().align[0], 'c');
+});
