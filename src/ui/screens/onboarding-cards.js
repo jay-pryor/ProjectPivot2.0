@@ -54,7 +54,7 @@ function implementedCard(state, data, wf, h, p) {
       <ul class="suggest-list">${sugg.map((s) => html`<li><label class="suggest-item"><input type="checkbox" name="controlId" value="${s.id}"><span class="suggest-text">${s.text}</span><span class="suggest-from">${s.from}</span></label></li>`)}</ul>
       <button type="submit" class="small">Add as implemented</button></form>` : ''}
     ${rows.length ? html`<table class="wf-controls"><thead><tr><th>Control</th><th>Tier</th><th>Origin</th><th>Description</th><th>Implemented by</th></tr></thead><tbody>
-      ${rows.map((c) => { const m = missing(data, c.control, p.id); return html`<tr>
+      ${rows.map((c) => { const m = missing(data, c.control, p.id); return html`<tr ${dataAttrs({ dblclick: 'go', view: 'control', id: c.control.id })}>
         <td>${go(c.control.title, 'control', { id: c.control.id })}${m.length ? html`<div class="wf-missing">Missing: ${m.join(', ')}</div>` : ''}</td>
         <td><select name="tier" aria-label="Tier of ${c.control.title}" ${dataAttrs(at(c))}>${option('', 'Not set', c.control.tier ?? '')}${CONTROL_TIERS.map((t) => option(t, t, c.control.tier ?? ''))}</select></td>
         <td><input name="origin" value="${c.control.origin ?? ''}" placeholder="Origin…" aria-label="Origin of ${c.control.title}" ${dataAttrs(at(c))}></td>

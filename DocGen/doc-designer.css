@@ -87,6 +87,12 @@
                border-radius: 6px; background: var(--c-surface); margin-bottom: 6px; cursor: grab;}
   .docgen .ord-step.dragging { opacity: .45;}
   .docgen .ord-step.drop-target { border-color: var(--c-accent, var(--c-info)); box-shadow: inset 0 2px 0 var(--c-info);}
+  /* Dragging a section: an accent line in the gap it will drop into. */
+  .docgen .ord-step.drop-before, .docgen .ord-step.drop-after { position: relative;}
+  .docgen .ord-step.drop-before::before, .docgen .ord-step.drop-after::after { content: ''; position: absolute; left: -4px; right: -4px; height: 3px;
+    background: var(--c-accent); box-shadow: 0 0 6px var(--c-accent); pointer-events: none; z-index: 5;}
+  .docgen .ord-step.drop-before::before { top: -5px;}
+  .docgen .ord-step.drop-after::after { bottom: -5px;}
   .docgen .ord-step.off { opacity: .55; background: var(--c-surface-alt);}
   .docgen .ord-num { min-width: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--c-text-muted); padding-top: 2px;}
   .docgen .ord-inc { padding-top: 3px;}
@@ -352,8 +358,7 @@
      pages: the same column, the same bar height, the same padding round the pages, and room
      kept for a scrollbar in both, whether or not either needs one. */
   .docgen .rd-style-preview { position: sticky; top: 0; max-height: calc(100vh - 230px); overflow: auto; min-width: 0; scrollbar-gutter: stable;}
-  .docgen .rd-style-preview .rd-secprev-head { position: sticky; top: 0; z-index: 2; background: var(--c-bg); padding: 6px 0; margin: 0; min-height: 40px; box-sizing: border-box;}
-  .docgen .rd-style-preview .rd-secprev-head > .rd-state { padding-left: 10px;}
+  .docgen .rd-style-preview .rd-secprev-head { position: sticky; top: 0; z-index: 20; background: var(--c-bg); padding: 6px 10px; margin: 0; min-height: 40px; box-sizing: border-box;}
   .docgen .rd-style-pages { align-items: safe center; gap: 8px; border: 1px solid var(--c-border); padding: 12px;}
   .docgen .rd-replaced code { font-size: 15px; margin-right: 6px;}
   .docgen .rd-subject { font: inherit; font-size: 13px; padding: 2px 6px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text);}
@@ -379,7 +384,7 @@
   .docgen .rd-scope button.on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-text); font-weight: 600;}
   .docgen .rd-secprev-head { flex-wrap: wrap;}
   /* The preview column scrolls; its switch and zoom stay at the top of it. */
-  .docgen .rd-sec-prev .rd-secprev-head { position: sticky; top: 0; z-index: 2; background: var(--c-bg); padding: 6px 0; margin: 0; min-height: 40px; box-sizing: border-box;}
+  .docgen .rd-sec-prev .rd-secprev-head { position: sticky; top: 0; z-index: 20; background: var(--c-bg); padding: 6px 10px; margin: 0; min-height: 40px; box-sizing: border-box;}
   /* Ticks in three even columns; a long name wraps under its own box. */
   .docgen .rd-ticks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 12px; margin-top: 4px;}
   .docgen .rd-ticks .gen-opt { display: flex; align-items: flex-start; margin: 0; white-space: normal; overflow-wrap: break-word; min-width: 0;}
@@ -514,6 +519,8 @@
   .docgen .dp-todo-flag { position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 50%;
     background: #f08c00; color: #fff; font-family: Arial, sans-serif; font-weight: 700; line-height: 1;}
   .docgen .dp-todo-flag[data-dp-fill] { cursor: pointer; z-index: 4;}
+  .docgen .dp-flag-flash { animation: dp-flag-flash 1.4s ease-out;}
+  @keyframes dp-flag-flash { 0%, 40% { box-shadow: 0 0 0 3px #e02424, 0 0 12px 4px rgba(224, 36, 36, .5);} 100% { box-shadow: 0 0 0 3px rgba(224, 36, 36, 0);}}
   .docgen .dp-todo-flag[data-dp-fill]:hover { background: #e02424; transform: scale(1.15);}
   /* Where a part landed: invisible, until its ◎ is pressed and it flashes. */
   .docgen .dp-target { position: absolute; box-sizing: border-box; pointer-events: none; border-radius: 2px;}
@@ -523,7 +530,10 @@
   .docgen .rd-fade-out { opacity: 0; transform: translateY(4px); transition: opacity .17s ease-in, transform .17s ease-in;}
   .docgen .rd-fade-in { animation: rd-fade-in .22s ease-out;}
   @keyframes rd-fade-in { from { opacity: 0; transform: translateY(-4px);} to { opacity: 1; transform: none;}}
-  .docgen .rd-part.rd-part-flash { animation: rd-part-flash 1.4s ease-out;}
+  .docgen .rd-part-flash { animation: rd-part-flash 1.4s ease-out;}
+  /* The box itself, when a ! leads to one blank among several. */
+  .docgen .rd-box-flash { animation: rd-box-flash 1.6s ease-out;}
+  @keyframes rd-box-flash { 0%, 50% { outline: 3px solid #e02424; outline-offset: 2px;} 100% { outline: 3px solid rgba(224, 36, 36, 0); outline-offset: 2px;}}
   @keyframes rd-part-flash { 0%, 40% { box-shadow: 0 0 0 3px #e02424, 0 0 14px 4px rgba(224, 36, 36, .4);} 100% { box-shadow: 0 0 0 3px rgba(224, 36, 36, 0);}}
   .docgen .dp-mark { position: absolute; box-sizing: border-box; border: 2px solid #e02424; pointer-events: none; z-index: 3;}
 
@@ -559,16 +569,38 @@
   .docgen .rd-mkt, .docgen .rd-mk-toggle, .docgen .rd-cmt-toggle { font: inherit; font-size: 12px; padding: 5px 10px; border: 1px solid var(--c-border);
     border-radius: 4px; background: var(--c-surface); color: var(--c-text); cursor: pointer; white-space: nowrap;}
   .docgen .rd-mkt.on, .docgen .rd-mk-toggle.on, .docgen .rd-cmt-toggle.on { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-text); font-weight: 600;}
+  .docgen button.rd-mkt.on:hover:not(:disabled), .docgen button.rd-mk-toggle.on:hover:not(:disabled), .docgen button.rd-cmt-toggle.on:hover:not(:disabled) {
+    background: var(--c-accent); border-color: var(--c-text); color: var(--c-accent-text);}
   .docgen .rd-mkt:disabled { opacity: .4; cursor: default;}
-  .docgen .rd-preview-doc.rd-drawing .dp-page { cursor: crosshair; user-select: none;}
-  .docgen .rd-preview-doc.rd-drawing .dp-link, .docgen .rd-preview-doc.rd-commenting .dp-link { pointer-events: none;}
-  .docgen .rd-preview-doc.rd-commenting .dp-page { cursor: copy;}
+  .docgen .rd-review-compact .rd-mkt { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 28px; padding: 0;}
+  .docgen .rd-review-compact .rd-mkt svg { display: block;}
+  .docgen .rd-drawing .dp-page { cursor: crosshair; user-select: none;}
+  .docgen .rd-drawing .dp-link, .docgen .rd-commenting .dp-link { pointer-events: none;}
+  .docgen .rd-commenting .dp-page { cursor: copy;}
+  /* In the narrower Sections and Styles columns the tools wrap under the bar's first line when they must. */
+  /* In the Sections and Styles columns the tools sit just left of the zoom, the two kept
+     together at the right; a column too narrow for one line takes them to the next, together. */
+  .docgen .rd-headright { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 1 auto; min-width: 0;}
+  .docgen .rd-headright > .rd-review { margin: 0;}
+  .docgen .rd-headright > .rd-zoom { margin-left: 0;}
+  .docgen .rd-secprev-head .rd-mkt, .docgen .rd-secprev-head .rd-mk-toggle, .docgen .rd-secprev-head .rd-cmt-toggle { font-size: 11px; padding: 4px 7px;}
+  .docgen .rd-secprev-head .rd-review-compact .rd-mkt { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; padding: 0;}
+  .docgen .rd-secprev-head .rd-review-compact .rd-mkt svg { display: block;}
 
   /* ---- Markup: see-through red, over the page ---- */
   .docgen .dp-mk { position: absolute; box-sizing: border-box; pointer-events: none; z-index: 2;}
   .docgen .dp-mk-hl { background: rgba(224, 36, 36, .28); border-radius: 2px;}
   .docgen .dp-mk-box { border: 2px solid rgba(224, 36, 36, .8); background: rgba(224, 36, 36, .04);}
   .docgen .dp-mk-fade { animation: dp-mk-fade .6s ease-in forwards;}
+  /* Select: saved markup takes clicks; a selected one is ringed and has its ✕ at the top-right. */
+  .docgen .rd-tool-select .dp-page { cursor: default;}
+  .docgen .rd-tool-select .dp-mk:not(.dp-mk-fade) { pointer-events: auto; cursor: pointer;}
+  .docgen .rd-tool-select .dp-mk:not(.dp-mk-fade):hover { box-shadow: 0 0 0 1px rgba(224, 36, 36, .9);}
+  .docgen .dp-mk.dp-mk-sel { outline: 2px dashed #e02424; outline-offset: 2px; pointer-events: auto;}
+  .docgen .dp-mk > button.dp-mk-x { position: absolute; top: -11px; right: -11px; width: 18px; height: 18px; padding: 0; border: 0;
+    display: inline-flex; align-items: center; justify-content: center; background: #e02424; color: #fff; font-size: 11px; font-weight: 700;
+    line-height: 1; cursor: pointer; pointer-events: auto; z-index: 5; box-shadow: 0 1px 3px rgba(0, 0, 0, .35);}
+  .docgen .dp-mk > button.dp-mk-x:hover:not(:disabled) { background: #b81c1c; color: #fff;}
   @keyframes dp-mk-fade { to { opacity: 0;}}
 
   /* ---- Comments: a symbol just off the page's right edge ---- */
@@ -591,6 +623,7 @@
     box-shadow: 0 8px 28px rgba(0, 0, 0, .35); padding: 10px 12px; font-size: 13px; box-sizing: border-box;}
   .rd-cmt-layer .rd-cmt-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px;}
   .rd-cmt-layer .rd-cmt-head > button { margin-left: auto; font: inherit; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer;}
+  .rd-cmt-layer .rd-cmt-head > button.armed, .rd-cmt-layer .rd-cmt-head > button.armed:hover { background: #e02424; border-color: #e02424; color: #fff; font-weight: 700;}
   .rd-cmt-layer .rd-cmt-post + .rd-cmt-post { border-top: 1px solid var(--c-border, #ddd); margin-top: 6px; padding-top: 6px;}
   .rd-cmt-layer .rd-cmt-meta { font-size: 11px; color: var(--c-text-muted, #777); margin-bottom: 2px;}
   .rd-cmt-layer .rd-cmt-text { white-space: pre-wrap; overflow-wrap: anywhere;}
@@ -599,3 +632,4 @@
   .rd-cmt-layer .rd-cmt-btns { display: flex; align-items: center; gap: 6px; margin-top: 6px;}
   .rd-cmt-layer .rd-cmt-btns .rd-state { margin-right: auto; font-size: 11px;}
   .rd-cmt-layer .rd-cmt-btns button { font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 4px; cursor: pointer;}
+  .docgen .rd-part-goto svg { display: block;}

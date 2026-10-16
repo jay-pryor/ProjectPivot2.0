@@ -62,3 +62,14 @@ test('the HTML puts markup and comments over the block they were made on; withou
   assert.match(html, /Rename &lt;this&gt;/);
   assert.match(html, /\.rv-cmt:hover \.rv-cmt-pop/);
 });
+
+test('selected markup can be removed one by one; a selected one is drawn with its own ✕', async () => {
+  const h = host();
+  const a = App.docStore.addMarkup({ kind: 'hl', page: 0, x: 1, y: 1, w: 50, h: 10 }).id;
+  App.docStore.addMarkup({ kind: 'box', page: 0, x: 5, y: 40, w: 50, h: 20 });
+  App.docStore.removeMarkup([a]);
+  assert.deepEqual(h.getState().report.markup.map((m) => m.kind), ['box']);
+  const { pagesHtml } = await import('../../DocGen/doc-preview.js');
+  const html = pagesHtml([{ size: [100, 100], items: [] }], { markup: [{ id: 'mk2', kind: 'box', page: 0, x: 5, y: 40, w: 50, h: 20, sel: true }] });
+  assert.match(html, /class="dp-mk dp-mk-box dp-mk-sel" data-mk="mk2"[^>]*><button type="button" class="dp-mk-x" data-mk-del="mk2"/);
+});

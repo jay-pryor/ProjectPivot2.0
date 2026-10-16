@@ -94,19 +94,39 @@ function fileLine(state, f, missing) {
     <span class="muted">${size(f.size)} · added by ${profileName(state, f.addedBy)}, ${when(f.addedAt)}</span>${missing.has(f.stored) ? html` <span class="tag tag-missing">File missing</span>` : ''}`;
 }
 
-/** A linked record, named and linked for a person. @param {Data} data @param {any} x from referenceTargets */
-function targetCell(data, x) {
+/**
+ * Where a linked record lives — its page (and the tab, for a platform's part of a hazard) —
+ * and the ID that names it. What its row's double-click opens, and what its ID links to.
+ * @param {Data} data @param {any} x from referenceTargets
+ * @returns {{ view: string, attrs: Record<string, string>, id: string }}
+ */
+function targetPlace(data, x) {
   const { link, target, hazard } = x;
   switch (link.targetKind) {
-    case 'hazard': return html`<span class="id">${idTag(hazardLabel(target))}</span> ${go(target.title, 'hazard', { id: target.id })}`;
+    case 'hazard': return { view: 'hazard', attrs: { id: target.id }, id: hazardLabel(target) };
+    case 'causalFactor': case 'consequence': case 'hazardPhase': return { view: 'hazard', attrs: { id: hazard.id }, id: hazardLabel(hazard) };
+    case 'failureMode': case 'systemElement': case 'affectedGroup':
+      return { view: 'hazard', attrs: { id: hazard.id, tab: `p:${target.platformId}` }, id: hazardLabel(hazard) };
+    case 'control': return { view: 'control', attrs: { id: target.id }, id: controlLabel(target) };
+    default: return { view: 'platform', attrs: { id: target.id }, id: platformLabel(target) };
+  }
+}
+
+/** A linked record, named for a person: its ID the link, then its name and what part of it. @param {Data} data @param {any} x from referenceTargets */
+function targetCell(data, x) {
+  const { link, target, hazard } = x;
+  const at = targetPlace(data, x);
+  const idLink = html`<span class="id">${go(idTag(at.id), at.view, at.attrs)}</span>`;
+  switch (link.targetKind) {
+    case 'hazard': return html`${idLink} ${target.title}`;
     case 'causalFactor':
-    case 'consequence': return html`<span class="id">${idTag(hazardLabel(hazard))}</span> ${go(hazard.title, 'hazard', { id: hazard.id })}: ${target.text}`;
-    case 'hazardPhase': return html`<span class="id">${idTag(hazardLabel(hazard))}</span> ${go(hazard.title, 'hazard', { id: hazard.id })}: ${get(data, 'phase', target.phaseId)?.name ?? ''}`;
+    case 'consequence': return html`${idLink} ${hazard.title}: ${target.text}`;
+    case 'hazardPhase': return html`${idLink} ${hazard.title}: ${get(data, 'phase', target.phaseId)?.name ?? ''}`;
     case 'failureMode':
     case 'systemElement':
-    case 'affectedGroup': return html`<span class="id">${idTag(hazardLabel(hazard))}</span> ${go(hazard.title, 'hazard', { id: hazard.id, tab: `p:${target.platformId}` })} on ${get(data, 'platform', target.platformId)?.name ?? ''}: ${target.text}`;
-    case 'control': return html`<span class="id">${idTag(controlLabel(target))}</span> ${go(target.title, 'control', { id: target.id })}`;
-    default: return html`<span class="id">${idTag(platformLabel(target))}</span> ${go(target.name, 'platform', { id: target.id })}`;
+    case 'affectedGroup': return html`${idLink} ${hazard.title} on ${get(data, 'platform', target.platformId)?.name ?? ''}: ${target.text}`;
+    case 'control': return html`${idLink} ${target.title}`;
+    default: return html`${idLink} ${target.name}`;
   }
 }
 
@@ -150,6 +170,8 @@ export function referenceView(state, data, id) {
       <section class="block">${dataTable(state, {
         id: 'referenceTargets',
         rowKey: (x) => x.link.id,
+        // A double-click on the row opens the record, as its ID does.
+        rowAttrs: (x) => { const at = targetPlace(data, x); return { dblclick: 'go', view: at.view, ...at.attrs }; },
         rows: targets,
         empty: 'Supports nothing yet. Link it with the +.',
         tools: r.status !== 'deleted' ? plus({ action: 'openPicker', picker: 'linkTargets', 'reference-id': id }, 'Link records') : '',
@@ -184,11 +206,12 @@ export function referencesCard(state, data, { kind, id, platformId = null }) {
     id: `refs-${kind}`,
     rowKey: (x) => x.reference.id,
     rows,
+    rowAttrs: (x) => ({ dblclick: 'go', view: 'reference', id: x.reference.id }),
     empty: 'No references yet.',
     tools: plus({ action: 'openPicker', picker: 'linkReferences', 'target-kind': kind, 'target-id': id }, 'Link references'),
     columns: [
       { key: 'reference', label: 'References', width: 440, minWidth: 220, value: (x) => `${referenceLabel(x.reference)} ${x.reference.title}`,
-        render: (x) => html`<span class="id">${idTag(referenceLabel(x.reference))}</span> ${go(x.reference.title, 'reference', { id: x.reference.id })}${statusTag(x.reference.status)}` },
+        render: (x) => html`<span class="id">${go(idTag(referenceLabel(x.reference)), 'reference', { id: x.reference.id })}</span> ${x.reference.title}${statusTag(x.reference.status)}` },
       ...(kind === 'hazard' ? [{ key: 'for', label: 'Informs', width: 360, minWidth: 160, value: (/** @type {any} */ x) => x.fors.map((/** @type {any} */ f) => forWord(f.forText)).join(', '), render: forCell }] : []),
       { key: 'points', label: 'Points at', width: 220, minWidth: 180, sortable: false, render: (x) => pointsAt(x.reference) },
       removeColumn((x) => (x.fors.length === 1

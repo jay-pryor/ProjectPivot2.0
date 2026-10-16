@@ -45,7 +45,8 @@ const targetsColumn = (hazardId, platformId) => ({ key: 'targets', label: 'Preve
   value: (/** @type {any} */ c) => c.targets.map((/** @type {any} */ t) => t.text).join(', '), render: (/** @type {any} */ c) => targetsCell(c, hazardId, platformId) });
 
 /** @param {any} c */
-const controlCell = (c) => html`${go(c.control.title, 'control', { id: c.control.id })}${statusTag(c.control.status)}`;
+// Plain text: the C-00X column beside it is the link.
+const controlCell = (c) => html`${c.control.title}${statusTag(c.control.status)}`;
 
 /** A control table's own column for the control's number (C-…), opening its page. Made when a table is drawn, not as this file loads, as it comes from hazards.js, which needs this file. */
 const controlIdColumn = () => ({ ...idColumn((/** @type {any} */ c) => c.control, controlLabel, (/** @type {any} */ c) => go(idTag(controlLabel(c.control)), 'control', { id: c.control.id })), label: 'Control ID', width: 180, minWidth: 150 });
@@ -62,6 +63,7 @@ export function controlsSection(state, data, h, platformId, platformName, only) 
   return dataTable(state, {
     id: 'controlAnalysis',
     rowKey: (c) => c.control.id,
+    rowAttrs: (c) => ({ dblclick: 'go', view: 'control', id: c.control.id }),
     rows,
     empty: 'No controls on this platform yet. Add them with the +.',
     tools: plus({ action: 'openPicker', picker: 'addControlsHere', 'hazard-id': h.id, 'platform-id': platformId }, 'Add controls'),

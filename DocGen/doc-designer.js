@@ -2189,6 +2189,17 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
       return { ok: true, id: id, issues: [] };
     }
+    /** Remove some markup, by id. */
+    function removeMarkup(ids) {
+      if (!P()) return errNoProject();
+      var gone = {}; (ids || []).forEach(function (id) { gone[id] = true; });
+      App.docHost.commit(function (p) {
+        var b = bag(p);
+        b.markup = (b.markup || []).filter(function (m) { return !gone[m.id]; });
+        tidy(p, b);
+      });
+      return ok();
+    }
     function clearMarkup() {
       if (!P()) return errNoProject();
       App.docHost.commit(function (p) { var b = bag(p); delete b.markup; tidy(p, b); });
@@ -3506,7 +3517,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       DEFAULT_SPACE_MM: DEFAULT_SPACE_MM, MAX_SPACE_MM: MAX_SPACE_MM,
       // CLS-1: the classification banner, which is a document decision, not a per-run one.
       setClassification: setClassification, setTag: setTag,
-      addMarkup: addMarkup, clearMarkup: clearMarkup, addComment: addComment, replyComment: replyComment, removeComment: removeComment,
+      addMarkup: addMarkup, removeMarkup: removeMarkup, clearMarkup: clearMarkup, addComment: addComment, replyComment: replyComment, removeComment: removeComment,
       setHtmlReview: setHtmlReview,
       // NAM-1 / SEC-1 / TBS-1: a section's name, its introduction, its table styling.
       setBlockName: setBlockName, setBlockHeading: setBlockHeading, setBlockIntro: setBlockIntro,
@@ -4768,7 +4779,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function partControls(sec, part, i, n) {
       return '<span class="rd-part-move">' +
         (part.kind === 'table' || part.kind === 'repeat' || part.kind === 'space' ? '' : spaceAfterBtn(sec, part)) +
-        '<button type="button" class="rd-part-goto" data-rd-part-goto="' + esc(part.id) + '" title="Go to this block in the preview" aria-label="Go to this block in the preview">◎</button>' +
+        '<button type="button" class="rd-part-goto" data-rd-part-goto="' + esc(part.id) + '" title="Go to this block in the preview" aria-label="Go to this block in the preview">' + EYE_SVG + '</button>' +
         '<button type="button" data-rd-part-up="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' + (i === 0 ? ' disabled' : '') + ' title="Move up">▲</button>' +
         '<button type="button" data-rd-part-down="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '"' + (i === n - 1 ? ' disabled' : '') + ' title="Move down">▼</button>' +
         '<button type="button" class="danger" data-rd-part-del="' + esc(part.id) + '" data-rd-sec="' + esc(sec.id) + '" title="Delete this block">✕</button>' +
@@ -5014,21 +5025,53 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     function titleAlignOf(part) { return part.titleAlign === 'l' || part.titleAlign === 'r' ? part.titleAlign : 'c'; }
     var TITLE_ALIGN_CSS = { l: 'left', c: 'center', r: 'right' };
 
+    /** Pages being drawn on or commented on say so, for their cursor. */
+    function reviewCls() { return (_rd.tool ? ' rd-drawing rd-tool-' + _rd.tool : '') + (_rd.commenting ? ' rd-commenting' : ''); }
+    var _bandMap = [];     // the section preview's bands: { pg, top, bottom } each, as last drawn
     /**
-     * The full Preview's review tools, just left of the zoom: Markup Options, which slides
+     * A page under the pointer in any preview, as the page of the DOCUMENT it is and how far
+     * down it the band starts (a band of the section preview is a slice of a page), with the
+     * zoom it is drawn at. Null off a page.
+     */
+    function pageUnder(target) {
+      var pg = target && target.closest && target.closest('#rd-preview-doc .dp-page, [data-rd-sec-prev] .dp-page, [data-rd-style-preview] .dp-page');
+      if (!pg) return null;
+      var i = Number(pg.getAttribute('data-page')) - 1;
+      if (pg.closest('#rd-preview-doc')) return { el: pg, page: i, top: 0, k: zoomOf('preview') };
+      if (pg.closest('[data-rd-style-preview]')) return { el: pg, page: i, top: 0, k: zoomOf('styles') };
+      if (_rd.secWhole) return { el: pg, page: i, top: 0, k: zoomOf('section') };
+      var b = _bandMap[i];
+      return b ? { el: pg, page: b.pg, top: b.top, k: zoomOf('section') } : null;
+    }
+    /**
+     * The review tools, just left of the zoom in every preview: Markup Options, which slides
      * open to the left to show Fading, Highlighter, Box and Clear all; and Comment, a mode.
      */
-    function reviewTools(project) {
+    /* `compact`: the menu's four buttons as icons (named in their tooltips) — used in every
+     * preview now; the words are kept for a caller that wants them. */
+    var MK_ICON = {
+      select: '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3 1.5l9.5 7.2-4.2.6 2.4 4.9-1.9.9-2.4-4.9L3 13z" fill="currentColor"/></svg>',
+      fade: '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor"/></svg>',
+      hl: '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M10.5 1.5l4 4-6.5 6.5H4v-4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><rect x="1" y="13.5" width="14" height="2" fill="currentColor"/></svg>',
+      box: '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="2" y="3" width="12" height="10" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
+      clear: '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V2.5h3v2M4.5 4.5l.7 9.5h5.6l.7-9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>'
+    };
+    function reviewTools(project, compact) {
       var open = !!_rd.markupOpen, has = ((project.report || {}).markup || []).length > 0 || _fades.length > 0;
-      var tool = function (id, label, title) {
-        return '<button type="button" class="rd-mkt' + (_rd.tool === id ? ' on' : '') + '" data-rd-tool="' + id + '" aria-pressed="' + (_rd.tool === id) + '" title="' + title + '"' + (open ? '' : ' tabindex="-1"') + '>' + label + '</button>';
+      var label = function (icon, text) { return compact ? MK_ICON[icon] : text; };
+      var tool = function (id, text, title) {
+        return '<button type="button" class="rd-mkt' + (_rd.tool === id ? ' on' : '') + '" data-rd-tool="' + id + '" aria-pressed="' + (_rd.tool === id) + '" title="' + (compact ? text + ': ' : '') + title + '"' +
+          ' aria-label="' + text + '"' + (open ? '' : ' tabindex="-1"') + '>' + label(id, text) + '</button>';
       };
-      return '<span class="rd-review">' +
+      var fadeText = 'Fading: ' + (_rd.fading ? 'On' : 'Off');
+      return '<span class="rd-review' + (compact ? ' rd-review-compact' : '') + '">' +
         '<span class="rd-mk-menu' + (open ? ' open' : '') + '" aria-hidden="' + !open + '"><span class="rd-mk-inner">' +
-          '<button type="button" class="rd-mkt' + (_rd.fading ? ' on' : '') + '" data-rd-fading aria-pressed="' + !!_rd.fading + '" title="When on, what you draw fades away after 5 seconds and is not kept"' + (open ? '' : ' tabindex="-1"') + '>Fading: ' + (_rd.fading ? 'On' : 'Off') + '</button>' +
+          tool('select', 'Select', 'Click a highlight or box to select it (Ctrl+click for more); Delete or its \u2715 removes it') +
+          '<button type="button" class="rd-mkt' + (_rd.fading ? ' on' : '') + '" data-rd-fading aria-pressed="' + !!_rd.fading + '" aria-label="' + fadeText + '"' +
+            ' title="' + (compact ? fadeText + '. ' : '') + 'When on, what you draw fades away after 5 seconds and is not kept"' + (open ? '' : ' tabindex="-1"') + '>' + label('fade', fadeText) + '</button>' +
           tool('hl', 'Highlighter', 'Drag across a line to highlight it') +
           tool('box', 'Box', 'Drag from one corner to the other to draw a box') +
-          '<button type="button" class="rd-mkt danger" data-rd-mk-clear' + (has ? '' : ' disabled') + ' title="Remove all markup"' + (open ? '' : ' tabindex="-1"') + '>Clear all</button>' +
+          '<button type="button" class="rd-mkt danger" data-rd-mk-clear' + (has ? '' : ' disabled') + ' aria-label="Clear all" title="' + (compact ? 'Clear all: ' : '') + 'Remove all markup"' + (open ? '' : ' tabindex="-1"') + '>' + label('clear', 'Clear all') + '</button>' +
         '</span></span>' +
         '<button type="button" class="rd-mk-toggle' + (open ? ' on' : '') + '" data-rd-markup-open aria-expanded="' + open + '">Markup Options</button>' +
         '<button type="button" class="rd-cmt-toggle' + (_rd.commenting ? ' on' : '') + '" data-rd-commenting aria-pressed="' + !!_rd.commenting + '" title="Click on the page to leave a comment">Comment</button>' +
@@ -5040,7 +5083,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
     var _fades = [];
     function reviewLayer(project) {
       var b = (project && project.report) || {};
-      var markup = (Array.isArray(b.markup) ? b.markup : []).concat(_fades);
+      var sel = _rd.mkSel || {};
+      var markup = (Array.isArray(b.markup) ? b.markup : []).map(function (m) { return sel[m.id] ? Object.assign({ sel: true }, m) : m; }).concat(_fades);
       var comments = (Array.isArray(b.comments) ? b.comments : []).map(function (c) { return { id: c.id, page: c.page, y: c.y, n: (c.posts || []).length }; });
       if (_rd.cmtDraft) comments.push({ id: '_new', page: _rd.cmtDraft.page, y: _rd.cmtDraft.y, n: 1, pending: true });
       return { markup: markup, comments: comments };
@@ -5059,6 +5103,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       });
       return { markup: markup, comments: comments };
     }
+
+    /** The go-to button's icon: an eye — "show me this in the preview". */
+    var EYE_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">' +
+      '<path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>' +
+      '<circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg>';
 
     /** A part picked to be outlined in the section preview shows it here too. */
     function pickCls(part) { return _rd.picked[part.id] ? ' rd-picked' : ''; }
@@ -5459,6 +5508,8 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           });
         }
       }
+      // Which page and where on it each band starts, for drawing and commenting on a band.
+      _bandMap = bandInfo;
       var k = zoomOf('section');
       var zoom = zoomBar('section');
       var pages = lastPage - mine.page + 1;
@@ -5468,9 +5519,9 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         return '<button type="button" class="' + (on ? 'on' : '') + '" data-rd-prev-scope="' + o[0] + '" aria-pressed="' + on + '">' + o[1] + '</button>';
       }).join('') + '</span>';
       return '<div class="rd-secprev-head">' + scope + '<span class="rd-state">' + note + (pages > 1 ? 'Pages ' + (mine.page + 1) + ' to ' + (lastPage + 1) : 'Page ' + (mine.page + 1)) +
-        ' of ' + p.pages.length + '.</span>' + zoom + '</div>' +
+        ' of ' + p.pages.length + '.</span>' + '<span class="rd-headright">' + reviewTools(project, true) + zoom + '</span></div>' +
         // The whole document, opened at this section; or just this section, cut from it.
-        '<div class="rd-secprev rd-preview-pages">' + (whole
+        '<div class="rd-secprev rd-preview-pages' + reviewCls() + '">' + (whole
           ? pagesHtml(p.pages, Object.assign({ scale: k, anchors: p.anchors, here: here, imageUrl: imageUrl, marks: (p.regions || []).filter(isPicked), targets: p.regions || [] }, reviewLayer(project)))
           : pagesHtml(bands, Object.assign({ scale: k, anchors: bandAnchors, imageUrl: imageUrl, marks: bandRegions.filter(isPicked), targets: bandRegions }, reviewInBands(reviewLayer(project), bandInfo)))) + '</div>';
     }
@@ -5868,7 +5919,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         '<div class="rd-sec-fields" data-rd-sec-fields><h5 class="rd-sec-title"><span>' + esc(shownText(block.label)) + ' \u2014 ' + esc(cat.label) + '</span>' +
           // The same ◎ as a block's, for the whole section: always here, whichever category is open.
           '<button type="button" class="rd-part-goto" data-rd-sec-goto="' + esc(block.id) + '" title="Go to this section in the preview"' +
-            ' aria-label="Go to this section in the preview">◎</button></h5>' +
+            ' aria-label="Go to this section in the preview">' + EYE_SVG + '</button></h5>' +
           // DS-6: a whole-register table under a repeating section is not filtered to the copy.
           (isRegister(block) && catalogue() && scopeOf(project, block.id).outer.length > 1
             ? '<p class="rpt-omit">This register table is inside a repeating section: it prints, unchanged, with each copy.</p>' : '') +
@@ -6155,10 +6206,10 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       // The pages are drawn in the Style being EDITED, so a change is seen before it is put in use.
       var laid = laidOut(project, f);
       var pages = '<div class="rd-style-preview" data-rd-style-preview>' +
-        '<div class="rd-secprev-head">' + (laid.error ? '' : '<span class="rd-state">' + laid.pages.length + ' page' + (laid.pages.length === 1 ? '' : 's') + '</span>') + zoomBar('styles') + '</div>' +
+        '<div class="rd-secprev-head">' + (laid.error ? '' : '<span class="rd-state">' + laid.pages.length + ' page' + (laid.pages.length === 1 ? '' : 's') + '</span>') + '<span class="rd-headright">' + reviewTools(project, true) + zoomBar('styles') + '</span></div>' +
         (laid.error
           ? '<p class="rd-err">' + esc(laid.error) + '</p>'
-          : '<div class="rd-preview-pages rd-style-pages">' + pagesHtml(laid.pages, Object.assign({ scale: zoomOf('styles'), imageUrl: imageUrl }, reviewLayer(project))) + '</div>') + '</div>';
+          : '<div class="rd-preview-pages rd-style-pages' + reviewCls() + '">' + pagesHtml(laid.pages, Object.assign({ scale: zoomOf('styles'), imageUrl: imageUrl }, reviewLayer(project))) + '</div>') + '</div>';
       return '<div class="rd-styles">' + list + fields + pages + '</div>';
     }
 
@@ -6415,11 +6466,11 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       return '<div class="rd-preview">' +
         '<div class="rd-addbar"><button type="button" data-rd-refresh-preview>↻ Refresh</button>' +
           '<span class="rd-state">' + p.pages.length + ' page' + (p.pages.length === 1 ? '' : 's') + '</span>' +
-          reviewTools(project) +
+          reviewTools(project, true) +
           zoomBar('preview') + '</div>' +
         '<div class="rd-preview-body">' +
           '<nav class="rd-preview-nav">' + (nav || '<span class="rd-state">No sections.</span>') + '</nav>' +
-          '<article class="rd-preview-doc rd-preview-pages' + (_rd.tool ? ' rd-drawing rd-tool-' + _rd.tool : '') + (_rd.commenting ? ' rd-commenting' : '') + '" id="rd-preview-doc">' +
+          '<article class="rd-preview-doc rd-preview-pages' + reviewCls() + '" id="rd-preview-doc">' +
             pagesHtml(p.pages, Object.assign({ scale: zoomOf('preview'), anchors: p.anchors, imageUrl: imageUrl,
             // Ctrl+click picks here too, so the outlines (and the parts behind them) come along.
             marks: (p.regions || []).filter(function (r) { return r.src.some(function (id) { return _rd.picked[id]; }); }), targets: p.regions || [] }, reviewLayer(project))) + '</article>' +
@@ -7154,11 +7205,13 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       dom.on(ctx.root, 'click', '[data-rd-tool]', function (e, el) {
         var t = el.getAttribute('data-rd-tool');
         _rd.tool = _rd.tool === t ? null : t;
+        if (_rd.tool !== 'select') _rd.mkSel = {};
         if (_rd.tool) { _rd.commenting = false; if (_rd.cmtDraft) { _rd.cmtDraft = null; hidePop(); } }
         repaint();
       });
       dom.on(ctx.root, 'click', '[data-rd-mk-clear]', function () {
         _fades = [];
+        _rd.mkSel = {};
         logIssues(App.docStore.clearMarkup());
         repaint();
       });
@@ -7172,12 +7225,15 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       /* Drawing, in the full Preview: a highlight is one line high, at the line pressed on,
        * as long as the drag; a box runs from where the press began to where it ends. */
       ctx.root.addEventListener('mousedown', function (e) {
-        if (!_rd.tool || e.button !== 0 || e.ctrlKey || e.metaKey) return;
-        var pg = e.target.closest && e.target.closest('#rd-preview-doc .dp-page');
-        if (!pg) return;
+        if (!_rd.tool || e.button !== 0) return;
+        if (_rd.tool === 'select') { selectAt(e); return; }
+        if (e.ctrlKey || e.metaKey) return;
+        var u = pageUnder(e.target);
+        if (!u) return;
         e.preventDefault();
-        var k = zoomOf('preview'), rect = pg.getBoundingClientRect();
-        var page = Number(pg.getAttribute('data-page')) - 1;
+        // Drawn in the page's own coordinates; a band of a page is moved down to where it starts.
+        var pg = u.el, k = u.k, rect = pg.getBoundingClientRect(), off = u.top;
+        var page = u.page;
         var x0 = (e.clientX - rect.left) / k, y0 = (e.clientY - rect.top) / k;
         var top = y0 - 7, tall = 14;
         if (_rd.tool === 'hl') {
@@ -7206,7 +7262,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
           draw(ev);
           live.remove();
           if (box.w < 3 || (_rd.tool === 'box' && box.h < 3)) return;   // a click, not a drag
-          var m = { kind: _rd.tool, page: page, x: box.x, y: box.y, w: box.w, h: box.h, at: blockAt(page, box.x, box.y, box.w, box.h) };
+          var m = { kind: _rd.tool, page: page, x: box.x, y: box.y + off, w: box.w, h: box.h, at: blockAt(page, box.x, box.y + off, box.w, box.h) };
           if (_rd.fading) {
             // Not kept: it fades from the screen five seconds on, and is gone.
             var id = 'fade' + Date.now();
@@ -7222,16 +7278,50 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         document.addEventListener('mouseup', done, true);
       }, true);
 
+      /* Select: a click on a saved highlight or box selects it (Ctrl or Shift adds to, or takes
+       * from, what is selected); a click on the page away from any clears the selection. */
+      function selectAt(e) {
+        if (e.target.closest && e.target.closest('.dp-mk-x')) return;     // its own delete
+        if (!pageUnder(e.target)) return;
+        e.preventDefault();
+        var mk = e.target.closest('.dp-mk[data-mk]:not(.dp-mk-fade)');
+        var sel = _rd.mkSel || {};
+        if (mk) {
+          var id = mk.getAttribute('data-mk');
+          if (e.ctrlKey || e.metaKey || e.shiftKey) { sel = Object.assign({}, sel); if (sel[id]) delete sel[id]; else sel[id] = true; }
+          else sel = {}, sel[id] = true;
+        } else if (Object.keys(sel).length) sel = {};
+        else return;
+        _rd.mkSel = sel;
+        repaint();
+      }
+      function removeSelected(ids) {
+        if (!ids.length) return;
+        logIssues(App.docStore.removeMarkup(ids));
+        ids.forEach(function (id) { delete (_rd.mkSel || {})[id]; });
+        repaint();
+      }
+      dom.on(ctx.root, 'click', '[data-mk-del]', function (e, el) { e.preventDefault(); e.stopPropagation(); removeSelected([el.getAttribute('data-mk-del')]); });
+      document.addEventListener('keydown', function (e) {
+        if (!_rd.open || (e.key !== 'Delete' && e.key !== 'Backspace')) return;
+        var ids = Object.keys(_rd.mkSel || {});
+        if (!ids.length) return;
+        var t = e.target;
+        if (t && t.closest && t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+        e.preventDefault();
+        removeSelected(ids);
+      });
+
       // Comment mode: a click on a page (not on a blank's !, nor on a comment) starts a comment there.
       ctx.root.addEventListener('click', function (e) {
         if (!_rd.commenting || e.button !== 0 || e.ctrlKey || e.metaKey) return;
         var t = e.target;
         if (!t.closest || t.closest('[data-dp-fill], .dp-cmt')) return;
-        var pg = t.closest('#rd-preview-doc .dp-page');
-        if (!pg) return;
+        var u = pageUnder(t);
+        if (!u) return;
         e.preventDefault(); e.stopPropagation();
-        var k = zoomOf('preview'), rect = pg.getBoundingClientRect();
-        var page = Number(pg.getAttribute('data-page')) - 1, y = (e.clientY - rect.top) / k;
+        var pg = u.el, k = u.k, rect = pg.getBoundingClientRect();
+        var page = u.page, y = (e.clientY - rect.top) / k + u.top;
         var x = (e.clientX - rect.left) / k;
         _rd.cmtDraft = { page: page, y: y, text: '', at: (function () { var a = blockAt(page, x, y, 0, 0); return a && { sec: a.sec, n: a.n, fy: a.fy }; })() };
         repaint();
@@ -7276,7 +7366,16 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         if (b.hasAttribute('data-cmt-confirm')) confirmDraft();
         else if (b.hasAttribute('data-cmt-cancel')) cancelDraft();
         else if (b.hasAttribute('data-cmt-send')) sendReply(b.getAttribute('data-cmt-send'));
-        else if (b.hasAttribute('data-cmt-remove')) { logIssues(App.docStore.removeComment(b.getAttribute('data-cmt-remove'))); hidePop(); repaint(); }
+        else if (b.hasAttribute('data-cmt-remove')) {
+          // Two clicks: the first asks, the second removes; left alone, it stops asking.
+          if (!b.classList.contains('armed')) {
+            b.classList.add('armed');
+            b.textContent = 'Confirm remove?';
+            setTimeout(function () { if (b.isConnected) { b.classList.remove('armed'); b.textContent = '\u2715 Remove'; } }, 4000);
+            return;
+          }
+          logIssues(App.docStore.removeComment(b.getAttribute('data-cmt-remove'))); hidePop(); repaint();
+        }
       });
       layer.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -7378,6 +7477,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         if (e.key !== 'Escape' || !_rd.open) return;
         if (_rd.cmtDraft) { _rd.cmtDraft = null; hidePop(); repaint(); return; }
         if (_pop) { hidePop(); return; }
+        if (Object.keys(_rd.mkSel || {}).length) { _rd.mkSel = {}; repaint(); return; }
         if (Object.keys(_rd.picked).length) { _rd.picked = {}; repaint(); return; }
         if (_rd.tool || _rd.commenting) { _rd.tool = null; _rd.commenting = false; repaint(); }
       });
@@ -7725,20 +7825,37 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', _dragId); } catch (err) {} }
         el.classList.add('dragging');
       });
-      dom.on(ctx.root, 'dragend', '[data-rd-block]', function (e, el) { el.classList.remove('dragging'); _dragId = null; });
+      /* Where a dragged section will land is shown as an accent line in the gap it will go
+       * into: the upper half of a row means before it, the lower half after it. */
+      function clearDropLine() {
+        [].forEach.call(ctx.root.querySelectorAll('.drop-before, .drop-after'), function (x) { x.classList.remove('drop-before', 'drop-after'); });
+      }
+      function dropAfter(e, el) { var r = el.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; }
+      dom.on(ctx.root, 'dragend', '[data-rd-block]', function (e, el) { el.classList.remove('dragging'); clearDropLine(); _dragId = null; });
       dom.on(ctx.root, 'dragover', '[data-rd-block]', function (e, el) {
         if (!_dragId) return;
         e.preventDefault();
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-        el.classList.add('drop-target');
+        var after = dropAfter(e, el);
+        // The same gap is shown once, on the row below it where there is one.
+        var next = el.nextElementSibling && el.nextElementSibling.matches('[data-rd-block]') ? el.nextElementSibling : null;
+        var mark = after && next ? next : el, cls = after && !next ? 'drop-after' : 'drop-before';
+        if (mark.classList.contains(cls)) return;
+        clearDropLine();
+        mark.classList.add(cls);
       });
-      dom.on(ctx.root, 'dragleave', '[data-rd-block]', function (e, el) { el.classList.remove('drop-target'); });
+      dom.on(ctx.root, 'dragleave', '[data-rd-block]', function (e, el) {
+        if (!el.contains(e.relatedTarget) && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-rd-block]'))) clearDropLine();
+      });
       dom.on(ctx.root, 'drop', '[data-rd-block]', function (e, el) {
         e.preventDefault();
-        el.classList.remove('drop-target');
-        var target = el.getAttribute('data-rd-block'), p = P();
-        if (p && _dragId && _dragId !== target) {
-          quietly(function () { moveSection(p, _dragId, 0, target); });
+        clearDropLine();
+        var after = dropAfter(e, el), p = P();
+        var next = el.nextElementSibling && el.nextElementSibling.matches('[data-rd-block]') ? el.nextElementSibling : null;
+        // Before this row, or before the one after it (the end, when it is the last).
+        var before = after ? (next ? next.getAttribute('data-rd-block') : '\u0000end') : el.getAttribute('data-rd-block');
+        if (p && _dragId && before !== _dragId) {
+          quietly(function () { moveSection(p, _dragId, 0, before); });
           dirty(); repaint();
         }
         _dragId = null;
@@ -7815,23 +7932,25 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
        * change is made, what came fades in, and only then `then` (a glide) runs — so the eye
        * sees the view change before it is taken somewhere in it. `outSel` is what fades.
        */
-      function switchView(outSel, apply, then) {
+      function switchView(outSel, apply, then, afterPaint) {
         remember();
         var going = [].slice.call(ctx.root.querySelectorAll(outSel));
         going.forEach(function (el) { el.classList.add('rd-fade-out'); });
         setTimeout(function () {
           apply();
           repaint();
+          if (afterPaint) afterPaint();
           [].forEach.call(ctx.root.querySelectorAll(outSel), function (el) { flash(el, 'rd-fade-in'); });
           setTimeout(then, 200);
         }, going.length ? 170 : 0);
       }
-      /** Glide the scrolling area around a row so the row is centred, then flash it. */
-      function glideToRow(row) {
+      /** Glide the scrolling area around a row so the row is centred, then flash it (and `box` in it, outlined). */
+      function glideToRow(row, box) {
+        var done = function () { flash(row, 'rd-part-flash'); if (box) flash(box, 'rd-box-flash'); };
         var v = scrollerOf(row);
-        if (!v) { flash(row, 'rd-part-flash'); return; }
+        if (!v) { done(); return; }
         var vr = v.getBoundingClientRect(), rr = row.getBoundingClientRect();
-        glide(v, null, rr.top - vr.top - Math.max(16, (v.clientHeight - rr.height) / 2), 0, function () { flash(row, 'rd-part-flash'); });
+        glide(v, null, rr.top - vr.top - Math.max(16, (v.clientHeight - rr.height) / 2), 0, done);
       }
       /* Go to blank (Generate): the blank's section, on its Fill in, with the blank's box
        * glided to and flashed — and the preview beside it taken to the block it sits in. */
@@ -7843,22 +7962,46 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
         e.preventDefault(); e.stopPropagation();
         var fid = el.getAttribute('data-dp-fill'), key = el.getAttribute('data-dp-fill-key');
         var item = fillsNow(H().getState()).items.filter(function (i) { return i.id === fid && i.key === key; })[0];
-        if (item) goToBlank(item.id, item.key, item.sectionId, item.partId);
+        // Pressed in the section preview, that preview is already where it should be: it stays.
+        if (item) goToBlank(item.id, item.key, item.sectionId, item.partId, !!el.closest('[data-rd-sec-prev]'));
       });
       /** A blank's section, on its Fill in, its box glided to and flashed, and its block shown in the preview. */
-      function goToBlank(fid, key, sec, part) {
+      function goToBlank(fid, key, sec, part, stay) {
         // From another tab the whole view changes; within Sections, only what does.
         var outSel = _rd.pane !== 'section' ? '.rd-layout'
-          : sec !== _rd.selected ? '[data-rd-sec-fields], [data-rd-sec-prev]' : '[data-rd-sec-fields]';
+          : sec !== _rd.selected && !stay ? '[data-rd-sec-fields], [data-rd-sec-prev]' : '[data-rd-sec-fields]';
         var already = _rd.pane === 'section' && sec === _rd.selected && _rd.secCat === 'fill';
+        // Staying: the preview keeps the very spot it was pressed at, whatever the new section would show.
+        var prev = ctx.root.querySelector('[data-rd-sec-prev]');
+        var kept = stay && prev ? [prev.scrollTop, prev.scrollLeft] : null;
+        var hold = function () {
+          var p2 = kept && ctx.root.querySelector('[data-rd-sec-prev]');
+          if (p2) { p2.scrollTop = kept[0]; p2.scrollLeft = kept[1]; }
+        };
         switchView(already ? '.rd-none' : outSel, function () { _rd.pane = 'section'; _rd.selected = sec; _rd.secCat = 'fill'; }, function () {
           var box = [].filter.call(ctx.root.querySelectorAll('[data-rd-fill]'), function (b) {
             return b.getAttribute('data-rd-fill') === fid && b.getAttribute('data-rd-fill-key') === key;
           })[0];
           var item = box && box.closest('.rd-fillitem');
-          if (item) glideToRow(item);
-          if (part) inPreview(part, false);
+          if (item) glideToRow(item, box);
+          // The preview goes to THIS blank — this entry's — not to the first place its block prints.
+          if (!stay && !blankInPreview(fid, key) && part) inPreview(part, false);
+        }, hold);
+      }
+      /** Glide the section preview to one blank's ! (a blank for one entry), and flash it. False when it is not shown. */
+      function blankInPreview(fid, key) {
+        var box = ctx.root.querySelector('[data-rd-sec-prev]');
+        var flag = box && [].filter.call(box.querySelectorAll('.dp-todo-flag[data-dp-fill]'), function (f) {
+          return f.getAttribute('data-dp-fill') === fid && f.getAttribute('data-dp-fill-key') === key;
+        })[0];
+        if (!flag) return false;
+        var fr = flag.getBoundingClientRect(), br = box.getBoundingClientRect();
+        glide(box, null, fr.top - br.top - (box.clientHeight - fr.height) / 2, 0, function () {
+          flash(flag, 'dp-flag-flash');
+          var hl = flag.previousElementSibling;
+          if (hl && hl.classList.contains('dp-todo')) flash(hl, 'dp-flag-flash');
         });
+        return true;
       }
       dom.on(ctx.root, 'click', '[data-rd-sec-goto]', function (e, el) { remember(); sectionInPreview(el.getAttribute('data-rd-sec-goto')); });
       /** Open a section in the Sections view (fading across, keeping the category where it has
@@ -7931,7 +8074,7 @@ import { boxCount as FIG_BOXES, imagePath as IMAGE_PATH, imageInfo as IMAGE_INFO
       }
       // Ctrl+click in the preview picks (or un-picks) the part there, as a click on its editor does.
       ctx.root.addEventListener('click', function (e) {
-        if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return;
+        if (!(e.ctrlKey || e.metaKey) || e.button !== 0 || _rd.tool) return;   // Ctrl+click with Select adds markup instead
         var at = partAt(e), id = at && at.part;
         if (!id) return;
         e.preventDefault(); e.stopPropagation();
