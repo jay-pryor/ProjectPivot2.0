@@ -346,6 +346,7 @@ export function mount(root, controller) {
   bowtiePanZoom(appEl, controller.dispatch);
   bowtieLinkFocus(appEl);
   favouriteDrag(appEl, controller.dispatch);
+  listDrag(appEl, controller.dispatch);
   const reselectHistory = historySelect(appEl, controller.dispatch);
   const reselectOptions = assignSelect(appEl, controller.dispatch);
   const reselect = () => { reselectHistory(); reselectOptions(); };
@@ -903,6 +904,56 @@ function favouriteDrag(el, dispatch) {
     const t = /** @type {HTMLElement} */ (e.target);
     if (e.key === 'Enter' && t.matches?.('[role="link"][data-action]')) { e.preventDefault(); t.click(); }
   });
+}
+
+/**
+ * A numbered list's rows (causal factors, consequences and the like) dragged by their handles into
+ * another order, within their own list only: dropped on a row, the one dragged takes its place.
+ * @param {HTMLElement} el @param {(action: any) => Promise<void>} dispatch
+ */
+function listDrag(el, dispatch) {
+  /** @type {HTMLElement | null} */
+  let grip = null;
+  const clear = () => { for (const o of el.querySelectorAll('.nl-item.drop-before, .nl-item.drop-after, .dragging-nl')) o.classList.remove('drop-before', 'drop-after', 'dragging-nl'); };
+  /** The row under the pointer, if it is in the list being dragged in. @param {Event} e */
+  const target = (e) => {
+    const li = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest?.('.nl-item'));
+    return grip && li && li.parentElement === grip.closest('.nl') ? li : null;
+  };
+  /** @param {HTMLElement} li */
+  const indexOf = (li) => [...(li.parentElement?.children ?? [])].indexOf(li);
+  el.addEventListener('dragstart', (e) => {
+    const g = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest?.('[data-move-action]'));
+    if (!g) return;
+    grip = g;
+    g.closest('.nl-item')?.classList.add('dragging-nl');
+    if (e.dataTransfer) { e.dataTransfer.setData('text/plain', g.closest('.nl-item')?.querySelector('.nl-text')?.textContent ?? ''); e.dataTransfer.effectAllowed = 'move'; }
+  });
+  el.addEventListener('dragover', (e) => {
+    const li = target(e);
+    if (!li || !grip) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    for (const o of el.querySelectorAll('.nl-item.drop-before, .nl-item.drop-after')) if (o !== li) o.classList.remove('drop-before', 'drop-after');
+    // Moving down, it lands after the one dropped on; moving up, before it.
+    const from = Number(grip.dataset.moveIndex);
+    const to = indexOf(li);
+    li.classList.toggle('drop-after', to > from);
+    li.classList.toggle('drop-before', to < from);
+  });
+  el.addEventListener('drop', (e) => {
+    const li = target(e);
+    if (!li || !grip) return;
+    e.preventDefault();
+    const g = grip;
+    grip = null;
+    clear();
+    const to = indexOf(li);
+    if (to === Number(g.dataset.moveIndex)) return;
+    const { moveAction, moveId, movePlatformId } = g.dataset;
+    void dispatch({ type: moveAction, id: moveId, to: String(to), ...(movePlatformId ? { platformId: movePlatformId } : {}) });
+  });
+  el.addEventListener('dragend', () => { grip = null; clear(); });
 }
 
 /**

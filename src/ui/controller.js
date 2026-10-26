@@ -51,11 +51,11 @@ export const SWEEP_AFTER_MS = 24 * 60 * 60 * 1000;
 const EDITS = {
   createHazard: hazards.createHazard, updateHazard: hazards.updateHazard, retireHazard: hazards.retireHazard,
   deleteHazard: hazards.deleteHazard, restoreRecord: hazards.restoreRecord,
-  addCausalFactor: hazards.addCausalFactor, updateCausalFactor: hazards.updateCausalFactor, deleteCausalFactor: hazards.deleteCausalFactor,
-  addConsequence: hazards.addConsequence, updateConsequence: hazards.updateConsequence, deleteConsequence: hazards.deleteConsequence,
-  addFailureMode: hazards.addFailureMode, updateFailureMode: hazards.updateFailureMode, deleteFailureMode: hazards.deleteFailureMode,
-  addSystemElement: hazards.addSystemElement, updateSystemElement: hazards.updateSystemElement, deleteSystemElement: hazards.deleteSystemElement,
-  addAffectedGroup: hazards.addAffectedGroup, updateAffectedGroup: hazards.updateAffectedGroup, deleteAffectedGroup: hazards.deleteAffectedGroup,
+  addCausalFactor: hazards.addCausalFactor, updateCausalFactor: hazards.updateCausalFactor, deleteCausalFactor: hazards.deleteCausalFactor, moveCausalFactor: hazards.moveCausalFactor,
+  addConsequence: hazards.addConsequence, updateConsequence: hazards.updateConsequence, deleteConsequence: hazards.deleteConsequence, moveConsequence: hazards.moveConsequence,
+  addFailureMode: hazards.addFailureMode, updateFailureMode: hazards.updateFailureMode, deleteFailureMode: hazards.deleteFailureMode, moveFailureMode: hazards.moveFailureMode,
+  addSystemElement: hazards.addSystemElement, updateSystemElement: hazards.updateSystemElement, deleteSystemElement: hazards.deleteSystemElement, moveSystemElement: hazards.moveSystemElement,
+  addAffectedGroup: hazards.addAffectedGroup, updateAffectedGroup: hazards.updateAffectedGroup, deleteAffectedGroup: hazards.deleteAffectedGroup, moveAffectedGroup: hazards.moveAffectedGroup,
   createControl: controls.createControl, updateControl: controls.updateControl, retireControl: controls.retireControl,
   deleteControl: controls.deleteControl, linkControl: controls.linkControl, setControlKind: controls.setControlKind,
   unlinkControl: controls.unlinkControl, setControlAnalysis: controls.setControlAnalysis, setImplementedBy: controls.setImplementedBy,
@@ -858,12 +858,11 @@ export function createController(env) {
     async setHomeOwner({ ownerId, show }) {
       set({ homeOwner: ownerId || 'me', ...(show === 'home' ? { view: { name: 'home' }, editing: null } : {}) });
     },
-    /** From onboarding: add the ticked controls to the hazard here, each at its usual kind, and mark them Implemented. */
+    /** From onboarding: add the ticked controls to the hazard here, each at its usual kind. */
     async addSuggestedControls({ hazardId, platformId, controlId }) {
       for (const id of list(controlId)) {
         const kind = state.session?.working.records.control[id]?.kind || 'preventative';
         await applyEdit('addControlHere', { hazardId, platformId, controlId: id, kind });
-        await applyEdit('setControlStatus', { hazardId, controlId: id, platformId, status: 'implemented' });
       }
     },
     // A platform whose onboarding was cancelled, onboarded again.

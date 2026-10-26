@@ -63,17 +63,33 @@ export function descriptionField(h) {
 }
 
 /**
+ * A numbered list row's handle and ↑ ↓: drag the row by its handle (see listDrag in mount.js), or
+ * press an arrow, to move it to another place in its list.
+ * @param {string} action e.g. moveCausalFactor @param {any} r the entry @param {number} i its place @param {number} n how many
+ * @param {string} what e.g. "causal factor" @param {Record<string, string>} [extra] more for the op, e.g. the platform shown
+ */
+function moveTools(action, r, i, n, what, extra = {}) {
+  if (n < 2) return { handle: '', arrows: '' };
+  const at = (/** @type {number} */ to) => ({ action, id: r.id, to: String(to), ...extra });
+  return {
+    handle: html`<span class="nl-grip" draggable="true" title="Drag to move" aria-hidden="true" ${dataAttrs({ 'move-action': action, 'move-id': r.id, 'move-index': String(i), ...Object.fromEntries(Object.entries(extra).map(([k, v]) => [`move-${k}`, v])) })}>⋮⋮</span>`,
+    arrows: html`<button type="button" class="icon-move" title="Move up" aria-label="Move ${what} ${i + 1} up"${i === 0 ? raw(' disabled') : ''} ${dataAttrs(at(i - 1))}>↑</button><button type="button" class="icon-move" title="Move down" aria-label="Move ${what} ${i + 1} down"${i === n - 1 ? raw(' disabled') : ''} ${dataAttrs(at(i + 1))}>↓</button>`,
+  };
+}
+
+/**
  * Causal factors or consequences as a short numbered list on a card: 1, 2, 3… in the order they
- * were added. A row's text is changed by double-clicking it. On a platform's tab a new causal
+ * were added, or were moved to. A row's text is changed by double-clicking it. On a platform's tab a new causal
  * factor is that platform's, and + also offers the hazard's causal factors from its other
  * platforms, to tick and add with what is typed.
  * @param {any} state
  * @param {{ name: 'CausalFactor' | 'Consequence', items: any[], hazardId: string, platformId?: string | null,
- *   suggestions?: { text: string, from: string }[], grouped?: { text: string, from: string }[] }} o
+ *   suggestions?: { text: string, from: string }[], grouped?: { text: string, from: string }[], others?: string[] }} o
  *   platformId: the platform the page is for; suggestions: causal factors on other platforms, not yet here;
- *   grouped: suggestions from the platform's groups, shown first
+ *   grouped: suggestions from the platform's groups, shown first; others: every other one to choose
+ *   from (Info's list and those given anywhere), in a list kept closed until opened
  */
-export function numberedCard(state, { name, items, hazardId, platformId = null, suggestions = [], grouped = [] }) {
+export function numberedCard(state, { name, items, hazardId, platformId = null, suggestions = [], grouped = [], others = [] }) {
   const causal = name === 'CausalFactor';
   const kind = causal ? 'causalFactor' : 'consequence';
   const what = causal ? 'causal factor' : 'consequence';
@@ -83,13 +99,14 @@ export function numberedCard(state, { name, items, hazardId, platformId = null, 
     <h3 class="dash-card-h">${causal ? 'Causal factors' : 'Consequences'} <span class="count">${items.length}</span>${plus({ action: 'startEdit', kind: `new${name}`, id: hazardId }, `Add a ${what}`)}</h3>
     ${items.length ? html`<ol class="nl">${items.map((r, i) => {
       const editing = state.editing?.kind === kind && state.editing.id === r.id;
-      return html`<li class="nl-item"><span class="nl-num">${i + 1}</span>
+      const mv = moveTools(`move${name}`, r, i, items.length, what, causal && platformId ? { 'platform-id': platformId } : {});
+      return html`<li class="nl-item">${mv.handle}<span class="nl-num">${i + 1}</span>
         ${editing
           ? html`<input class="cell-edit" name="text" value="${r.text}" required aria-label="${what}" autofocus ${dataAttrs({ change: `update${name}`, id: r.id })}>`
           : html`<span class="cell-text nl-text" ${dataAttrs({ dblclick: 'startEdit', kind, id: r.id })} title="Double-click to change">${r.text}</span>`}
-        <span class="row-actions">${removeButton(`Delete ${what} ${i + 1}`, `Delete ${what} ${i + 1}?`, `“${r.text}” will be deleted.`, { run: `delete${name}`, id: r.id })}</span></li>`;
+        <span class="row-actions">${mv.arrows}${removeButton(`Delete ${what} ${i + 1}`, `Delete ${what} ${i + 1}?`, `“${r.text}” will be deleted.`, { run: `delete${name}`, id: r.id })}</span></li>`;
     })}</ol>` : html`<p class="muted nl-empty">No ${what}s yet.</p>`}
-    ${adding ? addForm({ action: `add${name}`, attrs: { 'hazard-id': hazardId }, what, extra: here, heading: 'On this hazard\'s other platforms', suggestions, grouped, reveal: `suggest:${hazardId}:${platformId}` }) : ''}
+    ${adding ? addForm({ action: `add${name}`, attrs: { 'hazard-id': hazardId }, what, extra: here, heading: 'On this hazard\'s other platforms', suggestions, grouped, others, reveal: `suggest:${hazardId}:${platformId}` }) : ''}
   </section>`;
 }
 
@@ -102,7 +119,7 @@ const PLATFORM_LISTS = Object.freeze({
 
 /**
  * A hazard's element failure modes, systems or elements, or affected groups on one platform, as a numbered card
- * like its causal factors: + opens a box that suggests what has been typed before, on any hazard
+ * like its causal factors (and, like them, dragged or arrowed into another order): + opens a box that suggests what has been typed before, on any hazard
  * or platform, and lists those entries to tick and add with it; a row is changed by double-clicking it.
  * @param {any} state
  * @param {{ kind: 'failureMode' | 'systemElement' | 'affectedGroup', items: any[], hazardId: string, platformId: string, entries: string[],
@@ -121,11 +138,12 @@ export function platformListCard(state, { kind, items, hazardId, platformId, ent
     <h3 class="dash-card-h">${title} <span class="count">${items.length}</span>${plus({ action: 'startEdit', kind: `new${name}`, id: pair }, `Add ${/^[aeiou]/.test(what) ? 'an' : 'a'} ${what}`)}</h3>
     ${items.length ? html`<ol class="nl">${items.map((r, i) => {
       const editing = state.editing?.kind === kind && state.editing.id === r.id;
-      return html`<li class="nl-item"><span class="nl-num">${i + 1}</span>
+      const mv = moveTools(`move${name}`, r, i, items.length, what);
+      return html`<li class="nl-item">${mv.handle}<span class="nl-num">${i + 1}</span>
         ${editing
           ? html`<input class="cell-edit" name="text" value="${r.text}" required list="${list}" autocomplete="off" aria-label="${what}" autofocus ${dataAttrs({ change: `update${name}`, id: r.id })}>`
           : html`<span class="cell-text nl-text" ${dataAttrs({ dblclick: 'startEdit', kind, id: r.id })} title="Double-click to change">${r.text}</span>`}
-        <span class="row-actions">${removeButton(`Delete ${what} ${i + 1}`, `Delete ${what} ${i + 1}?`, `“${r.text}” will be deleted.`, { run: `delete${name}`, id: r.id })}</span></li>`;
+        <span class="row-actions">${mv.arrows}${removeButton(`Delete ${what} ${i + 1}`, `Delete ${what} ${i + 1}?`, `“${r.text}” will be deleted.`, { run: `delete${name}`, id: r.id })}</span></li>`;
     })}</ol>` : html`<p class="muted nl-empty">${none}</p>`}
     ${adding ? addForm({ action: `add${name}`, attrs: { 'hazard-id': hazardId, 'platform-id': platformId }, what, list, heading: 'Used before',
       suggestions: entries.filter((t) => !here.has(t.toLowerCase()))
@@ -140,17 +158,22 @@ export function platformListCard(state, { kind, items, hazardId, platformId, ent
  * elsewhere as ticks. Add puts in what is typed and every one ticked; with any ticked, the box may
  * be left empty (see pickedEntries in mount.js).
  * @param {{ action: string, attrs: Record<string, string>, what: string, extra?: unknown, list?: string, heading: string,
- *   suggestions: { text: string, from: string }[], reveal: string, grouped?: { text: string, from: string }[] }} o
- *   list: the id of a datalist the box suggests from as you type
+ *   suggestions: { text: string, from: string }[], reveal: string, grouped?: { text: string, from: string }[], others?: string[] }} o
+ *   list: the id of a datalist the box suggests from as you type; others: the rest to choose from,
+ *   under a closed "Other …" that opens to tick them
  */
-function addForm({ action, attrs, what, extra = '', list, heading, suggestions, reveal, grouped = [] }) {
+function addForm({ action, attrs, what, extra = '', list, heading, suggestions, reveal, grouped = [], others = [] }) {
   const block = (/** @type {string} */ h, /** @type {{ text: string, from: string }[]} */ xs, /** @type {string} */ key) => (xs.length
     ? html`<div class="suggest" data-reveal="${key}"><p class="suggest-h">${h}</p><ul class="suggest-list">${xs.map((x) => html`<li><label class="suggest-item"><input type="checkbox" name="pick" value="${x.text}"><span class="suggest-text">${x.text}</span>${x.from ? html`<span class="suggest-from">${x.from}</span>` : ''}</label></li>`)}</ul></div>`
     : '');
   const groupedTexts = new Set(grouped.map((g) => g.text.toLowerCase()));
+  const shown = new Set([...groupedTexts, ...suggestions.map((x) => x.text.toLowerCase())]);
+  const rest = others.filter((t) => !shown.has(t.toLowerCase()));
   return html`<form data-action="${action}" ${dataAttrs(attrs)} class="new-row new-entries" data-picks>
     <div class="row inline fill"><input name="text" required${list ? html` list="${list}" autocomplete="off"` : ''} placeholder="New ${what}…" aria-label="New ${what}" class="grow" autofocus>${extra}<button type="submit">Add</button><button type="button" ${dataAttrs({ action: 'cancelEdit' })}>Cancel</button></div>
     ${block('Suggested from your groups', grouped, `${reveal}:groups`)}
     ${block(heading, suggestions.filter((x) => !groupedTexts.has(x.text.toLowerCase())), reveal)}
+    ${rest.length ? html`<details class="suggest suggest-more"><summary class="suggest-h">Other ${what}s <span class="count">${rest.length}</span></summary>
+      <ul class="suggest-list">${rest.map((t) => html`<li><label class="suggest-item"><input type="checkbox" name="pick" value="${t}"><span class="suggest-text">${t}</span></label></li>`)}</ul></details>` : ''}
   </form>`;
 }

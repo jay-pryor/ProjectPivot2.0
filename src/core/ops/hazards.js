@@ -3,7 +3,7 @@ import { newId, hazardLabel } from '../ids.js';
 import { get, put, all, live, created, changed, need, needText, NUMBERED } from '../data.js';
 import { commit } from '../apply.js';
 import { linksTo } from './references.js';
-import { platformsOfHazard } from '../queries.js';
+import { platformsOfHazard, byAdded } from '../queries.js';
 import { ids } from '../ids.js';
 import { unlinkRecs } from './platforms.js';
 import { assignPlatformLetters, assignReportIds } from './report-ids.js';
@@ -122,7 +122,40 @@ function childOps(kind, label) {
       const r = need(data, kind, id);
       return commit(data, act, `Delete ${lower}`, [{ kind, rec: changed(r, act, { status: 'deleted' }) }, ...linksTo(data, act, [{ kind, id }])]);
     },
+    /**
+     * Moved to place `to` (from 0) in the list as shown: a causal factor among those on `platformId`
+     * (or all the hazard's, with none); a consequence among the hazard's.
+     * @param {Data} data @param {Act} act @param {{ id: string, to: number | string, platformId?: string | null }} args
+     */
+    move(data, act, { id, to, platformId }) {
+      const r = need(data, kind, id);
+      const siblings = live(data, kind).filter((x) => x.hazardId === r.hazardId).sort(byAdded);
+      const shown = kind === 'causalFactor' && platformId ? siblings.filter((x) => !x.platformId || x.platformId === platformId) : siblings;
+      return moved(data, act, kind, `Move ${lower}`, siblings, shown, r, to);
+    },
   };
+}
+
+/**
+ * One entry moved to place `to` among those shown, the others shown keeping their order and those
+ * not shown their places; the list's order (seq) is then numbered afresh, and only the entries whose
+ * number changes are written.
+ * @param {Data} data @param {Act} act @param {string} kind @param {string} action
+ * @param {import('../data.js').Rec[]} siblings the whole list, in order @param {import('../data.js').Rec[]} shown those of it on screen, in order
+ * @param {import('../data.js').Rec} r @param {number | string} to
+ */
+function moved(data, act, kind, action, siblings, shown, r, to) {
+  const from = shown.findIndex((x) => x.id === r.id);
+  const j = Number(to);
+  if (from < 0 || !Number.isInteger(j) || j < 0 || j >= shown.length) throw new PivotError('move', 'It cannot move there.');
+  if (j === from) return data;
+  const order = shown.filter((x) => x.id !== r.id);
+  order.splice(j, 0, r);
+  const slots = new Set(shown.map((x) => x.id));
+  let k = 0;
+  const next = siblings.map((x) => (slots.has(x.id) ? order[k++] : x));
+  const recs = next.flatMap((x, i) => (x.seq === i + 1 ? [] : [{ kind, rec: changed(x, act, { seq: i + 1 }) }]));
+  return commit(data, act, action, recs);
 }
 
 /**
@@ -155,11 +188,13 @@ const causal = childOps('causalFactor', 'Causal factor');
 export const addCausalFactor = causal.add;
 export const updateCausalFactor = causal.update;
 export const deleteCausalFactor = causal.remove;
+export const moveCausalFactor = causal.move;
 
 const conseq = childOps('consequence', 'Consequence');
 export const addConsequence = conseq.add;
 export const updateConsequence = conseq.update;
 export const deleteConsequence = conseq.remove;
+export const moveConsequence = conseq.move;
 
 /**
  * A hazard's entries on one platform, typed freely, kept in the order they were added: how its
@@ -212,6 +247,12 @@ function platformListOps(kind, label, plural) {
       const r = need(data, kind, id);
       return commit(data, act, `Delete ${lower}`, [{ kind, rec: changed(r, act, { status: 'deleted' }) }, ...linksTo(data, act, [{ kind, id }])]);
     },
+    /** Moved to place `to` (from 0) in its list on its platform. @param {Data} data @param {Act} act @param {{ id: string, to: number | string }} args */
+    move(data, act, { id, to }) {
+      const r = need(data, kind, id);
+      const list = live(data, kind).filter((x) => x.hazardId === r.hazardId && x.platformId === r.platformId).sort(byAdded);
+      return moved(data, act, kind, `Move ${lower}`, list, list, r, to);
+    },
   };
 }
 
@@ -219,16 +260,19 @@ const failures = platformListOps('failureMode', 'Element failure mode', 'element
 export const addFailureMode = failures.add;
 export const updateFailureMode = failures.update;
 export const deleteFailureMode = failures.remove;
+export const moveFailureMode = failures.move;
 
 const systems = platformListOps('systemElement', 'System or element', 'systems or elements');
 export const addSystemElement = systems.add;
 export const updateSystemElement = systems.update;
 export const deleteSystemElement = systems.remove;
+export const moveSystemElement = systems.move;
 
 const groups = platformListOps('affectedGroup', 'Affected group', 'affected groups');
 export const addAffectedGroup = groups.add;
 export const updateAffectedGroup = groups.update;
 export const deleteAffectedGroup = groups.remove;
+export const moveAffectedGroup = groups.move;
 
 /**
  * Give each hazard, control and platform that has no number the next one of its kind, oldest

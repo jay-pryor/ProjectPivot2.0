@@ -6,6 +6,7 @@ import { ids } from '../../../src/core/ids.js';
 import {
   createHazard, updateHazard, retireHazard, deleteHazard, restoreRecord, assignHazardNumbers,
   addCausalFactor, updateCausalFactor, deleteCausalFactor, addConsequence,
+  moveCausalFactor, moveConsequence, addFailureMode, moveFailureMode,
 } from '../../../src/core/ops/hazards.js';
 
 const act = { by: 'u1', at: '2026-09-28T10:00:00+10:00' };
@@ -87,4 +88,51 @@ test('assignHazardNumbers numbers unnumbered hazards in creation order and never
   assert.equal(d.nextHazardNumber, 43);
   assert.equal(Object.keys(d.history).length, before, 'numbering is not a user action');
   assert.equal(assignHazardNumbers(d), d, 'nothing to number: the same data back');
+});
+
+/** A hazard on platforms p1 and p2. */
+function onTwo() {
+  let d = createHazard(emptyData(), act, { id: 'h1', title: 'Fire' });
+  for (const p of ['p1', 'p2']) {
+    d = put(d, 'platform', created(act, p, { name: p, ownerId: 'u1' }));
+    d = put(d, 'hazardPlatform', created(act, ids.hazardPlatform('h1', p), { hazardId: 'h1', platformId: p, reportId: null }));
+  }
+  return d;
+}
+
+test('a consequence moves to another place; the order is kept in seq, and one move is one history entry', async () => {
+  const { childrenOf } = await import('../../../src/core/queries.js');
+  let d = addConsequence(onTwo(), act, { hazardId: 'h1', pick: ['A', 'B', 'C'] });
+  const [a, , c] = childrenOf(d, 'consequence', 'h1');
+  const n = entries(d).length;
+  d = moveConsequence(d, later, { id: c.id, to: '0' });
+  assert.deepEqual(childrenOf(d, 'consequence', 'h1').map((r) => r.text), ['C', 'A', 'B']);
+  assert.equal(entries(d).length, n + 1);
+  assert.equal(entries(d).at(-1).action, 'Move consequence');
+  assert.equal(moveConsequence(d, later, { id: c.id, to: 0 }), d, 'where it is already: nothing written');
+  assert.throws(() => moveConsequence(d, later, { id: a.id, to: 3 }), code('move'));
+});
+
+test('a causal factor moves among those shown on a platform; those on other platforms alone keep their places', async () => {
+  const { causalFactorsOn } = await import('../../../src/core/queries.js');
+  let d = addCausalFactor(onTwo(), act, { hazardId: 'h1', text: 'All1' });
+  d = addCausalFactor(d, act, { hazardId: 'h1', text: 'P2only', platformId: 'p2' });
+  d = addCausalFactor(d, act, { hazardId: 'h1', text: 'P1a', platformId: 'p1' });
+  d = addCausalFactor(d, act, { hazardId: 'h1', text: 'P1b', platformId: 'p1' });
+  const p1b = causalFactorsOn(d, 'h1', 'p1').at(-1);
+  d = moveCausalFactor(d, later, { id: p1b.id, to: '0', platformId: 'p1' });
+  assert.deepEqual(causalFactorsOn(d, 'h1', 'p1').map((r) => r.text), ['P1b', 'All1', 'P1a']);
+  // All1 is every platform's, so moving it on p1 moves it on p2 too.
+  assert.deepEqual(causalFactorsOn(d, 'h1', 'p2').map((r) => r.text), ['P2only', 'All1']);
+  assert.deepEqual(causalFactorsOn(d, 'h1').map((r) => r.text), ['P1b', 'P2only', 'All1', 'P1a']);
+});
+
+test('an element failure mode moves within its platform list', async () => {
+  const { platformListOn } = await import('../../../src/core/queries.js');
+  let d = addFailureMode(onTwo(), act, { hazardId: 'h1', platformId: 'p1', pick: ['X', 'Y', 'Z'] });
+  d = addFailureMode(d, act, { hazardId: 'h1', platformId: 'p2', text: 'Other' });
+  const [x] = platformListOn(d, 'failureMode', 'h1', 'p1');
+  d = moveFailureMode(d, later, { id: x.id, to: '2' });
+  assert.deepEqual(platformListOn(d, 'failureMode', 'h1', 'p1').map((r) => r.text), ['Y', 'Z', 'X']);
+  assert.deepEqual(platformListOn(d, 'failureMode', 'h1', 'p2').map((r) => r.text), ['Other']);
 });

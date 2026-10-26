@@ -6,7 +6,7 @@ import { tierColumn } from './controls.js';
 import { live, get } from '../../core/data.js';
 import { hazardLabel, controlLabel, platformLabel } from '../../core/ids.js';
 import { hazardRows, hazardDetail, ratingOf, ratingsOf, bandOf, worseBand, hazardLastReviewed, byNumber, hazardReferences, hazardReferenceRows, causalFactorsOn, controlPlatforms, controlState, safetyReportsOn } from '../../core/queries.js';
-import { platformTab, safetyReportsSection } from './ssra.js';
+import { platformTab, safetyReportsSection, otherChoices } from './ssra.js';
 import { RECEPTORS, RECEPTOR_WORD } from '../../core/receptors.js';
 import { day } from '../names.js';
 import { BANDS } from '../../core/matrix.js';
@@ -113,7 +113,7 @@ export function hazardView(state, data, id) {
     <article class="doc dash">
       <section class="dash-card dash-summary">${descriptionField(h)}</section>
       <div class="dash-grid two">
-        ${numberedCard(state, { name: 'Consequence', items: d.consequences, hazardId: h.id })}
+        ${numberedCard(state, { name: 'Consequence', items: d.consequences, hazardId: h.id, others: otherChoices(data, 'consequence', d.consequences) })}
         ${phaseCard(data, h)}
       </div>
       <h2 class="dash-h">Platforms <span class="count">${d.platforms.length}</span>${h.status === 'live' ? plus({ action: 'openPicker', picker: 'linkPlatforms', 'hazard-id': h.id }, 'Link platforms') : ''}</h2>
