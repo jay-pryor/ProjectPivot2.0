@@ -176,6 +176,8 @@ On the platform tab, each of the three [[receptor|receptors]] (Personnel, Enviro
 
 If the same hazard is on another platform, **Copy from…** brings its ratings, controls or SFARP across to save typing.
 
+To put a list of facets in another order, drag a row by its handle (⋮⋮) or use its ↑ and ↓; reports follow the new order.
+
 ## Safety reports
 
 Record an occurrence, near miss, hazard report or bulletin against the hazard on a platform. Each gets an ID such as HAZ-001-A-1 when saved. A report filed against the wrong platform can be moved.
@@ -456,14 +458,9 @@ The small **+** next to the Platforms page's title, or the Platform Onboarding t
 1. **Details**: a description (needed), the owner, and an image if you have one.
 2. **Groups**: at least one [[platform group]].
 3. **Hazards**: at least one. Hazards assigned to the platform's groups (or [[all platforms]]) are suggested; tick them and **Add**.
-4. **Each hazard**: two things are needed, listed below.
+4. **Each hazard**: its **[[facet|facets]]** are needed: each of causal factors, systems or elements, element failure modes, consequences and affected groups has an entry, or a tick for **None applies**. Consequences are the hazard's, shared by all its platforms.
 
-On each hazard's page:
-
-- its **[[facet|facets]]**: each of failure modes, systems or elements, affected groups and causal factors has an entry, or a tick for **None applies**;
-- its **implemented controls**: each with tier, origin, description and implemented by, or a tick for **No controls implemented**.
-
-Suggestions come from the groups the hazard and platform share. Other controls, ratings, justifications and SFARP can be filled in too, but are not required.
+Suggestions come from the groups the hazard and platform share. Adding a causal factor or consequence also offers the hazard's own from its other platforms, and a closed **Other …** list of everything else on Info or given on any hazard. Controls, ratings, justifications and SFARP can be filled in too, but are not required; where the hazard is on another platform, **Copy from…** brings its ratings (and, by the copy icon on each box, its justifications) across.
 
 ## Completing
 

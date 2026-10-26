@@ -632,6 +632,12 @@ tr:hover .option-groups .og-x, .option-groups .og-x:focus-visible { visibility: 
 .confirm-box { max-width: 480px; }
 .confirm-box p { margin: 0 0 16px; line-height: 1.5; }
 .nl-item:hover .row-actions { visibility: visible; }
+.nl-grip { flex: none; width: 12px; margin-right: -6px; cursor: grab; color: var(--p-muted); font-size: 12px; letter-spacing: -3px; user-select: none; visibility: hidden; }
+.nl-item:hover .nl-grip { visibility: visible; }
+.nl-item.dragging-nl { opacity: .45; }
+.nl-item.drop-before { box-shadow: inset 0 3px 0 var(--p-accent); }
+.nl-item.drop-after { box-shadow: inset 0 -3px 0 var(--p-accent); }
+.icon-move { padding: 0 6px; line-height: 1.6; }
 .nl-empty { margin: 0; }
 .nl-card .new-row { margin-top: 8px; }
 
@@ -683,8 +689,8 @@ button.plat-card:active { transform: translateY(-1px); }
 .risk-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 .risk-panel { display: grid; gap: 8px; align-content: start; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 0; padding: 12px 14px; }
 .risk-panel h3 { margin: 0; font-size: 15px; }
-.risk-field { display: flex; align-items: center; gap: 8px; font-weight: 700; }
-.risk-field select { font-weight: 400; border: 1px solid var(--p-muted); background: var(--p-surface-2); }
+.risk-field { display: grid; grid-template-columns: 7.5em minmax(0, 15em); align-items: center; gap: 8px; margin: 0; font-weight: 700; }
+.risk-field select { width: 100%; font-weight: 400; border: 1px solid var(--p-muted); background: var(--p-surface-2); }
 .risk-panel textarea, .sfarp textarea { width: 100%; resize: vertical; }
 .risk-level { display: flex; align-items: center; gap: 8px; color: var(--p-muted); }
 .sfarp { display: grid; gap: 12px; width: 66.667%; }
@@ -883,6 +889,8 @@ button.plat-card { min-height: 190px; grid-template-rows: auto auto auto 1fr; }
 .suggest-item:has(input:checked) { border-style: solid; border-color: var(--p-accent); background: color-mix(in srgb, var(--p-accent) 12%, transparent); }
 .suggest-item input { margin: 0; accent-color: var(--p-accent); }
 .suggest-text { flex: 1; min-width: 0; }
+.suggest-more > summary { cursor: pointer; margin: 0; }
+.suggest-more[open] > summary { margin-bottom: 6px; }
 .suggest-from { font-size: 12px; color: var(--p-muted); }
 @media (prefers-reduced-motion: reduce) { .suggest.reveal { animation: none; } }
 

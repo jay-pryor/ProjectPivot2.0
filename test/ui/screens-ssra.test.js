@@ -43,7 +43,7 @@ test('a platform tab is a dashboard: risk and controls at a glance, the shared h
   assert.match(out, /class="shared-mark">Shared across platforms/);
   assert.match(out, /<textarea class="doc-text boxed" name="description"[^>]*data-change="updateHazard"/);
   assert.match(out, /<div class="dash-grid hazard-lists">\s*<section class="dash-card nl-card" aria-label="Causal factors">/);
-  assert.match(out, /aria-label="Causal factors">[\s\S]*?<span class="nl-num">1<\/span>[\s\S]*?aria-label="Consequences">[\s\S]*?<span class="nl-num">1<\/span>[\s\S]*?aria-label="Element failure modes">[\s\S]*?No element failure modes yet\.[\s\S]*?aria-label="System\/Element">[\s\S]*?aria-label="Lifecycle phases">[\s\S]*?aria-label="Affected groups">/);
+  assert.match(out, /aria-label="Causal factors">[\s\S]*?<span class="nl-num">1<\/span>[\s\S]*?aria-label="System\/Element">[\s\S]*?aria-label="Element failure modes">[\s\S]*?No element failure modes yet\.[\s\S]*?aria-label="Consequences">[\s\S]*?<span class="nl-num">1<\/span>[\s\S]*?aria-label="Affected groups">[\s\S]*?aria-label="Lifecycle phases">/);
   assert.ok(out.indexOf('aria-label="Hazard"') < out.indexOf('aria-label="Risk"') && out.indexOf('aria-label="Risk"') < out.indexOf('aria-label="Controls"'), 'hazard, then risk, then controls');
   assert.match(out, /class="rail-item on" aria-pressed="true"[^>]*data-section="initial"/, 'Initial risk is open until another is chosen');
   assert.equal((out.match(/class="rail-panel"/g) ?? []).length, 1, 'one section open at a time');

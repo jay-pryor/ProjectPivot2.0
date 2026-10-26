@@ -23,7 +23,7 @@ function rail(data, wf, prog, current) {
     <div class="wf-rail-h">Hazards</div>
     ${workflowHazards(data, wf).map((x) => {
       const n = prog.perHazard.get(x.hazard.id)?.required ?? 0;
-      return item(x.hazard.id, html`${mark(n === 2)}<span class="wf-name">${idTag(x.reportId)} ${x.hazard.title}</span><span class="wf-count">${n}/2</span>`, n === 2);
+      return item(x.hazard.id, html`${mark(n === 1)}<span class="wf-name">${idTag(x.reportId)} ${x.hazard.title}</span><span class="wf-count">${n}/1</span>`, n === 1);
     })}
     ${item('', html`${mark(false)}<span class="wf-name">Summary &amp; complete</span>`, false)}</nav>`;
 }
@@ -91,7 +91,7 @@ export function onboardingBody(state, data, wf, mine) {
 }
 
 /**
- * An ended onboarding's grid: each hazard it covered against its facets and implemented controls.
+ * An ended onboarding's grid: each hazard it covered against its facets.
  * @param {Data} data @param {any} wf
  */
 export function onboardingGrid(data, wf) {
@@ -99,6 +99,6 @@ export function onboardingGrid(data, wf) {
   if (!hz.length) return html`<p class="muted">No hazards.</p>`;
   const prog = onboardingProgress(data, { ...wf, state: 'open' });
   const cell = (/** @type {boolean | undefined} */ ok) => html`<td class="${ok ? 'yes' : 'no'}">${ok ? '✓' : ''}</td>`;
-  return html`<div class="wf-grid-wrap"><table class="wf-grid"><thead><tr><th scope="col">Hazard</th><th scope="col">Facets</th><th scope="col">Implemented controls</th></tr></thead>
-    <tbody>${hz.map((x) => { const h = prog.perHazard.get(x.hazard.id); return html`<tr><th scope="row">${idTag(x.reportId)} ${x.hazard.title}</th>${cell(h && FACET_KINDS.every((f) => h.facets[f]))}${cell(h?.implemented)}</tr>`; })}</tbody></table></div>`;
+  return html`<div class="wf-grid-wrap"><table class="wf-grid"><thead><tr><th scope="col">Hazard</th><th scope="col">Facets</th></tr></thead>
+    <tbody>${hz.map((x) => { const h = prog.perHazard.get(x.hazard.id); return html`<tr><th scope="row">${idTag(x.reportId)} ${x.hazard.title}</th>${cell(h && FACET_KINDS.every((f) => h.facets[f]))}</tr>`; })}</tbody></table></div>`;
 }

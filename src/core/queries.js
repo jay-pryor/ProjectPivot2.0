@@ -802,6 +802,22 @@ export function facetEntries(data, kind) {
 }
 
 /**
+ * Every causal factor or consequence a hazard could be given: the facet's options on Info, in their
+ * order, then what has been given on any hazard, most used first; once each (ignoring case),
+ * leaving out what is in `have` (in lower case).
+ * @param {Data} data @param {'causalFactor' | 'consequence'} kind @param {Set<string>} have
+ * @returns {string[]}
+ */
+export function facetChoices(data, kind, have) {
+  /** @type {Map<string, string>} */
+  const seen = new Map();
+  for (const t of [...facetOptions(data, kind).map((o) => String(o.option.name).trim()), ...facetEntries(data, kind).map((e) => e.text)]) {
+    if (t && !have.has(t.toLowerCase()) && !seen.has(t.toLowerCase())) seen.set(t.toLowerCase(), t);
+  }
+  return [...seen.values()];
+}
+
+/**
  * What a lifecycle phase covers: its hazards, the platforms they are on, the additional controls
  * linked to them, the worst residual band over every hazard on every platform, and how many of
  * those hazard-on-platform pairs still lack a full residual rating.

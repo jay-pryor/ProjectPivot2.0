@@ -22,7 +22,7 @@ function ready() {
   d = createPlatformGroup(d, act, { id: 'g1', name: 'Lasers' });
   d = tagPlatform(d, act, { platformId: 'p9', groupId: 'g1' });
   d = linkHazard(d, act, { hazardId: 'h1', platformId: 'p9' });
-  for (const check of ['none:failureMode', 'none:systemElement', 'none:affectedGroup', 'none:controls']) d = setStep(d, act, { workflowId: 'w9', hazardId: 'h1', check, checked: true });
+  for (const check of ['none:failureMode', 'none:systemElement', 'none:affectedGroup']) d = setStep(d, act, { workflowId: 'w9', hazardId: 'h1', check, checked: true });
   return d;
 }
 
@@ -39,10 +39,11 @@ test('onboarding a new platform makes it and the workflow in one change, on Deta
 test('positions include the platform steps; none ticks need the hazard on the platform', () => {
   let d = setWorkflowPosition(begun(), act, { workflowId: 'w9', hazardId: '@groups' });
   assert.equal(d.records.workflow.w9.at.hazardId, '@groups');
-  assert.throws(() => setStep(d, act, { workflowId: 'w9', hazardId: 'h1', check: 'none:controls', checked: true }), code('workflow.hazard'));
+  assert.throws(() => setStep(d, act, { workflowId: 'w9', hazardId: 'h1', check: 'none:consequence', checked: true }), code('workflow.hazard'));
   d = linkHazard(d, act, { hazardId: 'h1', platformId: 'p9' });
-  assert.doesNotThrow(() => setStep(d, act, { workflowId: 'w9', hazardId: 'h1', check: 'none:controls', checked: true }));
+  assert.doesNotThrow(() => setStep(d, act, { workflowId: 'w9', hazardId: 'h1', check: 'none:consequence', checked: true }));
   assert.throws(() => setStep(d, act, { workflowId: 'w9', hazardId: 'h1', check: 'sfarp', checked: true }), code('workflow.check'), 'review checks are not onboarding’s');
+  assert.throws(() => setStep(d, act, { workflowId: 'w9', hazardId: 'h1', check: 'none:controls', checked: true }), code('workflow.check'), 'controls are not required, so have no none tick');
 });
 
 test('complete is strict, writes no review, and ends Onboarding', () => {

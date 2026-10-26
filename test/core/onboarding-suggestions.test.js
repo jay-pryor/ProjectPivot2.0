@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPlatformGroup, tagPlatform } from '../../src/core/ops/platform-groups.js';
 import { createFacetOption, setOptionGroup } from '../../src/core/ops/facets.js';
-import { createHazard, addFailureMode } from '../../src/core/ops/hazards.js';
+import { createHazard, addFailureMode, addCausalFactor } from '../../src/core/ops/hazards.js';
 import { createControl } from '../../src/core/ops/controls.js';
-import { setControlStatus } from '../../src/core/ops/assessment.js';
+import { facetChoices } from '../../src/core/queries.js';
 import { sharedGroups, groupSuggestions } from '../../src/core/workflows.js';
 import { act, seed } from '../helpers.js';
 
@@ -47,12 +47,28 @@ test('hazard suggestions come from the platform’s groups and All platforms, wi
   assert.deepEqual(groupSuggestions(d, { kind: 'hazard', platformId: 'p1' }).map((s) => [s.id, s.from]), [['h3', 'Vehicles']], 'h1 is already on p1; h4 is Maritime only');
 });
 
-test('control suggestions come from the shared groups, without controls already Implemented on the hazard here', () => {
+test('control suggestions come from the shared groups, without controls already on the hazard here', () => {
   let d = groups();
   d = createControl(d, act, { id: 'c3', title: 'Beam stop' });
   d = setOptionGroup(d, act, { facet: 'control', optionId: 'c3', groupId: 'gL', on: true });
   d = setOptionGroup(d, act, { facet: 'control', optionId: 'c1', groupId: 'gL', on: true });
-  assert.deepEqual(groupSuggestions(d, { kind: 'control', platformId: 'p1', hazardId: 'h1' }).map((s) => s.id), ['c1', 'c3'], 'c1 is on h1 at p1 only as Recommended');
-  d = setControlStatus(d, act, { hazardId: 'h1', controlId: 'c1', platformId: 'p1', status: 'implemented' });
-  assert.deepEqual(groupSuggestions(d, { kind: 'control', platformId: 'p1', hazardId: 'h1' }).map((s) => s.id), ['c3']);
+  assert.deepEqual(groupSuggestions(d, { kind: 'control', platformId: 'p1', hazardId: 'h1' }).map((s) => s.id), ['c3'], 'c1 is on h1 at p1 already, as Recommended');
+});
+
+test('consequence suggestions come from the shared groups, without those the hazard has', () => {
+  let d = groups();
+  for (const [id, name] of [['qB', 'Burns'], ['qS', 'Smoke inhalation']]) {
+    d = createFacetOption(d, act, { id, facet: 'consequence', name });
+    d = setOptionGroup(d, act, { facet: 'consequence', optionId: id, groupId: 'gL', on: true });
+  }
+  assert.deepEqual(groupSuggestions(d, { kind: 'consequence', platformId: 'p1', hazardId: 'h1' }).map((s) => s.text), ['Smoke inhalation'], 'h1 has Burns');
+});
+
+test('facet choices: Info\'s options, then what is given on any hazard, once each, leaving out what is had', () => {
+  let d = seed();
+  d = createFacetOption(d, act, { id: 'o1', facet: 'causalFactor', name: 'Fuel leak' });
+  d = createFacetOption(d, act, { id: 'o2', facet: 'causalFactor', name: 'hot works' });
+  d = addCausalFactor(d, act, { hazardId: 'h2', text: 'Heavy rain' });
+  assert.deepEqual(facetChoices(d, 'causalFactor', new Set()), ['Fuel leak', 'hot works', 'Heavy rain'], 'Hot works on h1 is the same as Info\'s hot works');
+  assert.deepEqual(facetChoices(d, 'causalFactor', new Set(['hot works', 'heavy rain'])), ['Fuel leak']);
 });

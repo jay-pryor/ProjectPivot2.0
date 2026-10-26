@@ -4,6 +4,7 @@ import { MemoryFolder } from '../fakes/folder.js';
 import { MemoryStorage } from '../fakes/storage.js';
 import { fixedClock } from '../../src/core/time.js';
 import { createController } from '../../src/ui/controller.js';
+import { controlsOnPlatform } from '../../src/core/queries.js';
 
 const env = (f, storage = new MemoryStorage()) => ({ clock: fixedClock('2026-09-28T10:00:00+10:00'), storage, minSaveMs: 0,
   pickFolder: async () => f.handle, pickSaveFile: async (n) => f.handle.getFileHandle(n, { create: true }), pickOpenFile: async () => null });
@@ -30,7 +31,7 @@ test('New platform onboards it: the platform and its workflow are made and the w
   const saved = again.getState().session.working;
   assert.equal(saved.records.platform[saved.records.workflow[v.id].platformId].description, 'A trailer');
 });
-test('ticked suggested controls are added to the hazard here and set Implemented', async () => {
+test('ticked suggested controls are added to the hazard here, at the status any control gets', async () => {
   const f = new MemoryFolder();
   const c = createController(env(f));
   await c.dispatch({ type: 'chooseFolder' });
@@ -45,5 +46,5 @@ test('ticked suggested controls are added to the hazard here and set Implemented
   await c.dispatch({ type: 'linkHazards', hazardId: 'h1', platformId: pid });
   await c.dispatch({ type: 'addSuggestedControls', hazardId: 'h1', platformId: pid, controlId: ['c1'] });
   const after = c.getState().session.working;
-  assert.equal(after.records.ruling[`ru:h1:c1:${pid}`].state, 'implemented');
+  assert.deepEqual(controlsOnPlatform(after, 'h1', pid).map((x) => [x.control.id, x.state]), [['c1', 'recommended']]);
 });

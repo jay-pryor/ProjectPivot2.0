@@ -9,7 +9,7 @@ import { referencesCard } from './references.js';
 import { numberedCard, platformListCard, sectionRail, descriptionField } from './dashboard.js';
 import { get } from '../../core/data.js';
 import { ids, controlLabel } from '../../core/ids.js';
-import { copySources, stageCopySources, assessmentOf, ratingsOf, sfarpOf, hazardDetail, controlsOnPlatform, safetyReportsOn, causalFactorsOn, partCopySources, platformListOn, platformListEntries, hazardReferences, hazardReferenceRows, bandOf, worseBand, implementedByOf, implementedByText } from '../../core/queries.js';
+import { copySources, stageCopySources, assessmentOf, ratingsOf, sfarpOf, hazardDetail, controlsOnPlatform, safetyReportsOn, causalFactorsOn, partCopySources, platformListOn, platformListEntries, hazardReferences, hazardReferenceRows, facetChoices, bandOf, worseBand, implementedByOf, implementedByText } from '../../core/queries.js';
 import { SAFETY_REPORT_TYPES } from '../../core/ops/safety-reports.js';
 import { safetyReportId } from '../../core/ops/report-ids.js';
 import { idColumn } from './hazards.js';
@@ -230,7 +230,7 @@ function copyPartButton(data, h, platformId, part, what) {
  * hazard; shown only when another platform has something at that stage.
  * @param {Data} data @param {any} h @param {string} platformId @param {'initial' | 'residual'} stage
  */
-function copyStageButton(data, h, platformId, stage) {
+export function copyStageButton(data, h, platformId, stage) {
   if (!stageCopySources(data, h.id, platformId, stage).length) return '';
   return html`<button type="button" class="copy-stage" ${dataAttrs({ action: 'openPicker', picker: 'copyStage', 'hazard-id': h.id, 'platform-id': platformId, stage })} title="Copy all ${stage} likelihoods and consequences from another platform"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="9" height="9"/><path d="M3 11V2h9"/></svg>Copy from…</button>`;
 }
@@ -240,7 +240,7 @@ function copyStageButton(data, h, platformId, stage) {
  * each, with the platforms they come from.
  * @param {Data} data @param {string} hazardId @param {string} platformId
  */
-function causalFactorSuggestions(data, hazardId, platformId) {
+export function causalFactorSuggestions(data, hazardId, platformId) {
   const here = new Set(causalFactorsOn(data, hazardId, platformId).map((r) => String(r.text).trim().toLowerCase()));
   /** @type {Map<string, { text: string, from: string[] }>} */
   const found = new Map();
@@ -254,6 +254,13 @@ function causalFactorSuggestions(data, hazardId, platformId) {
   }
   return [...found.values()].map((e) => ({ text: e.text, from: e.from.join(', ') }));
 }
+
+/**
+ * The causal factors or consequences a hazard does not have yet, from Info's list and those given
+ * on any hazard: what a numbered card's closed "Other …" list offers.
+ * @param {Data} data @param {'causalFactor' | 'consequence'} kind @param {any[]} items what it has
+ */
+export const otherChoices = (data, kind, items) => facetChoices(data, kind, new Set(items.map((r) => String(r.text).trim().toLowerCase())));
 
 /**
  * For a hazard's typed list on one platform, each entry (in lower case) its other platforms have,
@@ -315,12 +322,12 @@ export function platformTab(state, data, h, platformId) {
       </section>
     </div>`)}
     <div class="dash-grid hazard-lists">
-      ${numberedCard(state, { name: 'CausalFactor', items: causalFactorsOn(data, h.id, platformId), hazardId: h.id, platformId, suggestions: causalFactorSuggestions(data, h.id, platformId) })}
-      ${numberedCard(state, { name: 'Consequence', items: d.consequences, hazardId: h.id })}
-      ${platformListCard(state, { kind: 'failureMode', items: platformListOn(data, 'failureMode', h.id, platformId), hazardId: h.id, platformId, entries: platformListEntries(data, 'failureMode'), usedOn: usedOnOthers(data, 'failureMode', h.id, platformId) })}
+      ${numberedCard(state, { name: 'CausalFactor', items: causalFactorsOn(data, h.id, platformId), hazardId: h.id, platformId, suggestions: causalFactorSuggestions(data, h.id, platformId), others: otherChoices(data, 'causalFactor', causalFactorsOn(data, h.id, platformId)) })}
       ${platformListCard(state, { kind: 'systemElement', items: platformListOn(data, 'systemElement', h.id, platformId), hazardId: h.id, platformId, entries: platformListEntries(data, 'systemElement'), usedOn: usedOnOthers(data, 'systemElement', h.id, platformId) })}
-      ${phaseCard(data, h)}
+      ${platformListCard(state, { kind: 'failureMode', items: platformListOn(data, 'failureMode', h.id, platformId), hazardId: h.id, platformId, entries: platformListEntries(data, 'failureMode'), usedOn: usedOnOthers(data, 'failureMode', h.id, platformId) })}
+      ${numberedCard(state, { name: 'Consequence', items: d.consequences, hazardId: h.id, others: otherChoices(data, 'consequence', d.consequences) })}
       ${platformListCard(state, { kind: 'affectedGroup', items: platformListOn(data, 'affectedGroup', h.id, platformId), hazardId: h.id, platformId, entries: platformListEntries(data, 'affectedGroup'), usedOn: usedOnOthers(data, 'affectedGroup', h.id, platformId) })}
+      ${phaseCard(data, h)}
     </div>
     ${sectionRail(state, 'ssra', [
       { key: 'reports', label: 'Safety reports', icon: 'reports', badge: reports.length, body: () => html`<h2>Safety reports</h2><section class="block">${safetyReportsSection(state, data, h, platformId)}</section>` },
